@@ -2,6 +2,13 @@
 
 AI 에이전트(Codex, Claude 등)가 이 리포에서 작업할 때 반드시 따라야 할 상시 규칙.
 
+## 디자인 시스템 컴포넌트 API
+
+컴포넌트 사용 전 반드시 아래 문서를 참조할 것. prop 이름·타입 오류 방지.
+
+- 웹: [@docs/design-system/web-components.md](docs/design-system/web-components.md)
+- 네이티브: [@docs/design-system/native-components.md](docs/design-system/native-components.md)
+
 ---
 
 ## 리포 구조
@@ -83,6 +90,45 @@ apps/<app>/src/features/<domain>/
 ```
 
 feature 추가 후: `pnpm typecheck && pnpm lint` 반드시 통과 확인.
+
+---
+
+## 커밋 메시지 규칙
+
+### 형식
+
+```
+[SCRUM-XX] <type>: <한글 설명>
+
+- 변경 bullet 1
+- 변경 bullet 2
+```
+
+### type 목록
+
+| type | 사용 시점 |
+|---|---|
+| `feat` | 새 기능 추가 |
+| `fix` | 버그 수정 |
+| `chore` | 빌드·설정·의존성 등 프로덕션 코드 변경 없는 작업 |
+| `refactor` | 동작 변경 없는 코드 구조 개선 |
+| `test` | 테스트 추가·수정 |
+| `docs` | 문서만 변경 |
+| `style` | 포맷·공백 등 코드 의미 변경 없는 수정 |
+
+### 규칙
+
+- Jira 티켓 번호는 `[SCRUM-XX]` 형식으로 제목 앞에 붙임
+- 제목은 한글 서술형, 50자 이내
+- 본문 bullet은 파일/기능 단위로 간결하게 작성
+
+### 예시
+
+```
+[SCRUM-65] chore: 프론트엔드 모노레포 초기 구조 설계
+[SCRUM-66] feat: 디자인 시스템 토큰·컴포넌트 구축 및 앱 통합
+[SCRUM-67] fix: 주문 상태 필터 초기화 오류 수정
+```
 
 ---
 

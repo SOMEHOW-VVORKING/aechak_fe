@@ -4,7 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "lib": ["DOM", "ES2022"],
+    "types": ["react"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": []
 }

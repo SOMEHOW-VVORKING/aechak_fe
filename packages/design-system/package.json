@@ -8,7 +8,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./web": "./src/web/index.ts",
-    "./native": "./src/native/theme.ts"
+    "./tailwind": "./src/web/tailwind-theme.ts",
+    "./native": "./src/native/index.ts"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-native": ">=0.79.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native": { "optional": true }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -17,6 +25,8 @@
   "devDependencies": {
     "@aechak/tsconfig": "workspace:*",
     "@aechak/eslint-config": "workspace:*",
+    "@types/react": "^19.0.0",
+    "@types/react-native": "^0.73.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "eslint": "^9.28.0"
