@@ -1,0 +1,21 @@
+diff --git a/package.json b/package.json
+index 155dc65ac5ea87d4b439415cdbc3346d6cdad489..5b0ae11901c21ad837288cb934a3f4ec30a87fd4 100644
+--- a/package.json
++++ b/package.json
+@@ -1,12 +1,14 @@
+ {
+   "name": "metro-cache",
+   "version": "0.84.4",
+-  "description": "🚇 Cache layers for Metro.",
++  "description": "\ud83d\ude87 Cache layers for Metro.",
+   "main": "src/index.js",
+   "exports": {
+     ".": "./src/index.js",
+     "./package.json": "./package.json",
+-    "./private/*": "./src/*.js"
++    "./private/*": "./src/*.js",
++    "./src/*": "./src/*.js",
++    "./src/stores/*": "./src/stores/*.js"
+   },
+   "repository": {
+     "type": "git",

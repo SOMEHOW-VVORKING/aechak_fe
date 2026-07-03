@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'packages/config/*'
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true
+patchedDependencies:
+  metro-cache@0.84.4: patches/metro-cache@0.84.4.patch

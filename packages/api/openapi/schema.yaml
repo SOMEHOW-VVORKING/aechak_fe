@@ -1,0 +1,32 @@
+openapi: "3.0.3"
+info:
+  title: "Aechak API"
+  description: "Backend OpenAPI spec — replace with actual spec when finalized"
+  version: "0.0.1"
+servers:
+  - url: "http://localhost:8080"
+    description: "Local development"
+  - url: "https://api.aechak.com"
+    description: "Production"
+paths:
+  /health:
+    get:
+      summary: "Health check"
+      operationId: "healthCheck"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

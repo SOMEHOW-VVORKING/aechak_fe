@@ -1,0 +1,14 @@
+{
+  "name": "@aechak/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "peerDependencies": {
+    "eslint": ">=9.0.0"
+  },
+  "dependencies": {
+    "typescript-eslint": "^8.34.1",
+    "eslint-plugin-boundaries": "^5.1.0"
+  }
+}

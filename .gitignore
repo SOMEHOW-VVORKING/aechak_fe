@@ -1,0 +1,55 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+dist
+.expo
+.next
+out
+build
+
+# Turbo
+.turbo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing
+coverage
+playwright-report
+test-results
+
+# Expo
+.expo-shared
+
+# Mobile build artifacts (local builds via EAS CLI)
+*.ipa
+*.apk
+*.aab
+
+# Generated (keep generated API types in version control for openapi:generate:check)
+# packages/api/src/generated is intentionally NOT gitignored

@@ -1,0 +1,10 @@
+{
+  "extends": "@aechak/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "noEmit": true
+  },
+  "include": ["src", "orval.config.ts"]
+}

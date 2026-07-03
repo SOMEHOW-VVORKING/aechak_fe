@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Aechak",
+    "slug": "aechak",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "aechak",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aechak.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#3b82f6"
+      },
+      "package": "com.aechak.app"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

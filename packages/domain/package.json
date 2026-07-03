@@ -1,0 +1,18 @@
+{
+  "name": "@aechak/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@aechak/tsconfig": "workspace:*",
+    "@aechak/eslint-config": "workspace:*",
+    "typescript": "^5.8.3",
+    "eslint": "^9.28.0"
+  }
+}

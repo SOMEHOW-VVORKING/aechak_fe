@@ -1,0 +1,10 @@
+{
+  "name": "@aechak/tailwind-config",
+  "version": "0.0.0",
+  "private": true,
+  "main": "preset.js",
+  "types": "preset.d.ts",
+  "peerDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}
