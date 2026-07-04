@@ -1,4 +1,5 @@
 import { type HTMLAttributes, type ReactNode } from 'react'
+import { getInteractiveDivProps } from './interactive-div'
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
@@ -12,10 +13,7 @@ export function Card({ children, selected, padding = 'none', onClick, className 
 
   return (
     <div
-      role={isInteractive ? 'button' : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={isInteractive ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick() } : undefined}
+      {...getInteractiveDivProps(onClick)}
       className={[
         'rounded-card border bg-surface-raised',
         selected ? 'border-brand-border' : 'border-border-subtle',

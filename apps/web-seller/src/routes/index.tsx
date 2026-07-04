@@ -6,11 +6,9 @@ export const Route = createFileRoute('/')({
 
 function RouteComponent() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-gray-900">Aechak Seller</h1>
-        <p className="mt-2 text-sm text-gray-500">셀러 어드민</p>
-      </div>
+    <div className="p-6">
+      <h1 className="text-heading font-semibold text-text-primary">대시보드</h1>
+      <p className="mt-2 text-body-sm text-text-tertiary">셀러 어드민</p>
     </div>
   )
 }

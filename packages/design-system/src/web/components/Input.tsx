@@ -1,4 +1,5 @@
 import { type InputHTMLAttributes, type ReactNode, useId } from 'react'
+import { ClearIcon } from './icons'
 
 type InputState = 'default' | 'error' | 'success'
 
@@ -79,9 +80,7 @@ export function Input({
             aria-label="입력 초기화"
             tabIndex={-1}
           >
-            <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            <ClearIcon />
           </button>
         )}
         {!showClear && rightAddon && <span className="flex-none text-icon">{rightAddon}</span>}

@@ -32,6 +32,7 @@ export const theme = {
     brand: colors.brand.default,
     brandHover: colors.brand.hover,
     brandSubtle: colors.brand.subtle,
+    brandBorder: colors.brand.border,
     onBrand: colors.brand.on,
 
     // Accent (sale/discount)
@@ -44,6 +45,7 @@ export const theme = {
     successSurface: colors.success.surface,
     warningFg: colors.warning.fg,
     warningSurface: colors.warning.surface,
+    warningSolid: colors.warning.solid,
     errorFg: colors.error.fg,
     errorSurface: colors.error.surface,
     infoFg: colors.info.fg,
