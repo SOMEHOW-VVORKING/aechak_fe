@@ -24,7 +24,7 @@ interface SideNavProps {
 }
 
 const itemBase = [
-  'w-full flex items-center gap-3 px-4 py-2.5 rounded-md mx-2 text-body-sm font-medium transition-colors text-left',
+  'w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-body-sm font-medium transition-colors text-left',
   'focus-visible:outline-none focus-visible:shadow-focus-ring',
 ].join(' ')
 
@@ -35,7 +35,7 @@ export function SideNav({ groups, activeKey, onSelect, header, footer, className
   return (
     <nav
       className={[
-        'flex flex-col h-full w-56 bg-surface-raised border-r border-border-subtle select-none',
+        'flex flex-col h-full w-64 bg-surface-raised border-r border-border-subtle select-none',
         className,
       ]
         .filter(Boolean)
@@ -43,11 +43,11 @@ export function SideNav({ groups, activeKey, onSelect, header, footer, className
     >
       {header && <div className="px-4 py-5 border-b border-border-subtle">{header}</div>}
 
-      <div className="flex-1 overflow-y-auto py-3 space-y-1">
+      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
         {groups.map((group) => (
           <div key={group.key}>
             {group.label && (
-              <p className="px-4 py-2 text-caption font-semibold text-text-tertiary uppercase tracking-wide">
+              <p className="px-2 py-2 text-caption font-semibold text-text-tertiary uppercase tracking-wide">
                 {group.label}
               </p>
             )}

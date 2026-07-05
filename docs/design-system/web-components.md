@@ -246,6 +246,7 @@ interface Column<T> {
   key: string
   label: string        // ← 'header' 아님
   width?: string
+  align?: 'left' | 'center' | 'right'  // 기본 'left'. 헤더 label과 셀 내용 모두에 적용됨
   sortable?: boolean
   render?: (row: T) => ReactNode
 }
@@ -258,11 +259,17 @@ interface Column<T> {
 | `rowKey` | `(row: T) => string` | **필수** |
 | `selectedKeys` | `Set<string>` | — |
 | `onSelectChange` | `(keys: Set<string>) => void` | — |
+| `onRowClick` | `(row: T) => void` | — |
 | `sortKey` | `string` | — |
 | `sortDir` | `'asc' \| 'desc'` | — |
 | `onSort` | `(key: string) => void` | — |
 | `loading` | `boolean` | `false` |
 | `emptyLabel` | `string` | `'데이터가 없습니다.'` |
+
+`onRowClick`을 주면 행 전체가 클릭 가능해짐(`cursor-pointer` 자동 적용) — 셀 안의 개별
+버튼(예: 이름/ID 링크) `onClick`과 동시에 둬도 됨(같은 핸들러를 두 번 호출해도 멱등하면 안전).
+`align`은 StatusPill·숫자 컬럼처럼 왼쪽 정렬이 어색한 컬럼에 사용 — 숫자/카운트 컬럼은
+`right`, StatusPill 단독 컬럼은 `center` 권장.
 
 ---
 
@@ -710,10 +717,38 @@ interface NavGroup { label?: string; items: NavItem[] }
 
 | prop | 타입 | 기본값 |
 |---|---|---|
-| `variant` | `'success' \| 'error' \| 'warning' \| 'info' \| 'brand' \| 'neutral'` | `'neutral'` |
+| `variant` | `'success' \| 'error' \| 'warning' \| 'info' \| 'danger' \| 'accent' \| 'brand' \| 'neutral' \| 'muted'` | `'neutral'` |
 | `size` | `'sm' \| 'md'` | `'md'` |
 | `dot` | `boolean` | `false` |
 | `children` | `ReactNode` | **필수** |
+
+`muted`는 "휴업/퇴점/블라인드/탈퇴 처리"처럼 `neutral`보다 한 단계 더 옅게 눈에 덜 띄어야 하는
+비활성 상태에 쓰고, `danger`는 판매정지/영구정지/강제삭제 같은 되돌리기 어려운 제재 액션에 쓴다
+(`error`는 단순 부정적 결과 — 반려/임시정지 등 — 에 사용, `danger`보다 약한 톤).
+
+---
+
+## TabBar
+
+```tsx
+<TabBar
+  tabs={[
+    { key: '/', label: '홈', icon: <Home className="size-full" /> },
+    { key: '/market', label: '마켓', icon: <Store className="size-full" /> },
+  ]}
+  activeKey={pathname}
+  onSelect={(key) => navigate({ to: key })}
+/>
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `tabs` | `{ key: string; label: string; icon: ReactNode }[]` | **필수** |
+| `activeKey` | `string` | **필수** |
+| `onSelect` | `(key: string) => void` | **필수** |
+| `className` | `string` | — |
+
+앱 최하단 5-tab 셸 전용 바텀 네비게이션. `MobileScreen`의 `footer` 슬롯에 넣어 사용 (`BottomFixedAction`과 동일하게 `env(safe-area-inset-bottom)` 패딩 적용). **네이티브 `TabBar`와 다른 점:** `icon`이 `(isActive) => ReactNode` 렌더 프롭이 아니라 `ReactNode` 직접 전달 — 웹 아이콘(lucide-react)은 액티브/인액티브 전용 별도 글리프가 없고 `currentColor`/className으로 재색칠하기 때문. 라우팅은 컴포넌트가 직접 하지 않음 — `onSelect`에서 호출부가 TanStack Router `navigate`를 호출 (`SideNav`와 동일한 컨벤션).
 
 ---
 

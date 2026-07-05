@@ -42,7 +42,7 @@ export const colors = {
     sunken: '#F4F2EE',
     overlay: '#FFFFFF',
     inverse: '#1C1A17',
-    hover: '#F4F2EE',
+    hover: '#ECE9E3',
     pressed: '#E9E5DF',
     selected: '#ECF6F1',
     disabled: '#F4F2EE',

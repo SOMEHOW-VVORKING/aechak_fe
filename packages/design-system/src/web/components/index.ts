@@ -122,3 +122,6 @@ export type {
 
 export { StepProgress } from './StepProgress'
 export type { StepProgressProps } from './StepProgress'
+
+export { TabBar } from './TabBar'
+export type { TabBarProps, TabBarItem } from './TabBar'

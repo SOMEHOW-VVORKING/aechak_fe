@@ -4,8 +4,15 @@ export interface Column<T> {
   key: string
   label: string
   width?: string
+  align?: 'left' | 'center' | 'right'
   sortable?: boolean
   render?: (row: T) => ReactNode
+}
+
+const alignClass: Record<NonNullable<Column<unknown>['align']>, string> = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
 }
 
 interface DataTableProps<T> {
@@ -17,6 +24,7 @@ interface DataTableProps<T> {
   onSort?: (key: string) => void
   selectedKeys?: Set<string>
   onSelectChange?: (keys: Set<string>) => void
+  onRowClick?: (row: T) => void
   loading?: boolean
   emptyLabel?: string
 }
@@ -62,6 +70,7 @@ export function DataTable<T>({
   onSort,
   selectedKeys,
   onSelectChange,
+  onRowClick,
   loading = false,
   emptyLabel = '데이터가 없습니다.',
 }: DataTableProps<T>) {
@@ -106,6 +115,7 @@ export function DataTable<T>({
                 key={col.key}
                 className={[
                   'px-3 py-2.5 text-label font-semibold text-text-secondary whitespace-nowrap',
+                  alignClass[col.align ?? 'left'],
                   col.sortable ? 'cursor-pointer select-none hover:text-text-primary' : '',
                 ].join(' ')}
                 style={col.width ? { width: col.width } : undefined}
@@ -147,8 +157,10 @@ export function DataTable<T>({
                 className={[
                   'border-b border-border-subtle last:border-0 transition-colors',
                   isSelected ? 'bg-surface-selected' : 'hover:bg-surface-hover',
+                  onRowClick ? 'cursor-pointer' : '',
                 ].join(' ')}
                 aria-selected={hasSelection ? isSelected : undefined}
+                onClick={() => onRowClick?.(row)}
               >
                 {hasSelection && (
                   <td className="w-10 px-3 py-2.5">
@@ -162,7 +174,13 @@ export function DataTable<T>({
                   </td>
                 )}
                 {columns.map((col) => (
-                  <td key={col.key} className="px-3 py-2.5 text-text-primary whitespace-nowrap">
+                  <td
+                    key={col.key}
+                    className={[
+                      'px-3 py-2.5 text-text-primary whitespace-nowrap',
+                      alignClass[col.align ?? 'left'],
+                    ].join(' ')}
+                  >
                     {col.render
                       ? col.render(row)
                       : String((row as Record<string, unknown>)[col.key] ?? '')}
