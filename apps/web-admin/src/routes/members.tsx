@@ -1,0 +1,357 @@
+import { useEffect, useMemo, useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { AlertTriangle, Ban, Check, CheckCircle, MessageCircle, Minus, Package, PauseCircle, UserX } from 'lucide-react'
+import {
+  Button,
+  DataTable,
+  Drawer,
+  FilterBar,
+  Modal,
+  PageHeader,
+  SearchInput,
+  Select,
+  StatusPill,
+  Textarea,
+  Toast,
+} from '@aechak/design-system/web'
+import type { Column } from '@aechak/design-system/web'
+import type { MemberAccount, MemberAccountStatus } from '@aechak/domain'
+import { useMemberAccounts } from '@/features/members'
+import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailField } from '@/shared/components/DetailField'
+import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { HistoryList } from '@/shared/components/HistoryList'
+import { SummaryGrid } from '@/shared/components/SummaryGrid'
+
+export const Route = createFileRoute('/members')({
+  component: MembersPage,
+})
+
+const statusMeta: Record<
+  MemberAccountStatus,
+  {
+    label: string
+    variant: 'success' | 'warning' | 'error' | 'danger' | 'muted'
+    icon: typeof CheckCircle
+  }
+> = {
+  normal: { label: '정상', variant: 'success', icon: CheckCircle },
+  restricted: { label: '이용 제한', variant: 'warning', icon: AlertTriangle },
+  suspended: { label: '임시 정지', variant: 'error', icon: PauseCircle },
+  banned: { label: '영구 정지', variant: 'danger', icon: Ban },
+  withdrawing: { label: '탈퇴 처리', variant: 'muted', icon: UserX },
+}
+
+const statusFilterOptions = [
+  { value: 'all', label: '계정 상태 전체' },
+  ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
+]
+
+const sanctionReasonOptions = [
+  { value: 'abuse-review', label: '리뷰 욕설/비방 반복' },
+  { value: 'chat-dispute', label: '채팅 분쟁 반복' },
+  { value: 'fraud-report', label: '허위 신고 반복' },
+]
+
+const sanctionPeriodOptions = [
+  { value: '7d', label: '7일' },
+  { value: '14d', label: '14일' },
+  { value: '30d', label: '30일' },
+]
+
+const decisionModalMeta: Record<
+  MemberAccountStatus,
+  { title: string; description: string; confirmLabel: string; confirmVariant: 'primary' | 'danger' }
+> = {
+  normal: {
+    title: '정상 상태로 되돌릴까요?',
+    description: '계정 제한 · 정지가 해제되고 서비스를 정상적으로 이용할 수 있어요.',
+    confirmLabel: '정상 전환',
+    confirmVariant: 'primary',
+  },
+  restricted: {
+    title: '이용을 제한할까요?',
+    description: '일부 기능(리뷰 작성, 채팅 등) 이용이 제한되고 대상자에게 통보돼요.',
+    confirmLabel: '이용 제한',
+    confirmVariant: 'primary',
+  },
+  suspended: {
+    title: '계정을 임시 정지할까요?',
+    description: '설정한 기간 동안 로그인 및 서비스 이용이 제한돼요.',
+    confirmLabel: '임시 정지',
+    confirmVariant: 'primary',
+  },
+  banned: {
+    title: '계정을 영구 정지할까요?',
+    description: '영구 정지된 계정은 다시 로그인할 수 없고, 되돌릴 수 없어요. 진행 중 주문이 없는지 먼저 확인하세요.',
+    confirmLabel: '영구 정지',
+    confirmVariant: 'danger',
+  },
+  withdrawing: {
+    title: '회원을 탈퇴 처리할까요?',
+    description: '탈퇴 처리된 계정은 서비스를 다시 이용할 수 없어요. 되돌릴 수 없으니 신중히 확인하세요.',
+    confirmLabel: '탈퇴 처리',
+    confirmVariant: 'danger',
+  },
+}
+
+function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<MemberAccount>[] {
+  return [
+    {
+      key: 'id',
+      label: '회원 ID',
+      render: row => (
+        <button
+          type="button"
+          onClick={() => onOpenDetail(row)}
+          className="font-medium tabular-nums text-text-primary hover:text-brand hover:underline"
+        >
+          {row.id}
+        </button>
+      ),
+    },
+    { key: 'nickname', label: '닉네임' },
+    {
+      key: 'orderCount',
+      label: '주문',
+      align: 'right',
+      render: row => <span className="tabular-nums">{row.orderCount}</span>,
+    },
+    {
+      key: 'reportCount',
+      label: '신고',
+      align: 'right',
+      render: row => <span className="tabular-nums">{row.reportCount}</span>,
+    },
+    {
+      key: 'accountStatus',
+      label: '계정 상태',
+      align: 'center',
+      render: row => {
+        const meta = statusMeta[row.accountStatus]
+        const Icon = meta.icon
+        return (
+          <StatusPill variant={meta.variant}>
+            <Icon className="size-3" />
+            {meta.label}
+          </StatusPill>
+        )
+      },
+    },
+    {
+      key: 'hasActiveOrder',
+      label: '탈퇴',
+      align: 'center',
+      render: row =>
+        row.hasActiveOrder ? (
+          <StatusPill variant="info">
+            <Package className="size-3" />
+            진행 주문
+          </StatusPill>
+        ) : (
+          <StatusPill variant="neutral">
+            <Minus className="size-3" />
+          </StatusPill>
+        ),
+    },
+  ]
+}
+
+function MembersPage() {
+  const { data, isLoading } = useMemberAccounts()
+  const [rows, setRows] = useState<MemberAccount[] | null>(null)
+  useEffect(() => {
+    if (data && rows === null) setRows(data)
+  }, [data, rows])
+  const items = rows ?? []
+
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(
+    () =>
+      items.filter(row => {
+        if (statusFilter !== 'all' && row.accountStatus !== statusFilter) return false
+        if (search && !row.id.includes(search) && !row.nickname.includes(search)) return false
+        return true
+      }),
+    [items, statusFilter, search],
+  )
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected = items.find(row => row.id === selectedId) ?? null
+  const SelectedStatusIcon = selected ? statusMeta[selected.accountStatus].icon : null
+
+  const [decision, setDecision] = useState<MemberAccountStatus>('normal')
+  const [sanctionReason, setSanctionReason] = useState('')
+  const [sanctionPeriod, setSanctionPeriod] = useState('')
+  const [internalMemo, setInternalMemo] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  function openDrawer(row: MemberAccount) {
+    setSelectedId(row.id)
+    setDecision(row.accountStatus)
+    setSanctionReason(row.sanctionReason ?? '')
+    setSanctionPeriod(row.sanctionPeriod ?? '')
+    setInternalMemo(row.internalMemo ?? '')
+  }
+
+  function closeDrawer() {
+    setSelectedId(null)
+    setConfirmOpen(false)
+  }
+
+  function applyStatus(nextStatus: MemberAccountStatus) {
+    if (!selected) return
+    setRows(prev =>
+      (prev ?? []).map(row =>
+        row.id === selected.id
+          ? { ...row, accountStatus: nextStatus, sanctionReason, sanctionPeriod, internalMemo }
+          : row,
+      ),
+    )
+    setToast(
+      nextStatus === 'banned' ? `'${selected.nickname}' 계정을 영구 정지했어요.` : '계정 상태를 변경했어요.',
+    )
+    closeDrawer()
+  }
+
+  const memberColumns = useMemo(() => makeMemberColumns(openDrawer), [])
+  const sanctionReasonLabel =
+    sanctionReasonOptions.find(opt => opt.value === sanctionReason)?.label ?? sanctionReason
+
+  return (
+    <div className="p-6">
+      <PageHeader title="일반 회원 관리" />
+      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
+        구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다.
+      </p>
+
+      <FilterBar className="mb-3.5">
+        <div className="w-40">
+          <Select options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
+        </div>
+        <SearchInput value={search} onChange={setSearch} placeholder="회원 ID · 닉네임 검색" className="w-64" />
+      </FilterBar>
+
+      <DataTable
+        columns={memberColumns}
+        rows={filtered}
+        rowKey={row => row.id}
+        onRowClick={openDrawer}
+        loading={isLoading}
+        emptyLabel="조건에 맞는 회원이 없습니다."
+      />
+
+      <Drawer open={selected !== null} onClose={closeDrawer} title="회원 상세" width="lg">
+        {selected && (
+          <div className="space-y-5">
+            <p className="-mt-2 text-body-sm text-text-tertiary">
+              {selected.id} · {selected.nickname}
+            </p>
+
+            <DrawerSummaryCard
+              pills={
+                <>
+                  <StatusPill variant={statusMeta[selected.accountStatus].variant}>
+                    {SelectedStatusIcon && <SelectedStatusIcon className="size-3" />}
+                    {statusMeta[selected.accountStatus].label}
+                  </StatusPill>
+                  <StatusPill variant="neutral">
+                    <MessageCircle className="size-3" />
+                    {selected.joinChannel}
+                  </StatusPill>
+                </>
+              }
+            >
+              <SummaryGrid
+                items={[
+                  { label: '이메일', value: selected.emailMasked },
+                  { label: '휴대폰', value: selected.phoneMasked },
+                  { label: '주문 건수', value: `${selected.orderCount}건` },
+                  { label: '진행 중 주문', value: selected.hasActiveOrder ? '있음' : '없음' },
+                ]}
+              />
+            </DrawerSummaryCard>
+
+            <DetailField label={`신고 누적 이력 · ${selected.reportHistory.length}건`}>
+              <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없습니다." />
+            </DetailField>
+
+            <DetailField label="계정 상태">
+              <DecisionRadioGroup
+                name="member-status"
+                value={decision}
+                onChange={value => setDecision(value as MemberAccountStatus)}
+                options={[
+                  { value: 'normal', label: '정상' },
+                  { value: 'restricted', label: '이용 제한', caption: '일부 기능 제한' },
+                  { value: 'suspended', label: '임시 정지', caption: '기간제 정지' },
+                  { value: 'banned', label: '영구 정지', caption: '계정 영구 차단' },
+                ]}
+              />
+            </DetailField>
+
+            <DetailField label="제재 사유">
+              <Select
+                options={sanctionReasonOptions}
+                value={sanctionReason}
+                onChange={setSanctionReason}
+                placeholder="사유 선택"
+              />
+            </DetailField>
+
+            <DetailField label="제재 기간">
+              <Select
+                options={sanctionPeriodOptions}
+                value={sanctionPeriod}
+                onChange={setSanctionPeriod}
+                placeholder="기간 선택"
+              />
+            </DetailField>
+
+            <DetailField label="내부 메모" visibility="internal-only">
+              <Textarea
+                value={internalMemo}
+                onChange={setInternalMemo}
+                maxLength={300}
+                rows={3}
+                placeholder="내부 공유용 메모를 입력하세요."
+              />
+            </DetailField>
+
+            <div className="flex gap-2 border-t border-border-subtle pt-4">
+              <Button
+                variant="primary"
+                leftIcon={<Check className="size-4" />}
+                onClick={() => setConfirmOpen(true)}
+              >
+                제출
+              </Button>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={decisionModalMeta[decision].title}
+        description={decisionModalMeta[decision].description}
+        confirmLabel={decisionModalMeta[decision].confirmLabel}
+        confirmVariant={decisionModalMeta[decision].confirmVariant}
+        onConfirm={() => applyStatus(decision)}
+      >
+        <SummaryGrid
+          items={[
+            { label: '대상', value: selected ? `${selected.nickname} (${selected.id})` : '' },
+            { label: '사유', value: sanctionReasonLabel },
+          ]}
+        />
+      </Modal>
+
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
+    </div>
+  )
+}

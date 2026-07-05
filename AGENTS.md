@@ -114,6 +114,192 @@ className을 `px-4 py-2`에서 `px-2 py-2`로 줄여 라벨의 절대 위치(16p
 아직 라우트 파일이 없는 nav 항목은 클릭 시 TanStack Router의 기본 404("Not Found")로
 빠지는 것이 정상이며, 각 배치 PR에서 파일을 추가하면 해결된다.
 
+`src/routes/<segment>/index.tsx` 형태(디렉터리 + index)로 라우트를 추가하면
+TanStack Router가 `/<segment>/`로 등록한다 (`/<segment>` 단일 파일과 동일하게
+동작하며 `AppShell`의 `activeKey`/`onSelect` 문자열과도 그대로 매칭됨). 라우트
+파일을 추가한 뒤에는 `routeTree.gen.ts`가 갱신돼야 `tsc -b`가 새 라우트를 인식한다
+— 위에 적힌 대로 `generate-routes.cjs` standalone 실행은 실제로 파일을 갱신하지
+않으므로, `pnpm --filter web-seller dev`를 잠깐 띄우거나 `pnpm vite build`를 한 번
+돌려서 `routeTree.gen.ts`를 실제로 갱신하고 커밋할 것 (안 하면 `pnpm typecheck`가
+새 라우트에서 임포트한 타입을 못 찾아 실패한다).
+
+**`packages/domain`의 `Product`/`Order` 타입은 Batch 5(상품/주문/클레임 관리,
+`b5-st-3`/`b5-st-5`/`b5-st-6`)가 처음으로 실제 소비했다.** 그 전까지는 `auth`
+기능만 `User` 타입을 썼고 `Product`/`Order`는 어느 앱에서도 import되지 않는
+플레이스홀더였다 — 그래서 이 배치에서 셀러 어드민 화면 요구사항(판매 상태·검수
+상태 분리, 구매자/수령자/운송장 정보 등)에 맞춰 필드를 상당히 재구성했고, 클레임
+전용 `Claim` 타입도 새로 추가했다 (`packages/domain/src/types/index.ts`, barrel은
+`packages/domain/src/index.ts`에서 재수출 — 새 타입 추가 시 barrel도 같이
+갱신해야 다른 앱에서 "no exported member" 에러가 안 남). 이후 배치(web-admin의
+셀러/회원 관리, web-buyer의 상품 목록 등)에서 같은 도메인 개념을 다룰 때는 이
+타입들을 그대로 재사용하거나 신중하게 확장할 것 — 임의로 새 로컬 타입을 다시
+만들지 말 것.
+
+## web-seller 취소/반품/교환(클레임) 화면 — 확인 Modal 패턴
+
+`apps/web-seller/src/features/claims/`의 파괴적/되돌리기 어려운 클레임 액션(환불 확정,
+취소 승인/거부)은 모두 즉시 mutate하지 않고 확인 `Modal`을 거친다. `RefundConfirmModal`
+(환불 확정)과 `ClaimActionConfirmModal`(취소/반품/교환 승인·거부, `target: { claim,
+action: 'approve' | 'reject' } | null` state)이 같은 패턴 — "claim-target state를
+`routes/claims/index.tsx`가 소유 → 액션 버튼은 mutate 대신 setState로 타겟만 지정 →
+Modal 컴포넌트가 `claim`이 있을 때만 조건부 렌더링 → 확인 시에만 실제 mutate 호출".
+새 클레임 액션에 확인 단계가 필요하면 이 패턴을 따를 것.
+
+**주의:** 확인 Modal이 자체 `useMutation` 훅 인스턴스를 새로 만들지 말 것.
+`routes/claims/index.tsx`의 `isMutating`(`approveClaim.isPending || rejectClaim.isPending`)은
+`ClaimsTable`에 전달되어 승인 대기 중인 다른 행의 버튼을 비활성화하는 데도 쓰인다 —
+모달이 별도 훅 인스턴스로 mutate하면 `isMutating`이 모달의 실제 mutation 상태를
+반영하지 못해 이 비활성화 로직이 깨진다. `ClaimActionConfirmModal`은 그래서 `claim`
+자체가 아니라 mutate 트리거(`onConfirm`)와 `loading` 상태를 prop으로 받는다
+(`RefundConfirmModal`처럼 컴포넌트 내부에서 자체 훅을 호출하지 않음).
+
+`StatusPill` 아래 보조 텍스트(예: 클레임 유형·사유 컬럼의 사유, 주문 상태 컬럼의
+송장/자동확정일)를 붙일 때는 `pl-2.5`로 pill의 내부 텍스트(`px-2.5` 패딩)와 좌측을
+맞추고 `mt-1.5` 이상으로 여백을 줄 것 — pill 바깥 테두리에 그냥 맞추면(패딩 없이) 보조
+텍스트가 pill의 아이콘/테두리 쪽으로 치우쳐 보여 어색하다.
+
+## web-seller 사용자 노출 문구(카피) 컨벤션
+
+캡틴 요청으로 진행한 카피 감사(copy audit)에서 확립된 규칙 — 새 화면/문구 작성 시 그대로 적용할 것.
+
+- **가운뎃점(`·`)을 구분자로 쓰지 말 것.** 이 앱은 이미 `/`를 지배적 구분자로 쓰고 있었다
+  (`주문/배송 관리`, `취소/반품/교환`, `정산/매출`, `주문번호 / 상품` 등) — `·`가 섞여 있던
+  기존 문구(컬럼 라벨 `구매자 · 수령자`/`유형 · 사유`/`귀책 · 배송비`, placeholder
+  `상품명 · 상품번호 검색`/`주문번호 · 수령자명`, 클레임 화면 안내 문장의 `반품·교환`/`정산·환불`,
+  mock 데이터의 카테고리(`고양이 · 급식기` 등)·클레임 사유(`단순 변심 · 배송 전` 등)·반려
+  사유(`효능·효과`))를 전부 `/`로 통일했다 — 단 상품명+수량 표기(`orders.mock.ts`)만 예외로
+  `상품명 · 1개` 대신 `상품명 (1개)` 괄호 표기를 썼다(수량은 대등한 두 항목의 나열이 아니라
+  수식이라 `/`보다 괄호가 자연스러움). 새 문구에서 대등한 두 항목을 나란히 보여줄 때는 `/`를
+  기본으로 쓸 것.
+- **앱 전체 어조는 -해요체(구어체)이며 -습니다/-됩니다 같은 격식체를 섞지 말 것.** 유일하게
+  섞여 있던 `orders/components/ShipmentModal.tsx`의 Alert 문구("...변경되고 ... 발송됩니다")를
+  "...바뀌고 ... 알림이 가요"로 고쳐 나머지 화면(`RefundConfirmModal`, `ClaimActionConfirmModal`,
+  `OrdersTable`의 오류 메시지 등)과 어조를 맞췄다. 새 안내/에러/확인 문구를 쓸 때 -습니다체가
+  나오면 회귀 신호로 볼 것.
+- 큰따옴표(`""`)/작은따옴표(`''`)를 직접 인용 부호로 쓰지 않는다(현재 0건, 유지할 것) — 강조가
+  필요하면 `<strong>`처럼 마크업을 쓰거나 그냥 풀어 쓸 것.
+
+---
+
+## web-admin 앱 셸
+
+`apps/web-admin/src/routes/__root.tsx`는 (web-seller의 별도 `AppShell.tsx`와 달리)
+`AdminShell` 컴포넌트를 루트 라우트 안에 직접 정의해 `SideNav` + `<Outlet />`을 조립한다.
+14개 운영 화면(대시보드/셀러 입점 심사·관리/회원 관리/상품 검수·AI 큐/신고·문의/주문·클레임/
+리뷰/채팅 모니터링/공지/액션 로그) + 6개 확장 화면(배너/카테고리/정산/계정 권한/통계/세금 신고)의
+라우트 경로·아이콘·그룹이 이미 정의돼 있다. **새 어드민 화면 라우트를 추가할 때 셸을 다시 만들지
+말 것** — `src/routes/`에 해당 경로 파일만 추가하면 `AdminShell`이 활성 탭 하이라이트를 처리한다.
+
+## web-admin 심사/관리 화면 — 공유 Drawer/Modal 패턴 (b9-st-2~6)
+
+셀러 입점 심사(`sellers/applications.tsx`)/셀러 관리(`sellers/index.tsx`)/회원 관리
+(`members.tsx`)/상품 검수(`products/review.tsx`)/AI 검수 큐(`products/ai-queue.tsx`) 5개
+화면은 모두 "목록 `DataTable` → 행 클릭 시 상세 `Drawer` → 파괴적 액션은 확인 `Modal`"이라는
+동일한 구조를 공유한다. 매번 새로 만들지 말고 `apps/web-admin/src/shared/components/`의
+다음 프리미티브를 재사용할 것 (`sellers/applications.tsx`가 이 패턴을 처음 적용한 템플릿):
+
+- **`DetailField`** — 드로어 필드 레이블 + `visibility` prop(`'visible-to-user'`는 눈
+  아이콘+"사용자 노출", `'internal-only'`는 자물쇠 아이콘+"비공개"). 모든 화면에 "셀러 안내
+  내용"(공개) vs "내부 메모"(비공개) 쌍으로 반복되는 패턴.
+- **`SummaryGrid`** — 드로어 상단 요약 카드의 2열 label/value grid. Modal의 상세 정보
+  (대상/사유/기간 등)에도 그대로 재사용 가능.
+- **`DrawerSummaryCard`** — sunken 배경 + pill 묶음 + `SummaryGrid`(또는 임의 children)을
+  감싸는 드로어 상단 요약 카드 래퍼.
+- **`HistoryList`** — `{label, date}[]` 이력 목록(제재 이력/신고 이력 등)을 sunken border
+  목록으로 렌더링.
+- **`DecisionRadioGroup`** — "심사 결과"/"계정 상태"/"검수 결과" 같은 결정 라디오 카드 목록.
+  **주의**: 디자인 시스템 `Radio`는 자체적으로 `<label>`로 렌더링되므로, 바깥 행을 또
+  `<label>`로 감싸면 안 된다 — Checkbox 중첩 라벨 토글 상쇄 버그와 같은 문제가 생길 수 있어
+  바깥 행은 `<div onClick>`으로만 감쌌다(라디오는 이미 선택된 값으로 또 onChange가 와도
+  멱등이라 안전하지만, 안전을 위해 라벨 중첩 자체를 피함).
+- **`ActorTag`** — "AI 자동" vs "관리자" 처리 주체 태그. `products/review.tsx`,
+  `products/ai-queue.tsx`에서 공유.
+
+확인 `Modal` 패턴(판매정지/영구정지/판매중지/강제삭제)은 모두 동일 구조: 드로어에서 위험
+액션 버튼 클릭 시 로컬 `confirmOpen` state로 `Modal`을 열고, `title`은 "~할까요?" 질문형,
+`description`은 1~2문장 결과 설명, `children`에 `SummaryGrid`로 대상/사유 등 상세, 취소는
+항상 `Modal` 기본 취소 버튼, 확정은 `confirmVariant="danger"` + 실제 액션 라벨.
+
+**`DecisionRadioGroup`으로 여러 결정 옵션(승인/반려/보완요청 등)을 받는 화면은 액션 버튼을
+옵션 개수만큼 늘어놓지 말고 단일 "제출" 버튼 + 선택된 `decision`에 따라 내용이 바뀌는 확인
+`Modal` 하나로 처리할 것** (`sellers/applications.tsx`, `products/ai-queue.tsx`, `members.tsx`가
+이 패턴).
+`decision` 값 → `{ title, description, confirmLabel, confirmVariant, nextStatus, message }`를
+매핑하는 로컬 `Record`를 만들고, "제출" 버튼은 `setConfirmOpen(true)`만 호출, `Modal`의
+`onConfirm`에서 그 매핑을 읽어 기존 `applyDecision`/`applyStatus(nextStatus, message)`를
+그대로 재사용한다 — 되돌리기 쉬운 결정(예: 입점 심사의 승인)도 실수 클릭 방지를 위해 확인
+모달을 거치는 쪽으로 통일했다(과거에는 "신청 단계라 되돌리기 쉬움"을 이유로 확인 모달 없이
+버튼 3개를 바로 노출했었으나 폐기됨). 파괴적이지 않은 결정은 `confirmVariant="primary"`,
+파괴적/비가역 결정(반려·삭제 등)은 `"danger"`로 구분.
+
+`members.tsx`는 `decision` state 자체가 이미 `MemberAccountStatus`라서(별도의
+'approve'/'reject' 같은 문자열 키가 아니라 상태값 그대로) `decisionModalMeta`를
+`Record<MemberAccountStatus, {...}>`로 바로 선언하고 `nextStatus`/`message` 필드 없이
+`onConfirm={() => applyStatus(decision)}`만 쓰면 된다 — `applyStatus`가 이미 상태별 토스트
+메시지를 만들어주므로 메시지 매핑을 중복 선언하지 않았다. **주의**: `MemberAccountStatus`는
+`DecisionRadioGroup` 옵션에 없는 `withdrawing`(탈퇴 처리)까지 포함해 5개 값이라
+`Record<MemberAccountStatus, ...>`는 `withdrawing` 키도 반드시 채워야 `tsc`가 통과한다 —
+`openDrawer`가 `decision`을 `row.accountStatus`로 초기화하므로 이미 탈퇴 처리된 회원의
+드로어를 열었다가 그대로 제출하면 `withdrawing` 분기가 실제로 도달 가능하다.
+
+**`StatusPill`의 `variant`는 문서(`web-components.md`)에 한때 6종만 적혀 있었지만 실제
+컴포넌트 소스에는 `danger`/`accent`/`muted`까지 9종이 있다** — prop 타입 확인 시 문서보다
+`packages/design-system/src/web/components/StatusPill.tsx`를 직접 열어 최신 union을 볼
+것. 이 배치에서 `muted`(휴업/퇴점/자동 블라인드/탈퇴 처리 등 옅은 비활성 상태)와
+`danger`(판매정지/영구정지/강제삭제 등 되돌리기 어려운 제재)를 구분해 쓰면서 발견해 문서를
+갱신했다.
+
+**`muted`를 대등한 카테고리 쌍(peer option) 중 한쪽에만 쓰지 말 것** —
+`sellers/applications.tsx`의 판매자 유형 컬럼이 원래 사업자=`neutral`/개인=`muted`였는데,
+`muted`는 위 문단처럼 "비활성 상태" 전용이라 개인 판매자가 사업자보다 흐릿하고 덜 강조되어
+보이는 시각적 불균형이 생겼다(캡틴 피드백으로 발견). 사업자/개인처럼 단순히 다른 값이지
+한쪽이 비활성 상태인 게 아닌 경우, 두 pill은 `neutral`+`info`처럼 시각적 무게(테두리·텍스트
+대비)가 같은 variant 조합을 쓸 것 — `muted`는 오직 실제로 비활성/휴면 상태를 나타낼 때만.
+**동일한 버그가 `sellers/index.tsx`에도 독립적으로 존재해**(테이블의 `sellerType` 컬럼 +
+드로어 요약 pill 2곳) 이번 배치에서 같이 `muted` → `info`로 고쳤다 — 같은 사업자/개인 pill을
+새 화면에 또 추가할 일이 있으면 처음부터 `neutral`+`info`로 시작할 것.
+
+**5개 web-admin 심사/관리 화면의 상세 `Drawer` width는 `md`가 아니라 `lg`(480px)를 쓴다** —
+`md`(384px)로는 `SummaryGrid`·`DecisionRadioGroup`·`Textarea` 등이 좁아 보인다는 피드백으로
+전환됨. 이 5개 화면 계열에 새 드로어를 추가할 때는 `lg`를 기본값으로 볼 것.
+
+### web-admin 심사/관리 5종 — 감사에서 발견한 알려진 격차 (수정 보류)
+
+Phase 2 wave 2 사전 커밋 감사(`fm/phase2-wave2-audit-r5t`)에서 확인했지만, 위험도/범위
+대비 이번 배치에서 고치지 않고 다음 배치를 위해 남겨둔 항목들:
+
+- **`SellerAccount`/`MemberAccount`/`ProductReviewItem`이 기존 `Seller`/`User`/`Product`를
+  확장하지 않고 병렬 타입으로 새로 생겼다** (`packages/domain/src/types/index.ts`). 특히
+  `ProductReviewItem.saleStatus: ProductReviewSaleStatus`(`'on-sale' | 'suspended' |
+  'pending-review' | 'rejected'`)와 `Product.status: ProductSaleStatus`(`'selling' |
+  'sold_out' | ...`)는 이름 충돌은 이미 고쳐졌지만(51368ae) 여전히 같은 개념("이 상품이
+  판매 노출 중인가")을 서로 다른 어휘로 모델링한다 — web-buyer가 나중에 상품 판매 상태를
+  다뤄야 할 때 두 enum 중 무엇을 봐야 하는지 혼란이 생길 수 있다. 이번 감사에서는 타입
+  구조 자체를 병합하는 건 이 배치 3개 앱(web-seller 상품/주문/클레임 + web-admin 검수 5종)
+  전반을 건드리는 리스크가 커서 보류했다 — 다음 배치에서 `Product`/`Seller`/`User`를
+  확장하는 형태로 재구성 검토할 것.
+- **`products/review.tsx`의 검수 결과 `DecisionRadioGroup`(통과/반려 2옵션)이 실제 액션
+  버튼(검수 통과/블라인드 유지/판매 중지 3개) 중 어느 것과도 "반려"가 매칭되지 않는다** —
+  `saleStatus: 'rejected'`가 필터 옵션·mock 데이터에는 존재하는데 이 화면에서 상품을
+  `rejected`로 전환하는 버튼이 없다. `sellers/applications.tsx`(승인/반려/보완요청 3옵션이
+  버튼 3개와 1:1 대응)나 `members.tsx`(`decision` state를 `handleApply`가 그대로
+  읽어 반영)가 올바른 참조 패턴이니, "반려" 액션을 추가할 때 그쪽 구조를 따를 것. 어떤
+  결과 문구·재고 처리를 반려에 붙일지는 제품 결정이 필요해 이번 감사에서는 구현하지 않음.
+- **5개 화면 모두 `useQuery` 데이터를 `rows/setRows` + `useEffect`로 로컬 state에
+  한 번 복사해 mutate하는 패턴**(`applications.tsx`/`sellers/index.tsx`/`members.tsx`/
+  `review.tsx`/`ai-queue.tsx`)을 쓴다. 반면 같은 배치의 web-seller
+  `claims.queries.ts`/`claims.mock.ts`는 mock 배열을 직접 mutate하는 `mockApproveClaim`
+  류 함수 + `useMutation` + `queryClient.invalidateQueries`로 더 정석적인 TanStack Query
+  패턴을 쓴다. web-admin 5종도 다음에 손댈 때 이 web-seller 패턴을 참고해 전환할 것 — 이번
+  감사에서는 5개 파일 × mock/queries/route 전체를 건드리는 리스크 대비 실익(마운트 시
+  렌더 1회 추가 정도)이 작아 그대로 두었다.
+- **`review.tsx`의 상세 드로어 요약(썸네일+제목+판매정보)은 다른 4개 화면과 달리
+  `DrawerSummaryCard`를 쓰지 않고 손으로 레이아웃했다** — 이미지 썸네일이 있는 유일한
+  화면이라 "pills 먼저, 나머지 내용은 아래" 구조인 `DrawerSummaryCard`에 억지로 끼워맞추면
+  시각적으로 어색해질 수 있어 의도적으로 남겨뒀다. 이 화면만 정말 레이아웃이 다르다고
+  판단되면 그대로 두고, 아니라면 `DrawerSummaryCard`에 `leading` 슬롯을 추가하는 방향으로
+  검토할 것.
+
 ---
 
 ## web-buyer 앱 — WebView-first 구매자 앱 (Phase 3 피벗)
@@ -196,6 +382,33 @@ bottom-6 left-1/2 -translate-x-1/2`로 **스스로 위치를 잡는다** — 부
 고치기보다 화면 쪽에서 실패 메시지를 다른 위치(예: 상단)에 인라인으로
 보여주는 식으로 설계할 것 — `Toast`는 web-seller/web-admin에서도 동일하게
 동작하므로 앱 하나만을 위해 이 공용 컴포넌트의 포지셔닝을 바꾸지 말 것.
+
+### 5-tab 앱 셸 (홈/마켓/SNS/채팅/마이)
+
+`apps/mobile/app/(tabs)/_layout.tsx`(네이티브 `TabBar` + Expo Router `Tabs`)를
+web-buyer로 변환한 결과물. web-seller/web-admin의 `AppShell`과 달리 별도 파일에
+셸 컴포넌트를 두지 않고, TanStack Router의 **pathless layout route**
+(`apps/web-buyer/src/routes/_tabs.tsx`, 파일명 `_` 접두사 — URL 세그먼트를
+차지하지 않는 레이아웃 라우트)로 구현했다. 5개 탭 루트 라우트
+(`_tabs/index.tsx` → `/`, `_tabs/market.tsx` → `/market`, `_tabs/sns.tsx` →
+`/sns`, `_tabs/chat.tsx` → `/chat`, `_tabs/mypage.tsx` → `/mypage`)는 모두
+`_tabs.tsx`의 자식이라 자동으로 하단 탭바를 공유한다. **새 셀러/어드민 앱과
+달리 web-buyer의 루트 `/`는 이제 온보딩으로 리다이렉트하지 않고 홈 탭
+placeholder를 직접 렌더링한다** — "첫 방문자만 온보딩으로 보내는" 인증 체크는
+아직 구현되지 않은 별도(Phase 2) 범위다.
+
+`onboarding/*.tsx` 라우트들은 `_tabs.tsx`의 자식이 아니라 `__root`에 직접
+매달려 있으므로 탭바가 뜨지 않는다 — 온보딩 화면에 탭바가 보이면 그 라우트
+파일이 실수로 `_tabs/` 디렉터리 밑에 들어간 것이니 위치를 확인할 것.
+
+디자인 시스템에 새로 추가된 웹 `TabBar`(`packages/design-system/src/web/
+components/TabBar.tsx`)는 네이티브 `TabBar`와 달리 `icon`이 `(isActive) =>
+ReactNode` 렌더 프롭이 아니라 `ReactNode` 직접 전달 — lucide-react는 액티브
+전용 별도 글리프가 없어 색상만 바꾸면 충분하기 때문. 라우팅도 컴포넌트가
+직접 하지 않고 `onSelect(key)`만 호출 — 탭 전환은 `_tabs.tsx`가
+`useNavigate()`로 수행 (SideNav/AppShell과 동일 컨벤션). `MobileScreen`의
+`footer` 슬롯에 넣어 `BottomFixedAction`과 동일한 `env(safe-area-inset-
+bottom)` 패딩 컨벤션을 공유한다.
 
 ---
 

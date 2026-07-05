@@ -9,38 +9,114 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MembersRouteImport } from './routes/members'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SellersIndexRouteImport } from './routes/sellers/index'
+import { Route as SellersApplicationsRouteImport } from './routes/sellers/applications'
+import { Route as ProductsReviewRouteImport } from './routes/products/review'
+import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
 
+const MembersRoute = MembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SellersIndexRoute = SellersIndexRouteImport.update({
+  id: '/sellers/',
+  path: '/sellers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SellersApplicationsRoute = SellersApplicationsRouteImport.update({
+  id: '/sellers/applications',
+  path: '/sellers/applications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsReviewRoute = ProductsReviewRouteImport.update({
+  id: '/products/review',
+  path: '/products/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsAiQueueRoute = ProductsAiQueueRouteImport.update({
+  id: '/products/ai-queue',
+  path: '/products/ai-queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/members': typeof MembersRoute
+  '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/review': typeof ProductsReviewRoute
+  '/sellers/applications': typeof SellersApplicationsRoute
+  '/sellers/': typeof SellersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/members': typeof MembersRoute
+  '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/review': typeof ProductsReviewRoute
+  '/sellers/applications': typeof SellersApplicationsRoute
+  '/sellers': typeof SellersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/members': typeof MembersRoute
+  '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/review': typeof ProductsReviewRoute
+  '/sellers/applications': typeof SellersApplicationsRoute
+  '/sellers/': typeof SellersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/members'
+    | '/products/ai-queue'
+    | '/products/review'
+    | '/sellers/applications'
+    | '/sellers/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/members'
+    | '/products/ai-queue'
+    | '/products/review'
+    | '/sellers/applications'
+    | '/sellers'
+  id:
+    | '__root__'
+    | '/'
+    | '/members'
+    | '/products/ai-queue'
+    | '/products/review'
+    | '/sellers/applications'
+    | '/sellers/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MembersRoute: typeof MembersRoute
+  ProductsAiQueueRoute: typeof ProductsAiQueueRoute
+  ProductsReviewRoute: typeof ProductsReviewRoute
+  SellersApplicationsRoute: typeof SellersApplicationsRoute
+  SellersIndexRoute: typeof SellersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/members': {
+      id: '/members'
+      path: '/members'
+      fullPath: '/members'
+      preLoaderRoute: typeof MembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +124,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sellers/': {
+      id: '/sellers/'
+      path: '/sellers'
+      fullPath: '/sellers/'
+      preLoaderRoute: typeof SellersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sellers/applications': {
+      id: '/sellers/applications'
+      path: '/sellers/applications'
+      fullPath: '/sellers/applications'
+      preLoaderRoute: typeof SellersApplicationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/review': {
+      id: '/products/review'
+      path: '/products/review'
+      fullPath: '/products/review'
+      preLoaderRoute: typeof ProductsReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/ai-queue': {
+      id: '/products/ai-queue'
+      path: '/products/ai-queue'
+      fullPath: '/products/ai-queue'
+      preLoaderRoute: typeof ProductsAiQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MembersRoute: MembersRoute,
+  ProductsAiQueueRoute: ProductsAiQueueRoute,
+  ProductsReviewRoute: ProductsReviewRoute,
+  SellersApplicationsRoute: SellersApplicationsRoute,
+  SellersIndexRoute: SellersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

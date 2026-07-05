@@ -9,15 +9,24 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as TabsRouteImport } from './routes/_tabs'
+import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as OnboardingTermsRouteImport } from './routes/onboarding/terms'
 import { Route as OnboardingNicknameRouteImport } from './routes/onboarding/nickname'
 import { Route as OnboardingLoginRouteImport } from './routes/onboarding/login'
+import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
+import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
+import { Route as TabsMarketRouteImport } from './routes/_tabs/market'
+import { Route as TabsChatRouteImport } from './routes/_tabs/chat'
 
-const IndexRoute = IndexRouteImport.update({
+const TabsRoute = TabsRouteImport.update({
+  id: '/_tabs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TabsIndexRoute = TabsIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => TabsRoute,
 } as any)
 const OnboardingTermsRoute = OnboardingTermsRouteImport.update({
   id: '/onboarding/terms',
@@ -34,42 +43,95 @@ const OnboardingLoginRoute = OnboardingLoginRouteImport.update({
   path: '/onboarding/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TabsSnsRoute = TabsSnsRouteImport.update({
+  id: '/sns',
+  path: '/sns',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsMypageRoute = TabsMypageRouteImport.update({
+  id: '/mypage',
+  path: '/mypage',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsMarketRoute = TabsMarketRouteImport.update({
+  id: '/market',
+  path: '/market',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsChatRoute = TabsChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => TabsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof TabsIndexRoute
+  '/chat': typeof TabsChatRoute
+  '/market': typeof TabsMarketRoute
+  '/mypage': typeof TabsMypageRoute
+  '/sns': typeof TabsSnsRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/chat': typeof TabsChatRoute
+  '/market': typeof TabsMarketRoute
+  '/mypage': typeof TabsMypageRoute
+  '/sns': typeof TabsSnsRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
+  '/': typeof TabsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_tabs': typeof TabsRouteWithChildren
+  '/_tabs/chat': typeof TabsChatRoute
+  '/_tabs/market': typeof TabsMarketRoute
+  '/_tabs/mypage': typeof TabsMypageRoute
+  '/_tabs/sns': typeof TabsSnsRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
+  '/_tabs/': typeof TabsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/onboarding/login' | '/onboarding/nickname' | '/onboarding/terms'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/onboarding/login' | '/onboarding/nickname' | '/onboarding/terms'
-  id:
-    | '__root__'
     | '/'
+    | '/chat'
+    | '/market'
+    | '/mypage'
+    | '/sns'
     | '/onboarding/login'
     | '/onboarding/nickname'
     | '/onboarding/terms'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/chat'
+    | '/market'
+    | '/mypage'
+    | '/sns'
+    | '/onboarding/login'
+    | '/onboarding/nickname'
+    | '/onboarding/terms'
+    | '/'
+  id:
+    | '__root__'
+    | '/_tabs'
+    | '/_tabs/chat'
+    | '/_tabs/market'
+    | '/_tabs/mypage'
+    | '/_tabs/sns'
+    | '/onboarding/login'
+    | '/onboarding/nickname'
+    | '/onboarding/terms'
+    | '/_tabs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  TabsRoute: typeof TabsRouteWithChildren
   OnboardingLoginRoute: typeof OnboardingLoginRoute
   OnboardingNicknameRoute: typeof OnboardingNicknameRoute
   OnboardingTermsRoute: typeof OnboardingTermsRoute
@@ -77,12 +139,19 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_tabs': {
+      id: '/_tabs'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof TabsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_tabs/': {
+      id: '/_tabs/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof TabsIndexRouteImport
+      parentRoute: typeof TabsRoute
     }
     '/onboarding/terms': {
       id: '/onboarding/terms'
@@ -105,11 +174,57 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_tabs/sns': {
+      id: '/_tabs/sns'
+      path: '/sns'
+      fullPath: '/sns'
+      preLoaderRoute: typeof TabsSnsRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/mypage': {
+      id: '/_tabs/mypage'
+      path: '/mypage'
+      fullPath: '/mypage'
+      preLoaderRoute: typeof TabsMypageRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/market': {
+      id: '/_tabs/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof TabsMarketRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/chat': {
+      id: '/_tabs/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof TabsChatRouteImport
+      parentRoute: typeof TabsRoute
+    }
   }
 }
 
+interface TabsRouteChildren {
+  TabsChatRoute: typeof TabsChatRoute
+  TabsMarketRoute: typeof TabsMarketRoute
+  TabsMypageRoute: typeof TabsMypageRoute
+  TabsSnsRoute: typeof TabsSnsRoute
+  TabsIndexRoute: typeof TabsIndexRoute
+}
+
+const TabsRouteChildren: TabsRouteChildren = {
+  TabsChatRoute: TabsChatRoute,
+  TabsMarketRoute: TabsMarketRoute,
+  TabsMypageRoute: TabsMypageRoute,
+  TabsSnsRoute: TabsSnsRoute,
+  TabsIndexRoute: TabsIndexRoute,
+}
+
+const TabsRouteWithChildren = TabsRoute._addFileChildren(TabsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  TabsRoute: TabsRouteWithChildren,
   OnboardingLoginRoute: OnboardingLoginRoute,
   OnboardingNicknameRoute: OnboardingNicknameRoute,
   OnboardingTermsRoute: OnboardingTermsRoute,
