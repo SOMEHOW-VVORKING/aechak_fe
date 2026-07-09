@@ -1,22 +1,10 @@
 import { useMutation } from '@tanstack/react-query'
-import { axiosInstance } from '@aechak/api'
-import type { User } from '@aechak/domain'
+import { mockSocialLogin, type SocialProvider } from './auth.mock'
 import { useAuthStore } from './auth.store'
-
-interface LoginBody {
-  email: string
-  password: string
-}
-
-interface LoginResponse {
-  user: User
-  accessToken: string
-}
 
 export const useLogin = () =>
   useMutation({
-    mutationFn: (body: LoginBody) =>
-      axiosInstance.post<LoginResponse>('/auth/login', body).then(r => r.data),
+    mutationFn: (provider: SocialProvider) => mockSocialLogin(provider),
     onSuccess: data => {
       useAuthStore.getState().setUser(data.user)
     },

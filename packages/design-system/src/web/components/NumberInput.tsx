@@ -1,3 +1,5 @@
+import { type ChangeEvent, useEffect, useState } from 'react'
+
 export interface NumberInputProps {
   value: number
   onChange: (value: number) => void
@@ -17,12 +19,34 @@ export function NumberInput({
   size = 'md',
   disabled = false,
 }: NumberInputProps) {
+  const [localValue, setLocalValue] = useState(String(value))
+
+  useEffect(() => {
+    setLocalValue(String(value))
+  }, [value])
+
   const canDecrease = !disabled && value - step >= min
   const canIncrease = !disabled && value + step <= max
 
   const btnSize = size === 'sm' ? 'size-[30px]' : 'size-10'
-  const valWidth = size === 'sm' ? 'w-8' : 'w-11'
+  const valWidth = size === 'sm' ? 'w-12' : 'w-16'
   const valText = size === 'sm' ? 'text-body-sm' : 'text-body'
+
+  function handleInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value
+    if (raw !== '' && raw !== '-' && !/^-?\d*\.?\d*$/.test(raw)) return
+    setLocalValue(raw)
+    if (raw === '' || raw === '-') return
+    const parsed = Number(raw)
+    if (!Number.isNaN(parsed)) onChange(parsed)
+  }
+
+  function handleBlur() {
+    const parsed = Number(localValue)
+    const clamped = Number.isNaN(parsed) ? value : Math.min(max, Math.max(min, parsed))
+    setLocalValue(String(clamped))
+    if (clamped !== value) onChange(clamped)
+  }
 
   return (
     <div
@@ -46,9 +70,16 @@ export function NumberInput({
           <path d="M5 12h14" />
         </svg>
       </button>
-      <span className={`${valWidth} ${valText} text-center text-text-primary tabular-nums`}>
-        {value}
-      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={localValue}
+        onChange={handleInputChange}
+        onBlur={handleBlur}
+        disabled={disabled}
+        aria-label="값"
+        className={`${valWidth} ${valText} bg-transparent text-center text-text-primary tabular-nums outline-none disabled:cursor-not-allowed`}
+      />
       <button
         type="button"
         onClick={() => onChange(Math.min(max, value + step))}

@@ -22,6 +22,7 @@ export function Select({
   onChange,
   value,
   id,
+  className = '',
   ...props
 }: SelectProps) {
   const generatedId = useId()
@@ -47,6 +48,7 @@ export function Select({
             'disabled:bg-surface-disabled disabled:text-text-disabled disabled:cursor-not-allowed',
             !value ? 'text-text-placeholder' : '',
             error ? 'border-error-border' : 'border-border',
+            className,
           ].filter(Boolean).join(' ')}
           aria-invalid={!!error || undefined}
           aria-describedby={error ? `${selectId}-error` : undefined}

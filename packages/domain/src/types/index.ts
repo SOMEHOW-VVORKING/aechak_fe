@@ -75,6 +75,21 @@ export interface Claim {
   createdAt: string
 }
 
+export interface ShippingPolicy {
+  sellerId: SellerId
+  defaultCourier: string
+  baseFee: number
+  freeShippingThreshold: number
+  originAddress: string
+  returnAddress: string
+  sameAsOrigin: boolean
+  jejuExtraFee: number
+  remoteAreaExtraFee: number
+  returnFee: number
+  exchangeFee: number
+  avgDispatchDays: number
+}
+
 export interface PaginatedResponse<T> {
   data: T[]
   total: number
@@ -96,16 +111,41 @@ export type SellerApplicationStatus =
   | 'revision-requested'
   | 'resubmitted'
 
+// 'business'의 세부 유형(개인 사업자 vs 법인 사업자) — sellerType은 admin 필터·표시용 굵은 분류로 그대로 두고,
+// 셀러 자신의 재제출 폼(b5-st-2)에서만 필요한 세부값이라 별도 optional 필드로 분리했다.
+export type SellerLegalType = 'individual' | 'individual-business' | 'corporate-business'
+
+export type SellerApplicationDocumentStatus = 'submitted' | 'resubmission-required' | 'not-applicable'
+
+export interface SellerApplicationDocument {
+  key: string
+  label: string
+  status?: SellerApplicationDocumentStatus
+  note?: string
+  required?: boolean
+}
+
 export interface SellerApplication {
   id: string
   applicantName: string
   sellerType: 'business' | 'individual'
+  legalType?: SellerLegalType
   businessNumberMasked?: string
   status: SellerApplicationStatus
   appliedAt: string
   representativeNameMasked: string
   phoneMasked: string
-  documents: { key: string; label: string }[]
+  // 아래 필드들은 셀러 자신이 자기 신청서를 보는 화면(마스킹 불필요)에서만 채워진다 —
+  // web-admin 심사 화면은 위 masked 필드만 계속 사용.
+  representativeName?: string
+  phone?: string
+  phoneVerified?: boolean
+  email?: string
+  businessAddress?: string
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountHolder?: string
+  documents: SellerApplicationDocument[]
   resubmissionCount?: number
   rejectionReason?: string
   revisionNote?: string
@@ -170,6 +210,27 @@ export interface ProductReviewItem {
   processReason?: string
   sellerNotice?: string
   internalMemo?: string
+}
+
+export type SettlementStatus = 'pending' | 'scheduled' | 'completed' | 'held'
+
+export interface Settlement {
+  orderId: OrderId
+  // 월 선택기 필터링용 소속 월('YYYY-MM') — 구매확정 전(정산 대기/보류)이라 confirmedAt이
+  // 없는 건도 필터가 걸려야 하므로 confirmedAt과 별개로 항상 채워지는 필수 필드다.
+  settlementMonth: string
+  confirmedAt?: string
+  expectedPayoutDate?: string
+  productAmount: number
+  feeAmount?: number
+  finalAmount?: number
+  status: SettlementStatus
+  // 건별 정산 상세 Drawer(표 행 클릭 시)용 세부 분해 — 정산 대기/보류 건은 아직 확정 전이라 비워둔다.
+  shippingFee?: number
+  couponBurden?: number
+  platformFeeAmount?: number
+  pgFeeAmount?: number
+  refundDeduction?: number
 }
 
 export type AiReviewTargetType = 'product-image' | 'product-description' | 'review' | 'sns-post'

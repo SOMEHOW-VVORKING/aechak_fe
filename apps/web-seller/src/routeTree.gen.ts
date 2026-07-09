@@ -10,13 +10,32 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StoreSettingsIndexRouteImport } from './routes/store-settings/index'
+import { Route as ShippingPolicyIndexRouteImport } from './routes/shipping-policy/index'
+import { Route as SettlementsIndexRouteImport } from './routes/settlements/index'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
+import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as ClaimsIndexRouteImport } from './routes/claims/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreSettingsIndexRoute = StoreSettingsIndexRouteImport.update({
+  id: '/store-settings/',
+  path: '/store-settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShippingPolicyIndexRoute = ShippingPolicyIndexRouteImport.update({
+  id: '/shipping-policy/',
+  path: '/shipping-policy/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettlementsIndexRoute = SettlementsIndexRouteImport.update({
+  id: '/settlements/',
+  path: '/settlements/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
@@ -29,6 +48,11 @@ const OrdersIndexRoute = OrdersIndexRouteImport.update({
   path: '/orders/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginIndexRoute = LoginIndexRouteImport.update({
+  id: '/login/',
+  path: '/login/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
   id: '/claims/',
   path: '/claims/',
@@ -38,35 +62,76 @@ const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/claims/': typeof ClaimsIndexRoute
+  '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/settlements/': typeof SettlementsIndexRoute
+  '/shipping-policy/': typeof ShippingPolicyIndexRoute
+  '/store-settings/': typeof StoreSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/claims': typeof ClaimsIndexRoute
+  '/login': typeof LoginIndexRoute
   '/orders': typeof OrdersIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/settlements': typeof SettlementsIndexRoute
+  '/shipping-policy': typeof ShippingPolicyIndexRoute
+  '/store-settings': typeof StoreSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/claims/': typeof ClaimsIndexRoute
+  '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/settlements/': typeof SettlementsIndexRoute
+  '/shipping-policy/': typeof ShippingPolicyIndexRoute
+  '/store-settings/': typeof StoreSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/claims/' | '/orders/' | '/products/'
+  fullPaths:
+    | '/'
+    | '/claims/'
+    | '/login/'
+    | '/orders/'
+    | '/products/'
+    | '/settlements/'
+    | '/shipping-policy/'
+    | '/store-settings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/claims' | '/orders' | '/products'
-  id: '__root__' | '/' | '/claims/' | '/orders/' | '/products/'
+  to:
+    | '/'
+    | '/claims'
+    | '/login'
+    | '/orders'
+    | '/products'
+    | '/settlements'
+    | '/shipping-policy'
+    | '/store-settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/claims/'
+    | '/login/'
+    | '/orders/'
+    | '/products/'
+    | '/settlements/'
+    | '/shipping-policy/'
+    | '/store-settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ClaimsIndexRoute: typeof ClaimsIndexRoute
+  LoginIndexRoute: typeof LoginIndexRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
+  SettlementsIndexRoute: typeof SettlementsIndexRoute
+  ShippingPolicyIndexRoute: typeof ShippingPolicyIndexRoute
+  StoreSettingsIndexRoute: typeof StoreSettingsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,6 +141,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store-settings/': {
+      id: '/store-settings/'
+      path: '/store-settings'
+      fullPath: '/store-settings/'
+      preLoaderRoute: typeof StoreSettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shipping-policy/': {
+      id: '/shipping-policy/'
+      path: '/shipping-policy'
+      fullPath: '/shipping-policy/'
+      preLoaderRoute: typeof ShippingPolicyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settlements/': {
+      id: '/settlements/'
+      path: '/settlements'
+      fullPath: '/settlements/'
+      preLoaderRoute: typeof SettlementsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products/': {
@@ -92,6 +178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/': {
+      id: '/login/'
+      path: '/login'
+      fullPath: '/login/'
+      preLoaderRoute: typeof LoginIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/claims/': {
       id: '/claims/'
       path: '/claims'
@@ -105,8 +198,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ClaimsIndexRoute: ClaimsIndexRoute,
+  LoginIndexRoute: LoginIndexRoute,
   OrdersIndexRoute: OrdersIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
+  SettlementsIndexRoute: SettlementsIndexRoute,
+  ShippingPolicyIndexRoute: ShippingPolicyIndexRoute,
+  StoreSettingsIndexRoute: StoreSettingsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -32,6 +32,7 @@ export function Textarea({
   id,
   value,
   rows = 4,
+  className = '',
   ...props
 }: TextareaProps) {
   const generatedId = useId()
@@ -59,7 +60,10 @@ export function Textarea({
           maxLength={maxLength}
           value={value}
           onChange={e => onChange?.(e.target.value)}
-          className="w-full resize-none bg-transparent px-3.5 py-3 text-body text-text-primary placeholder:text-text-placeholder outline-none disabled:cursor-not-allowed"
+          className={[
+            'w-full resize-none bg-transparent px-3.5 py-3 text-body text-text-primary placeholder:text-text-placeholder outline-none disabled:cursor-not-allowed',
+            className,
+          ].filter(Boolean).join(' ')}
           aria-describedby={helperText ? `${textareaId}-helper` : undefined}
           aria-invalid={state === 'error' || undefined}
           {...props}

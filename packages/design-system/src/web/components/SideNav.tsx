@@ -21,6 +21,16 @@ interface SideNavProps {
   header?: ReactNode
   footer?: ReactNode
   className?: string
+  /**
+   * 접힘 상태. `onCollapsedChange`가 없으면 `true`일 때 완전히 숨김(`null`, 기존 동작 —
+   * 하위 호환용). `onCollapsedChange`가 있으면 `true`일 때 좁은 아이콘 레일을 렌더링한다.
+   */
+  collapsed?: boolean
+  /**
+   * 주어지면 SideNav가 스스로 접기/펼치기 토글 버튼을 그린다(펼침 상태에선 헤더 옆,
+   * 접힘 상태에선 레일 안). 없으면 토글 버튼 없이 `collapsed` 값대로만 렌더링(하위 호환).
+   */
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 const itemBase = [
@@ -31,7 +41,64 @@ const itemBase = [
 const itemActive = 'bg-brand-subtle text-brand font-semibold'
 const itemIdle = 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
 
-export function SideNav({ groups, activeKey, onSelect, header, footer, className = '' }: SideNavProps) {
+const toggleButtonBase = [
+  'flex flex-none items-center justify-center rounded-md text-icon transition-colors',
+  'hover:bg-surface-hover hover:text-text-primary',
+  'focus-visible:outline-none focus-visible:shadow-focus-ring',
+].join(' ')
+
+// Drawer/Accordion/CategoryTree와 같은 인라인 SVG 컨벤션(라이브러리 의존 없는 자체 chevron).
+function ToggleChevron({ pointing }: { pointing: 'left' | 'right' }) {
+  return (
+    <svg
+      className={`size-4 ${pointing === 'right' ? 'rotate-180' : ''}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m15 6-6 6 6 6" />
+    </svg>
+  )
+}
+
+export function SideNav({
+  groups,
+  activeKey,
+  onSelect,
+  header,
+  footer,
+  className = '',
+  collapsed = false,
+  onCollapsedChange,
+}: SideNavProps) {
+  if (collapsed) {
+    if (!onCollapsedChange) return null
+
+    return (
+      <nav
+        className={[
+          'flex h-full w-14 flex-none flex-col items-center gap-2 border-r border-border-subtle bg-surface-raised py-4 select-none',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <button
+          type="button"
+          onClick={() => onCollapsedChange(false)}
+          aria-label="메뉴 펼치기"
+          className={`size-9 ${toggleButtonBase}`}
+        >
+          <ToggleChevron pointing="right" />
+        </button>
+      </nav>
+    )
+  }
+
   return (
     <nav
       className={[
@@ -41,7 +108,21 @@ export function SideNav({ groups, activeKey, onSelect, header, footer, className
         .filter(Boolean)
         .join(' ')}
     >
-      {header && <div className="px-4 py-5 border-b border-border-subtle">{header}</div>}
+      {(header || onCollapsedChange) && (
+        <div className="flex items-center gap-2 px-4 py-5 border-b border-border-subtle">
+          {header && <div className="min-w-0 flex-1">{header}</div>}
+          {onCollapsedChange && (
+            <button
+              type="button"
+              onClick={() => onCollapsedChange(true)}
+              aria-label="메뉴 접기"
+              className={`size-8 ${toggleButtonBase}`}
+            >
+              <ToggleChevron pointing="left" />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
         {groups.map((group) => (

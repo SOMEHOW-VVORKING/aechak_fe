@@ -673,7 +673,14 @@ interface Column<T> {
 ## SideNav
 
 ```tsx
-<SideNav groups={groups} activeKey={key} onSelect={setKey} header={<Logo />} />
+<SideNav
+  groups={groups}
+  activeKey={key}
+  onSelect={setKey}
+  header={<Logo />}
+  collapsed={collapsed}
+  onCollapsedChange={setCollapsed}
+/>
 ```
 
 ```ts
@@ -688,6 +695,14 @@ interface NavGroup { label?: string; items: NavItem[] }
 | `onSelect` | `(key: string) => void` |
 | `header` | `ReactNode` |
 | `footer` | `ReactNode` |
+| `collapsed` | `boolean` (기본값 `false`) |
+| `onCollapsedChange` | `(collapsed: boolean) => void` |
+
+`onCollapsedChange`를 넘기면 `SideNav`가 토글 버튼을 스스로 그린다 — 펼침
+상태에서는 `header` 옆에 접기 버튼을, `collapsed=true`일 때는 `w-64` 전체 nav
+대신 좁은 아이콘 레일(`w-14`)과 그 안의 펼치기 버튼만 그린다(nav 항목 라벨은
+숨김). `onCollapsedChange` 없이 `collapsed`만 `true`로 주면 완전히 숨김(`null`,
+하위 호환용 — 이 경우 호출부가 토글 버튼을 직접 만들어야 함).
 
 ---
 

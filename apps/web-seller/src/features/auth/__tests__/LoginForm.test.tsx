@@ -3,30 +3,34 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi } from 'vitest'
 import { LoginForm } from '../components/LoginForm'
 
-// AC-AUTH-001: 이메일과 비밀번호 입력 필드와 제출 버튼이 렌더링된다
+// AC-AUTH-001: 카카오/구글/Apple 소셜 로그인 버튼 3개가 순서대로 렌더링된다
 describe('LoginForm', () => {
-  it('[AC-AUTH-001] renders email field, password field, and submit button', () => {
+  it('[AC-AUTH-001] renders kakao, google, apple social login buttons in order', () => {
     render(<LoginForm />)
-    expect(screen.getByRole('textbox', { name: /email/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /로그인/i })).toBeInTheDocument()
+    const buttons = [
+      screen.getByRole('button', { name: '카카오로 로그인' }),
+      screen.getByRole('button', { name: '구글로 로그인' }),
+      screen.getByRole('button', { name: 'Apple로 로그인' }),
+    ]
+    const allButtons = screen.getAllByRole('button')
+    expect(allButtons.slice(0, 3)).toEqual(buttons)
   })
 
-  it('[AC-AUTH-001] calls onSubmit with email and password when form is submitted', async () => {
+  it('[AC-AUTH-001] calls onSocialLogin with the clicked provider', async () => {
     const user = userEvent.setup()
-    const onSubmit = vi.fn()
+    const onSocialLogin = vi.fn()
 
-    render(<LoginForm onSubmit={onSubmit} />)
+    render(<LoginForm onSocialLogin={onSocialLogin} />)
 
-    await user.type(screen.getByRole('textbox', { name: /email/i }), 'seller@example.com')
-    await user.type(screen.getByLabelText(/password/i), 'password123')
-    await user.click(screen.getByRole('button', { name: /로그인/i }))
+    await user.click(screen.getByRole('button', { name: '구글로 로그인' }))
 
-    expect(onSubmit).toHaveBeenCalledWith('seller@example.com', 'password123')
+    expect(onSocialLogin).toHaveBeenCalledWith('google')
   })
 
-  it('[AC-AUTH-001] shows loading state when isLoading is true', () => {
+  it('[AC-AUTH-001] disables social buttons when isLoading is true', () => {
     render(<LoginForm isLoading />)
-    expect(screen.getByRole('button', { name: /로그인 중/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '카카오로 로그인' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '구글로 로그인' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Apple로 로그인' })).toBeDisabled()
   })
 })

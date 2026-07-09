@@ -103,6 +103,35 @@ className을 `px-4 py-2`에서 `px-2 py-2`로 줄여 라벨의 절대 위치(16p
 
 ---
 
+## 웹 디자인시스템 입력 컴포넌트 — 호출부 `className`은 반드시 병합(append)할 것
+
+`SelectHTMLAttributes`/`TextareaHTMLAttributes` 등 네이티브 HTML attribute 인터페이스를
+확장하는 웹 컴포넌트는 `className`을 구조분해하지 않으면 호출부가 넘긴 `className`이
+`...props`에 그대로 담겨 JSX상 컴포넌트 내부 `className={...}` **뒤에** spread된다 —
+React/JSX는 같은 엘리먼트에 동일 prop이 두 번 나오면 나중 것이 이긴다. 그 결과 호출부의
+`className`이 컴포넌트가 공들여 만든 내부 스타일(`appearance-none`, 높이, 테두리 등)을
+통째로 덮어써 버린다.
+
+**실제로 `Select.tsx`가 이 버그였다** — `apps/web-seller/.../DashboardPage.tsx`가 기간
+선택기에 `<Select ... className="w-[140px]" />`를 넘기자 `appearance-none`이 지워져
+브라우저 네이티브 select 화살표가 되살아나고, 컴포넌트가 그리는 커스텀 SVG 셰브런과 겹쳐
+화살표가 2개로 보이는 디자인 깨짐이 발생했다(캡틴이 직접 리포트). 감사 결과 `Textarea.tsx`도
+동일한 구조(구조분해 없이 `{...props}`가 내부 `<textarea>`의 `className` 뒤에 옴)라 같은
+버그를 잠재적으로 가지고 있었다(이 시점엔 `className`을 넘기는 호출부가 없어 아직 드러나지
+않았을 뿐) — 함께 고쳤다. `Input.tsx`/`SearchInput.tsx`/`Card.tsx`/`Button.tsx`/
+`DatePicker.tsx`는 이미 `className`을 구조분해해 내부 클래스 배열 뒤에 append하고
+`{...props}`에서 제외하는 올바른 패턴이라 손대지 않았다.
+
+**새 입력류 컴포넌트를 만들거나 기존 컴포넌트에 `className` 통과를 추가할 때 지킬 패턴:**
+1. 구조분해 시 `className = ''`로 명시적으로 꺼낼 것(그래야 `...props`에 안 남음).
+2. 실제 DOM 엘리먼트의 `className`은 `[내부 클래스1, 내부 클래스2, ..., className].filter(Boolean).join(' ')`처럼
+   **항상 배열의 마지막**에 붙일 것 — 덮어쓰기(overwrite)가 아니라 병합(append)이 되어야
+   호출부가 폭/마진 같은 레이아웃만 조정하고 컴포넌트의 핵심 스타일(예: `appearance-none`)은
+   보존된다.
+3. `{...props}`는 `className`을 구조분해한 **이후에** 스프레드할 것.
+
+---
+
 ## web-seller 앱 셸
 
 `apps/web-seller/src/routes/__root.tsx`는 `AppShell`(`src/shared/components/AppShell.tsx`)을
@@ -123,6 +152,97 @@ TanStack Router가 `/<segment>/`로 등록한다 (`/<segment>` 단일 파일과 
 돌려서 `routeTree.gen.ts`를 실제로 갱신하고 커밋할 것 (안 하면 `pnpm typecheck`가
 새 라우트에서 임포트한 타입을 못 찾아 실패한다).
 
+### SideNav 접기/펼치기 — SideNav가 토글 버튼과 접힌 레일을 자체 렌더링(Revision 1)
+
+캡틴 요청("좁은 화면에서도 필요하면 접고 펼 수 있어야 한다")으로 `SideNav`
+(`packages/design-system/src/web/components/SideNav.tsx`)에 `collapsed?: boolean` +
+`onCollapsedChange?: (collapsed: boolean) => void` prop을 추가했다. 둘 다 옵셔널이라
+안 넘기면 기존과 100% 동일 동작(`web-admin`은 아직 안 넘김) — `collapsed=true`인데
+`onCollapsedChange`가 없으면 여전히 `null`(완전 숨김, 하위 호환).
+
+**1차 구현(토글 버튼을 `AppShell`의 별도 `h-12` 상단 바에 두는 방식)은 캡틴 리뷰에서
+반려되어 폐기했다** — 실제 화면에서 보니 그 바가 SideNav 헤더와도 페이지 제목과도
+안 붙어 있어 붕 떠 보였다. **지금 아키텍처는 `SideNav`가 토글 버튼 렌더링 책임을
+직접 가진다:**
+
+- `onCollapsedChange`가 주어지면:
+  - `collapsed=false`(펼침): 기존 `w-64` 전체 nav를 그대로 그리되, `header` slot
+    바로 옆(오른쪽)에 접기 토글 버튼을 함께 그린다 — 헤더 콘텐츠는 `min-w-0 flex-1`
+    div로 감싸 버튼과 한 줄에 나란히 배치.
+  - `collapsed=true`: `null` 대신 **좁은 아이콘 레일**(`w-14`, 56px)을 그린다 — nav
+    항목 라벨/아이콘은 렌더링하지 않고(캡틴이 원한 건 "닫기"이지 아이콘 전용 축소
+    모드가 아니라는 지시를 그대로 따름), 레일 안에 펼치기 토글 버튼 하나만 놓는다.
+    이 레일이 `AppShell`의 별도 상단 바를 완전히 대체한다 — 버튼이 `SideNav` 자신
+    안에 있으므로 열림/닫힘 상태 전환 내내 같은 컴포넌트, 같은 상대 위치(헤더 옆 →
+    레일 안)를 유지해 어색하게 붕 뜨는 문제가 구조적으로 생기지 않는다.
+  - `onCollapsedChange`가 없으면(`web-admin`처럼 아직 배선 안 한 앱) 토글 버튼 자체가
+    렌더링되지 않고 `collapsed` 값대로만 동작(펼침 고정, 또는 `true`면 `null`).
+- **토글 아이콘은 lucide-react가 아니라 컴포넌트 내부 인라인 SVG**(`ToggleChevron`)로
+  그렸다 — `packages/design-system`은 어떤 아이콘 라이브러리에도 의존하지 않는다는
+  기존 컨벤션(`icon`/`icon(isActive)` prop이 항상 `ReactNode`인 이유와 동일) 때문.
+  다만 `NavItem.icon`처럼 도메인 아이콘을 호출부가 주입하는 것과 달리, 토글
+  버튼처럼 컴포넌트 자신의 범용 chrome(열림/닫힘 표시 화살표)은 `Drawer`의 닫기
+  X, `Accordion`/`CategoryTree`의 확장 chevron과 같은 기존 패턴을 그대로 따라
+  `viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"` 인라인 `<path>`로
+  직접 그린다 — 새 프리미티브에 범용 chrome 아이콘이 필요하면 라이브러리를
+  끌어오지 말고 이 인라인 SVG 컨벤션을 먼저 참고할 것.
+- **실제 토글 배선(버튼 prop 전달, 반응형 감지)은 이번에도 `web-seller`
+  (`shared/components/AppShell.tsx`)에만 넣었다** — `AppShell`은 이제 `collapsed`
+  state와 `onCollapsedChange={setCollapsed}`만 `SideNav`에 넘기고, 버튼 UI 자체는
+  전혀 그리지 않는다(별도 상단 바 완전히 제거, `<main>`이 다시 `SideNav`의 바로 다음
+  형제).
+- **반응형 감지는 `matchMedia` + `change` 리스너**
+  (`apps/web-seller/src/shared/hooks/useIsNarrowViewport.ts`, 기본 `1024px` = Tailwind
+  `lg`) — 디자인 시스템의 `useVisualViewportHeight`(리사이즈 이벤트 구독 패턴)와
+  구조는 같지만, 픽셀 단위 `resize`가 아니라 브레이크포인트 통과 여부만 필요해
+  `matchMedia`를 썼다.
+- **좁아질 때만 강제로 접고, 넓어져도 자동으로 펴지 않는다.** `AppShell`은
+  `isNarrow`가 `true`로 바뀌는 순간에만 `setCollapsed(true)`를 호출하는
+  `useEffect`를 둔다 — 좁은 화면에서 사용자가 수동으로 편 상태를 유지하고
+  싶을 수 있고, 토글 버튼으로 언제든 직접 되돌릴 수 있으므로 "넓어지면
+  자동으로 다시 펴기"는 넣지 않았다(의도적 결정, 버그 아님).
+- 새로 이 prop을 쓰는 앱(`web-admin` 등)을 추가할 때는 `SideNav`에 `collapsed`/
+  `onCollapsedChange`만 넘기면 된다 — 토글 버튼이나 접힌 레일을 소비 앱에서 다시
+  만들 필요 없음(그게 이번에 고친 핵심).
+
+### 로그인 화면(`/login`, `b5-st-13`) — SideNav 없는 라우트, AppShell 예외 분기
+
+`features/auth/`는 초기 스캐폴딩(SCRUM-65) 이후 어느 라우트에도 연결된 적이 없던
+플레이스홀더였다 — `routes/login/` 자체가 존재하지 않았다. 이번에 목업(`b5-st-13`,
+소셜 로그인 전용, 이메일/비밀번호 UI 없음)에 맞춰 `LoginForm.tsx`를 카카오/구글/Apple
+소셜 버튼 3개로 새로 만들고 `routes/login/index.tsx`를 처음 추가했다.
+
+- **목업의 `.social-btn`은 provider별 브랜드 색상이 없다** — 카카오/구글/Apple 버튼
+  3개 모두 동일한 중립 스타일(`bg-surface-raised` + `border-default`, 아이콘도
+  `--icon-muted` 회색 하나로 통일)이었다. 작업 지시에는 "provider별 브랜드 색상은
+  목업 참고"라고 적혀 있었지만 실제 목업 마크업(`screen-specimen.css` `.social-btn`/
+  `.social-logo`)을 직접 열어 확인한 결과 브랜드 색상 자체가 존재하지 않았다 — 지시의
+  가정이 틀린 경우라 실제 목업을 따라 디자인 시스템 `Button variant="secondary"`
+  (중립 스타일)로 3개 버튼을 통일했다. 이후 이 화면에 실제 브랜드 색상을 넣으라는
+  요구가 새로 들어오면 그건 이번 목업 배치 이후의 스코프 확장이다.
+- **`lucide-react`(현재 버전 `^1.23.0`)에는 브랜드 로고 아이콘이 없다** — `Apple`은
+  우연히 이름이 겹쳐 존재하지만, 목업이 쓴 `chrome`(구글 대용)은 이 버전에 아예 없다
+  (`Chrome` export 자체가 없음 — 트레이드마크 아이콘이 lucide에서 빠진 것으로 보임).
+  구글 버튼은 `Globe`로 대체했다 — 새로 소셜 로그인류 버튼을 추가할 때 목업의
+  `data-lucide` 이름을 그대로 믿지 말고 `ls node_modules/.pnpm/lucide-react@*/node_modules/lucide-react/dist/esm/icons/`로
+  실제 export 존재 여부를 먼저 확인할 것.
+- **`AppShell`(`shared/components/AppShell.tsx`)은 `pathname === '/login'`일 때
+  `SideNav` 없이 `<Outlet />`만 렌더링하는 예외 분기를 탄다** — `__root.tsx`가 모든
+  라우트에 무조건 `AppShell`을 씌우는 구조라, 목업처럼 SideNav 없는 중앙 카드
+  단독 화면을 만들려면 라우트 트리를 pathless layout(web-buyer의 `_tabs.tsx` 패턴)으로
+  쪼개거나 `AppShell` 안에서 예외 처리하는 두 가지 방법이 있었다 — 기존 5개 라우트
+  파일을 전부 이동시켜야 하는 pathless layout 리팩터 대신, 위험도가 낮은 `AppShell`
+  내부 조건 분기를 선택했다. **새 SideNav-less 라우트(예: 향후 운영 어드민 공용
+  로그인)가 하나 더 생기면 이 if문에 조건을 계속 추가하지 말고, 그 시점에 pathless
+  layout으로 전환할 것** — 지금은 예외가 하나뿐이라 조건 분기가 더 저렴했을 뿐이다.
+- 로그인 성공 처리는 `auth.queries.ts`의 `useLogin`이 `auth.mock.ts`의
+  `mockSocialLogin(provider)`(어느 버튼을 눌러도 동일한 mock 유저 반환, `provider`
+  값만 기록)를 호출하고 `onSuccess`에서 `useAuthStore.setUser` + 라우트 쪽
+  `navigate({ to: '/' })`로 대시보드 이동 — claims/products 등 기존 feature의
+  "mock 함수 + useMutation" 패턴과 동일하게 맞췄다. 기존 `useLogin`은 실제로는 한
+  번도 연결된 적 없는 이메일/비밀번호 + 실제 axios POST였다(사용된 적 없는 죽은
+  코드) — "기존 로직을 유지"라는 표현에 속지 말고 실제 참조 여부를 먼저 확인할 것.
+
 **`packages/domain`의 `Product`/`Order` 타입은 Batch 5(상품/주문/클레임 관리,
 `b5-st-3`/`b5-st-5`/`b5-st-6`)가 처음으로 실제 소비했다.** 그 전까지는 `auth`
 기능만 `User` 타입을 썼고 `Product`/`Order`는 어느 앱에서도 import되지 않는
@@ -134,6 +254,85 @@ TanStack Router가 `/<segment>/`로 등록한다 (`/<segment>` 단일 파일과 
 셀러/회원 관리, web-buyer의 상품 목록 등)에서 같은 도메인 개념을 다룰 때는 이
 타입들을 그대로 재사용하거나 신중하게 확장할 것 — 임의로 새 로컬 타입을 다시
 만들지 말 것.
+
+## web-seller 대시보드 — MetricCard 복합 footer (BarChart는 2026-07-09 제거됨)
+
+대시보드(`apps/web-seller/src/features/dashboard/`)에 캡틴 요청으로 지표 카드 전기간 대비
+증감률(`▲12%`/`▼5%`)을 스코프 확장으로 추가했다 (`screens.html` b5-st-1 목업에는 없던 내용).
+
+- **`MetricCard`의 `footer` prop은 단일 `ReactNode` 슬롯**이라, 카드마다 기존 footer 내용이
+  다른 상태(`StatusPill`이 있는 것/순수 텍스트인 것)에서 그 옆에 새 요소(증감률)를 추가하려면
+  `footer` 안을 `<div className="flex flex-col gap-0.5">`로 감싸 기존 footer 내용(pill 또는
+  텍스트)을 그대로 두고 그 아래 줄에 증감률 `<span>`을 붙이는 방식을 썼다 — `MetricCard`
+  자체를 수정하거나 새 prop을 추가하지 않고 소비 측(`DashboardPage.tsx`)에서만 합성.
+  `MetricCard`의 footer 컨테이너(`inline-flex items-center gap-1`)는 자식이 몇 개든 하나의
+  flex-col div로 감싸 넣으면 레이아웃이 깨지지 않는다 — 여러 footer 요소를 나란히/위아래로
+  배치해야 하는 다른 화면에서도 이 패턴(래퍼 div로 합성, 컴포넌트 prop 확장 안 함)을 먼저
+  검토할 것.
+- 증감률 색상은 `text-success-fg`(상승)/`text-error-fg`(하락)를 썼다 — 상승이 항상
+  "좋다"는 의미가 아님(예: 배송 지연·취소 요청 상승은 나쁨)에도 캡틴 스펙이 방향(up/down)만
+  기준으로 색을 정하라고 명시했으므로 지표별 긍정/부정 의미 판단 없이 방향에만 매핑했다.
+  지표별 "좋은 방향"이 다르다는 이유로 색을 반전시키지 말 것 — 이번 요구사항의 의도적 결정.
+- **매출 추이 `BarChart` 섹션은 2026-07-09 캡틴이 화면을 직접 보고 되돌리기 요청해 제거됐다.**
+  `DashboardSummary`의 `revenueTrend`/`DashboardRevenueTrendPoint`도 이 차트 전용 필드라 함께
+  삭제(`dashboard.mock.ts`) — 다른 곳에서 참조하는 곳이 없었다. `BarChart`
+  (`packages/design-system`) 컴포넌트 자체는 그대로 있으니 다시 차트가 필요해지면 재사용
+  가능하지만, 대시보드에 다시 추가하기 전에 이번처럼 캡틴 확인을 먼저 받을 것 — 애초에
+  b5-st-1 목업에 없던 스코프 확장이었다가 되돌려진 이력이 있다. 지표 카드 증감률 뱃지는 이번
+  제거와 무관하게 그대로 유지됨.
+
+### 기간 선택기(전체/최근 7일/30일/90일) 실제 배선 (2026-07-09)
+
+기간 선택기(`Select`)가 값만 바뀌고 실제로는 항상 같은 mock을 보여주는 장식용 상태였다 —
+캡틴이 화면을 직접 써보다가 발견(정산/매출 화면의 월 선택기와 같은 종류의 문제). "전체"를
+맨 앞 기본값으로 추가하고, `useDashboardSummary(period)`가 선택된 기간의 mock을 반환하도록
+`useSellerApplication(status?)` 관례(`store-settings.queries.ts`)를 그대로 따라 배선했다 —
+`queryKey`에 `period`를 포함시켜 기간 전환 시 TanStack Query가 별개 캐시 엔트리로 취급한다.
+
+- **7개 지표 카드(신규주문/발송대기/배송지연/취소요청/반품요청/교환요청/미응답문의)만
+  기간별로 값·증감률이 달라진다.** `dashboard.mock.ts`에 `DASHBOARD_METRIC_META`(라벨·아이콘·
+  footer 문구 — 기간과 무관)와 `DASHBOARD_METRIC_VALUES_BY_PERIOD`(값·증감률만 4세트: `all`/
+  `7d`/`30d`/`90d`, 기간이 길수록 누적 카운트가 커지는 방향)로 분리해 `getDashboardSummaryMock
+  (period)`가 두 조각을 합성한다 — 라벨/아이콘/footer 문구를 4번 반복하지 않기 위한 구조.
+- **정산 예정 금액 카드·상품 상태 카드는 의도적으로 기간과 무관하게 고정.** 둘 다 "지금 이
+  순간의 스냅샷"(현재 정산 대기 금액, 현재 상품 상태)이라 과거 시점 데이터가 없고, 기간을
+  바꿔도 같은 값을 보여주는 게 정답이다 — `DASHBOARD_SETTLEMENT_MOCK`/
+  `DASHBOARD_PRODUCT_STATUSES_MOCK`을 기간별로 쪼개지 말 것. 지표 카드와 달리 이 두 카드는
+  "이 화면에서 절대 기간에 반응하면 안 되는 것" 사례이니, 새 요구사항이 들어와도 먼저 이게
+  스냅샷 성격인지 누적 성격인지부터 판단할 것.
+- **정산/매출 화면의 월 선택기도 같은 종류의 장식용 선택기였다** — 이 항목을 적을 당시엔
+  대시보드만 고치고 "다른 화면에도 남아있을 수 있다"고 남겨뒀는데, 같은 날 별도 배치
+  (`cbe0e7f`/`40b70af`, `apps/web-seller/src/features/settlements/`)에서 정산/매출 쪽도
+  독립적으로 고쳐졌다 — 두 화면 모두 이제 실제 필터링 상태. 새로 장식용 선택기를 발견하면
+  이 두 배치의 구조(메타/값 분리 + 쿼리 훅에 옵셔널 파라미터 추가 + `queryKey`에 포함)를
+  그대로 참고할 것.
+
+### Revision 1 — "긴급만" 토글 실제 필터링 + 지표 카드 4열 그리드를 flex-wrap으로 전환
+
+같은 배치에서 캡틴이 화면을 보고 지적한 두 가지를 추가로 고쳤다:
+
+- **`urgentOnly` state가 `Toggle`의 `checked`/`onChange`에만 연결되고 카드 목록 필터링에는
+  전혀 안 쓰이던 장식용 상태였다** — `data.metrics.filter(metric => !urgentOnly ||
+  metric.variant === 'urgent')`로 실제 필터링하도록 고쳤다. **기본값도 `useState(true)`에서
+  `useState(false)`로 함께 바꿨다** — 필터링을 켜면서 초기값을 `true`로 그대로 두면 첫
+  로드부터 카드 7개 중 6개(현재 mock 기준 `variant: 'urgent'`는 "배송 지연" 하나뿐)가
+  사라져 캡틴이 지금까지 보던 화면과 완전히 다른 첫인상이 된다 — 새 boolean 상태를 실제
+  동작에 연결할 때는 그 상태의 초기값이 "필터링이 켜진 채 시작"을 의미하지 않는지 항상
+  같이 점검할 것(토글 이름과 무관하게 state 자체는 계속 `true`였다는 게 문제였다).
+- **`grid grid-cols-4`(고정 4열) + 카드 7개 조합이 마지막 줄에 3개만 남아 4번째 칸이 빈
+  채로 어색해 보이는 문제**를 `flex flex-wrap gap-3` 컨테이너 + 각 `MetricCard`에
+  `className="flex-auto basis-[210px]"`로 바꿔 해결했다. `flex-auto`(`flex: 1 1 auto`)가
+  `flex-basis: 210px`와 결합되면, 브라우저의 줄바꿈 판단 자체는 여전히 210px 기준으로
+  이뤄지지만(4열 유지) 마지막 줄처럼 항목 수가 남는 경우 `flex-grow`가 그 줄의 남는 폭을
+  나머지 항목에 고르게 분배한다 — 즉 "고정 폭 카드 + 빈 칸"이 아니라 "그 줄의 카드들이
+  넓어져 꽉 채움" 형태로 자연스럽게 재배치된다(실측: 4개 줄은 카드당 ~210px, 3개 줄은
+  카드당 ~280px). **긴급만 필터로 카드가 1개만 남을 때도 같은 원리로 그 1장이 전체 폭을
+  채운다** — 별도 분기 없이 동일한 flex 레이아웃 하나로 카드 개수가 몇 개든(1~7개) 항상
+  마지막 줄이 자연스럽게 채워진다. `MetricCard`는 이미 `className`을 배열 마지막에 병합하는
+  올바른 패턴(위 "웹 디자인시스템 입력 컴포넌트" 절 참고)이라 컴포넌트 자체는 손대지 않고
+  호출부(`DashboardPage.tsx`)에서만 `flex-auto basis-[210px]`를 얹어 해결했다. 로딩 중
+  `Skeleton` 8개 그리드는 `grid grid-cols-4` 그대로 뒀다 — 8은 4로 나누어떨어져 이 문제가
+  애초에 재현되지 않는다(고정 스켈레톤 개수라 실제 필터링된 카드 수와 무관).
 
 ## web-seller 취소/반품/교환(클레임) 화면 — 확인 Modal 패턴
 
@@ -178,6 +377,254 @@ Modal 컴포넌트가 `claim`이 있을 때만 조건부 렌더링 → 확인 �
   나오면 회귀 신호로 볼 것.
 - 큰따옴표(`""`)/작은따옴표(`''`)를 직접 인용 부호로 쓰지 않는다(현재 0건, 유지할 것) — 강조가
   필요하면 `<strong>`처럼 마크업을 쓰거나 그냥 풀어 쓸 것.
+
+---
+
+## web-seller 설정 폼 저장 패턴 (`배송 정책`, b5-st-4)
+
+`shipping-policy` 화면(`apps/web-seller/src/routes/shipping-policy/index.tsx`)이 web-seller
+최초의 "단일 폼 저장" 화면이다 — 기존 3개 feature(claims/orders/products)는 전부 "목록 + 행
+액션" 형태라 그대로 베낄 수 없었고, 이 화면에서 정한 구조를 이후 스토어 설정/계정·보안 등
+같은 성격의 화면이 그대로 따라갈 것.
+
+- **폼 상태는 라우트가 소유한다.** `useShippingPolicy()`(useQuery)로 원본을 불러오고, 로컬
+  `useState<ShippingPolicy | null>(null)`에 `useEffect(() => { if (data && !form) setForm(data) },
+  [data, form])`로 딱 한 번만 시드한다 — `!form` 가드가 핵심이다. 저장 성공 후
+  `invalidateQueries`로 `data`가 새로 오더라도 이미 `form`이 채워져 있으니 재시딩하지 않는다
+  (재시딩하면 사용자가 막 입력한 값이 서버 왕복 사이 다시 덮어써질 수 있음). web-admin 5종의
+  "매 마운트마다 `rows/setRows`" 패턴과 다른 점은 이 가드 하나뿐이지만, 폼에서는 이 가드가
+  없으면 저장 직후 자기 자신의 변경사항을 지워버리는 실제 버그가 난다.
+- **필드 변경은 하나의 `onChange: (patch: Partial<T>) => void`로 합친다.** 폼 컴포넌트
+  (`features/shipping-policy/components/ShippingPolicyForm.tsx`)는 `value`/`onChange` 두 prop만
+  받는 순수 컨트롤드 컴포넌트이고, 라우트의 `handleChange`는 `setForm(prev => prev ? { ...prev,
+  ...patch } : prev)` 한 줄로 모든 필드를 처리한다 — 필드마다 개별 `useState`를 만들지 말 것.
+- **저장은 확인 Modal 없이 바로 mutate한다.** claims의 "확인 Modal 먼저" 패턴은 파괴적/되돌리기
+  어려운 액션 전용이고, 폼 전체 저장은 되돌리기 쉬운 일반 액션이라 `PageHeader`의 `actions`에
+  놓은 "저장" `Button`이 `useMutation`을 바로 호출한다(`loading={mutation.isPending}`,
+  `disabled={!form || isLoading}`로 원본 미로딩/폼 미시딩 상태에서 저장 버튼을 막음).
+- **성공 피드백은 `Toast` + `queryClient.invalidateQueries`.** claims/orders의
+  `useMutation` + `onSuccess: () => queryClient.invalidateQueries({ queryKey })` 관례를 그대로
+  재사용하되(`shipping-policy.queries.ts`), 확인 Modal이 없으므로 그 자리를 로컬 `toastMessage`
+  state + 라우트 최상단의 `useMutation({ onSuccess: () => setToastMessage(...) })`가 대신한다.
+  **주의**: Toast 문구는 위 카피 컨벤션(-해요체)을 따라 `저장했어요.`를 쓸 것 —
+  `저장되었습니다.`처럼 -습니다체를 쓰면 회귀 신호.
+- **디자인 시스템 `NumberInput`은 -/+ 스테퍼이지 자유 입력 텍스트필드가 아니다.** 배송비류
+  금액 필드(3,000~30,000원대)에 `step={500}`을 주고 통화 단위 "원"은 컴포넌트 밖에 별도
+  `<span>`으로 붙였다(컴포넌트 자체에 `label`/addon slot이 없음) — 새 폼에서도 금액 필드는 이
+  조합(라벨 `<span>` + `NumberInput` + "원" `<span>`)을 그대로 재사용할 것, 디자인 시스템을
+  고치지 말 것.
+- **"OO와 동일" 체크박스 토글 필드**(반품지 주소 = 출고지와 동일)는 체크 시 대상 `Input`을
+  `disabled`로 두고 값도 소스 필드값을 그대로 보여준다(진짜 숨기지 않음, mockup의 lock 아이콘
+  readonly 표현과 동일) — 체크 해제 시에만 실제 `returnAddress` 값이 편집 가능해진다. 저장
+  시점에는 `sameAsOrigin`이 true면 `returnAddress`를 `originAddress`로 덮어써서 보내
+  (`handleSave`의 `payload` 계산) 저장된 데이터 자체가 항상 일관되게 한다.
+
+**주의 — "폼 상태는 라우트가 소유" 패턴에서 mutate 성공 후 서버가 바꾼 필드(status 등)를
+반영하려면 `onSuccess`에서 mutation 응답으로 `setForm`을 직접 호출해야 한다.** `!form` 가드
+때문에 `invalidateQueries`로 쿼리 캐시가 갱신돼도 이미 채워진 로컬 `form`은 재시딩되지 않는다
+(의도된 동작 — 위 문단 참고). 그런데 저장 자체가 서버 쪽 파생 필드를 바꾸는 액션(예: 아래
+`store-settings`의 재제출 → `status: 'resubmitted'`)이라면, `onSuccess: () =>
+setToastMessage(...)`만 쓰고 `setForm`을 안 하면 로컬 `form.status`가 영원히 이전 값에
+머물러 "재제출 후에도 재제출 버튼이 다시 활성화되는" 실제 버그가 난다(이번 배치에서
+`chrome-devtools-axi`로 재제출 버튼을 두 번 눌러보다가 발견 — 첫 클릭 후 버튼이 계속
+활성 상태로 남아있었다). `shipping-policy`처럼 저장이 "내가 입력한 값을 그대로 서버에
+반영"만 하는 경우는 이 문제가 없어(응답이 입력과 동일하니 반영 여부가 안 보임) 이번에
+처음 드러났다 — mutate 응답이 요청 payload와 달라지는 액션(상태 전이 등)을 다루는 폼은
+`onSuccess: (updated) => { setForm(updated); setToastMessage(...) }`처럼 응답을 반드시
+로컬에 반영할 것.
+
+---
+
+## web-seller 스토어 설정(`/store-settings`, b5-st-2) — substate 2-A만 구현, 2-B는 범위 밖
+
+목업(b5-st-2)은 2-A(서류 보완 요청 · 재제출)와 2-B(승인 후 · 스토어 정보) 2개 substate를
+가지지만, **캡틴 지시로 2-A만 구현했다** — 2-B(스토어 이미지/기본 정보/고객 안내 문구)는
+MVP 요구사항에 스토어 프로필 커스터마이징이 없어 이번 배치에서 제외됐다. `/store-settings`
+라우트는 현재 "입점 심사에서 반려된 셀러가 서류를 보완해 재제출하는" 화면 하나만 렌더링한다
+— 승인된 셀러가 이 경로에 왔을 때 보여줄 화면(2-B)은 아직 없다(다음 배치 스코프).
+
+### 도메인 타입 이원화 정리 — `SellerApplication`을 확장, 새 병렬 타입 안 만듦
+
+`AGENTS.md`의 "web-admin 심사/관리 5종 — 알려진 격차" 절이 지적했던 "SellerApplication이
+`Seller`와 병렬 타입으로 존재" 문제가 이 화면(셀러 자신의 재제출 화면)에서 실제로 부딪혔다.
+`Seller`는 `shopName`만 있어 이 폼에 전혀 못 쓰고, 기존 `SellerApplication`(web-admin
+`sellers/applications.tsx` 전용으로 만들어짐)은 반려 사유·서류 목록 등 뼈대는 있지만 전부
+**마스킹된** 필드(`representativeNameMasked`, `phoneMasked`)뿐이라 셀러 자신이 보는
+비마스킹 값(전화번호 실번호, 이메일, 사업장 주소, 정산 계좌, 서류별 상태)이 없었다.
+
+**결정: 새 병렬 타입을 만들지 않고 `SellerApplication`(`packages/domain/src/types/index.ts`)을
+확장했다.** 마스킹 필드는 그대로 두고(admin 표시용), 셀러 자신의 뷰에서만 채워지는 비마스킹
+필드를 optional로 추가: `representativeName`/`phone`/`phoneVerified`/`email`/
+`businessAddress`/`bankName`/`bankAccountNumber`/`bankAccountHolder`. `documents`는 인라인
+`{key,label}[]`에서 이름 있는 `SellerApplicationDocument`(`status?`/`note?`/`required?`
+추가)로 승격했다 — 전부 optional이라 web-admin의 기존 mock 리터럴(`{key,label}`만 있는
+객체)이 그대로 타입 체크를 통과한다(실제로 `pnpm --filter @aechak/web-admin typecheck`로
+확인, 회귀 없음). `sellerType: 'business' | 'individual'`(admin이 필터·표시에 쓰는 굵은
+분류)은 그대로 두고, 목업의 3-way 셀러 유형(개인 일반/개인 사업자/법인 사업자)은 별도
+optional 필드 `legalType: SellerLegalType`으로 추가 — `sellerType`을 3-way로 바꾸면
+admin의 `row.sellerType === 'business'` 이분법 체크가 깨지므로, 세분류가 필요한 화면만
+새 필드를 보고 `sellerType`은 그로부터 파생시켜 저장한다(`StoreSettingsForm.tsx`의
+`handleLegalTypeChange`: `legalType` 변경 시 `sellerType`도 함께 계산해 항상 일관성 유지).
+**판단 기준**: 필드가 부족하면 우선 기존 타입에 optional 필드로 확장하고, 기존 필수 필드의
+의미·유니온을 바꿔야 완전히 새로운 개념이 되는 경우에만(이번엔 아님) 새 타입을 고려할 것 —
+이번처럼 "이미 있는 필드의 마스킹 안 된 버전이 필요하다" 정도는 병렬 타입을 만들 이유가
+못 된다.
+
+### "FileUpload row" — `PhotoUpload`를 그대로 쓰지 않고 행 안에 토글로 내장
+
+목업 스펙 칩 목록(`FormSection(stepper), Segmented, TextField, Select, TextArea, FileUpload
+row, Alert, StatusPill`)의 "FileUpload row"는 디자인 시스템에 존재하는 컴포넌트 이름이
+아니다 — 나머지 칩(FormSection/Segmented/TextField/Select/TextArea/Alert/StatusPill)은
+전부 실제 컴포넌트(`FormSection`/`SegmentedControl`/`Input`/`Select`/`Textarea`/`Alert`/
+`StatusPill`)와 1:1 대응하는데 "FileUpload row"만 대응 컴포넌트가 없다는 게 이 화면을
+구현하며 확인한 사실 — 목업이 그리는 실제 레이아웃(서류명 + 상태 pill + 작은 버튼 한 줄)은
+`PhotoUpload`(썸네일 그리드 업로더)와 시각적으로 안 맞는다. 그래서 `DocumentRow`
+(`features/store-settings/components/DocumentRow.tsx`)를 새로 만들어 기본 상태는 목업 그대로
+한 줄(라벨 + `StatusPill` + `Button`)로 렌더링하고, "업로드"/"교체" 버튼을 누르면 그 아래
+`PhotoUpload`(`max={1}`)가 펼쳐지는 방식으로 컴포넌트 갭 없이(`PhotoUpload` 재사용) 목업
+레이아웃을 보존했다 — 새 컴포넌트를 만들되 디자인 시스템에 올리지 않고 feature 로컬
+컴포넌트로 둔 이유는 이 "행 + 토글식 업로더" 조합이 지금은 이 화면 하나뿐이라서다. 같은
+패턴이 다른 화면에서도 필요해지면 그때 `packages/design-system`으로 승격 검토할 것.
+
+파일을 선택하면(`DocumentRow`의 `onAdd`) 실제 업로드 없이 로컬에서 해당 서류
+`status`를 바로 `'submitted'`로 바꾼다(페이지 상단 "재제출하기" 버튼은 `required &&
+status === 'resubmission-required'`인 서류가 하나라도 남아있으면 비활성화 — 통장 사본을
+갈아끼우기 전까지는 재제출 자체를 막는다). 목업엔 없는 스코프 확장이지만 통장 사본에
+붙은 `required` 표시(`*`)의 의미를 실제로 강제한 것이라 최소 범위 안에 있다고 판단했다.
+
+### Revision 1 — `SellerApplicationStatus` 6종 전체 분기 (홀딩 뷰 + 승인 안내)
+
+최초 배치는 mock이 항상 `rejected`만 반환하고 라우트가 `form.status`로 분기하지 않아,
+`pending`/`reviewing`/`approved`/`resubmitted`를 포함한 나머지 5개 상태도 전부 반려·재제출
+폼을 그대로 보여주는 버그가 있었다(캡틴이 실제 화면을 열어보고 발견). 캡틴 지시로 6개 상태를
+3개 그룹으로 좁혀 분기했다:
+
+- **`pending`/`reviewing`/`resubmitted` → 홀딩 뷰 하나로 통합.** "셀러가 할 일이 없고
+  기다리는 중"이라는 공통점으로 묶어 `EmptyState`(디자인 시스템 컴포넌트 재사용, 새 컴포넌트
+  안 만듦) + 상태별 안내 문구만 보여준다(폼/서류 목록 없음, 편집 불가). 진행 파이프라인은
+  그대로 유지 — 이 3개 상태의 mock 픽스처는 전부 `resubmissionCount: 1`로 만들어 "한 번
+  반려됐다가 재제출한 뒤 다시 심사 중"이라는 동일한 서사를 공유하게 했다. 그래서 파이프라인의
+  "서류 반려"=error/"재제출"=success/"최종 승인"=info(현재) 배색이 세 상태 모두에서 그대로
+  말이 된다 — `pending`을 "한 번도 반려된 적 없는 최초 신청"으로 모델링했다면 파이프라인의
+  "서류 반려" 단계가 거짓이 되므로, 픽스처 데이터 자체를 파이프라인 서사와 일치하게 설계한
+  것이 핵심 판단이었다(코드 변경 없이 mock으로 해결).
+- **`rejected`/`revision-requested` → 기존 폼 화면 그대로, 문구까지 완전히 동일하게 유지.**
+  두 상태를 구분하는 새 카피를 만들지 않고 `HEADER_META`에서 동일한 객체를 공유한다 —
+  "이미 구현된 화면은 손대지 말 것" 지시를 문자 그대로 지키는 가장 낮은 리스크 선택.
+  분기 이전엔 `revision-requested`가 애초에 도달 불가능한 코드였다(mock이 항상 `rejected`만
+  반환) — 이번에 분기가 생기면서 실제로 렌더링 가능해졌지만 시각적으로는 변경 없음.
+- **`approved` → 짧은 안내만(2-B는 여전히 범위 밖).** 파이프라인·폼·서류 목록 전부 숨기고
+  `EmptyState`로 "입점 신청이 승인됐어요 / 스토어 정보를 설정하는 화면은 곧 제공될 예정이에요"
+  한 줄만 보여준다 — `PageHeader` 타이틀도 이때만 "스토어 개설 · 서류 보완"이 아니라 "스토어
+  설정"으로 바뀐다(2-B가 생기면 이 타이틀의 화면이 될 자리).
+- **mock 상태 스위치 메커니즘**: `mockFetchSellerApplication(status?)`가 이제
+  `SELLER_APPLICATION_FIXTURES: Record<SellerApplicationStatus, SellerApplication>`에서
+  픽스처를 골라 반환한다 — 인자 없이 호출하면 항상 `'rejected'`(기존 회귀 테스트·프로덕션
+  라우트가 전제하는 값, `MOCK_SELLER_APPLICATION`은 `SELLER_APPLICATION_FIXTURES.rejected`와
+  동일 참조). `useSellerApplication(status?)`도 동일하게 optional로 통과시킨다. 프로덕션
+  라우트는 여전히 `useSellerApplication()`(인자 없음)만 호출 — 상태를 바꿔 확인하고 싶을
+  때만 개발 중 일시적으로 인자를 넘겨 `chrome-devtools-axi`로 스크린샷 찍고 원복하는 방식을
+  썼다(URL 파라미터나 UI 토글 같은 영구 디버그 기능은 추가하지 않음, 스코프 최소화).
+- **재제출 버튼을 누른 직후 폼이 계속 열려 있던 버그도 이번에 같이 해소됐다** —
+  `handleResubmit`의 `onSuccess`가 mutation 응답(`updated`, `status: 'resubmitted'`)으로
+  `setForm`을 갱신하고, 라우트가 `form.status`로 분기하게 되면서 `resubmitted`가 자동으로
+  홀딩 뷰로 전환된다(별도의 "재제출 후 폼 잠금" 로직을 추가로 짤 필요가 없었음 — 상태
+  분기 자체가 이 문제를 흡수했다).
+
+### Revision 2 — 중복 필드 제거 + 셀프 리뷰 단순화
+
+캡틴이 `StoreSettingsForm.tsx`의 "판매자 유형" 섹션에서 "셀러 유형"(3단
+`SegmentedControl`, `legalType` 기반)과 "사업자번호 보유"(`Select`)가 같은 값을 라벨만
+바꿔 중복 질문하고 있다고 지적 — `BUSINESS_NUMBER_OPTIONS`가 `LEGAL_TYPE_OPTIONS`와
+정확히 같은 3개 `SellerLegalType` 값이었다. **`BUSINESS_NUMBER_OPTIONS`와 그 `Select`를
+완전히 제거**하고 "셀러 유형" `SegmentedControl` 하나만 남겼다(`store-settings.queries.ts`/
+`index.ts` 배럴의 관련 export도 함께 제거 — 죽은 export 안 남김). **새 필드를 추가할 때
+"이미 있는 값과 실제로 다른 정보인가"를 먼저 확인할 것** — 이번 케이스는 다른 이름의 Select를
+추가하면서 그 값이 옆에 있는 다른 필드와 항상 1:1로 같이 움직인다는 걸 놓친 경우였다.
+
+이어서 이번에 새로 추가된 코드 전체(`features/store-settings/**`,
+`routes/store-settings/index.tsx`)를 셀프 리뷰해 같은 종류의 중복을 추가로 찾아 정리했다:
+
+- `store-settings.mock.ts`의 `rejected`/`revision-requested` 픽스처가 `status` 한 필드만
+  다르고 `appliedAt`/`resubmissionCount`/`rejectionReason`/`revisionNote`(문장 전체)를
+  리터럴로 두 번 반복하고 있었다 — `REJECTED_FORM_FIELDS` 공유 객체로 추출해 스프레드하고
+  `status`만 오버라이드하게 정리(`documents`는 상태별로 새 배열이 필요해 각자
+  `baseDocuments(...)`를 그대로 호출 — 공유 객체 안에 넣으면 배열 참조가 공유돼 버그가 될
+  수 있어 의도적으로 제외).
+- `routes/store-settings/index.tsx`의 `HEADER_META`도 `rejected`/`revision-requested`
+  키에 완전히 동일한 객체 리터럴을 복붙해뒀던 걸 `FORM_HEADER_META` 상수 하나로 합쳐 두 키가
+  같은 참조를 공유하게 했다.
+- 같은 파일의 `isHolding`/`isApproved` 분기가 시각적으로 거의 같은 `<EmptyState>` 블록
+  두 개(홀딩 뷰/승인 안내)로 중복 렌더링되고 있었고, `holdingCopy(form.status)`도 title과
+  description을 얻으려고 같은 인자로 두 번 호출되고 있었다 — 렌더 직전에 `notice = isHolding
+  ? {...} : isApproved ? {...} : null` 하나로 합쳐 `holdingCopy`를 한 번만 호출하고
+  `<EmptyState>`도 한 곳에서만 렌더링하도록 정리.
+- **손대지 않은 것**: `isHolding`(3개 상태 OR)과 `pastResubmission`(2개 상태의 부정)은 서로
+  다른 상태 부분집합을 가리키고 각각 다른 곳(폼 분기 vs 파이프라인 배색)에도 쓰이고 있어
+  하나로 합치면 오히려 읽기 어려워질 위험이 있다고 판단해 그대로 뒀다 — "애매하면 그대로
+  둘 것" 기준 적용.
+
+검증: `pnpm --filter @aechak/web-seller typecheck`, `pnpm --filter @aechak/web-admin
+typecheck`(도메인 타입 비영향 확인), `lint`, `test`(21개) 전부 재통과. `chrome-devtools-axi`로
+`rejected` 상태를 다시 렌더링해 "사업자번호 보유" 필드가 사라지고 나머지 폼/서류 섹션은
+그대로인 것을 확인.
+
+---
+
+## web-seller 정산/매출(`/settlements`, b5-st-10) — 캡틴 지시로 단순 표 하나로 축소
+
+목업(`screens.html` b5-st-10)은 탭 2개(정산 내역/성과 분석) + MetricCard 4종 + 월 선택기 +
+정산 테이블 + 건별 상세 분해 카드 + 보류 내역 사이드리스트 + 정산 계좌 카드 + 파일 다운로드
+Modal로 8개 화면 중 가장 무거웠지만, 캡틴이 이번 배치에서 "단순 표 하나"로 범위를 크게
+줄였다. Revision 1에서 월 선택기(당시엔 장식용) + 행 클릭 시 건별 정산 상세(당시엔 표 아래
+인라인 `Card`)가 추가됐고, **Revision 2에서 캡틴이 그 두 가지를 다시 조정했다: (1) 상세를
+`Drawer`로 전환, (2) 월 선택기를 실제 필터링 + 기본값 "전체"로 전환.** 다운로드 관련 요소(상단/
+테이블 헤더의 "내보내기" 버튼, 액션 컬럼의 다운로드 아이콘, 다운로드 Modal)는 Revision 2에서도
+여전히 전부 범위 밖 — 탭 구조·MetricCard 4종·보류 내역 사이드리스트·정산 계좌 카드·성과 분석
+탭도 마찬가지로 범위 밖으로 유지됨.
+
+- **건별 정산 상세는 web-admin 5종 심사/관리 화면과 동일한 "행 클릭 → 상세 `Drawer`"
+  패턴으로 전환됐다(Revision 2).** Revision 1의 "표 아래 인라인 `Card`, 기본 선택 첫 번째
+  행" 방식은 폐기 — 지금은 `Drawer(open/onClose/title="건별 정산 상세"/width="md")` 안에
+  `SettlementDetailContent`(`features/settlements/components/`, 예전 이름
+  `SettlementDetailCard`에서 개명 — 더 이상 자체 `Card`/제목을 그리지 않고 `Drawer`가 그
+  chrome을 담당하므로 내용만 렌더링)를 넣는다. **닫힌 상태가 기본**(Revision 1과 달리 첫
+  행을 자동으로 열어두지 않음) — `selectedOrderId: string | null` state가 `null`이면
+  `Drawer`도 닫힘. `width`는 `md`(384px)로 충분함을 실제 렌더링(`chrome-devtools-axi`
+  스크린샷)으로 확인했다 — 내용이 label/value 한 줄짜리 행뿐이라 여유 있게 들어감, `lg`로
+  올릴 필요 없었음. `정산 대기`/`정산 보류` 건처럼 아직 구매확정 전이라 분해 데이터가 없는
+  행을 클릭하면 Drawer 안에 "구매확정 전이라 상세 내역이 아직 없어요" 안내만 보여준다
+  (`Settlement.platformFeeAmount == null`로 분기, 로직 자체는 Revision 1과 동일).
+- **월 선택기는 이제 실제로 목록을 필터링한다(Revision 2)** — 옵션 맨 앞에 `전체`(기본값)를
+  추가하고, `Settlement`에 필수 필드 `settlementMonth: string`('YYYY-MM')을 새로 추가해
+  `settlements.filter(s => s.settlementMonth === month)`로 거른다. **`confirmedAt`
+  (표시용 'MM.DD' 문자열)이 아니라 별도 `settlementMonth` 필드를 쓰는 이유** — `정산 대기`/
+  `정산 보류` 건은 구매확정 전이라 `confirmedAt`이 아예 없는데, 이런 행도 특정 월을
+  선택했을 때 필터링 대상이 되어야 하므로(주문이 발생한 월 기준으로 분류) `confirmedAt`과
+  독립적인 필수 필드가 필요했다 — optional 상세 분해 필드들과 달리 이 필드는 모든 mock
+  행에 반드시 채워야 `tsc`가 통과한다.
+- **필터링을 실제로 시연하려고 mock 데이터를 6월 4건 → 6월 4건 + 5월 2건 + 4월 1건(총
+  7건)으로 늘렸다** — 5월 1건은 `정산 완료`(전체 분해 필드 포함), 5월 1건은 `정산 보류`
+  (분해 없음), 4월 1건은 `정산 완료`. `__tests__/settlements.mock.test.ts`의
+  `AC-SETTLEMENTS-003`이 월 선택기가 제공하는 각 월(`2026-06`/`2026-05`/`2026-04`)에
+  최소 1건이 존재하는지 검사한다 — 새 월 옵션을 추가하면서 mock 데이터를 깜빡하면 이 테스트가
+  잡아낸다.
+- **`Settlement` 도메인 타입의 상세 분해 필드(`shippingFee`/`couponBurden`/
+  `platformFeeAmount`/`pgFeeAmount`/`refundDeduction`)는 전부 optional이고, 채워진 4개
+  항목(쿠폰부담+플랫폼수수료+PG수수료+환불차감)의 합이 항상 `feeAmount`와 같아야 하는
+  불변식이 있다** — 목업 실측값(상품금액 64,000 기준 플랫폼수수료 8%=5,120, PG수수료
+  2.8%=1,792)으로 검증 완료, `__tests__/settlements.mock.test.ts`의
+  `AC-SETTLEMENTS-002`가 이 불변식을 mock 데이터 전체에 대해 검사한다. 새 정산 mock 행을
+  추가할 때 이 합계가 깨지면 그 테스트가 바로 잡아낸다. 새로 추가한 5월/4월 mock 행은 이
+  불변식은 지키되, `상품금액 - feeAmount = finalAmount`라는 (목업 원본 첫 행에는 실제로는
+  안 맞던) 두 번째 관계식까지 맞춰서 만들었다 — 목업을 그대로 베낀 기존 첫 행(`20260613-0182`)의
+  `finalAmount`는 이 두 번째 관계식과 어긋나지만(목업 자체의 산술 오차로 보임) 손대지 않았고,
+  새로 만드는 행은 처음부터 일관되게 설계했다.
+- **목업 원문의 "구매확정일 OO.OO · 정산예정일 OO.OO" 안내 텍스트는 `·`를 `/`로 바꿔서
+  구현했다** — "web-seller 사용자 노출 문구(카피) 컨벤션" 절이 명시한 "가운뎃점을 구분자로
+  쓰지 말 것" 규칙이 목업 텍스트 자체보다 우선한다는 걸 이번에 재확인한 사례. 목업 마크업을
+  그대로 베끼면 이 규칙을 어기게 되는 경우가 종종 있으니, 목업에 `·`가 있어도 항상 `/`로
+  변환해서 옮길 것.
 
 ---
 
@@ -409,6 +856,16 @@ ReactNode` 렌더 프롭이 아니라 `ReactNode` 직접 전달 — lucide-react
 `useNavigate()`로 수행 (SideNav/AppShell과 동일 컨벤션). `MobileScreen`의
 `footer` 슬롯에 넣어 `BottomFixedAction`과 동일한 `env(safe-area-inset-
 bottom)` 패딩 컨벤션을 공유한다.
+
+`b5-st-1`(대시보드, `src/routes/index.tsx`) 구현 완료 — mock 데이터는
+`src/features/dashboard/dashboard.mock.ts` + `dashboard.queries.ts`
+(`useDashboardSummary`), Q4 컨벤션 그대로. **주의:** 라우트 매핑 리포트의
+컴포넌트 열은 `b5-st-1`에 `*chart*`(gap)를 명시하지만, `screens.html`의
+실제 `b5-st-1` 마크업(`spec-chips`, id 근방 4643–4718행)에는 차트가 없다 —
+`MetricCard` 그리드 + 정산/상품상태 quiet 카드뿐. `BarChart`는 존재하지만
+이 화면에는 쓰지 않는 게 맞음(모형 자체가 근거) — 다른 화면(`b5-st-10`
+정산/매출 등)에서 차트가 실제로 필요할 때 그 화면의 `screens.html` 마크업을
+직접 확인해서 판단할 것, 리포트 표만 보고 넣지 말 것.
 
 ---
 
