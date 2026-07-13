@@ -1,7 +1,7 @@
 export {
   WEB_LOGIN_PROVIDERS,
   socialLoginRedirectUrl,
-  useTokenBootstrap,
+  bootstrapSession,
   useNicknameAvailability,
   NICKNAME_MIN_LENGTH,
 } from './onboarding.queries'

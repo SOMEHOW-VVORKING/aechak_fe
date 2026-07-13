@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { axiosInstance, setAccessToken } from '@aechak/api'
 import { mockCheckNicknameAvailable } from './onboarding.mock'
 
@@ -24,13 +24,13 @@ interface WebTokenData {
 /**
  * 콜백 복귀 직후 access 수령(refresh-bootstrap) — 자격증명은 httpOnly 쿠키라 요청 body가 비어 있다.
  * access는 응답 body로만 오고 refresh는 다시 Set-Cookie로 회전된다.
+ * 라우트 beforeLoad에서 호출한다 — 컴포넌트 이펙트에서 1회성으로 쏘면
+ * StrictMode의 폐기되는 첫 마운트에 걸려 결과 통지가 유실될 수 있다.
  */
-export const useTokenBootstrap = () =>
-  useMutation({
-    mutationFn: () =>
-      axiosInstance.post<{ data: WebTokenData }>('/auth/web/refresh').then(r => r.data.data),
-    onSuccess: data => setAccessToken(data.accessToken),
-  })
+export async function bootstrapSession(): Promise<void> {
+  const response = await axiosInstance.post<{ data: WebTokenData }>('/auth/web/refresh')
+  setAccessToken(response.data.data.accessToken)
+}
 
 export const NICKNAME_MIN_LENGTH = 2
 
