@@ -79,7 +79,7 @@ function NicknameSetupRoute() {
     >
       <div className="flex flex-col gap-1.5">
         <h1 className="text-heading font-bold text-text-primary">닉네임을 정해 주세요</h1>
-        <p className="text-body-sm text-text-secondary">2~12자, 한글·영문·숫자를 사용할 수 있어요</p>
+        <p className="text-body-sm text-text-secondary">2~12자, 한글/영문/숫자를 사용할 수 있어요</p>
       </div>
       <Input
         label="닉네임 *"

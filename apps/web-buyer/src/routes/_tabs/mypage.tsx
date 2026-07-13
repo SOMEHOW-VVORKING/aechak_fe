@@ -1,13 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { MyPageHubScreen } from '@/features/mypage'
 
+// 마이페이지 허브(b10-st-1). _tabs 레이아웃의 자식이라 하단 탭바를 유지한다.
 export const Route = createFileRoute('/_tabs/mypage')({
-  component: MyPageScreen,
+  component: MyPageHubScreen,
 })
-
-function MyPageScreen() {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <h1 className="text-title font-semibold text-text-primary">마이</h1>
-    </div>
-  )
-}

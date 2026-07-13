@@ -91,6 +91,31 @@ import 경로: `@aechak/design-system/web`
 
 ---
 
+## BottomSheet
+
+```tsx
+<BottomSheet open={open} onClose={() => setOpen(false)} title="정렬 기준">
+  {/* 옵션 목록 등 */}
+</BottomSheet>
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `open` | `boolean` | **필수** |
+| `onClose` | `() => void` | **필수** |
+| `children` | `ReactNode` | **필수** |
+| `title` | `string` | — |
+| `showGrabber` | `boolean` | `true` |
+| `maxHeight` | `number` (px) | — (미지정 시 뷰포트 90%) |
+| `className` | `string` | — |
+
+하단에서 올라오는 시트. 화면 아래에 붙어(스크림 + 상단만 둥근 모서리) 옵션/필터 시트·비회원 게이트 등에
+쓴다. 스크림 클릭·ESC로 닫히고 포커스 트랩·바디 스크롤 잠금은 `Modal`/`Drawer`와 동일한 패턴. 옆에서
+나오는 패널이 필요하면 `Drawer`를 쓸 것 (`BottomSheet` ≠ `Drawer`). 네이티브 `BottomSheet`의 `visible`
+대신 `Modal`/`Drawer`와 맞춘 `open`을 쓴다.
+
+---
+
 ## Button
 
 ```tsx
@@ -568,6 +593,45 @@ interface Column<T> {
 
 ---
 
+## ProductCard
+
+```tsx
+<ProductCard
+  image="https://..."
+  storeName="냥이상점"
+  name="고양이 자동 급식기 5L"
+  price={64000}
+  originalPrice={89000}
+  wished={wished}
+  onWishToggle={() => setWished(v => !v)}
+  onClick={() => navigate({ to: '/product/$id', params: { id } })}
+/>
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `image` | `string` | **필수** |
+| `name` | `string` | **필수** |
+| `price` | `number` | **필수** |
+| `originalPrice` | `number` | — |
+| `storeName` | `string` | — |
+| `isSold` | `boolean` | — |
+| `onClick` | `() => void` | — |
+| `wished` | `boolean` | — |
+| `onWishToggle` | `() => void` | — |
+| `className` | `string` | — |
+
+상품 그리드 카드. 할인율은 `originalPrice`로 내부 자동 계산(세일 뱃지=코랄, 가격 행에 `%` + 원가
+취소선; 반올림이 0%면 표시 안 함), 가격은 `toLocaleString('ko-KR') + '원'`. `isSold`면 썸네일이
+흐려지고 품절 pill이 뜬다. `onWishToggle`을 주면 썸네일 우상단에 찜 하트가 나타난다 — 하트는 카드
+이동 클릭 영역(카드 전체를 덮는 stretched 버튼)과 **형제**로 분리돼 마우스·키보드(Enter/Space)
+모두에서 찜만 독립 토글되고 카드 이동을 유발하지 않으며(중첩 인터랙티브 없음), 탭 스톱도 둘로
+나뉜다. `onWishToggle` 없으면 하트 자체를 렌더링하지 않는다. 커서는 **비품절 + `onClick`** 카드가
+전체 `cursor-pointer`, **품절(`isSold`)**은 이동 불가라 `cursor-not-allowed`(이동 버튼도 렌더 안 함).
+네이티브 `ProductCard`의 `onPress` 대신 web 관용 `onClick`을 쓴다.
+
+---
+
 ## Radio
 
 ```tsx
@@ -607,6 +671,57 @@ interface Column<T> {
 | `name` | `string` | — |
 
 유형 선택·판정 옵션 등 큰 선택 카드가 필요할 때 사용. 쿠폰 전용은 `CouponCard` 사용. 여러 `RadioCard`를 라디오 그룹으로 묶을 때는 동일한 `name`을 전달.
+
+---
+
+## RatingInput
+
+```tsx
+<RatingInput value={rating} onChange={setRating} />
+<RatingInput value={4.8} readonly size={14} />
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `value` | `number` | **필수** |
+| `onChange` | `(value: number) => void` | — |
+| `max` | `number` | `5` |
+| `size` | `number` (px) | `28` |
+| `readonly` | `boolean` | — |
+| `className` | `string` | — |
+
+별점 입력·표시. `onChange`가 없거나 `readonly`면 표시 전용(별을 누를 수 없음)이며 이 모드에서는 `value`가
+소수여도(예: `4.8`) 별이 부분적으로 채워진다(평균 별점 표시용). 입력 모드(`onChange` 전달)는 별을 탭해
+정수 단위로 선택한다. 채워진 별은 앰버(`warning`) 색.
+
+---
+
+## ReviewCard
+
+```tsx
+<ReviewCard
+  author="집사**"
+  rating={5}
+  date="06.11"
+  content="먼지가 거의 안 날려요. 재구매 의사 있어요."
+  verifiedPurchase
+  images={['https://...']}
+/>
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `author` | `string` | **필수** |
+| `rating` | `1 \| 2 \| 3 \| 4 \| 5` | **필수** |
+| `date` | `string` | **필수** |
+| `content` | `string` | **필수** |
+| `images` | `string[]` | — |
+| `verifiedPurchase` | `boolean` | — |
+| `className` | `string` | — |
+
+리뷰 카드. 상단에 별점(`RatingInput` readonly 재사용)과 날짜, 그 아래 작성자 + 구매 인증 pill
+(`verifiedPurchase`일 때만), 본문, 사진(가로 스크롤 썸네일) 순으로 렌더링. 네이티브 `ReviewCard`를
+미러하되 목업(b4-st-3)의 구매 인증 pill을 옵션으로 추가.
 
 ---
 
@@ -802,6 +917,34 @@ interface NavGroup { label?: string; items: NavItem[] }
 | `onChange` | `(value: string) => void` | — |
 
 **주의:** `onChange`는 `string` 직접 전달. Input과 다름 (`ChangeEvent` 아님).
+
+---
+
+## Timeline
+
+```tsx
+<Timeline steps={[
+  { label: '결제완료', sublabel: '6/13', status: 'done' },
+  { label: '배송중', sublabel: '6/14 / CJ대한통운 1234-5678', status: 'active' },
+  { label: '배송완료', status: 'todo' },
+]} />
+```
+
+```ts
+interface TimelineStep {
+  label: string
+  sublabel?: string
+  status: 'done' | 'active' | 'todo'
+}
+```
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `steps` | `TimelineStep[]` | **필수** |
+| `className` | `string` | — |
+
+세로 진행 타임라인(주문 배송추적/클레임 진행 등). `done`은 초록 점·연결선, `active`는 브랜드색 점·라벨,
+`todo`는 옅은 회색. 네이티브 `Timeline`을 미러.
 
 ---
 

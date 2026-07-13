@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Alert, Button, MobileScreen } from '@aechak/design-system/web'
 import { useSocialLogin, type SocialProvider } from '@/features/onboarding'
+import { login } from '@/shared/auth'
 
 // TODO: placeholder brand marks (colored initial badges) — swap for
 // licensed Kakao/Google/Apple logos before shipping; sourcing/recreating
@@ -34,7 +35,10 @@ function SocialLoginRoute() {
   const handleSocialLogin = (provider: SocialProvider) => {
     setShowFailureAlert(false)
     socialLogin.mutate(provider, {
-      onSuccess: () => navigate({ to: '/onboarding/terms' }),
+      onSuccess: () => {
+        login()
+        navigate({ to: '/onboarding/terms' })
+      },
       onError: () => setShowFailureAlert(true),
     })
   }
@@ -47,6 +51,13 @@ function SocialLoginRoute() {
           className="flex flex-col gap-2.5 px-6 pt-6"
           style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
         >
+          {/* 실패 안내는 로그인 버튼 바로 위에 인라인으로 둔다 — 화면 중앙에 붕 뜨지 않고
+              방금 누른 액션 옆에서 피드백이 보이도록. */}
+          {showFailureAlert && (
+            <Alert variant="error" onDismiss={() => setShowFailureAlert(false)}>
+              로그인에 실패했어요. 다시 시도해 주세요.
+            </Alert>
+          )}
           {SOCIAL_OPTIONS.map(({ provider, label, initial, badgeClassName }) => (
             <Button
               key={provider}
@@ -74,16 +85,11 @@ function SocialLoginRoute() {
           <p className="mt-1 text-center text-caption text-text-tertiary">
             시작하면 <span className="font-medium text-text-primary">이용약관</span> 및{' '}
             <span className="font-medium text-text-primary">개인정보처리방침</span>에 동의하게
-            됩니다.
+            돼요.
           </p>
         </div>
       }
     >
-      {showFailureAlert && (
-        <Alert variant="error" onDismiss={() => setShowFailureAlert(false)}>
-          로그인에 실패했어요. 다시 시도해 주세요.
-        </Alert>
-      )}
       <p className="text-display font-bold text-brand">애착</p>
       <p className="text-body text-text-secondary">
         반려생활의 모든 것,

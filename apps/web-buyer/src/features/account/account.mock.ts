@@ -1,0 +1,63 @@
+import type { BuyerOrder, BuyerOrderStatus } from '@aechak/domain'
+
+// 계정 화면(b10-st-2 프로필 / b10-st-9 본인 인증 / b10-st-5 탈퇴) 공용 상수·파생 로직.
+// 실제 계정/주문 데이터는 shared/account·shared/order 스토어가 단일 소스이고, 여기서는 검증·판정만 둔다.
+
+export const NICKNAME_MAX = 12
+export const BIO_MAX = 150
+
+// 본인 인증 목업 — 테스트 고정 인증번호(실제 SMS 연동은 범위 밖). 이 코드만 인증 성공 처리한다.
+export const TEST_OTP_CODE = '000000'
+export const OTP_LENGTH = 6
+
+// 닉네임 검증(빈 값·길이). 성공 시 목업의 "사용할 수 있는 닉네임이에요" 메시지를 돌려준다.
+export function validateNickname(nickname: string): { ok: boolean; message: string } {
+  const trimmed = nickname.trim()
+  if (trimmed.length === 0) return { ok: false, message: '닉네임을 입력해 주세요.' }
+  if (trimmed.length > NICKNAME_MAX)
+    return { ok: false, message: `닉네임은 ${NICKNAME_MAX}자 이하로 입력해 주세요.` }
+  return { ok: true, message: '사용할 수 있는 닉네임이에요.' }
+}
+
+// 인증번호 형식 검증(6자리 숫자 + 고정 코드 일치).
+export function isValidOtp(code: string): boolean {
+  return code === TEST_OTP_CODE
+}
+
+// ── 회원 탈퇴 차단 판정(b10-st-5) ──
+// 진행 중인 거래(결제완료/상품준비중/배송중)가 하나라도 있으면 탈퇴할 수 없다.
+// 반품/교환은 web-buyer 범위 밖이라 진행 중 주문만으로 판정한다.
+export const WITHDRAW_BLOCKING_STATUSES: BuyerOrderStatus[] = ['paid', 'preparing', 'shipping']
+
+export function getBlockingOrders(orders: readonly BuyerOrder[]): BuyerOrder[] {
+  return orders.filter(o => WITHDRAW_BLOCKING_STATUSES.includes(o.status))
+}
+
+export function isWithdrawBlocked(orders: readonly BuyerOrder[]): boolean {
+  return getBlockingOrders(orders).length > 0
+}
+
+// 진행 중 주문을 "배송 준비 중"(결제완료/상품준비중)과 "배송 중"으로 나눠 건수를 센다(탈퇴 제한 안내용).
+export function blockingBreakdown(orders: readonly BuyerOrder[]): { label: string; count: number }[] {
+  const blocking = getBlockingOrders(orders)
+  const preparing = blocking.filter(o => o.status === 'paid' || o.status === 'preparing').length
+  const shipping = blocking.filter(o => o.status === 'shipping').length
+  return [
+    { label: '배송 준비 중 주문', count: preparing },
+    { label: '배송 중 주문', count: shipping },
+  ].filter(row => row.count > 0)
+}
+
+export const WITHDRAW_RETENTION_YEARS = 5
+
+// 탈퇴 시 삭제/비활성화되는 정보(안내 카드).
+export const WITHDRAW_DELETED_INFO: { label: string; note: string }[] = [
+  { label: '프로필 / 펫 정보', note: '비활성화' },
+  { label: '적립금 / 쿠폰', note: '즉시 소멸' },
+  { label: '찜 / 팔로우', note: '삭제' },
+]
+
+// 법령에 따라 보존되는 정보(안내 카드).
+export const WITHDRAW_RETAINED_INFO: { label: string; note: string }[] = [
+  { label: '채팅 / 댓글 / 리뷰 / 문의', note: '익명 처리' },
+]

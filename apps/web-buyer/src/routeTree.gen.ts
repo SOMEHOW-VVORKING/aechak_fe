@@ -9,24 +9,142 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WishlistRouteImport } from './routes/wishlist'
+import { Route as PreviewRouteImport } from './routes/preview'
+import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as CartRouteImport } from './routes/cart'
+import { Route as AddressesRouteImport } from './routes/addresses'
 import { Route as TabsRouteImport } from './routes/_tabs'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SearchIndexRouteImport } from './routes/search/index'
+import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
+import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
+import { Route as SettingsNotificationsRouteImport } from './routes/settings/notifications'
+import { Route as SettingsGuidelinesRouteImport } from './routes/settings/guidelines'
+import { Route as SettingsFaqRouteImport } from './routes/settings/faq'
+import { Route as SettingsDataDeletionRouteImport } from './routes/settings/data-deletion'
+import { Route as SettingsConsentsRouteImport } from './routes/settings/consents'
+import { Route as SearchResultsRouteImport } from './routes/search/results'
+import { Route as ReviewsWriteRouteImport } from './routes/reviews/write'
+import { Route as ReviewsMineRouteImport } from './routes/reviews/mine'
+import { Route as PaymentResultRouteImport } from './routes/payment/result'
 import { Route as OnboardingTermsRouteImport } from './routes/onboarding/terms'
 import { Route as OnboardingNicknameRouteImport } from './routes/onboarding/nickname'
 import { Route as OnboardingLoginRouteImport } from './routes/onboarding/login'
+import { Route as MypageWithdrawRouteImport } from './routes/mypage/withdraw'
+import { Route as MypageVerifyRouteImport } from './routes/mypage/verify'
+import { Route as MypageProfileRouteImport } from './routes/mypage/profile'
 import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
 import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
 import { Route as TabsMarketRouteImport } from './routes/_tabs/market'
 import { Route as TabsChatRouteImport } from './routes/_tabs/chat'
+import { Route as ProductsProductIdIndexRouteImport } from './routes/products/$productId/index'
+import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId/index'
+import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
+import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
+import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
+import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
+import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 
+const WishlistRoute = WishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PreviewRoute = PreviewRouteImport.update({
+  id: '/preview',
+  path: '/preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CheckoutRoute = CheckoutRouteImport.update({
+  id: '/checkout',
+  path: '/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CartRoute = CartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AddressesRoute = AddressesRouteImport.update({
+  id: '/addresses',
+  path: '/addresses',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TabsRoute = TabsRouteImport.update({
   id: '/_tabs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchIndexRoute = SearchIndexRouteImport.update({
+  id: '/search/',
+  path: '/search/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersIndexRoute = OrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TabsIndexRoute = TabsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => TabsRoute,
+} as any)
+const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
+  id: '/settings/privacy',
+  path: '/settings/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
+  id: '/settings/notifications',
+  path: '/settings/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsGuidelinesRoute = SettingsGuidelinesRouteImport.update({
+  id: '/settings/guidelines',
+  path: '/settings/guidelines',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsFaqRoute = SettingsFaqRouteImport.update({
+  id: '/settings/faq',
+  path: '/settings/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsDataDeletionRoute = SettingsDataDeletionRouteImport.update({
+  id: '/settings/data-deletion',
+  path: '/settings/data-deletion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsConsentsRoute = SettingsConsentsRouteImport.update({
+  id: '/settings/consents',
+  path: '/settings/consents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchResultsRoute = SearchResultsRouteImport.update({
+  id: '/search/results',
+  path: '/search/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewsWriteRoute = ReviewsWriteRouteImport.update({
+  id: '/reviews/write',
+  path: '/reviews/write',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewsMineRoute = ReviewsMineRouteImport.update({
+  id: '/reviews/mine',
+  path: '/reviews/mine',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentResultRoute = PaymentResultRouteImport.update({
+  id: '/payment/result',
+  path: '/payment/result',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingTermsRoute = OnboardingTermsRouteImport.update({
   id: '/onboarding/terms',
@@ -41,6 +159,21 @@ const OnboardingNicknameRoute = OnboardingNicknameRouteImport.update({
 const OnboardingLoginRoute = OnboardingLoginRouteImport.update({
   id: '/onboarding/login',
   path: '/onboarding/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MypageWithdrawRoute = MypageWithdrawRouteImport.update({
+  id: '/mypage/withdraw',
+  path: '/mypage/withdraw',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MypageVerifyRoute = MypageVerifyRouteImport.update({
+  id: '/mypage/verify',
+  path: '/mypage/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MypageProfileRoute = MypageProfileRouteImport.update({
+  id: '/mypage/profile',
+  path: '/mypage/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TabsSnsRoute = TabsSnsRouteImport.update({
@@ -63,87 +196,374 @@ const TabsChatRoute = TabsChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => TabsRoute,
 } as any)
+const ProductsProductIdIndexRoute = ProductsProductIdIndexRouteImport.update({
+  id: '/products/$productId/',
+  path: '/products/$productId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersOrderIdIndexRoute = OrdersOrderIdIndexRouteImport.update({
+  id: '/orders/$orderId/',
+  path: '/orders/$orderId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MypagePetsIndexRoute = MypagePetsIndexRouteImport.update({
+  id: '/mypage/pets/',
+  path: '/mypage/pets/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewsProductProductIdRoute = ReviewsProductProductIdRouteImport.update({
+  id: '/reviews/product/$productId',
+  path: '/reviews/product/$productId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsProductIdReportRoute = ProductsProductIdReportRouteImport.update({
+  id: '/products/$productId/report',
+  path: '/products/$productId/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersOrderIdCancelRoute = OrdersOrderIdCancelRouteImport.update({
+  id: '/orders/$orderId/cancel',
+  path: '/orders/$orderId/cancel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MypagePetsNewRoute = MypagePetsNewRouteImport.update({
+  id: '/mypage/pets/new',
+  path: '/mypage/pets/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
+  '/addresses': typeof AddressesRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
+  '/preview': typeof PreviewRoute
+  '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
+  '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/verify': typeof MypageVerifyRoute
+  '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/reviews/mine': typeof ReviewsMineRoute
+  '/reviews/write': typeof ReviewsWriteRoute
+  '/search/results': typeof SearchResultsRoute
+  '/settings/consents': typeof SettingsConsentsRoute
+  '/settings/data-deletion': typeof SettingsDataDeletionRoute
+  '/settings/faq': typeof SettingsFaqRoute
+  '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
+  '/orders/': typeof OrdersIndexRoute
+  '/search/': typeof SearchIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/mypage/pets/new': typeof MypagePetsNewRoute
+  '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/products/$productId/report': typeof ProductsProductIdReportRoute
+  '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/mypage/pets/': typeof MypagePetsIndexRoute
+  '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
+  '/products/$productId/': typeof ProductsProductIdIndexRoute
 }
 export interface FileRoutesByTo {
+  '/addresses': typeof AddressesRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
+  '/preview': typeof PreviewRoute
+  '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
+  '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/verify': typeof MypageVerifyRoute
+  '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/reviews/mine': typeof ReviewsMineRoute
+  '/reviews/write': typeof ReviewsWriteRoute
+  '/search/results': typeof SearchResultsRoute
+  '/settings/consents': typeof SettingsConsentsRoute
+  '/settings/data-deletion': typeof SettingsDataDeletionRoute
+  '/settings/faq': typeof SettingsFaqRoute
+  '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
   '/': typeof TabsIndexRoute
+  '/orders': typeof OrdersIndexRoute
+  '/search': typeof SearchIndexRoute
+  '/settings': typeof SettingsIndexRoute
+  '/mypage/pets/new': typeof MypagePetsNewRoute
+  '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/products/$productId/report': typeof ProductsProductIdReportRoute
+  '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/mypage/pets': typeof MypagePetsIndexRoute
+  '/orders/$orderId': typeof OrdersOrderIdIndexRoute
+  '/products/$productId': typeof ProductsProductIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_tabs': typeof TabsRouteWithChildren
+  '/addresses': typeof AddressesRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
+  '/preview': typeof PreviewRoute
+  '/wishlist': typeof WishlistRoute
   '/_tabs/chat': typeof TabsChatRoute
   '/_tabs/market': typeof TabsMarketRoute
   '/_tabs/mypage': typeof TabsMypageRoute
   '/_tabs/sns': typeof TabsSnsRoute
+  '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/verify': typeof MypageVerifyRoute
+  '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
   '/onboarding/nickname': typeof OnboardingNicknameRoute
   '/onboarding/terms': typeof OnboardingTermsRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/reviews/mine': typeof ReviewsMineRoute
+  '/reviews/write': typeof ReviewsWriteRoute
+  '/search/results': typeof SearchResultsRoute
+  '/settings/consents': typeof SettingsConsentsRoute
+  '/settings/data-deletion': typeof SettingsDataDeletionRoute
+  '/settings/faq': typeof SettingsFaqRoute
+  '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
   '/_tabs/': typeof TabsIndexRoute
+  '/orders/': typeof OrdersIndexRoute
+  '/search/': typeof SearchIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/mypage/pets/new': typeof MypagePetsNewRoute
+  '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/products/$productId/report': typeof ProductsProductIdReportRoute
+  '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/mypage/pets/': typeof MypagePetsIndexRoute
+  '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
+  '/products/$productId/': typeof ProductsProductIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/addresses'
+    | '/cart'
+    | '/checkout'
+    | '/preview'
+    | '/wishlist'
     | '/chat'
     | '/market'
     | '/mypage'
     | '/sns'
+    | '/mypage/profile'
+    | '/mypage/verify'
+    | '/mypage/withdraw'
     | '/onboarding/login'
     | '/onboarding/nickname'
     | '/onboarding/terms'
+    | '/payment/result'
+    | '/reviews/mine'
+    | '/reviews/write'
+    | '/search/results'
+    | '/settings/consents'
+    | '/settings/data-deletion'
+    | '/settings/faq'
+    | '/settings/guidelines'
+    | '/settings/notifications'
+    | '/settings/privacy'
+    | '/orders/'
+    | '/search/'
+    | '/settings/'
+    | '/mypage/pets/new'
+    | '/orders/$orderId/cancel'
+    | '/products/$productId/report'
+    | '/reviews/product/$productId'
+    | '/mypage/pets/'
+    | '/orders/$orderId/'
+    | '/products/$productId/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/addresses'
+    | '/cart'
+    | '/checkout'
+    | '/preview'
+    | '/wishlist'
     | '/chat'
     | '/market'
     | '/mypage'
     | '/sns'
+    | '/mypage/profile'
+    | '/mypage/verify'
+    | '/mypage/withdraw'
     | '/onboarding/login'
     | '/onboarding/nickname'
     | '/onboarding/terms'
+    | '/payment/result'
+    | '/reviews/mine'
+    | '/reviews/write'
+    | '/search/results'
+    | '/settings/consents'
+    | '/settings/data-deletion'
+    | '/settings/faq'
+    | '/settings/guidelines'
+    | '/settings/notifications'
+    | '/settings/privacy'
     | '/'
+    | '/orders'
+    | '/search'
+    | '/settings'
+    | '/mypage/pets/new'
+    | '/orders/$orderId/cancel'
+    | '/products/$productId/report'
+    | '/reviews/product/$productId'
+    | '/mypage/pets'
+    | '/orders/$orderId'
+    | '/products/$productId'
   id:
     | '__root__'
     | '/_tabs'
+    | '/addresses'
+    | '/cart'
+    | '/checkout'
+    | '/preview'
+    | '/wishlist'
     | '/_tabs/chat'
     | '/_tabs/market'
     | '/_tabs/mypage'
     | '/_tabs/sns'
+    | '/mypage/profile'
+    | '/mypage/verify'
+    | '/mypage/withdraw'
     | '/onboarding/login'
     | '/onboarding/nickname'
     | '/onboarding/terms'
+    | '/payment/result'
+    | '/reviews/mine'
+    | '/reviews/write'
+    | '/search/results'
+    | '/settings/consents'
+    | '/settings/data-deletion'
+    | '/settings/faq'
+    | '/settings/guidelines'
+    | '/settings/notifications'
+    | '/settings/privacy'
     | '/_tabs/'
+    | '/orders/'
+    | '/search/'
+    | '/settings/'
+    | '/mypage/pets/new'
+    | '/orders/$orderId/cancel'
+    | '/products/$productId/report'
+    | '/reviews/product/$productId'
+    | '/mypage/pets/'
+    | '/orders/$orderId/'
+    | '/products/$productId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   TabsRoute: typeof TabsRouteWithChildren
+  AddressesRoute: typeof AddressesRoute
+  CartRoute: typeof CartRoute
+  CheckoutRoute: typeof CheckoutRoute
+  PreviewRoute: typeof PreviewRoute
+  WishlistRoute: typeof WishlistRoute
+  MypageProfileRoute: typeof MypageProfileRoute
+  MypageVerifyRoute: typeof MypageVerifyRoute
+  MypageWithdrawRoute: typeof MypageWithdrawRoute
   OnboardingLoginRoute: typeof OnboardingLoginRoute
   OnboardingNicknameRoute: typeof OnboardingNicknameRoute
   OnboardingTermsRoute: typeof OnboardingTermsRoute
+  PaymentResultRoute: typeof PaymentResultRoute
+  ReviewsMineRoute: typeof ReviewsMineRoute
+  ReviewsWriteRoute: typeof ReviewsWriteRoute
+  SearchResultsRoute: typeof SearchResultsRoute
+  SettingsConsentsRoute: typeof SettingsConsentsRoute
+  SettingsDataDeletionRoute: typeof SettingsDataDeletionRoute
+  SettingsFaqRoute: typeof SettingsFaqRoute
+  SettingsGuidelinesRoute: typeof SettingsGuidelinesRoute
+  SettingsNotificationsRoute: typeof SettingsNotificationsRoute
+  SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  OrdersIndexRoute: typeof OrdersIndexRoute
+  SearchIndexRoute: typeof SearchIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+  MypagePetsNewRoute: typeof MypagePetsNewRoute
+  OrdersOrderIdCancelRoute: typeof OrdersOrderIdCancelRoute
+  ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
+  ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
+  MypagePetsIndexRoute: typeof MypagePetsIndexRoute
+  OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
+  ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wishlist': {
+      id: '/wishlist'
+      path: '/wishlist'
+      fullPath: '/wishlist'
+      preLoaderRoute: typeof WishlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/preview': {
+      id: '/preview'
+      path: '/preview'
+      fullPath: '/preview'
+      preLoaderRoute: typeof PreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checkout': {
+      id: '/checkout'
+      path: '/checkout'
+      fullPath: '/checkout'
+      preLoaderRoute: typeof CheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cart': {
+      id: '/cart'
+      path: '/cart'
+      fullPath: '/cart'
+      preLoaderRoute: typeof CartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/addresses': {
+      id: '/addresses'
+      path: '/addresses'
+      fullPath: '/addresses'
+      preLoaderRoute: typeof AddressesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_tabs': {
       id: '/_tabs'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof TabsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search/': {
+      id: '/search/'
+      path: '/search'
+      fullPath: '/search/'
+      preLoaderRoute: typeof SearchIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/': {
+      id: '/orders/'
+      path: '/orders'
+      fullPath: '/orders/'
+      preLoaderRoute: typeof OrdersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_tabs/': {
@@ -152,6 +572,76 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof TabsIndexRouteImport
       parentRoute: typeof TabsRoute
+    }
+    '/settings/privacy': {
+      id: '/settings/privacy'
+      path: '/settings/privacy'
+      fullPath: '/settings/privacy'
+      preLoaderRoute: typeof SettingsPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/notifications': {
+      id: '/settings/notifications'
+      path: '/settings/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/guidelines': {
+      id: '/settings/guidelines'
+      path: '/settings/guidelines'
+      fullPath: '/settings/guidelines'
+      preLoaderRoute: typeof SettingsGuidelinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/faq': {
+      id: '/settings/faq'
+      path: '/settings/faq'
+      fullPath: '/settings/faq'
+      preLoaderRoute: typeof SettingsFaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/data-deletion': {
+      id: '/settings/data-deletion'
+      path: '/settings/data-deletion'
+      fullPath: '/settings/data-deletion'
+      preLoaderRoute: typeof SettingsDataDeletionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/consents': {
+      id: '/settings/consents'
+      path: '/settings/consents'
+      fullPath: '/settings/consents'
+      preLoaderRoute: typeof SettingsConsentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search/results': {
+      id: '/search/results'
+      path: '/search/results'
+      fullPath: '/search/results'
+      preLoaderRoute: typeof SearchResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reviews/write': {
+      id: '/reviews/write'
+      path: '/reviews/write'
+      fullPath: '/reviews/write'
+      preLoaderRoute: typeof ReviewsWriteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reviews/mine': {
+      id: '/reviews/mine'
+      path: '/reviews/mine'
+      fullPath: '/reviews/mine'
+      preLoaderRoute: typeof ReviewsMineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payment/result': {
+      id: '/payment/result'
+      path: '/payment/result'
+      fullPath: '/payment/result'
+      preLoaderRoute: typeof PaymentResultRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/onboarding/terms': {
       id: '/onboarding/terms'
@@ -172,6 +662,27 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/login'
       fullPath: '/onboarding/login'
       preLoaderRoute: typeof OnboardingLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mypage/withdraw': {
+      id: '/mypage/withdraw'
+      path: '/mypage/withdraw'
+      fullPath: '/mypage/withdraw'
+      preLoaderRoute: typeof MypageWithdrawRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mypage/verify': {
+      id: '/mypage/verify'
+      path: '/mypage/verify'
+      fullPath: '/mypage/verify'
+      preLoaderRoute: typeof MypageVerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mypage/profile': {
+      id: '/mypage/profile'
+      path: '/mypage/profile'
+      fullPath: '/mypage/profile'
+      preLoaderRoute: typeof MypageProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_tabs/sns': {
@@ -202,6 +713,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TabsChatRouteImport
       parentRoute: typeof TabsRoute
     }
+    '/products/$productId/': {
+      id: '/products/$productId/'
+      path: '/products/$productId'
+      fullPath: '/products/$productId/'
+      preLoaderRoute: typeof ProductsProductIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/$orderId/': {
+      id: '/orders/$orderId/'
+      path: '/orders/$orderId'
+      fullPath: '/orders/$orderId/'
+      preLoaderRoute: typeof OrdersOrderIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mypage/pets/': {
+      id: '/mypage/pets/'
+      path: '/mypage/pets'
+      fullPath: '/mypage/pets/'
+      preLoaderRoute: typeof MypagePetsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reviews/product/$productId': {
+      id: '/reviews/product/$productId'
+      path: '/reviews/product/$productId'
+      fullPath: '/reviews/product/$productId'
+      preLoaderRoute: typeof ReviewsProductProductIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/$productId/report': {
+      id: '/products/$productId/report'
+      path: '/products/$productId/report'
+      fullPath: '/products/$productId/report'
+      preLoaderRoute: typeof ProductsProductIdReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/$orderId/cancel': {
+      id: '/orders/$orderId/cancel'
+      path: '/orders/$orderId/cancel'
+      fullPath: '/orders/$orderId/cancel'
+      preLoaderRoute: typeof OrdersOrderIdCancelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mypage/pets/new': {
+      id: '/mypage/pets/new'
+      path: '/mypage/pets/new'
+      fullPath: '/mypage/pets/new'
+      preLoaderRoute: typeof MypagePetsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,9 +785,37 @@ const TabsRouteWithChildren = TabsRoute._addFileChildren(TabsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   TabsRoute: TabsRouteWithChildren,
+  AddressesRoute: AddressesRoute,
+  CartRoute: CartRoute,
+  CheckoutRoute: CheckoutRoute,
+  PreviewRoute: PreviewRoute,
+  WishlistRoute: WishlistRoute,
+  MypageProfileRoute: MypageProfileRoute,
+  MypageVerifyRoute: MypageVerifyRoute,
+  MypageWithdrawRoute: MypageWithdrawRoute,
   OnboardingLoginRoute: OnboardingLoginRoute,
   OnboardingNicknameRoute: OnboardingNicknameRoute,
   OnboardingTermsRoute: OnboardingTermsRoute,
+  PaymentResultRoute: PaymentResultRoute,
+  ReviewsMineRoute: ReviewsMineRoute,
+  ReviewsWriteRoute: ReviewsWriteRoute,
+  SearchResultsRoute: SearchResultsRoute,
+  SettingsConsentsRoute: SettingsConsentsRoute,
+  SettingsDataDeletionRoute: SettingsDataDeletionRoute,
+  SettingsFaqRoute: SettingsFaqRoute,
+  SettingsGuidelinesRoute: SettingsGuidelinesRoute,
+  SettingsNotificationsRoute: SettingsNotificationsRoute,
+  SettingsPrivacyRoute: SettingsPrivacyRoute,
+  OrdersIndexRoute: OrdersIndexRoute,
+  SearchIndexRoute: SearchIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+  MypagePetsNewRoute: MypagePetsNewRoute,
+  OrdersOrderIdCancelRoute: OrdersOrderIdCancelRoute,
+  ProductsProductIdReportRoute: ProductsProductIdReportRoute,
+  ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
+  MypagePetsIndexRoute: MypagePetsIndexRoute,
+  OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
+  ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

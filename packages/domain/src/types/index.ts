@@ -35,7 +35,53 @@ export interface Product {
   inspectionStatus: ProductInspectionStatus
   rejectionReason?: string
   createdAt: string
+  // 아래는 구매자(web-buyer) 그리드/상세가 쓰는 표시용 필드 — 전부 optional이라
+  // 기존 web-seller/web-admin 소비부에는 영향 없음(임의 병렬 타입 대신 Product를 확장).
+  originalPrice?: number
+  storeName?: string
+  thumbnailUrl?: string
+  rating?: number
+  reviewCount?: number
+  isSoldOut?: boolean
 }
+
+// 구매자 장바구니 항목. productId + option 조합이 한 라인의 키다(같은 상품이라도 옵션이
+// 다르면 별개 라인). `selected`는 장바구니 화면의 부분 선택 UI 상태로, 순수 클라이언트
+// 값이지만 타입 필드일 뿐이라 도메인 순수성에는 영향이 없다.
+export interface CartItem {
+  productId: ProductId
+  option: string
+  quantity: number
+  selected: boolean
+}
+
+// 장바구니 라인 키(productId + option). 라인 스토어(shared/cart)와 파생 뷰(shared/catalog)가
+// 같은 키 규칙을 공유해야 하는데 두 곳은 서로 import할 수 없어(eslint shared→shared 금지),
+// 양쪽이 모두 의존하는 순수 함수라 도메인에 둔다.
+export function cartLineKey(productId: string, option: string): string {
+  return `${productId}::${option}`
+}
+
+// 구매자 배송지 주소록 항목(b10-st-4). 주문서(checkout)와 주소록 화면이 공유한다.
+export interface DeliveryAddress {
+  id: string
+  /** 배송지 이름(집/회사 등). */
+  label: string
+  /** 받는 사람. */
+  recipient: string
+  phone: string
+  zipcode: string
+  /** 기본 주소(도로명/지번). */
+  address1: string
+  /** 상세 주소. */
+  address2: string
+  /** 공동현관 출입 방법(선택). */
+  entranceMethod?: string
+  isDefault: boolean
+}
+
+// 구매자 결제 수단(b1-st-4 목업의 3종). 실제 PG 연동은 범위 밖 — 순수 목업 분기용.
+export type PaymentMethod = 'kakaopay' | 'tosspay' | 'card'
 
 export type OrderStatus = 'new_order' | 'preparing' | 'shipping' | 'delivered'
 
@@ -54,6 +100,126 @@ export interface Order {
   trackingNumber?: string
   purchaseConfirmDeadline?: string
   createdAt: string
+}
+
+// ── 구매자 주문 여정(web-buyer Phase 3, b4-st-1/b1-st-6/b4-st-4) ──
+// 셀러용 `Order`/`OrderStatus`는 "셀러 한 명의 단일 상품 주문 행"이고 상태머신도 셀러 관점
+// (new_order/preparing/shipping/delivered)이다. 구매자 주문은 여러 셀러 상품을 묶은 집계이고
+// 구매확정·취소완료까지 포함하는 다른 상태머신이라, 기존 `OrderStatus` 유니온을 확장하면
+// web-seller의 `Record<OrderStatus, ...>`(주문 상태 라벨/색 맵)가 키 누락으로 typecheck가 깨진다.
+// 따라서 구매자 전용 타입을 additive로 둔다 — 임의 병렬 타입이 아니라 셀러 주문과 별개인
+// 구매자 주문 집계 도메인이다(셀러가 web-buyer 주문 상태를 다뤄야 하면 이 타입을 재사용/확장할 것).
+export type BuyerOrderStatus =
+  | 'paid' // 결제완료
+  | 'preparing' // 상품준비중
+  | 'shipping' // 배송중
+  | 'delivered' // 배송완료
+  | 'confirmed' // 구매확정
+  | 'cancelled' // 취소완료
+
+// 주문에 포함된 상품(주문 시점 스냅샷 — 이후 카탈로그 가격/이름이 바뀌어도 주문 내역은 고정).
+export interface BuyerOrderItem {
+  productId: ProductId
+  name: string
+  option: string
+  quantity: number
+  unitPrice: number
+  thumbnailUrl?: string
+}
+
+// 셀러별 주문 그룹(배송비는 셀러 단위로 부과 — Phase 2 장바구니 order_group 구조와 일관).
+export interface BuyerOrderSellerGroup {
+  sellerId: SellerId
+  storeName: string
+  items: BuyerOrderItem[]
+  shippingFee: number
+}
+
+// 운송장 정보(목업 — 실제 택배사 연동은 범위 밖).
+export interface OrderShipment {
+  courier: string
+  trackingNumber: string
+}
+
+export interface BuyerOrder {
+  id: OrderId // 주문번호(YYYYMMDD-####)
+  orderedAt: string // 주문일시 표시 문자열
+  status: BuyerOrderStatus
+  groups: BuyerOrderSellerGroup[]
+  method: PaymentMethod
+  itemsTotal: number
+  shippingTotal: number
+  couponDiscount: number
+  pointsUsed: number
+  paidAmount: number
+  pointsEarned: number
+  shipment?: OrderShipment
+  // 상태 전이 시각(목업 표시용). 배송완료 시 autoConfirmAt(D+N)까지 자동 구매확정 안내를 띄운다.
+  shippedAt?: string
+  deliveredAt?: string
+  autoConfirmAt?: string
+  confirmedAt?: string
+  cancelledAt?: string
+  refundedAt?: string
+}
+
+// ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──
+// 구매자가 작성한 리뷰. 상품 리뷰 목록(b4-st-3)·내 리뷰(b4-st-6)가 공유한다.
+export interface Review {
+  id: string
+  productId: ProductId
+  orderId: OrderId
+  author: string
+  rating: 1 | 2 | 3 | 4 | 5
+  content: string
+  images: string[]
+  option?: string
+  verifiedPurchase: boolean
+  createdAt: string // 'YYYY.MM.DD'
+}
+
+// 리뷰 작성/수정 폼 입력값(제출 시 id/createdAt/author가 부여됨).
+export interface ReviewDraft {
+  productId: ProductId
+  orderId: OrderId
+  rating: number
+  content: string
+  images: string[]
+}
+
+// ── 구매자 계정/펫 프로필(web-buyer Phase 4, b10-st-1/2/3/5/8/9) ──
+// 마이 허브·프로필 수정·본인 인증·펫 프로필은 셀러/어드민과 무관한 구매자 전용 개념이라
+// additive 타입으로 둔다(기존 셀러용 타입 시그니처 무변경 — web-seller/web-admin 회귀 방지).
+
+// 반려동물 종. 목업 세그먼트대로 강아지/고양이 2종만 수집한다.
+export type PetSpecies = 'dog' | 'cat'
+
+// 반려동물 프로필(b10-st-3 관리 / b10-st-8 작성). 대표 펫은 항상 정확히 하나로 정규화한다.
+export interface PetProfile {
+  id: string
+  name: string
+  species: PetSpecies
+  breed?: string // 품종
+  birthYear?: number // 생년(예: 2023) — 나이는 표시 시 파생. 생년월 '모름'이면 birthYear/birthMonth 둘 다 undefined
+  birthMonth?: number // 생월(1~12) — 생년이 있을 때만 유효. 나이 파생을 생일 경과 여부까지 반영하는 데 쓴다
+  weightKg?: number // 체중(kg)
+  photoUrl?: string
+  isRepresentative: boolean // 대표 펫
+}
+
+// 본인 인증 상태(b10-st-9). 미인증 → 휴대폰 OTP 인증 → 인증 완료.
+export type VerificationStatus = 'unverified' | 'verified'
+
+// 구매자 계정 프로필(b10-st-1/2/9). 마이 허브·프로필 수정·본인 인증 화면이 공유한다.
+export interface BuyerAccount {
+  nickname: string
+  bio: string // 자기소개(프로필에 노출)
+  email: string // 마스킹 표시용
+  phone: string // 본인 인증 입력 프리필용 전체 번호
+  avatarUrl?: string
+  verification: VerificationStatus
+  verifiedPhoneMasked?: string // 인증 완료 시 마스킹된 번호
+  verifiedAt?: string // 'YYYY.MM.DD'
 }
 
 export type ClaimType = 'cancel' | 'return' | 'exchange' | 'dispute'
@@ -256,4 +422,23 @@ export interface AiReviewQueueItem {
   processReason?: string
   sellerNotice?: string
   internalMemo?: string
+}
+
+// 구매자 상품 신고(b8-st-1-product). 제출 시 운영 검수 큐로 넘어가는 신고 사유·상세를 담는다.
+// (신고자는 비공개 보호되므로 신고자 식별 정보는 이 타입에 두지 않는다.) SNS 게시물/유저
+// 신고는 이번 범위 밖이라 상품 신고 사유만 모델링한다.
+export type ProductReportReason =
+  | 'false-ad' // 허위·과장 광고
+  | 'wrong-info' // 상품 정보 오류
+  | 'illegal' // 불법 및 미취급 상품
+  | 'inappropriate' // 부적절한 내용
+  | 'etc' // 기타
+
+export interface ProductReport {
+  id: string
+  productId: ProductId
+  reason: ProductReportReason
+  /** 상세 내용(선택). */
+  detail: string
+  createdAt: string
 }

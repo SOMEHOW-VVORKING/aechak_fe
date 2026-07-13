@@ -1,0 +1,153 @@
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+
+export interface BottomSheetProps {
+  open: boolean
+  onClose: () => void
+  children: ReactNode
+  title?: string
+  showGrabber?: boolean
+  /** 시트 최대 높이(px). 미지정 시 뷰포트의 90%. */
+  maxHeight?: number
+  className?: string
+}
+
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+
+// 하단에서 올라오는 시트. web에는 side `Drawer`만 있어 옵션/필터 시트·비회원 게이트 등에
+// 쓸 하단 시트를 새로 추가한 것 — 스크림/ESC/포커스 트랩/스크롤 잠금 패턴은 `Modal`/`Drawer`와 동일.
+export function BottomSheet({
+  open,
+  onClose,
+  children,
+  title,
+  showGrabber = true,
+  maxHeight,
+  className = '',
+}: BottomSheetProps) {
+  // Stay mounted during close animation; unmount only after transition ends.
+  const [mounted, setMounted] = useState(open)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+
+  useEffect(() => {
+    if (open) setMounted(true)
+  }, [open])
+
+  // Restore focus on close
+  useEffect(() => {
+    if (!open) return
+    const prev = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+    return () => prev?.focus()
+  }, [open])
+
+  // Escape key
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  // Focus trap
+  useEffect(() => {
+    if (!open) return
+    const panel = panelRef.current
+    if (!panel) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (!items.length) {
+        e.preventDefault()
+        return
+      }
+      const first = items[0]!
+      const last = items[items.length - 1]!
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open])
+
+  // Body scroll lock
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [open])
+
+  if (!mounted) return null
+
+  const panelStyle: CSSProperties = {
+    maxHeight: maxHeight != null ? `${maxHeight}px` : '90vh',
+    paddingBottom: 'env(safe-area-inset-bottom)',
+  }
+
+  return (
+    <div
+      className={`fixed inset-0 z-bottomsheet flex items-end justify-center ${open ? '' : 'pointer-events-none'}`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={title ? titleId : undefined}
+    >
+      {/* Scrim — fade in/out */}
+      <div
+        className={`absolute inset-0 bg-scrim transition-opacity duration-moderate ${open ? 'opacity-100' : 'opacity-0'}`}
+        aria-hidden="true"
+        onClick={onClose}
+      />
+
+      {/* Sheet — slide up/down */}
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        style={panelStyle}
+        className={[
+          // 프레임 이탈 방지는 소비 앱 레벨에서 처리한다 — web-buyer는 __root의 폰 프레임 div에
+          // transform으로 containing block을 만들어 이 fixed 오버레이가 뷰포트가 아니라 프레임
+          // 기준으로 배치되게 한다(프레임<560이라 max-w는 실제로 안 걸림). 여기에 프레임 폭을
+          // 하드코딩하지 말 것.
+          'relative z-10 flex w-full max-w-[560px] flex-col rounded-t-bottomsheet bg-surface-raised shadow-bottomsheet outline-none',
+          'transition-transform duration-moderate ease-[cubic-bezier(0.2,0,0,1)]',
+          open ? 'translate-y-0' : 'translate-y-full',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onTransitionEnd={() => {
+          if (!open) setMounted(false)
+        }}
+      >
+        {showGrabber && (
+          <div className="flex flex-none justify-center pt-2 pb-1">
+            <span className="h-1 w-9 rounded-full bg-border" />
+          </div>
+        )}
+        {title && (
+          <h2
+            id={titleId}
+            className="flex-none px-5 pb-2 pt-2 text-subheading font-semibold text-text-primary"
+          >
+            {title}
+          </h2>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-2">{children}</div>
+      </div>
+    </div>
+  )
+}
