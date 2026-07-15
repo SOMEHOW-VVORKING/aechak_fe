@@ -35,6 +35,7 @@ import { Route as OnboardingLoginRouteImport } from './routes/onboarding/login'
 import { Route as MypageWithdrawRouteImport } from './routes/mypage/withdraw'
 import { Route as MypageVerifyRouteImport } from './routes/mypage/verify'
 import { Route as MypageProfileRouteImport } from './routes/mypage/profile'
+import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
 import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
 import { Route as TabsMarketRouteImport } from './routes/_tabs/market'
@@ -176,6 +177,11 @@ const MypageProfileRoute = MypageProfileRouteImport.update({
   path: '/mypage/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginCompleteRoute = LoginCompleteRouteImport.update({
+  id: '/login/complete',
+  path: '/login/complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TabsSnsRoute = TabsSnsRouteImport.update({
   id: '/sns',
   path: '/sns',
@@ -243,6 +249,7 @@ export interface FileRoutesByFullPath {
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
@@ -320,6 +328,7 @@ export interface FileRoutesById {
   '/_tabs/market': typeof TabsMarketRoute
   '/_tabs/mypage': typeof TabsMypageRoute
   '/_tabs/sns': typeof TabsSnsRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
@@ -361,6 +370,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/mypage'
     | '/sns'
+    | '/login/complete'
     | '/mypage/profile'
     | '/mypage/verify'
     | '/mypage/withdraw'
@@ -398,6 +408,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/mypage'
     | '/sns'
+    | '/login/complete'
     | '/mypage/profile'
     | '/mypage/verify'
     | '/mypage/withdraw'
@@ -437,6 +448,7 @@ export interface FileRouteTypes {
     | '/_tabs/market'
     | '/_tabs/mypage'
     | '/_tabs/sns'
+    | '/login/complete'
     | '/mypage/profile'
     | '/mypage/verify'
     | '/mypage/withdraw'
@@ -473,6 +485,7 @@ export interface RootRouteChildren {
   CheckoutRoute: typeof CheckoutRoute
   PreviewRoute: typeof PreviewRoute
   WishlistRoute: typeof WishlistRoute
+  LoginCompleteRoute: typeof LoginCompleteRoute
   MypageProfileRoute: typeof MypageProfileRoute
   MypageVerifyRoute: typeof MypageVerifyRoute
   MypageWithdrawRoute: typeof MypageWithdrawRoute
@@ -685,6 +698,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypageProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/complete': {
+      id: '/login/complete'
+      path: '/login/complete'
+      fullPath: '/login/complete'
+      preLoaderRoute: typeof LoginCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_tabs/sns': {
       id: '/_tabs/sns'
       path: '/sns'
@@ -790,6 +810,7 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRoute: CheckoutRoute,
   PreviewRoute: PreviewRoute,
   WishlistRoute: WishlistRoute,
+  LoginCompleteRoute: LoginCompleteRoute,
   MypageProfileRoute: MypageProfileRoute,
   MypageVerifyRoute: MypageVerifyRoute,
   MypageWithdrawRoute: MypageWithdrawRoute,
