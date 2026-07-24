@@ -2,6 +2,7 @@
 // 계정 상태(닉네임/자기소개/본인 인증)는 여기서 읽는다(마이 허브/프로필 수정/본인 인증).
 export {
   updateProfile,
+  setNickname,
   verifyPhone,
   maskPhone,
   resetAccount,
