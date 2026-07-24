@@ -1775,6 +1775,86 @@ DS `Toast`를 날것으로 직접 쓰던 화면 5곳(`ConsentSettingsScreen`(M-1
 - Phase 9 관례("공용 토스트는 AppToast를 쓴다")를 이번에 **모든** 화면으로 확장·강제한 것이다 —
   Phase 7의 화면별 수동 `whitespace-nowrap` span, Phase 9의 일부 잔존 날것 DS Toast를 여기서 정리했다.
 
+### 펫 폼 품종 Select — breeds API 실연동 (web-buyer 최초의 실데이터 GET API, 2026-07-23)
+
+펫 작성/수정 폼(`features/pet`)의 품종 목록이 하드코딩 mock에서 백엔드
+`GET /api/v1/breeds?species=DOG|CAT`(응답 `{ data: [{ breedId, label }] }`, JWT 필수 — 비로그인
+401 errorCode 20005, 온보딩 중 유저 허용)으로 전환됐다. SCRUM-127이 깔아둔 axios 인스턴스와
+Orval 파이프라인을 처음으로 실데이터에 쓴 배치라, 다음 실 API 연동은 아래 결정을 그대로 따를 것:
+
+- **`packages/api/openapi/schema.yaml`은 손으로 유지하는 스펙이고 경로는 `/api/v1` 접두 없이
+  쓴다** — axios 인스턴스 baseURL(client.ts)이 접두를 담당하므로 경로에 접두를 넣으면 두 번
+  붙는다(`servers`의 `/api/v1`은 문서 정확성용 — orval은 servers를 무시한다). 스펙 추가 후
+  `pnpm --filter @aechak/api openapi:generate` → 생성물을 통째로 커밋.
+- **생성된 react-query 훅(`useGetBreeds`)이 아니라 fetcher(`getBreeds`)만 소비한다** —
+  packages/api(^5.101)와 앱(^5.80)의 react-query 선언 범위가 달라 훅/옵션 타입이 패키지 경계를
+  넘으면 버전 표류 시 깨질 수 있다. feature 쪽 `pet.queries.ts`의 `useBreedOptions(species)`가
+  자체 useQuery로 감싸고(queryKey `['breeds', species]`, `staleTime: Infinity` — 품종은 세션 내
+  불변), 종 매핑(`'dog'→'DOG'`)과 옵션 변환(`toBreedOptions`, value=String(breedId))을 이 파일
+  안에 가둔다(서버 enum이 feature 밖으로 새지 않게).
+- **인증 실패는 전역 리다이렉트, 비인증 실패만 인라인 안내(재시도 버튼 없음).** 하드코딩 `BREEDS`
+  폴백은 삭제됐다(부활 금지). 401은 인터셉터가 refresh를 한 번 시도하고, refresh까지 실패하면
+  `packages/api`의 `setOnAuthExpired` 콜백이 발화한다 — `main.tsx`가 여기에 `logout()` +
+  `/onboarding/login` 이동을 배선(리다이렉트 루프 가드 포함)해, 세션이 진짜 없는 401은 화면이
+  인라인 에러로 떠안지 않고 전역에서 로그인으로 튕긴다. 그래서 품종 Select의 `error` 캡션은
+  네트워크·서버(500) 같은 **비인증** 오류에만 뜨고 버튼은 없다(화면 재진입 시 자연히 재조회).
+  refresh가 성공하는 401(토큰 만료)은 인터셉터가 조용히 복구하므로 에러 화면 자체가 안 뜬다.
+  최초엔 이 자리를 "에러 캡션 + 다시 시도 버튼"으로 뒀다가, 비로그인 401에서 재시도가 헛돈다는
+  캡틴 지적으로 전역 리다이렉트로 바꿨다 — 실패를 화면마다 인라인으로 떠안지 말 것.
+- **`packages/api` 인터셉터 하드닝(이번 감사에서 함께 수정).** breeds 연동으로 401 경로가 처음
+  실사용되며 잠복 버그 둘이 드러나 고쳤다. (1) **refresh 스탬피드**: 동시 401이 각자 refresh를
+  발사하면 httpOnly refresh 쿠키가 회전하면서 뒤늦은 refresh가 무효 쿠키로 실패해 멀쩡한 세션을
+  로그아웃(→ 이제는 전역 리다이렉트라 오작동이 더 커진다)시킬 수 있어, 진행 중 refresh를 공유
+  Promise 하나(`refreshAccessToken`)로 합쳤다. (2) **재시도 시 만료 토큰 재사용**: refresh 성공
+  후 재시도(`axiosInstance(config)`)가 같은 `config`를 재써 이전 토큰이 `Authorization`에 남고,
+  요청 인터셉터가 기존 헤더를 덮지 않아 계속 401 나던 버그를 고쳤다(재시도 직전 헤더를 새 토큰으로
+  직접 교체). 회귀는 `[AC-PET-BREEDS-010]`(만료 토큰 → 무중단 복구)이 잡는다. 4개 앱 공용 변경이나
+  계약 무변경이라 seller/admin은 typecheck로 무영향 확인.
+- **품종은 `breed`(라벨)+`breedId` 쌍으로 저장**(`PetProfile`/`PetInput`에 additive optional).
+  선택/리셋/프리필은 effect가 아니라 파생값(`selectedBreed`) — 생월 Select의 파생 패턴과 동일,
+  StrictMode 안전. 종 전환 시 새 종 목록에 없는 선택은 자동으로 미선택으로 떨어지고, breedId 없이
+  라벨만 저장된 기존 펫(시드 코코/보리 포함)은 편집 시 라벨 매칭으로 프리필돼 저장 시 breedId가
+  백필된다. 선택이 없으면 **종이 그대로일 때만** 기존 breed/breedId를 보존(API 장애 중 다른 필드
+  수정이 품종을 지우지 않게), 종이 바뀌면 둘 다 비운다('기타'는 dog 299/cat 386으로 종마다 id가
+  달라 stale id를 남기면 안 됨). 시드 펫에 breedId를 하드코딩하지 말 것(라벨 해석 경로의 상시
+  시연용).
+- **MSW(v2)를 web-buyer devDep으로 도입했다** — `src/testing/msw/server.ts`(핸들러+픽스처, 서버
+  Flyway 시드의 실제 id 부분집합)와 `test-setup.ts`의 수명주기(`onUnhandledRequest: 'error'` —
+  모든 테스트에서 실네트워크 전면 금지, 기존 테스트는 HTTP 무호출이라 안전). route 테스트가
+  vi.mock 대신 실제 HTTP 경로(URL·species 파라미터·envelope 해석·axios 401 refresh 인터셉터)까지
+  검증한다. **기본 refresh 핸들러는 반드시 401** — 200이면 인터셉터가 재시도에 성공해 401 에러
+  테스트가 조용히 통과해버린다. `src/testing/`은 boundaries element(`features/*`/`shared/*`/`app`)
+  밖의 unknown 파일이라 feature 테스트에서 import해도 lint를 통과한다(`routeTree.gen.ts` import와
+  같은 전례). msw postinstall은 후원 안내 출력뿐이라 `pnpm-workspace.yaml` `allowBuilds`에서
+  `false`로 고정했다.
+- **`vitest.config.ts`에 `exclude: [...configDefaults.exclude, 'e2e/**']` 필수** — vitest 기본
+  include(`**/*.spec.*`)가 Playwright spec을 집어삼켜 `@playwright/test` import에서 `pnpm test`
+  전체가 깨진다(e2e/에 .gitkeep만 있던 동안 잠복해 있던 문제 — web-seller/web-admin도 e2e spec을
+  처음 추가할 때 같은 수정이 필요하다).
+- **첫 Playwright E2E(`e2e/pet-breeds.spec.ts`)** — page.route 스텁으로 백엔드/로그인 없이 돈다
+  (펫 저장은 로컬 스토어). 두 spec: 강아지 전환→푸들 선택→저장→목록 메타(happy), 401→refresh
+  실패→`/onboarding/login`으로 튕김(error). 주의 2가지: (1) **fulfill 응답도 브라우저 CORS 검사를
+  받는다** — 페이지(5175)→API(8080)가 교차 출처 + `withCredentials`라
+  `Access-Control-Allow-Origin: http://localhost:5175`(와일드카드 불가) +
+  `Allow-Credentials: true`를 넣고 OPTIONS도 방어적으로 응답할 것, (2) StrictMode 이중 마운트 ×
+  retry:1로 **요청 횟수가 비결정적** — 지속 스텁(persistent)을 쓰고 요청 횟수를 단정하지 말 것.
+  실행: `pnpm --filter web-buyer exec playwright install chromium`(1회) →
+  `pnpm --filter web-buyer test:e2e`(dev 서버가 5175에 떠 있으면 재사용).
+- **실백엔드 수동 검증 절차**: `../be`에서 `docker compose up -d` +
+  `SPRING_PROFILES_ACTIVE=local ./gradlew :api:bootRun`(8080, local CORS는 5175/5173만 허용) →
+  web-buyer dev(5175) → 카카오 로그인 → `/mypage/pets/new` 네트워크 탭에서
+  `GET /api/v1/breeds?species=CAT` 200(Bearer) + 실제 고양이 87종/강아지 299종 노출 확인 →
+  시크릿 창(비로그인, refresh 쿠키 없음)에서 진입 시 401 → refresh 실패 → `/onboarding/login`으로
+  튕기는지 확인.
+- **알려진 auth 격차(후속 배치, breeds 범위 밖).** 이번 상태 감사에서 확인만 하고 남겨둔 것: (a) 설정
+  홈 로그아웃(`SettingsHomeScreen`)이 mock `loggedIn`만 내리고 실 access 토큰·서버 세션을 정리하지
+  않아, 진짜 로그인 상태에선 로그아웃이 표면적이다 — `setAccessToken(null)` + 서버 `/auth/web/logout`
+  호출로 보완 필요. (b) `loggedIn`은 기본값 `true`인데 부팅 시 세션 부트스트랩도, `/mypage` 등
+  회원 전용 라우트 가드도 없어 UI 인증 상태가 실 세션과 분리돼 있다(현재 실 API가 breeds 하나뿐이라
+  체감 안 될 뿐). (c) `features/{cart,wishlist}`의 파생 셀렉터(`useCartView`/`useWishlistProducts`)가
+  `useMemo` 없이 매 렌더 새 객체를 만든다 — 무한 루프는 아니고(스냅샷은 안정) `order.queries`/
+  `CheckoutScreen`이 이미 쓰는 `useMemo` 패턴과 일관되게 감쌀 것.
+
 ---
 
 ## 리포 구조
@@ -1911,13 +1991,13 @@ pnpm openapi:generate:check  # 생성 코드 ↔ OpenAPI 스펙 동기화 확인
 
 모든 게이트 통과 후 PR 제출.
 
-**알려진 이슈 (2026-07-04 기준):** `pnpm openapi:generate:check`가 `packages/api`에서
-실패할 수 있음 — `@tanstack/react-query`가 lockfile상 커밋된
-`packages/api/src/generated/api.ts`보다 새 버전으로 install되어 orval이 다른 타입
-시그니처(`DataTag`, `QueryClient` 파라미터 등)를 생성하기 때문. OpenAPI 스펙 변경과
-무관하게 재현되므로, 이 게이트가 실패해도 `typecheck`/`lint`/`test` 3종만 통과했다면
-Phase 1 관련 회귀는 아님 — `@tanstack/react-query` 버전 고정 또는 `packages/api`
-재생성으로 별도 해결 필요.
+**~~알려진 이슈 (2026-07-04 기준): `openapi:generate:check`가 스펙 변경 없이 실패~~ →
+2026-07-23 해소:** breeds 연동 배치에서 `packages/api/src/generated/api.ts`를 현재 설치본
+(orval 7.21 + react-query 5.101 타이핑, `DataTag` 포함)으로 재생성해 커밋하면서 버전 표류가
+사라졌다(같은 스펙으로 두 번 생성해 바이트 동일 — 재생성 결정성 확인됨). 참고로 이 게이트는
+`orval && git diff --exit-code src/generated`라 **생성물을 커밋하기 전에는 항상 실패한다** —
+스펙을 바꾼 배치에서는 재생성 결과를 커밋한 뒤에 돌려야 통과한다. 이후 react-query가 올라가며
+다시 표류하면 같은 방식(재생성 후 커밋)으로 해소할 것.
 
 ---
 

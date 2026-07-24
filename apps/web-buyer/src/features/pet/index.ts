@@ -5,7 +5,6 @@ export {
   SPECIES_OPTIONS,
   BIRTH_YEAR_OPTIONS,
   BIRTH_MONTH_OPTIONS,
-  breedOptions,
   petAge,
   formatPetMeta,
 } from './pet.mock'

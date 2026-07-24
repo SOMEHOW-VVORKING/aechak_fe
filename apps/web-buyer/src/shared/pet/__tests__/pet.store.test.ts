@@ -56,4 +56,15 @@ describe('pet.store', () => {
     expect(updated.weightKg).toBe(5)
     expect(updated.isRepresentative).toBe(true)
   })
+
+  it('[AC-PET-STORE-007] add/update가 breedId를 저장하고 undefined로 덮어쓸 수 있다', () => {
+    const created = addPet({ name: '뽀삐', species: 'dog', breed: '푸들', breedId: 279 })
+    expect(getPets().find(p => p.id === created.id)).toMatchObject({ breed: '푸들', breedId: 279 })
+
+    // 종 전환 저장 등에서 폼이 breedId를 명시적으로 비우면 stale id가 남지 않아야 한다.
+    updatePet(created.id, { name: '뽀삐', species: 'cat', breed: undefined, breedId: undefined })
+    const updated = getPets().find(p => p.id === created.id)!
+    expect(updated.breed).toBeUndefined()
+    expect(updated.breedId).toBeUndefined()
+  })
 })

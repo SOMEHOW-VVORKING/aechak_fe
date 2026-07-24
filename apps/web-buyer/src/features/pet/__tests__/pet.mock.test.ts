@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { PetProfile } from '@aechak/domain'
-import { breedOptions, formatPetMeta, petAge } from '../pet.mock'
+import { formatPetMeta, petAge } from '../pet.mock'
 
 function makePet(over: Partial<PetProfile>): PetProfile {
   return {
@@ -58,11 +58,6 @@ describe('pet.mock — 파생 표기', () => {
     ).toBe('강아지')
   })
 
-  it('[AC-PET-004] 종별 품종 옵션이 달라진다', () => {
-    const dog = breedOptions('dog').map(o => o.value)
-    const cat = breedOptions('cat').map(o => o.value)
-    expect(dog).toContain('푸들')
-    expect(cat).toContain('코리안 숏헤어')
-    expect(dog).not.toContain('코리안 숏헤어')
-  })
+  // [AC-PET-004]는 하드코딩 품종 옵션 테스트였다 — breeds API 연동으로 삭제,
+  // [AC-PET-BREEDS-001](pet.queries.test.ts)이 대체한다.
 })

@@ -5,5 +5,6 @@ packages:
 allowBuilds:
   '@scarf/scarf': false
   esbuild: true
+  msw: false
 patchedDependencies:
   metro-cache@0.84.4: patches/metro-cache@0.84.4.patch

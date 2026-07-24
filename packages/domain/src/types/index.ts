@@ -199,7 +199,8 @@ export interface PetProfile {
   id: string
   name: string
   species: PetSpecies
-  breed?: string // 품종
+  breed?: string // 품종 라벨(표시용)
+  breedId?: number // 품종 id(서버 breeds API의 breedId) — breed 라벨과 쌍으로 저장. API 연동 전 데이터는 라벨만 있을 수 있다
   birthYear?: number // 생년(예: 2023) — 나이는 표시 시 파생. 생년월 '모름'이면 birthYear/birthMonth 둘 다 undefined
   birthMonth?: number // 생월(1~12) — 생년이 있을 때만 유효. 나이 파생을 생일 경과 여부까지 반영하는 데 쓴다
   weightKg?: number // 체중(kg)
