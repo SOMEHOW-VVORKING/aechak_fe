@@ -11,6 +11,7 @@ export interface PetInput {
   name: string
   species: PetProfile['species']
   breed?: string
+  breedId?: number // 서버 breeds API의 breedId — breed 라벨과 쌍으로 저장한다
   birthYear?: number
   birthMonth?: number
   weightKg?: number

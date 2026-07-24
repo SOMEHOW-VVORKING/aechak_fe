@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CheckCircle2 } from 'lucide-react'
 import { BottomFixedAction, Input, MobileScreen } from '@aechak/design-system/web'
 import { NICKNAME_MIN_LENGTH, OnboardingHeader, useNicknameAvailability } from '@/features/onboarding'
+import { setNickname as persistNickname } from '@/shared/account'
 
 const NICKNAME_MAX_LENGTH = 12
 const DEBOUNCE_MS = 400
@@ -42,22 +43,26 @@ function NicknameSetupRoute() {
 
   const handleStart = () => {
     if (!canSubmit) return
+    // 입력한 닉네임을 계정에 저장한다(마이페이지/리뷰가 이 닉네임을 본다). 그 뒤 완료 화면을 띄운다.
+    persistNickname(nickname)
     setCompleted(true)
   }
 
-  // The buyer home screen hasn't been built yet (out of scope for this
-  // onboarding-only batch), so completion is shown inline rather than
-  // routing to a screen that doesn't exist.
+  // 완료 화면 — 사용자가 매듭을 짓고 스스로 홈으로 들어가게 한다(자동 이동/타이머 없음).
+  // 헤더(뒤로가기) 없음: 완료 후 온보딩으로 되돌아갈 지점이 아니다. replace로 히스토리에서도 뺀다.
   if (completed) {
     return (
-      <MobileScreen contentClassName="flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <CheckCircle2 className="size-12 text-success-fg" />
-        <h1 className="text-heading font-bold text-text-primary">온보딩 완료!</h1>
-        <p className="text-body-sm text-text-secondary">
-          {nickname}님, 애착에 오신 것을 환영해요.
-          <br />
-          메인 화면은 다음 배치에서 만나요.
-        </p>
+      <MobileScreen
+        footer={
+          <BottomFixedAction
+            primary={{ label: '홈으로 가기', onClick: () => navigate({ to: '/', replace: true }) }}
+          />
+        }
+        contentClassName="flex flex-col items-center justify-center gap-3 px-6 text-center"
+      >
+        <CheckCircle2 className="size-16 text-success-fg" />
+        <h1 className="text-heading font-bold text-text-primary">가입 완료!</h1>
+        <p className="text-body-sm text-text-secondary">{nickname}님, 애착에 오신 걸 환영해요.</p>
       </MobileScreen>
     )
   }

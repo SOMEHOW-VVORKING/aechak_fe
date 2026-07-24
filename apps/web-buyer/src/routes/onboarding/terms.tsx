@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Alert, BottomFixedAction, Checkbox, MobileScreen } from '@aechak/design-system/web'
+import { BottomFixedAction, Checkbox, MobileScreen } from '@aechak/design-system/web'
 import { OnboardingHeader } from '@/features/onboarding'
 
 interface TermItem {
@@ -27,36 +27,30 @@ export const Route = createFileRoute('/onboarding/terms')({
 function TermsAgreementRoute() {
   const navigate = useNavigate()
   const [agreed, setAgreed] = useState<Record<string, boolean>>({})
-  const [showError, setShowError] = useState(false)
 
   const allAgreed = TERMS.every(t => agreed[t.key])
+  // 필수 약관을 모두 체크해야만 다음으로 갈 수 있다(버튼 활성 조건). 선택 약관은 무관.
   const requiredAgreed = REQUIRED_TERMS.every(t => agreed[t.key])
 
   const toggleTerm = (key: string) => {
     setAgreed(prev => ({ ...prev, [key]: !prev[key] }))
-    setShowError(false)
   }
 
   const toggleAll = () => {
     const next = !allAgreed
     setAgreed(Object.fromEntries(TERMS.map(t => [t.key, next])))
-    setShowError(false)
   }
 
   const handleNext = () => {
-    if (!requiredAgreed) {
-      setShowError(true)
-      return
-    }
+    if (!requiredAgreed) return
     navigate({ to: '/onboarding/nickname' })
   }
 
   const renderTermRow = (item: TermItem) => {
     const isChecked = agreed[item.key] ?? false
-    const hasError = item.required && showError && !isChecked
     return (
       <div key={item.key} className="flex items-center gap-2 py-2">
-        <Checkbox checked={isChecked} onChange={() => toggleTerm(item.key)} error={hasError} />
+        <Checkbox checked={isChecked} onChange={() => toggleTerm(item.key)} />
         <button
           type="button"
           onClick={() => toggleTerm(item.key)}
@@ -70,9 +64,7 @@ function TermsAgreementRoute() {
           >
             {item.required ? '필수' : '선택'}
           </span>
-          <span className={['text-body-sm', hasError ? 'text-error-fg' : 'text-text-primary'].join(' ')}>
-            {item.label}
-          </span>
+          <span className="text-body-sm text-text-primary">{item.label}</span>
         </button>
       </div>
     )
@@ -87,14 +79,9 @@ function TermsAgreementRoute() {
         />
       }
       footer={
-        <>
-          {showError && !requiredAgreed && (
-            <div className="bg-surface-base px-4 pb-2">
-              <Alert variant="error">필수 약관에 동의해야 가입할 수 있어요</Alert>
-            </div>
-          )}
-          <BottomFixedAction primary={{ label: '다음', onClick: handleNext }} />
-        </>
+        <BottomFixedAction
+          primary={{ label: '다음', onClick: handleNext, disabled: !requiredAgreed }}
+        />
       }
       contentClassName="flex flex-col gap-5 px-4 py-4"
     >

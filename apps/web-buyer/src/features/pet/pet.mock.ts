@@ -20,15 +20,7 @@ export const SPECIES_OPTIONS: SegmentedControlOption[] = [
   { value: 'cat', label: '고양이' },
 ]
 
-// 종별 대표 품종 목록(목업의 "코리안 숏헤어" 등). 마지막은 항상 '기타'(품종 모름/직접 입력 대용).
-const BREEDS: Record<PetSpecies, string[]> = {
-  dog: ['푸들', '말티즈', '포메라니안', '시바견', '골든 리트리버', '믹스견', '기타'],
-  cat: ['코리안 숏헤어', '러시안 블루', '페르시안', '스코티시 폴드', '먼치킨', '믹스묘', '기타'],
-}
-
-export function breedOptions(species: PetSpecies): SelectOption[] {
-  return BREEDS[species].map(b => ({ value: b, label: b }))
-}
+// 품종 옵션은 하드코딩하지 않는다 — 서버 breeds API(pet.queries.ts의 useBreedOptions)가 단일 원본.
 
 // 생년 선택(현재 연도부터 20년 전까지, 최신순).
 export const BIRTH_YEAR_OPTIONS: SelectOption[] = Array.from({ length: 21 }, (_, i) => {

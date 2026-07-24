@@ -56,6 +56,12 @@ export function updateProfile(patch: ProfilePatch): void {
   emit()
 }
 
+/** 닉네임만 저장한다(온보딩 완료 등 다른 프로필 필드를 건드리지 않는 경로용). */
+export function setNickname(nickname: string): void {
+  account = { ...account, nickname }
+  emit()
+}
+
 /**
  * 휴대폰 본인 인증을 완료 처리한다. 인증 상태를 verified로 바꾸고 마스킹 번호·인증일을 찍는다.
  * 같은 번호로 여러 번 호출해도 멱등(StrictMode 이중 발화 안전).
