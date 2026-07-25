@@ -38,7 +38,7 @@ const api = vi.hoisted(() => {
           addressId: 1,
           label: '코코집사',
           receiverName: '코코집사',
-          contactNumber: '010-1234-5678',
+          contactNumber: '01012345678', // 서버 저장 형식(숫자만)
           zipCode: '04030',
           baseAddress: '서울 마포구 양화로 00, 101동 1004호',
           detailAddress: '',
@@ -49,7 +49,7 @@ const api = vi.hoisted(() => {
           addressId: 2,
           label: '회사',
           receiverName: '코코집사',
-          contactNumber: '010-1234-5678',
+          contactNumber: '01012345678', // 서버 저장 형식(숫자만)
           zipCode: '06200',
           baseAddress: '서울 강남구 테헤란로 000, 20층',
           detailAddress: '',
@@ -167,6 +167,8 @@ describe('/addresses', () => {
     expect(await screen.findByText('코코집사')).toBeInTheDocument()
     expect(screen.getByText('회사')).toBeInTheDocument()
     expect(screen.getByText('기본')).toBeInTheDocument()
+    // 서버는 숫자만 주고 화면이 하이픈을 조립한다
+    expect(screen.getAllByText(/코코집사 \/ 010-1234-5678/)).not.toHaveLength(0)
   })
 
   it('[AC-ADDR-ROUTE-002] 우편번호 검색(Daum) → 주소 선택 시 우편번호/기본 주소가 채워지고 새 배송지가 목록에 나타난다', async () => {

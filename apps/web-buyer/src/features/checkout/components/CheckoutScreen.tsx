@@ -15,7 +15,7 @@ import {
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
-import { useDefaultDeliveryAddress } from '@/shared/delivery-address'
+import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
 import { buildCartView, type CartLineView } from '@/shared/catalog'
 import {
   PAYMENT_METHODS,
@@ -137,7 +137,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
               </button>
             </div>
             <p className="text-body-sm text-text-primary">
-              {defaultAddress.recipient} / {defaultAddress.phone}
+              {defaultAddress.recipient} / {formatPhone(defaultAddress.phone)}
             </p>
             <p className="mt-0.5 text-body-sm text-text-secondary">
               {defaultAddress.address1}

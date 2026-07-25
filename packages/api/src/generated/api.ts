@@ -67,7 +67,7 @@ export interface DeliveryAddressListResponse {
 
 export interface AddDeliveryAddressRequest {
   receiverName: string
-  /** 휴대폰 번호 ^01[016789]-?\d{3,4}-?\d{4}$ */
+  /** 휴대폰 번호. 구분자(공백·하이픈·점·괄호)는 서버가 제거하고 숫자만 저장한다(^(010\d{8}|01[16789]\d{7,8})$) */
   contactNumber: string
   /** 5자리 숫자 */
   zipCode: string

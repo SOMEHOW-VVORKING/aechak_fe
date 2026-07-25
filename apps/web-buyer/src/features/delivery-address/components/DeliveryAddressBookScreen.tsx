@@ -19,6 +19,7 @@ import { AppToast } from '@/shared/components/AppToast'
 import {
   MAX_DELIVERY_ADDRESSES,
   deliveryAddressErrorMessage,
+  formatPhone,
   useAddDeliveryAddress,
   useDeliveryAddresses,
   useRemoveDeliveryAddress,
@@ -247,7 +248,7 @@ function DeliveryAddressCard({
         </span>
       </div>
       <p className="text-body-sm text-text-secondary">
-        {address.recipient} / {address.phone}
+        {address.recipient} / {formatPhone(address.phone)}
       </p>
       <p className="mt-0.5 whitespace-pre-line text-body-sm leading-relaxed text-text-secondary">
         {address.address1}
@@ -285,7 +286,8 @@ function DeliveryAddressForm({
   const [form, setForm] = useState<DeliveryAddressInput>(() => ({
     label: target?.label ?? '',
     recipient: target?.recipient ?? '',
-    phone: target?.phone ?? '',
+    // 서버는 숫자만 저장하므로 편집 폼에는 하이픈을 붙여 보여준다(저장 시 다시 정규화된다).
+    phone: formatPhone(target?.phone ?? ''),
     zipcode: target?.zipcode ?? '',
     address1: target?.address1 ?? '',
     address2: target?.address2 ?? '',
