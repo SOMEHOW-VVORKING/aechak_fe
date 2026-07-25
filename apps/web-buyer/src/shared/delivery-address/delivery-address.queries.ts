@@ -20,6 +20,9 @@ import {
 
 export const MAX_DELIVERY_ADDRESSES = 10
 
+/** 서버 에러코드 — 배송지 최대 개수 초과(사용자 대역 30120). */
+const DELIVERY_ADDRESS_LIMIT_EXCEEDED = 30120
+
 const DELIVERY_ADDRESSES_QUERY_KEY = ['delivery-addresses'] as const
 
 // 목업 스토어 시절 DeliveryAddressInput 모양 유지 — 화면 코드 안 고치려고.
@@ -72,27 +75,32 @@ export function useDeliveryAddresses() {
   return {
     addresses,
     isLoading: query.isLoading,
-    isError: query.isError,
+    // 캐시에 목록이 남아 있으면 배경 refetch 실패로 화면을 에러로 갈아끼우지 않는다.
+    isError: query.isError && addresses.length === 0,
     refetch: query.refetch,
   }
 }
 
 /** 기본이 없으면 첫 항목, 그것도 없으면 null. */
 export function useDefaultDeliveryAddress() {
-  const { addresses, isLoading, isError } = useDeliveryAddresses()
+  const { addresses, isLoading, isError, refetch } = useDeliveryAddresses()
   const address = addresses.find(a => a.isDefault) ?? addresses[0] ?? null
-  return { address, isLoading, isError }
+  return { address, isLoading, isError, refetch }
 }
 
 // 에러 문구는 HTTP status로 고름(계약이 status로 구분). 마땅찮으면 서버 message.
 // axios 타입 안 끌어오려고 duck-typing.
 export function deliveryAddressErrorMessage(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status
-  const serverMessage = (error as { response?: { data?: { message?: string } } })?.response?.data
-    ?.message
+  const data = (error as { response?: { data?: { message?: string; errorCode?: number } } })?.response
+    ?.data
+  const serverMessage = data?.message
   switch (status) {
+    // 422는 개수 초과(30120) 전용이 아니다 — 코드까지 봐야 다른 검증 실패를 오안내하지 않는다.
     case 422:
-      return '배송지는 최대 10개까지 등록할 수 있어요'
+      return data?.errorCode === DELIVERY_ADDRESS_LIMIT_EXCEEDED
+        ? '배송지는 최대 10개까지 등록할 수 있어요'
+        : (serverMessage ?? '배송지 정보를 다시 확인해주세요')
     case 403:
       return '본인 배송지만 접근할 수 있어요'
     case 400:
@@ -118,9 +126,9 @@ interface RemoveMutateOptions {
 
 function useInvalidateAddresses() {
   const queryClient = useQueryClient()
-  return () => {
-    void queryClient.invalidateQueries({ queryKey: DELIVERY_ADDRESSES_QUERY_KEY })
-  }
+  // 반환해서 react-query가 refetch까지 기다리게 한다 — isPending이 갱신 전 구간을 덮어
+  // 목록이 아직 옛 상태인 동안 같은 버튼을 다시 누르는 걸 막는다.
+  return () => queryClient.invalidateQueries({ queryKey: DELIVERY_ADDRESSES_QUERY_KEY })
 }
 
 export function useAddDeliveryAddress() {

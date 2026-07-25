@@ -102,8 +102,11 @@ vi.mock('@aechak/api', async importOriginal => {
       return Promise.resolve({ data: { addressId: id, isDefault: data.isDefault ?? false } })
     },
     deleteDeliveryAddress: (id: number) => {
+      // 서버는 기본 배송지를 지웠을 때만 승격된 id를 준다 — 그 분기를 테스트가 실제로 타게 한다.
+      const wasDefault = api.getRows().find(r => r.addressId === id)?.isDefault ?? false
       api.remove(id)
-      return Promise.resolve({ data: { promotedDefaultAddressId: null } })
+      const promoted = wasDefault ? (api.getRows()[0]?.addressId ?? null) : null
+      return Promise.resolve({ data: { promotedDefaultAddressId: promoted } })
     },
     setDefaultDeliveryAddress: (id: number) => {
       api.setDefault(id)
@@ -232,6 +235,34 @@ describe('/addresses', () => {
     await user.click(within(dialog).getByRole('button', { name: '삭제' }))
 
     await waitFor(() => expect(screen.queryByText('회사')).not.toBeInTheDocument())
+  })
+
+  it('[AC-ADDR-ROUTE-006] 기본 배송지를 삭제하면 승격된 배송지를 토스트로 알린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    // 첫 카드(코코집사)가 기본 — 지우면 서버가 회사를 승격하고 그 id를 응답으로 준다
+    await user.click(screen.getAllByRole('button', { name: '삭제' })[0]!)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '삭제' }))
+
+    expect(await screen.findByText(/'회사' 배송지가 기본으로 설정됐어요/)).toBeInTheDocument()
+  })
+
+  it('[AC-ADDR-ROUTE-007] 일반 배송지 삭제는 승격 토스트를 띄우지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('회사')
+
+    // 마지막 카드(회사)는 기본이 아니라 승격이 일어나지 않는다 — 오안내 방지
+    const deletes = screen.getAllByRole('button', { name: '삭제' })
+    await user.click(deletes[deletes.length - 1]!)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '삭제' }))
+
+    await waitFor(() => expect(screen.queryByText('회사')).not.toBeInTheDocument())
+    expect(screen.queryByText(/기본으로 설정됐어요/)).toBeNull()
   })
 
   it('[AC-ADDR-ROUTE-005] 배송지가 최대치(10개)면 "배송지 추가" 버튼이 비활성화된다', async () => {

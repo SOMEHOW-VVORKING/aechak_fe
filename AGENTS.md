@@ -1854,17 +1854,17 @@ Orval 파이프라인을 처음으로 실데이터에 쓴 배치라, 다음 실 
   체감 안 될 뿐). (c) `features/{cart,wishlist}`의 파생 셀렉터(`useCartView`/`useWishlistProducts`)가
   `useMemo` 없이 매 렌더 새 객체를 만든다 — 무한 루프는 아니고(스냅샷은 안정) `order.queries`/
   `CheckoutScreen`이 이미 쓰는 `useMemo` 패턴과 일관되게 감쌀 것.
-||||||| Stash base
 
 ### web-buyer 배송지 네이밍 — `deliveryAddress` 접두로 전면 통일 (2026-07-24)
 
 BE가 배송지 클래스를 전부 `DeliveryAddress` 접두로 확정하면서(오퍼레이션별 DTO 분리 포함) FE도
 같은 원칙으로 통일했다 — **화면 컴포넌트·훅·타입·파일·폴더는 `deliveryAddress`/`DeliveryAddress`
-접두, 와이어(URL `/addresses`, JSON 필드 `addressId`/`baseAddress`/`detailedAddress` 등)는 그대로.**
+접두, 와이어 JSON 필드(`addressId`/`baseAddress`/`detailAddress` 등)는 BE 계약 그대로.**
 
 - 폴더/파일: `src/shared/address/` → `src/shared/delivery-address/`(`delivery-address.queries.ts`),
   `src/features/address/` → `src/features/delivery-address/`(`DeliveryAddressBookScreen.tsx`,
-  `delivery-address.mock.ts`). 라우트 URL `/addresses`(`routes/addresses.tsx`)는 와이어 관례라 유지.
+  `delivery-address.mock.ts`). FE 라우트 URL `/addresses`(`routes/addresses.tsx`)는 유지하되,
+  API 경로는 BE 리네임을 따라 `/delivery-addresses`다(둘을 혼동하지 말 것).
 - 식별자: `useDeliveryAddresses`/`useDefaultDeliveryAddress`/`useAddDeliveryAddress`/
   `useUpdateDeliveryAddress`/`useRemoveDeliveryAddress`/`useSetDefaultDeliveryAddress`/
   `MAX_DELIVERY_ADDRESSES`/`DeliveryAddressInput`/`deliveryAddressErrorMessage` — 생성 클라이언트

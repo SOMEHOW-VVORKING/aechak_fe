@@ -40,7 +40,12 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
 
   const cartItems = useCartItems()
   // 배송지는 이제 서버에서 비동기로 온다 — 로딩 중엔 스켈레톤, 없으면 추가 CTA를 보여준다.
-  const { address: defaultAddress, isLoading: addressLoading } = useDefaultDeliveryAddress()
+  const {
+    address: defaultAddress,
+    isLoading: addressLoading,
+    isError: addressError,
+    refetch: refetchAddress,
+  } = useDefaultDeliveryAddress()
 
   // 바로 구매면 단일 상품으로 즉석 뷰를, 아니면 장바구니 라인으로 뷰를 만든다(같은 buildCartView 재사용).
   const view = useMemo(() => {
@@ -119,6 +124,18 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
             </div>
             <Skeleton variant="text" className="h-4 w-40" />
             <Skeleton variant="text" className="mt-1.5 h-4 w-56" />
+          </div>
+        ) : addressError ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <div className="mb-2 flex items-center gap-1.5">
+              <MapPin className="size-4 text-brand" />
+              <span className="text-label font-semibold text-text-primary">배송지</span>
+            </div>
+            {/* 조회 실패를 '배송지 없음'으로 보여주면 등록된 주소가 사라진 줄 알고 중복 등록한다. */}
+            <p className="text-body-sm text-text-secondary">배송지를 불러오지 못했어요.</p>
+            <Button variant="secondary" size="md" fullWidth onClick={() => void refetchAddress()} className="mt-3">
+              다시 시도
+            </Button>
           </div>
         ) : defaultAddress ? (
           <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
