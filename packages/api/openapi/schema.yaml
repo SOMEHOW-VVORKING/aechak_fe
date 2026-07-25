@@ -46,6 +46,107 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BreedListResponse"
+  /delivery-addresses:
+    get:
+      summary: "배송지 목록 조회"
+      description: "본인 배송지만. 기본 배송지가 최상단, 그 아래는 최신 수정순."
+      operationId: "getDeliveryAddresses"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryAddressListResponse"
+    post:
+      summary: "배송지 추가"
+      description: "최대 10개(초과 422 errorCode 30120). isDefault=true면 기존 기본은 자동 해제."
+      operationId: "addDeliveryAddress"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddDeliveryAddressRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddDeliveryAddressResponse"
+  /delivery-addresses/{addressId}:
+    patch:
+      summary: "배송지 수정"
+      description: "전체 객체 전송. isDefault=true면 기본 지정(기존 기본 해제), false/생략이면 기본 상태 유지."
+      operationId: "updateDeliveryAddress"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeliveryAddressRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateDeliveryAddressResponse"
+    delete:
+      summary: "배송지 삭제"
+      description: "기본 배송지 삭제 시 남은 것 중 최신이 자동 승격 — 승격된 id를 응답으로 준다(없으면 null)."
+      operationId: "deleteDeliveryAddress"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteDeliveryAddressResponse"
+  /delivery-addresses/{addressId}/default:
+    patch:
+      summary: "기본 배송지 지정"
+      description: "지정 건만 기본이 되고 나머지는 자동 해제(서버 소유 유일성)."
+      operationId: "setDefaultDeliveryAddress"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetDefaultDeliveryAddressResponse"
 components:
   schemas:
     Species:
@@ -68,6 +169,113 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BreedResponse"
+    DeliveryAddressResponse:
+      type: object
+      required: [addressId, receiverName, contactNumber, zipCode, baseAddress, isDefault]
+      properties:
+        addressId:
+          type: integer
+          format: int64
+        receiverName:
+          type: string
+        contactNumber:
+          type: string
+        zipCode:
+          type: string
+        baseAddress:
+          type: string
+        detailedAddress:
+          type: string
+          nullable: true
+        deliveryMemo:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        isDefault:
+          type: boolean
+    DeliveryAddressListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [addresses, totalCount]
+          properties:
+            addresses:
+              type: array
+              items:
+                $ref: "#/components/schemas/DeliveryAddressResponse"
+            totalCount:
+              type: integer
+    AddDeliveryAddressRequest:
+      type: object
+      required: [receiverName, contactNumber, zipCode, baseAddress, detailedAddress]
+      properties:
+        receiverName:
+          type: string
+        contactNumber:
+          type: string
+          description: "휴대폰 번호 ^01[016789]-?\\d{3,4}-?\\d{4}$"
+        zipCode:
+          type: string
+          description: "5자리 숫자"
+        baseAddress:
+          type: string
+        detailedAddress:
+          type: string
+        deliveryMemo:
+          type: string
+        label:
+          type: string
+        isDefault:
+          type: boolean
+          description: "생략=false"
+    UpdateDeliveryAddressRequest:
+      $ref: "#/components/schemas/AddDeliveryAddressRequest"
+    AddDeliveryAddressResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [addressId, isDefault, totalCount]
+          properties:
+            addressId:
+              type: integer
+              format: int64
+            isDefault:
+              type: boolean
+            totalCount:
+              type: integer
+    UpdateDeliveryAddressResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [addressId, isDefault]
+          properties:
+            addressId:
+              type: integer
+              format: int64
+            isDefault:
+              type: boolean
+    SetDefaultDeliveryAddressResponse:
+      $ref: "#/components/schemas/UpdateDeliveryAddressResponse"
+    DeleteDeliveryAddressResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          properties:
+            promotedDefaultAddressId:
+              type: integer
+              format: int64
+              nullable: true
+              description: "기본 삭제로 자동 승격된 배송지 id — 승격 없으면 null"
   securitySchemes:
     bearerAuth:
       type: http

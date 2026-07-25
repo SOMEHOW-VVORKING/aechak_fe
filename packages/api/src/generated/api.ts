@@ -5,15 +5,18 @@
  * Backend OpenAPI spec — 백엔드 컨트롤러와 수동 동기화한다
  * OpenAPI spec version: 0.0.1
  */
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
   UseSuspenseQueryOptions,
@@ -36,6 +39,79 @@ export interface BreedResponse {
 
 export interface BreedListResponse {
   data: BreedResponse[]
+}
+
+export interface DeliveryAddressResponse {
+  addressId: number
+  receiverName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailedAddress?: string | null
+  /** @nullable */
+  deliveryMemo?: string | null
+  /** @nullable */
+  label?: string | null
+  isDefault: boolean
+}
+
+export type DeliveryAddressListResponseData = {
+  addresses: DeliveryAddressResponse[]
+  totalCount: number
+}
+
+export interface DeliveryAddressListResponse {
+  data: DeliveryAddressListResponseData
+}
+
+export interface AddDeliveryAddressRequest {
+  receiverName: string
+  /** 휴대폰 번호 ^01[016789]-?\d{3,4}-?\d{4}$ */
+  contactNumber: string
+  /** 5자리 숫자 */
+  zipCode: string
+  baseAddress: string
+  detailedAddress: string
+  deliveryMemo?: string
+  label?: string
+  /** 생략=false */
+  isDefault?: boolean
+}
+
+export type UpdateDeliveryAddressRequest = AddDeliveryAddressRequest
+
+export type AddDeliveryAddressResponseData = {
+  addressId: number
+  isDefault: boolean
+  totalCount: number
+}
+
+export interface AddDeliveryAddressResponse {
+  data: AddDeliveryAddressResponseData
+}
+
+export type UpdateDeliveryAddressResponseData = {
+  addressId: number
+  isDefault: boolean
+}
+
+export interface UpdateDeliveryAddressResponse {
+  data: UpdateDeliveryAddressResponseData
+}
+
+export type SetDefaultDeliveryAddressResponse = UpdateDeliveryAddressResponse
+
+export type DeleteDeliveryAddressResponseData = {
+  /**
+   * 기본 삭제로 자동 승격된 배송지 id — 승격 없으면 null
+   * @nullable
+   */
+  promotedDefaultAddressId?: number | null
+}
+
+export interface DeleteDeliveryAddressResponse {
+  data: DeleteDeliveryAddressResponseData
 }
 
 export type HealthCheck200 = {
@@ -387,4 +463,522 @@ export function useGetBreedsSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 본인 배송지만. 기본 배송지가 최상단, 그 아래는 최신 수정순.
+ * @summary 배송지 목록 조회
+ */
+export const getDeliveryAddresses = (signal?: AbortSignal) => {
+  return customInstance<DeliveryAddressListResponse>({
+    url: `/delivery-addresses`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetDeliveryAddressesQueryKey = () => {
+  return [`/delivery-addresses`] as const
+}
+
+export const getGetDeliveryAddressesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetDeliveryAddressesQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeliveryAddresses>>> = ({ signal }) =>
+    getDeliveryAddresses(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDeliveryAddresses>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetDeliveryAddressesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDeliveryAddresses>>
+>
+export type GetDeliveryAddressesQueryError = unknown
+
+export function useGetDeliveryAddresses<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeliveryAddresses>>,
+          TError,
+          Awaited<ReturnType<typeof getDeliveryAddresses>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryAddresses<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeliveryAddresses>>,
+          TError,
+          Awaited<ReturnType<typeof getDeliveryAddresses>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryAddresses<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 배송지 목록 조회
+ */
+
+export function useGetDeliveryAddresses<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetDeliveryAddressesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetDeliveryAddressesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetDeliveryAddressesQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeliveryAddresses>>> = ({ signal }) =>
+    getDeliveryAddresses(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getDeliveryAddresses>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetDeliveryAddressesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDeliveryAddresses>>
+>
+export type GetDeliveryAddressesSuspenseQueryError = unknown
+
+export function useGetDeliveryAddressesSuspense<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryAddressesSuspense<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryAddressesSuspense<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 배송지 목록 조회
+ */
+
+export function useGetDeliveryAddressesSuspense<
+  TData = Awaited<ReturnType<typeof getDeliveryAddresses>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getDeliveryAddresses>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetDeliveryAddressesSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 최대 10개(초과 422 errorCode 30120). isDefault=true면 기존 기본은 자동 해제.
+ * @summary 배송지 추가
+ */
+export const addDeliveryAddress = (
+  addDeliveryAddressRequest: AddDeliveryAddressRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AddDeliveryAddressResponse>({
+    url: `/delivery-addresses`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: addDeliveryAddressRequest,
+    signal,
+  })
+}
+
+export const getAddDeliveryAddressMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addDeliveryAddress>>,
+    TError,
+    { data: AddDeliveryAddressRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addDeliveryAddress>>,
+  TError,
+  { data: AddDeliveryAddressRequest },
+  TContext
+> => {
+  const mutationKey = ['addDeliveryAddress']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addDeliveryAddress>>,
+    { data: AddDeliveryAddressRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return addDeliveryAddress(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AddDeliveryAddressMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addDeliveryAddress>>
+>
+export type AddDeliveryAddressMutationBody = AddDeliveryAddressRequest
+export type AddDeliveryAddressMutationError = unknown
+
+/**
+ * @summary 배송지 추가
+ */
+export const useAddDeliveryAddress = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof addDeliveryAddress>>,
+      TError,
+      { data: AddDeliveryAddressRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof addDeliveryAddress>>,
+  TError,
+  { data: AddDeliveryAddressRequest },
+  TContext
+> => {
+  const mutationOptions = getAddDeliveryAddressMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 전체 객체 전송. isDefault=true면 기본 지정(기존 기본 해제), false/생략이면 기본 상태 유지.
+ * @summary 배송지 수정
+ */
+export const updateDeliveryAddress = (
+  addressId: number,
+  addDeliveryAddressRequest: AddDeliveryAddressRequest,
+) => {
+  return customInstance<UpdateDeliveryAddressResponse>({
+    url: `/delivery-addresses/${addressId}`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: addDeliveryAddressRequest,
+  })
+}
+
+export const getUpdateDeliveryAddressMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDeliveryAddress>>,
+    TError,
+    { addressId: number; data: AddDeliveryAddressRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDeliveryAddress>>,
+  TError,
+  { addressId: number; data: AddDeliveryAddressRequest },
+  TContext
+> => {
+  const mutationKey = ['updateDeliveryAddress']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDeliveryAddress>>,
+    { addressId: number; data: AddDeliveryAddressRequest }
+  > = props => {
+    const { addressId, data } = props ?? {}
+
+    return updateDeliveryAddress(addressId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateDeliveryAddressMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDeliveryAddress>>
+>
+export type UpdateDeliveryAddressMutationBody = AddDeliveryAddressRequest
+export type UpdateDeliveryAddressMutationError = unknown
+
+/**
+ * @summary 배송지 수정
+ */
+export const useUpdateDeliveryAddress = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateDeliveryAddress>>,
+      TError,
+      { addressId: number; data: AddDeliveryAddressRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateDeliveryAddress>>,
+  TError,
+  { addressId: number; data: AddDeliveryAddressRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateDeliveryAddressMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 기본 배송지 삭제 시 남은 것 중 최신이 자동 승격 — 승격된 id를 응답으로 준다(없으면 null).
+ * @summary 배송지 삭제
+ */
+export const deleteDeliveryAddress = (addressId: number) => {
+  return customInstance<DeleteDeliveryAddressResponse>({
+    url: `/delivery-addresses/${addressId}`,
+    method: 'DELETE',
+  })
+}
+
+export const getDeleteDeliveryAddressMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDeliveryAddress>>,
+    TError,
+    { addressId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDeliveryAddress>>,
+  TError,
+  { addressId: number },
+  TContext
+> => {
+  const mutationKey = ['deleteDeliveryAddress']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDeliveryAddress>>,
+    { addressId: number }
+  > = props => {
+    const { addressId } = props ?? {}
+
+    return deleteDeliveryAddress(addressId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteDeliveryAddressMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDeliveryAddress>>
+>
+
+export type DeleteDeliveryAddressMutationError = unknown
+
+/**
+ * @summary 배송지 삭제
+ */
+export const useDeleteDeliveryAddress = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteDeliveryAddress>>,
+      TError,
+      { addressId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDeliveryAddress>>,
+  TError,
+  { addressId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteDeliveryAddressMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 지정 건만 기본이 되고 나머지는 자동 해제(서버 소유 유일성).
+ * @summary 기본 배송지 지정
+ */
+export const setDefaultDeliveryAddress = (addressId: number) => {
+  return customInstance<UpdateDeliveryAddressResponse>({
+    url: `/delivery-addresses/${addressId}/default`,
+    method: 'PATCH',
+  })
+}
+
+export const getSetDefaultDeliveryAddressMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultDeliveryAddress>>,
+    TError,
+    { addressId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDefaultDeliveryAddress>>,
+  TError,
+  { addressId: number },
+  TContext
+> => {
+  const mutationKey = ['setDefaultDeliveryAddress']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDefaultDeliveryAddress>>,
+    { addressId: number }
+  > = props => {
+    const { addressId } = props ?? {}
+
+    return setDefaultDeliveryAddress(addressId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SetDefaultDeliveryAddressMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDefaultDeliveryAddress>>
+>
+
+export type SetDefaultDeliveryAddressMutationError = unknown
+
+/**
+ * @summary 기본 배송지 지정
+ */
+export const useSetDefaultDeliveryAddress = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setDefaultDeliveryAddress>>,
+      TError,
+      { addressId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setDefaultDeliveryAddress>>,
+  TError,
+  { addressId: number },
+  TContext
+> => {
+  const mutationOptions = getSetDefaultDeliveryAddressMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
