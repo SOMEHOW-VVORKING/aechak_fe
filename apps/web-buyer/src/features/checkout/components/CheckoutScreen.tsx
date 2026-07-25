@@ -9,12 +9,13 @@ import {
   Input,
   MobileScreen,
   Radio,
+  Skeleton,
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
-import { useDefaultAddress } from '@/shared/address'
+import { useDefaultDeliveryAddress } from '@/shared/delivery-address'
 import { buildCartView, type CartLineView } from '@/shared/catalog'
 import {
   PAYMENT_METHODS,
@@ -38,7 +39,8 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
   const router = useRouter()
 
   const cartItems = useCartItems()
-  const defaultAddress = useDefaultAddress()
+  // 배송지는 이제 서버에서 비동기로 온다 — 로딩 중엔 스켈레톤, 없으면 추가 CTA를 보여준다.
+  const { address: defaultAddress, isLoading: addressLoading } = useDefaultDeliveryAddress()
 
   // 바로 구매면 단일 상품으로 즉석 뷰를, 아니면 장바구니 라인으로 뷰를 만든다(같은 buildCartView 재사용).
   const view = useMemo(() => {
@@ -109,7 +111,16 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
     >
       <div className="flex flex-col gap-3 p-4">
         {/* 배송지 */}
-        {defaultAddress ? (
+        {addressLoading ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <div className="mb-2 flex items-center gap-1.5">
+              <MapPin className="size-4 text-brand" />
+              <span className="text-label font-semibold text-text-primary">배송지</span>
+            </div>
+            <Skeleton variant="text" className="h-4 w-40" />
+            <Skeleton variant="text" className="mt-1.5 h-4 w-56" />
+          </div>
+        ) : defaultAddress ? (
           <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-1.5">

@@ -2,10 +2,19 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { resetCart } from '@/shared/cart'
-import { removeAddress, resetAddresses } from '@/shared/address'
 import { routeTree } from '../../../routeTree.gen'
+
+// 배송지는 @aechak/api fetcher로 서버에서 온다(훅 아님) — 여기선 빈 목록을 돌려주는 정적 목으로
+// "배송지 없음" 상태를 재현한다(jsdom 네트워크 호출 없음). mutation fetcher는 이 화면이 호출하지 않는다.
+vi.mock('@aechak/api', async importOriginal => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    getDeliveryAddresses: () => Promise.resolve({ data: { addresses: [], totalCount: 0 } }),
+  }
+})
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -20,17 +29,9 @@ function renderAt(path: string) {
   )
 }
 
-// 배송지 스토어를 완전히 비운다(시드 addr-1/addr-2 제거) — 주문서의 "배송지 없음" 상태를 재현한다.
-function clearAddresses() {
-  resetAddresses()
-  removeAddress('addr-1')
-  removeAddress('addr-2')
-}
-
 describe('/checkout 배송지 없음 상태', () => {
   beforeEach(() => {
     resetCart()
-    clearAddresses()
   })
 
   it('[AC-CHECKOUT-005] 배송지가 없으면 배송지 추가 CTA를 보여주고 결제 버튼을 막는다', async () => {

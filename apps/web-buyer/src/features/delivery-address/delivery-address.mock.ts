@@ -6,9 +6,11 @@ export function sanitizePhone(raw: string): string {
   return raw.replace(/[^0-9-]/g, '')
 }
 
-// 유효한 휴대폰 번호인지 판정한다. 하이픈은 무시하고 자릿수로 검사 — 0으로 시작하는 10~11자리
-// (예: 010-1234-5678 → 01012345678). 저장 시점과 입력 에러 표시가 이 함수를 함께 본다.
+// 유효한 휴대폰 번호인지 판정한다. 하이픈은 무시하고 자릿수로 검사 — 휴대폰 접두
+// (010·011·016·017·018·019) + 나머지 7~8자리. BE 계약(^01[016789]-?\d{3,4}-?\d{4}$)과
+// 동일하게 맞춰 지역번호(02·070 등)가 통과했다가 저장 시 400 나는 걸 막는다.
+// 저장 시점과 입력 에러 표시가 이 함수를 함께 본다.
 export function isValidPhone(phone: string): boolean {
   const digits = phone.replace(/\D/g, '')
-  return /^0\d{9,10}$/.test(digits)
+  return /^01[016789]\d{7,8}$/.test(digits)
 }

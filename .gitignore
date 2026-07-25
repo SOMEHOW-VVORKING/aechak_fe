@@ -53,3 +53,6 @@ test-results
 
 # Generated (keep generated API types in version control for openapi:generate:check)
 # packages/api/src/generated is intentionally NOT gitignored
+
+# Local AI knowledge base (session handoff / notes — not pushed to remote)
+knowledge-base/

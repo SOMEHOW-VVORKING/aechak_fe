@@ -75,8 +75,8 @@ export interface DeliveryAddress {
   address1: string
   /** 상세 주소. */
   address2: string
-  /** 공동현관 출입 방법(선택). */
-  entranceMethod?: string
+  /** 배송 요청사항(선택) — 서버 deliveryMemo 필드와 동일 단어. */
+  deliveryMemo?: string
   isDefault: boolean
 }
 

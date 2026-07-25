@@ -2,10 +2,20 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { resetCart } from '@/shared/cart'
-import { resetAddresses } from '@/shared/address'
 import { routeTree } from '../../../routeTree.gen'
+
+// 실패 후 '결제수단 변경'은 주문서(/checkout)로 복귀하고, 주문서는 배송지를 @aechak/api fetcher로
+// 읽는다(훅 아님). jsdom 네트워크 호출을 피하려 배송지 fetcher를 정적 목(빈 목록)으로 대체한다 —
+// 이 테스트의 단언은 주문 라인만 검증하므로 배송지 유무와 무관하다.
+vi.mock('@aechak/api', async importOriginal => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    getDeliveryAddresses: () => Promise.resolve({ data: { addresses: [], totalCount: 0 } }),
+  }
+})
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -23,7 +33,6 @@ function renderAt(path: string) {
 describe('/payment/result', () => {
   beforeEach(() => {
     resetCart()
-    resetAddresses()
   })
 
   it('[AC-PAYMENT-004] 바로구매 결제 실패 후 결제수단 변경은 그 바로구매 주문으로 돌아간다(장바구니 합계 청구 안 함)', async () => {
