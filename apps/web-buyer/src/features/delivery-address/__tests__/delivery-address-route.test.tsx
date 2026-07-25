@@ -2,118 +2,37 @@ import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { DaumPostcodeData } from '../daum-postcode'
+import { seedDeliveryAddresses, type DeliveryAddressRow } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-// 배송지는 @aechak/api fetcher로 서버에서 온다(훅 아님 — AGENTS.md breeds 절 컨벤션). jsdom엔
-// 서버가 없으므로 fetcher들을 vi.mock으로 대체하되, 목록/추가/삭제/기본지정이 실제로 반영되는
-// 상태 있는 인메모리 백엔드를 흉내 낸다. 목록 갱신은 어댑터(shared/delivery-address)의
-// mutation onSuccess → invalidate → 실제 react-query refetch 경로로 이뤄진다.
-type Row = {
-  addressId: number
-  receiverName?: string
-  contactNumber?: string
-  zipCode?: string
-  baseAddress?: string
-  detailAddress?: string | null
-  deliveryMemo?: string | null
-  label?: string | null
-  isDefault?: boolean
-}
-
-// 이 인메모리 백엔드는 서버 불변식(기본 배송지 유일성 · 기본 삭제 시 자동 승격 · 최대 10개 제한)을
-// 재현하지 않는다 — 서버가 소유하는 로직이라 클라이언트/테스트가 흉내 내면 안 된다. 순수 CRUD만 하고
-// isDefault는 요청 값을 그대로 저장한다. 최대 개수 도달 시 UI 비활성 같은 "클라이언트" 게이트만 검증한다.
-const api = vi.hoisted(() => {
-  let rows: Row[] = []
-  let seq = 0
-  const listeners = new Set<() => void>()
-  const emit = () => listeners.forEach(l => l())
-  return {
-    reset() {
-      seq = 2
-      rows = [
-        {
-          addressId: 1,
-          label: '코코집사',
-          receiverName: '코코집사',
-          contactNumber: '01012345678', // 서버 저장 형식(숫자만)
-          zipCode: '04030',
-          baseAddress: '서울 마포구 양화로 00, 101동 1004호',
-          detailAddress: '',
-          deliveryMemo: '공동현관 비밀번호 #1004',
-          isDefault: true,
-        },
-        {
-          addressId: 2,
-          label: '회사',
-          receiverName: '코코집사',
-          contactNumber: '01012345678', // 서버 저장 형식(숫자만)
-          zipCode: '06200',
-          baseAddress: '서울 강남구 테헤란로 000, 20층',
-          detailAddress: '',
-          isDefault: false,
-        },
-      ]
-      emit()
-    },
-    getRows: () => rows,
-    subscribe(cb: () => void) {
-      listeners.add(cb)
-      return () => {
-        listeners.delete(cb)
-      }
-    },
-    add(data: Omit<Row, 'addressId'>) {
-      seq += 1
-      rows = rows.concat({ ...data, addressId: seq, isDefault: data.isDefault ?? false })
-      emit()
-    },
-    update(id: number, data: Omit<Row, 'addressId'>) {
-      rows = rows.map(r => (r.addressId === id ? { ...r, ...data, addressId: id } : r))
-      emit()
-    },
-    remove(id: number) {
-      rows = rows.filter(r => r.addressId !== id)
-      emit()
-    },
-    setDefault(id: number) {
-      rows = rows.map(r => (r.addressId === id ? { ...r, isDefault: true } : r))
-      emit()
-    },
-  }
-})
-
-vi.mock('@aechak/api', async importOriginal => {
-  const actual = await importOriginal<Record<string, unknown>>()
-  return {
-    ...actual,
-    getDeliveryAddresses: () =>
-      Promise.resolve({ data: { addresses: api.getRows(), totalCount: api.getRows().length } }),
-    addDeliveryAddress: (data: Omit<Row, 'addressId'>) => {
-      api.add(data)
-      return Promise.resolve({
-        data: { addressId: 0, isDefault: data.isDefault ?? false, totalCount: api.getRows().length },
-      })
-    },
-    updateDeliveryAddress: (id: number, data: Omit<Row, 'addressId'>) => {
-      api.update(id, data)
-      return Promise.resolve({ data: { addressId: id, isDefault: data.isDefault ?? false } })
-    },
-    deleteDeliveryAddress: (id: number) => {
-      // 서버는 기본 배송지를 지웠을 때만 승격된 id를 준다 — 그 분기를 테스트가 실제로 타게 한다.
-      const wasDefault = api.getRows().find(r => r.addressId === id)?.isDefault ?? false
-      api.remove(id)
-      const promoted = wasDefault ? (api.getRows()[0]?.addressId ?? null) : null
-      return Promise.resolve({ data: { promotedDefaultAddressId: promoted } })
-    },
-    setDefaultDeliveryAddress: (id: number) => {
-      api.setDefault(id)
-      return Promise.resolve({ data: { addressId: id, isDefault: true } })
-    },
-  }
-})
+// 배송지는 @aechak/api fetcher로 서버에서 온다(훅 아님 — AGENTS.md breeds 절 컨벤션).
+// 모듈 모킹 대신 MSW로 네트워크에서 가로챈다 — URL·메서드·envelope 해석까지 실제 경로가 돌아야
+// 계약이 바뀌었을 때 여기서 잡힌다. 상태·응답 계약은 testing/msw/server.ts가 소유한다.
+const SEED: DeliveryAddressRow[] = [
+  {
+    addressId: 1,
+    label: '코코집사',
+    receiverName: '코코집사',
+    contactNumber: '01012345678', // 서버 저장 형식(숫자만)
+    zipCode: '04030',
+    baseAddress: '서울 마포구 양화로 00',
+    detailAddress: '101동 1004호',
+    deliveryMemo: '공동현관 비밀번호 #1004',
+    isDefault: true,
+  },
+  {
+    addressId: 2,
+    label: '회사',
+    receiverName: '코코집사',
+    contactNumber: '01012345678',
+    zipCode: '06200',
+    baseAddress: '서울 강남구 테헤란로 000',
+    detailAddress: '20층',
+    isDefault: false,
+  },
+]
 
 // jsdom에는 외부 스크립트/window.daum이 없으므로 Daum 우편번호 서비스를 목으로 주입한다.
 // embed(container) 시 클릭 가능한 후보 버튼 하나를 그려, 누르면 oncomplete가 발화하도록 흉내낸다.
@@ -143,6 +62,13 @@ class MockPostcode {
   }
 }
 
+/** 라벨 텍스트가 든 카드 엘리먼트 — 배지가 어느 카드에 붙었는지 보려면 카드 단위로 좁혀야 한다. */
+function card(label: string): HTMLElement {
+  const el = screen.getByText(label).closest('div.rounded-card')
+  if (!el) throw new Error(`카드를 찾지 못함: ${label}`)
+  return el as HTMLElement
+}
+
 function renderAt(path: string) {
   const router = createRouter({
     routeTree,
@@ -158,7 +84,7 @@ function renderAt(path: string) {
 
 describe('/addresses', () => {
   beforeEach(() => {
-    api.reset()
+    seedDeliveryAddresses(SEED)
     window.daum = { Postcode: MockPostcode }
   })
   afterEach(() => {
@@ -265,18 +191,48 @@ describe('/addresses', () => {
     expect(screen.queryByText(/기본으로 설정됐어요/)).toBeNull()
   })
 
+  it('[AC-ADDR-ROUTE-008] 수정하면 변경된 값이 목록에 반영된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    await user.click(screen.getAllByRole('button', { name: '수정' })[0]!)
+    const recipient = await screen.findByLabelText('받는 사람')
+    await user.clear(recipient)
+    await user.type(recipient, '김엄마')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText(/김엄마/)).toBeInTheDocument()
+  })
+
+  it('[AC-ADDR-ROUTE-009] 기본 배송지로 설정하면 배지가 그 카드로 옮겨간다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('회사')
+
+    // 기본이 아닌 카드에만 이 버튼이 뜬다 — 누르면 서버가 유일성을 정리하고 목록이 다시 읽힌다.
+    await user.click(screen.getByRole('button', { name: '기본 배송지로 설정' }))
+
+    // 배지가 회사 카드로 옮겨가고, 원래 기본이던 코코집사 카드에 설정 버튼이 생긴다
+    await waitFor(() => expect(within(card('회사')).getByText('기본')).toBeInTheDocument())
+    expect(within(card('코코집사')).getByRole('button', { name: '기본 배송지로 설정' })).toBeInTheDocument()
+  })
+
   it('[AC-ADDR-ROUTE-005] 배송지가 최대치(10개)면 "배송지 추가" 버튼이 비활성화된다', async () => {
-    // 시드 2건 + 8건 = 10건(MAX_DELIVERY_ADDRESSES). 최대 개수 제한은 클라이언트 UI 게이트다(서버 아님).
-    for (let i = 0; i < 8; i++) {
-      api.add({
+    // 시드 2건 + 8건 = 10건(MAX_DELIVERY_ADDRESSES). 서버도 초과를 422/30120으로 막지만
+    // 여기서 보는 건 도달 시 UI가 진입 자체를 막는 클라이언트 게이트다.
+    seedDeliveryAddresses([
+      ...SEED,
+      ...Array.from({ length: 8 }, (_, i) => ({
+        addressId: 10 + i,
         label: `추가-${i}`,
         receiverName: '테스터',
-        contactNumber: '010-0000-0000',
+        contactNumber: '01000000000',
         zipCode: '00000',
         baseAddress: '서울 어딘가',
         isDefault: false,
-      })
-    }
+      })),
+    ])
     renderAt('/addresses')
 
     const addButton = await screen.findByRole('button', { name: '배송지 추가' })
