@@ -16,7 +16,7 @@ type Row = {
   contactNumber?: string
   zipCode?: string
   baseAddress?: string
-  detailedAddress?: string | null
+  detailAddress?: string | null
   deliveryMemo?: string | null
   label?: string | null
   isDefault?: boolean
@@ -41,7 +41,7 @@ const api = vi.hoisted(() => {
           contactNumber: '010-1234-5678',
           zipCode: '04030',
           baseAddress: '서울 마포구 양화로 00, 101동 1004호',
-          detailedAddress: '',
+          detailAddress: '',
           deliveryMemo: '공동현관 비밀번호 #1004',
           isDefault: true,
         },
@@ -52,7 +52,7 @@ const api = vi.hoisted(() => {
           contactNumber: '010-1234-5678',
           zipCode: '06200',
           baseAddress: '서울 강남구 테헤란로 000, 20층',
-          detailedAddress: '',
+          detailAddress: '',
           isDefault: false,
         },
       ]

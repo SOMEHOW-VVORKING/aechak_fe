@@ -18,7 +18,7 @@ const RESPONSE: DeliveryAddressResponse = {
   contactNumber: '010-1234-5678',
   zipCode: '04030',
   baseAddress: '서울 마포구 양화로 00, 101동 1004호',
-  detailedAddress: '1004호',
+  detailAddress: '1004호',
   deliveryMemo: '공동현관 비밀번호 #1004',
   label: '집',
   isDefault: true,
@@ -82,7 +82,7 @@ describe('delivery-address.queries 어댑터', () => {
       contactNumber: '010-9999-8888',
       zipCode: '06200',
       baseAddress: '서울 강남구 테헤란로 000',
-      detailedAddress: '20층',
+      detailAddress: '20층',
       deliveryMemo: '로비 데스크',
       label: '회사',
       isDefault: false,
@@ -92,7 +92,7 @@ describe('delivery-address.queries 어댑터', () => {
   it('[AC-ADDR-MAP-005] 빈 배송 요청사항은 undefined로 생략, 상세주소는 필수라 그대로 전달한다', () => {
     // 상세주소는 이제 계약상 필수(BE @NotBlank) — 빈 값 차단은 폼 canSave가 맡고 매퍼는 가공하지 않는다.
     const req = toDeliveryAddressRequest({ ...INPUT, deliveryMemo: '   ' })
-    expect(req.detailedAddress).toBe('20층')
+    expect(req.detailAddress).toBe('20층')
     expect(req.deliveryMemo).toBeUndefined()
   })
 

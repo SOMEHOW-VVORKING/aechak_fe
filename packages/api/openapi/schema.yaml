@@ -184,7 +184,7 @@ components:
           type: string
         baseAddress:
           type: string
-        detailedAddress:
+        detailAddress:
           type: string
           nullable: true
         deliveryMemo:
@@ -211,7 +211,7 @@ components:
               type: integer
     AddDeliveryAddressRequest:
       type: object
-      required: [receiverName, contactNumber, zipCode, baseAddress, detailedAddress]
+      required: [receiverName, contactNumber, zipCode, baseAddress, detailAddress]
       properties:
         receiverName:
           type: string
@@ -223,7 +223,7 @@ components:
           description: "5자리 숫자"
         baseAddress:
           type: string
-        detailedAddress:
+        detailAddress:
           type: string
         deliveryMemo:
           type: string

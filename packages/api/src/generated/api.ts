@@ -48,7 +48,7 @@ export interface DeliveryAddressResponse {
   zipCode: string
   baseAddress: string
   /** @nullable */
-  detailedAddress?: string | null
+  detailAddress?: string | null
   /** @nullable */
   deliveryMemo?: string | null
   /** @nullable */
@@ -72,7 +72,7 @@ export interface AddDeliveryAddressRequest {
   /** 5자리 숫자 */
   zipCode: string
   baseAddress: string
-  detailedAddress: string
+  detailAddress: string
   deliveryMemo?: string
   label?: string
   /** 생략=false */

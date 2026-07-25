@@ -44,7 +44,7 @@ export function toDeliveryAddress(res: DeliveryAddressResponse): DeliveryAddress
     phone: res.contactNumber ?? '',
     zipcode: res.zipCode ?? '',
     address1: res.baseAddress ?? '',
-    address2: res.detailedAddress ?? '',
+    address2: res.detailAddress ?? '',
     deliveryMemo: res.deliveryMemo ?? undefined,
     isDefault: res.isDefault ?? false,
   }
@@ -56,7 +56,7 @@ export function toDeliveryAddressRequest(input: DeliveryAddressInput): AddDelive
     contactNumber: input.phone,
     zipCode: input.zipcode,
     baseAddress: input.address1,
-    detailedAddress: input.address2,
+    detailAddress: input.address2,
     deliveryMemo: input.deliveryMemo?.trim() || undefined,
     label: input.label || undefined,
     isDefault: input.isDefault,
