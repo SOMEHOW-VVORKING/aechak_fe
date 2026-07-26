@@ -76,6 +76,7 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
       {formTarget !== undefined ? (
         <DeliveryAddressForm
           target={formTarget}
+          isFirstAddress={addresses.length === 0}
           saving={addMutation.isPending || updateMutation.isPending}
           onCancel={() => setFormTarget(undefined)}
           onSave={input => {
@@ -274,11 +275,14 @@ function DeliveryAddressCard({
 
 function DeliveryAddressForm({
   target,
+  isFirstAddress,
   saving,
   onCancel,
   onSave,
 }: {
   target: DeliveryAddress | null
+  /** 등록된 배송지가 없으면 서버가 이 건을 기본으로 만든다 — 폼이 그 사실을 미리 보여준다. */
+  isFirstAddress: boolean
   saving: boolean
   onCancel: () => void
   onSave: (input: DeliveryAddressInput) => void
@@ -292,8 +296,8 @@ function DeliveryAddressForm({
     address1: target?.address1 ?? '',
     address2: target?.address2 ?? '',
     deliveryMemo: target?.deliveryMemo ?? '',
-    // 첫 배송지가 아니라면 기본값 체크는 사용자가 선택. 편집 시 기존 값 유지.
-    isDefault: target?.isDefault ?? false,
+    // 첫 배송지는 서버가 기본으로 만들어서 켠 채로 시작한다. 편집 시엔 기존 값 유지.
+    isDefault: target?.isDefault ?? isFirstAddress,
   }))
   const [postalOpen, setPostalOpen] = useState(false)
 
@@ -377,11 +381,17 @@ function DeliveryAddressForm({
           value={form.deliveryMemo ?? ''}
           onChange={e => set({ deliveryMemo: e.target.value })}
         />
-        <Checkbox
-          checked={form.isDefault}
-          onChange={checked => set({ isDefault: checked })}
-          label="기본 배송지로 설정"
-        />
+        <div className="flex flex-col gap-1">
+          <Checkbox
+            checked={form.isDefault}
+            onChange={checked => set({ isDefault: checked })}
+            disabled={isFirstAddress}
+            label="기본 배송지로 설정"
+          />
+          {isFirstAddress && (
+            <p className="text-caption text-text-tertiary">첫 배송지는 기본 배송지로 지정돼요</p>
+          )}
+        </div>
       </div>
 
       <PostalSearchSheet

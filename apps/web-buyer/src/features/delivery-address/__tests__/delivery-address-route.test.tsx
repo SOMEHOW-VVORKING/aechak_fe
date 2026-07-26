@@ -218,6 +218,33 @@ describe('/addresses', () => {
     expect(within(card('코코집사')).getByRole('button', { name: '기본 배송지로 설정' })).toBeInTheDocument()
   })
 
+  it('[AC-ADDR-ROUTE-010] 첫 배송지 등록 폼은 기본 배송지 체크가 켜진 채 잠겨 있다', async () => {
+    // 서버가 첫 건을 무조건 기본으로 만든다 — 끌 수 있는 것처럼 보이면 UI가 거짓말을 한다.
+    const user = userEvent.setup()
+    seedDeliveryAddresses([])
+    renderAt('/addresses')
+
+    await user.click(await screen.findByRole('button', { name: '배송지 추가' }))
+
+    const checkbox = screen.getByRole('checkbox', { name: /기본 배송지로 설정/ })
+    expect(checkbox).toBeChecked()
+    expect(checkbox).toBeDisabled()
+    expect(screen.getByText('첫 배송지는 기본 배송지로 지정돼요')).toBeInTheDocument()
+  })
+
+  it('[AC-ADDR-ROUTE-011] 두 번째부터는 기본 배송지 체크를 사용자가 고른다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    await user.click(screen.getByRole('button', { name: '배송지 추가' }))
+
+    const checkbox = screen.getByRole('checkbox', { name: /기본 배송지로 설정/ })
+    expect(checkbox).not.toBeChecked()
+    expect(checkbox).toBeEnabled()
+    expect(screen.queryByText('첫 배송지는 기본 배송지로 지정돼요')).toBeNull()
+  })
+
   it('[AC-ADDR-ROUTE-005] 배송지가 최대치(10개)면 "배송지 추가" 버튼이 비활성화된다', async () => {
     // 시드 2건 + 8건 = 10건(MAX_DELIVERY_ADDRESSES). 서버도 초과를 422/30120으로 막지만
     // 여기서 보는 건 도달 시 UI가 진입 자체를 막는 클라이언트 게이트다.

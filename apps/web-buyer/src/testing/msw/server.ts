@@ -60,7 +60,9 @@ const deliveryAddressHandlers = [
   http.post(DELIVERY_ADDRESSES_URL, async ({ request }) => {
     const body = (await request.json()) as Partial<DeliveryAddressRow>
     deliveryAddressSeq += 1
-    const row = { ...body, addressId: deliveryAddressSeq, isDefault: body.isDefault ?? false } as DeliveryAddressRow
+    // 서버는 활성 배송지가 없을 때 첫 건을 기본으로 만든다 — 응답 isDefault가 달라지므로 재현한다.
+    const isDefault = (body.isDefault ?? false) || deliveryAddressRows.length === 0
+    const row = { ...body, addressId: deliveryAddressSeq, isDefault } as DeliveryAddressRow
     deliveryAddressRows = [...deliveryAddressRows, row]
     return HttpResponse.json(
       { data: { addressId: row.addressId, isDefault: row.isDefault, totalCount: deliveryAddressRows.length } },
