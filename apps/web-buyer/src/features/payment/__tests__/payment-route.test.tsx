@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { resetCart } from '@/shared/cart'
-import { resetAddresses } from '@/shared/address'
 import { routeTree } from '../../../routeTree.gen'
+
+// 배송지는 MSW 기본 핸들러(빈 목록)가 응답한다 — 이 테스트 단언은 주문 라인만 본다.
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -23,7 +24,6 @@ function renderAt(path: string) {
 describe('/payment/result', () => {
   beforeEach(() => {
     resetCart()
-    resetAddresses()
   })
 
   it('[AC-PAYMENT-004] 바로구매 결제 실패 후 결제수단 변경은 그 바로구매 주문으로 돌아간다(장바구니 합계 청구 안 함)', async () => {

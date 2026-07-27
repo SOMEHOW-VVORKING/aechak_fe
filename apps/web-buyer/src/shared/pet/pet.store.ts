@@ -3,7 +3,7 @@ import type { PetProfile } from '@aechak/domain'
 
 // 반려동물 프로필 전역 스토어(b10-st-3 관리 / b10-st-8 작성). 펫 목록·펫 작성 화면이 같은 단일
 // 소스를 본다 — 작성 화면에서 추가하면 관리 화면 목록에 즉시 반영된다. 찜/장바구니/주문/계정과
-// 동일하게 클라이언트 목업 상태라 useSyncExternalStore로 구현했다. 배송지(shared/address)의
+// 동일하게 클라이언트 목업 상태라 useSyncExternalStore로 구현했다. 배송지(shared/delivery-address)의
 // "정확히 하나만 기본" 정규화와 같은 방식으로 "대표 펫은 항상 정확히 하나"를 보장한다.
 
 // 폼이 수집하는 값(id/대표 여부 제외). 저장 시 id가 부여되고 대표 여부는 스토어가 정규화한다.

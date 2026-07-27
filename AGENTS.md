@@ -1855,6 +1855,26 @@ Orval 파이프라인을 처음으로 실데이터에 쓴 배치라, 다음 실 
   `useMemo` 없이 매 렌더 새 객체를 만든다 — 무한 루프는 아니고(스냅샷은 안정) `order.queries`/
   `CheckoutScreen`이 이미 쓰는 `useMemo` 패턴과 일관되게 감쌀 것.
 
+### web-buyer 배송지 네이밍 — `deliveryAddress` 접두로 전면 통일 (2026-07-24)
+
+BE가 배송지 클래스를 전부 `DeliveryAddress` 접두로 확정하면서(오퍼레이션별 DTO 분리 포함) FE도
+같은 원칙으로 통일했다 — **화면 컴포넌트·훅·타입·파일·폴더는 `deliveryAddress`/`DeliveryAddress`
+접두, 와이어 JSON 필드(`addressId`/`baseAddress`/`detailAddress` 등)는 BE 계약 그대로.**
+
+- 폴더/파일: `src/shared/address/` → `src/shared/delivery-address/`(`delivery-address.queries.ts`),
+  `src/features/address/` → `src/features/delivery-address/`(`DeliveryAddressBookScreen.tsx`,
+  `delivery-address.mock.ts`). FE 라우트 URL `/addresses`(`routes/addresses.tsx`)는 유지하되,
+  API 경로는 BE 리네임을 따라 `/delivery-addresses`다(둘을 혼동하지 말 것).
+- 식별자: `useDeliveryAddresses`/`useDefaultDeliveryAddress`/`useAddDeliveryAddress`/
+  `useUpdateDeliveryAddress`/`useRemoveDeliveryAddress`/`useSetDefaultDeliveryAddress`/
+  `MAX_DELIVERY_ADDRESSES`/`DeliveryAddressInput`/`deliveryAddressErrorMessage` — 생성 클라이언트
+  (`@aechak/api`)도 동일 접두의 fetcher(`getDeliveryAddresses` 등)를 쓰며, breeds 절 컨벤션대로
+  훅이 아니라 fetcher만 소비한다(어댑터가 자체 useQuery/useMutation으로 감쌈).
+- **도메인 `DeliveryAddress.entranceMethod`는 `deliveryMemo`로 개명**(서버 필드와 동일 단어) —
+  폼 카피도 `공동현관 출입 방법` → `배송 요청사항`(플레이스홀더에 부재 시 요청 예시 추가)으로 바꿔
+  필드 의미를 넓혔다. 배송지에 새 식별자를 만들 때 소문자 `address` 단독 접두를 되살리지 말 것 —
+  단, 와이어 필드명(`addressId` 등)을 `deliveryAddressId`류로 "정리"하지도 말 것(BE 계약).
+
 ---
 
 ## 리포 구조

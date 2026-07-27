@@ -9,12 +9,13 @@ import {
   Input,
   MobileScreen,
   Radio,
+  Skeleton,
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
-import { useDefaultAddress } from '@/shared/address'
+import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
 import { buildCartView, type CartLineView } from '@/shared/catalog'
 import {
   PAYMENT_METHODS,
@@ -38,7 +39,13 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
   const router = useRouter()
 
   const cartItems = useCartItems()
-  const defaultAddress = useDefaultAddress()
+  // 배송지는 이제 서버에서 비동기로 온다 — 로딩 중엔 스켈레톤, 없으면 추가 CTA를 보여준다.
+  const {
+    address: defaultAddress,
+    isLoading: addressLoading,
+    isError: addressError,
+    refetch: refetchAddress,
+  } = useDefaultDeliveryAddress()
 
   // 바로 구매면 단일 상품으로 즉석 뷰를, 아니면 장바구니 라인으로 뷰를 만든다(같은 buildCartView 재사용).
   const view = useMemo(() => {
@@ -109,7 +116,28 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
     >
       <div className="flex flex-col gap-3 p-4">
         {/* 배송지 */}
-        {defaultAddress ? (
+        {addressLoading ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <div className="mb-2 flex items-center gap-1.5">
+              <MapPin className="size-4 text-brand" />
+              <span className="text-label font-semibold text-text-primary">배송지</span>
+            </div>
+            <Skeleton variant="text" className="h-4 w-40" />
+            <Skeleton variant="text" className="mt-1.5 h-4 w-56" />
+          </div>
+        ) : addressError ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <div className="mb-2 flex items-center gap-1.5">
+              <MapPin className="size-4 text-brand" />
+              <span className="text-label font-semibold text-text-primary">배송지</span>
+            </div>
+            {/* 조회 실패를 '배송지 없음'으로 보여주면 등록된 주소가 사라진 줄 알고 중복 등록한다. */}
+            <p className="text-body-sm text-text-secondary">배송지를 불러오지 못했어요.</p>
+            <Button variant="secondary" size="md" fullWidth onClick={() => void refetchAddress()} className="mt-3">
+              다시 시도
+            </Button>
+          </div>
+        ) : defaultAddress ? (
           <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
@@ -126,7 +154,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
               </button>
             </div>
             <p className="text-body-sm text-text-primary">
-              {defaultAddress.recipient} / {defaultAddress.phone}
+              {defaultAddress.recipient} / {formatPhone(defaultAddress.phone)}
             </p>
             <p className="mt-0.5 text-body-sm text-text-secondary">
               {defaultAddress.address1}
