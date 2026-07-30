@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Gift, Image as ImageIcon, ListChecks } from 'lucide-react'
 import type { Review } from '@aechak/domain'
 import {
@@ -11,6 +11,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
 import { findProduct } from '@/shared/catalog'
@@ -23,7 +24,6 @@ type MyReviewTab = 'pending' | 'completed'
 // 내 리뷰(b4-st-6). 작성 대기(배송완료·구매확정 미작성) / 작성 완료 탭 + 등록 완료 토스트.
 export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const { pending, completed } = useMyReviews()
   const { nickname } = useAccount()
   const deleteReview = useDeleteReview()
@@ -37,10 +37,7 @@ export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) 
   const [deleteTarget, setDeleteTarget] = useState<Review | null>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   const writeReview = (productId: string, orderId: string) =>
     navigate({ to: '/reviews/write', search: { productId, orderId } })

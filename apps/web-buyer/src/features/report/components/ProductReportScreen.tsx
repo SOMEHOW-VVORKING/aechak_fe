@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Image as ImageIcon } from 'lucide-react'
 import type { ProductReportReason } from '@aechak/domain'
 import {
@@ -7,35 +7,49 @@ import {
   EmptyState,
   MobileScreen,
   Radio,
+  Skeleton,
   StatusPill,
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
+import { useSafeBack } from '@/shared/useSafeBack'
 import {
   MAX_REPORT_DETAIL_LENGTH,
   PRODUCT_REPORT_REASONS,
-  getReportTargetMock,
   isValidReportReason,
 } from '../report.mock'
-import { useSubmitReport } from '../report.queries'
+import { useReportTarget, useSubmitReport } from '../report.queries'
 
 // 상품 신고(b8-st-1-product). 목업은 상품 위 BottomSheet지만 우리 앱에서는 전용 full-bleed
 // 라우트로 구현한다 — 대상 컨텍스트 카드 + 사유 라디오 5종 + 상세(선택) + 제출 → 접수 완료.
 // SNS 게시물/유저 신고는 이번 범위 밖(상품 신고만).
 export function ProductReportScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
-  const target = getReportTargetMock(productId)
+  const { data: target, isLoading } = useReportTarget(productId)
   const submit = useSubmitReport()
 
   const [reason, setReason] = useState<ProductReportReason | ''>('')
   const [detail, setDetail] = useState('')
   const [done, setDone] = useState(false)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/products/$productId', params: { productId } })
+  const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
+
+  // 대상 로딩 중에는 스켈레톤을 보여준다 — 상세 화면과 같은 "로딩 → 있음/없음" 흐름.
+  if (isLoading) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="상품 신고" />}>
+        <div className="flex flex-col gap-4 p-4">
+          <div className="flex items-center gap-2.5 rounded-card bg-surface-sunken p-3">
+            <Skeleton variant="rect" className="size-11 rounded-image" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton variant="text" className="h-4 w-2/3" />
+              <Skeleton variant="text" className="h-3 w-1/2" />
+            </div>
+          </div>
+        </div>
+      </MobileScreen>
+    )
   }
 
   if (!target) {
@@ -55,10 +69,7 @@ export function ProductReportScreen({ productId }: { productId: string }) {
   // 접수 완료 상태.
   if (done) {
     return (
-      <MobileScreen
-        header={<BackAppBar onBack={goBack} title="상품 신고" />}
-        footer={<BottomFixedAction primary={{ label: '확인', onClick: goBack }} />}
-      >
+      <MobileScreen footer={<BottomFixedAction primary={{ label: '확인', onClick: goBack }} />}>
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
           <span className="flex size-16 items-center justify-center rounded-full bg-success-surface text-success-fg">
             <CheckCircle2 className="size-10" />

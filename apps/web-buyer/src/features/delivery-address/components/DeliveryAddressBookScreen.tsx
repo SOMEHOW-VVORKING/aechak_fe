@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { AlertCircle, Loader2, MapPin, Plus, Search, SearchX, Star } from 'lucide-react'
 import type { DeliveryAddress } from '@aechak/domain'
 import {
@@ -16,6 +16,7 @@ import {
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { AppToast } from '@/shared/components/AppToast'
+import { useSafeBack } from '@/shared/useSafeBack'
 import {
   MAX_DELIVERY_ADDRESSES,
   deliveryAddressErrorMessage,
@@ -42,7 +43,6 @@ export interface DeliveryAddressBookScreenProps {
 // 한 화면에서 mode 전환으로 처리한다.
 export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenProps) {
   const navigate = useNavigate()
-  const router = useRouter()
   const { addresses, isLoading, isError, refetch } = useDeliveryAddresses()
   const addMutation = useAddDeliveryAddress()
   const updateMutation = useUpdateDeliveryAddress()
@@ -60,13 +60,13 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
   // 기본 배송지 삭제로 다른 배송지가 자동 승격됐을 때 안내하는 성공 토스트.
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
+  const backToList = useSafeBack({ to: '/mypage' })
   const goBack = () => {
     if (from === 'checkout') {
       navigate({ to: '/checkout' })
       return
     }
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
+    backToList()
   }
 
   const atLimit = addresses.length >= MAX_DELIVERY_ADDRESSES

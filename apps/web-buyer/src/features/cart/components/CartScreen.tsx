@@ -1,4 +1,4 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Image as ImageIcon, X } from 'lucide-react'
 import {
   BottomFixedAction,
@@ -9,6 +9,7 @@ import {
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
 import {
   removeFromCart,
@@ -26,14 +27,10 @@ import { useCartView } from '../cart.queries'
 // 한 번에 정리) 주문 금액엔 빠지고, 품절이 선택되면 주문하기를 비활성화한다(캡틴 요청).
 export function CartScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const view = useCartView()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/market' })
-  }
+  const goBack = useSafeBack({ to: '/market' })
 
   const selectedKeys = view.groups
     .flatMap(g => g.lines)

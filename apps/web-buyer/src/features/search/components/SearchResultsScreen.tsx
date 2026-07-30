@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronDown, SearchX, SlidersHorizontal, Star } from 'lucide-react'
 import {
   BottomSheet,
@@ -10,6 +10,7 @@ import {
   Skeleton,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useSearchResults } from '../search.queries'
@@ -45,8 +46,8 @@ const RATING_PRESETS: { label: string; value: number }[] = [
 // 검색 결과 + 필터(b3-st-3). full-bleed(탭바 없음). query는 라우트 검색 파라미터에서 받는다.
 export function SearchResultsScreen({ query }: { query: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
+  const goBack = useSafeBack({ to: '/' })
 
   const [draftQuery, setDraftQuery] = useState(query)
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS)
@@ -84,7 +85,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
   return (
     <MobileScreen
       header={
-        <BackAppBar onBack={() => (window.history.length > 1 ? router.history.back() : navigate({ to: '/' }))}>
+        <BackAppBar onBack={goBack}>
           <SearchInput
             value={draftQuery}
             onChange={setDraftQuery}

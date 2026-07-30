@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { BadgeCheck, CheckCircle2, Image as ImageIcon, RotateCcw, Truck } from 'lucide-react'
 import type { BuyerOrder, BuyerOrderSellerGroup } from '@aechak/domain'
 import {
@@ -12,6 +12,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
 import { useConfirmOrder, useOrder } from '../order.queries'
 import { PAYMENT_METHOD_LABEL, buildOrderTimeline, shortDate } from '../order.mock'
@@ -19,15 +20,11 @@ import { PAYMENT_METHOD_LABEL, buildOrderTimeline, shortDate } from '../order.mo
 // 주문 상세 / 배송 추적(b1-st-6). 배송 타임라인·자동 구매확정 안내·결제 정보 + 상태별 하단 액션.
 export function OrderDetailScreen({ orderId }: { orderId: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const order = useOrder(orderId)
   const confirmOrder = useConfirmOrder()
   const [toast, setToast] = useState<{ open: boolean; message: string }>({ open: false, message: '' })
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/orders' })
-  }
+  const goBack = useSafeBack({ to: '/orders' })
 
   const writeReview = () => {
     const first = order?.groups[0]?.items[0]

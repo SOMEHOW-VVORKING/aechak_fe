@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { Review } from '@aechak/domain'
 import {
   EmptyState,
@@ -11,6 +11,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
 import { useDeleteReview, useProductReviews, type ProductReviewsView } from '../review.queries'
@@ -20,14 +21,10 @@ import { MyReviewCard } from './MyReviewCard'
 // 상품 리뷰 목록(b4-st-3). 별점 분포 + 정렬(최신순/별점높은순/포토리뷰만) + 리뷰 카드 목록.
 export function ProductReviewsScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const { data, isLoading, isError, refetch } = useProductReviews(productId)
   const [sort, setSort] = useState<ReviewSort>('latest')
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/products/$productId', params: { productId } })
-  }
+  const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
 
   const title = data ? `리뷰 ${data.total.toLocaleString('ko-KR')}` : '리뷰'
 

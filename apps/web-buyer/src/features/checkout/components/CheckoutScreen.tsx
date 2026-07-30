@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Image as ImageIcon, MapPin, Plus } from 'lucide-react'
 import type { CartItem, PaymentMethod } from '@aechak/domain'
 import {
@@ -13,6 +13,7 @@ import {
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
 import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
@@ -36,7 +37,6 @@ export interface CheckoutScreenProps {
 // 약관 동의 + 최종 결제금액 계산. 쿠폰/정기배송 OFF.
 export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutScreenProps) {
   const navigate = useNavigate()
-  const router = useRouter()
 
   const cartItems = useCartItems()
   // 배송지는 이제 서버에서 비동기로 온다 — 로딩 중엔 스켈레톤, 없으면 추가 CTA를 보여준다.
@@ -68,10 +68,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
   const usablePoints = maxUsablePoints(payableBeforePoints)
   const payable = finalPayable(view.itemsTotal, view.shippingTotal, points)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/cart' })
-  }
+  const goBack = useSafeBack({ to: '/cart' })
 
   const goAddresses = () => navigate({ to: '/addresses', search: { from: 'checkout' } })
 

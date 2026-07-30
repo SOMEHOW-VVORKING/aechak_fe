@@ -1,6 +1,7 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Button, DocumentHeader, MobileScreen, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { DATA_DELETION_IMMEDIATE, DATA_RETENTION_ROWS } from '../settings.mock'
 import { DocParagraph, DocSection } from './DocLayout'
 
@@ -9,12 +10,8 @@ import { DocParagraph, DocSection } from './DocLayout'
 // (리베이스로 해당 라우트가 트리에 존재).
 export function DataDeletionScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/settings' })
-  }
+  const goBack = useSafeBack({ to: '/settings' })
 
   return (
     <MobileScreen

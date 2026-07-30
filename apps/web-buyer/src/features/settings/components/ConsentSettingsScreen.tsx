@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { MobileScreen, Toggle } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { MARKETING_CONSENT_DEFAULT, REQUIRED_CONSENTS } from '../settings.mock'
 import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 
@@ -11,7 +12,6 @@ import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 // 선택 동의(마케팅 수신, 토글로 철회/재동의 → 설명·토스트가 현재 상태를 그대로 반영).
 export function ConsentSettingsScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
 
   const [marketingOn, setMarketingOn] = useState(MARKETING_CONSENT_DEFAULT.agreed)
   // 토스트는 마지막 동작(동의/철회)을 기억해 문구/아이콘을 그에 맞게 보여준다.
@@ -20,10 +20,7 @@ export function ConsentSettingsScreen() {
     agreed: false,
   })
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/settings' })
-  }
+  const goBack = useSafeBack({ to: '/settings' })
 
   const handleMarketingChange = (next: boolean) => {
     setMarketingOn(next)

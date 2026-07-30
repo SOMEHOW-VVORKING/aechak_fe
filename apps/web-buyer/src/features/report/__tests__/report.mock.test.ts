@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { PRODUCT_REPORT_REASONS, getReportTargetMock, isValidReportReason } from '../report.mock'
+import {
+  PRODUCT_REPORT_REASONS,
+  fetchReportTarget,
+  getReportTargetMock,
+  isValidReportReason,
+} from '../report.mock'
 
 describe('report.mock', () => {
   it('[AC-REPORT-001] 상품 신고 사유는 명세의 5종과 일치한다', () => {
@@ -30,5 +35,10 @@ describe('report.mock', () => {
     expect(target).not.toBeNull()
     expect(target?.storeName).toBe('냥이상점')
     expect(getReportTargetMock('does-not-exist')).toBeNull()
+  })
+
+  it('[AC-REPORT-004] 비동기 조회는 존재 상품이면 대상을, 없는 상품이면 null을 resolve한다', async () => {
+    await expect(fetchReportTarget('p-feeder-5l')).resolves.toMatchObject({ storeName: '냥이상점' })
+    await expect(fetchReportTarget('does-not-exist')).resolves.toBeNull()
   })
 })

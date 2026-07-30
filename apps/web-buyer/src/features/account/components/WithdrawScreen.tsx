@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { UserX } from 'lucide-react'
 import {
   Alert,
@@ -11,6 +11,7 @@ import {
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useOrders } from '@/shared/order'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { useWithdraw } from '../account.queries'
 import {
   WITHDRAW_DELETED_INFO,
@@ -23,7 +24,6 @@ import {
 // 회원 탈퇴(b10-st-5). 진행 중 거래가 있으면 차단(5-A), 없으면 안내 후 확인 Modal(5-C/5-D).
 export function WithdrawScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const orders = useOrders()
   const withdraw = useWithdraw()
 
@@ -33,10 +33,7 @@ export function WithdrawScreen() {
   const blocked = isWithdrawBlocked(orders)
   const breakdown = blockingBreakdown(orders)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
-  }
+  const goBack = useSafeBack({ to: '/mypage' })
 
   const handleConfirm = () => {
     withdraw.mutate(undefined, {
@@ -50,7 +47,7 @@ export function WithdrawScreen() {
   // ── 탈퇴 완료(종결) ──
   if (withdrawn) {
     return (
-      <MobileScreen header={<BackAppBar onBack={() => navigate({ to: '/' })} title="회원 탈퇴" />}>
+      <MobileScreen>
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
             icon={<UserX className="size-8" />}

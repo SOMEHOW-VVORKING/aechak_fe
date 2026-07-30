@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
 export interface ImageLightboxProps {
@@ -8,11 +8,18 @@ export interface ImageLightboxProps {
   alt?: string
 }
 
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+
 // 리뷰 사진 등 단일 이미지를 크게 보는 라이트박스. 스크림 클릭/닫기 버튼/ESC로 닫힌다.
 // position:fixed지만 __root의 폰 프레임 translateZ containing block 안에서 배치돼
 // 데스크톱에서도 프레임을 벗어나지 않는다(BottomSheet/Modal/Toast와 동일 전제).
 // 모바일: 탭으로 열고 스크림/닫기 탭으로 닫힘(hover 전용 상호작용 없음).
+// aria-modal 선언과 동작을 맞추기 위해 DS Modal/Drawer/BottomSheet와 동일한 포커스 계약을
+// 갖춘다 — 열릴 때 라이트박스로 포커스 이동, Tab을 안에 가둠, 닫힐 때 원래 트리거로 복귀.
 export function ImageLightbox({ src, onClose, alt = '' }: ImageLightboxProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // ESC 닫기 + 바디 스크롤 잠금
   useEffect(() => {
     if (src == null) return
     const handler = (e: KeyboardEvent) => {
@@ -27,11 +34,51 @@ export function ImageLightbox({ src, onClose, alt = '' }: ImageLightboxProps) {
     }
   }, [src, onClose])
 
+  // 열릴 때 포커스를 라이트박스로 옮기고, 닫힐 때 원래 요소(리뷰 썸네일 등)로 복귀
+  useEffect(() => {
+    if (src == null) return
+    const prev = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+    return () => prev?.focus()
+  }, [src])
+
+  // Tab/Shift+Tab 순환을 라이트박스 안(닫기 버튼)으로 가둠
+  useEffect(() => {
+    if (src == null) return
+    const panel = panelRef.current
+    if (!panel) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (!items.length) {
+        e.preventDefault()
+        return
+      }
+      const first = items[0]!
+      const last = items[items.length - 1]!
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [src])
+
   if (src == null) return null
 
   return (
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center p-6"
+      ref={panelRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-modal flex items-center justify-center p-6 outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="리뷰 사진 확대 보기"

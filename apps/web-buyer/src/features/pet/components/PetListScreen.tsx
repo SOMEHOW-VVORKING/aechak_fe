@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Cat, Dog, PawPrint, Plus, Star } from 'lucide-react'
 import type { PetProfile } from '@aechak/domain'
 import { Button, EmptyState, MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { removePet, setRepresentativePet } from '@/shared/pet'
 import { usePetList } from '../pet.queries'
 import { formatPetMeta } from '../pet.mock'
@@ -12,17 +13,13 @@ import { PetFormScreen } from './PetFormScreen'
 // 펫 프로필 관리(b10-st-3). 목록(추가 → pets/new) + 인라인 편집 + 삭제 확인 Modal + 대표 펫 지정.
 export function PetListScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const pets = usePetList()
 
   // undefined = 목록, 객체 = 해당 펫 편집(인라인 폼).
   const [editTarget, setEditTarget] = useState<PetProfile | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<PetProfile | null>(null)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
-  }
+  const goBack = useSafeBack({ to: '/mypage' })
 
   // 편집 모드(인라인 폼)
   if (editTarget !== undefined) {

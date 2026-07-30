@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
 import { /* Bell, */ Database, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { logout } from '@/shared/auth'
 import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
@@ -13,13 +14,9 @@ import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 // 실제로 소유한 하위 화면으로만 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
 export function SettingsHomeScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const [logoutOpen, setLogoutOpen] = useState(false)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
-  }
+  const goBack = useSafeBack({ to: '/mypage' })
 
   const handleLogout = () => {
     logout()

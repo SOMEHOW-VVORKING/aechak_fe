@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Flag, Heart, Share2, Truck } from 'lucide-react'
 import {
   Avatar,
@@ -17,6 +17,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
 import { addToCart } from '@/shared/cart'
@@ -31,7 +32,6 @@ const DETAIL_REVIEW_LIMIT = 3
 
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
 export function ProductDetailScreen({ productId }: { productId: string }) {
-  const router = useRouter()
   const navigate = useNavigate()
   const { data, isLoading } = useProductDetail(productId)
 
@@ -46,10 +46,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
     variant: 'success',
   })
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   const showToast = (message: string, variant: ToastVariant = 'success') =>
     setToast({ open: true, message, variant })
