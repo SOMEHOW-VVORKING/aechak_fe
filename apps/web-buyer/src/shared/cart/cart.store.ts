@@ -39,8 +39,18 @@ function keyOf(item: CartItem): string {
   return cartLineKey(item.productId, item.option)
 }
 
-/** 장바구니에 담는다. 같은 productId+option 라인이 있으면 수량만 합친다(새 라인은 기본 선택). */
-export function addToCart(productId: string, option: string, quantity = 1): void {
+/**
+ * 장바구니에 담는다. 같은 productId+option 라인이 있으면 수량만 합친다(새 라인은 기본 선택).
+ * 옵션 조합 추가금(additionalPrice)/조합 id는 새 라인에만 싣는다 — 같은 option 라인은 같은 조합이라
+ * 추가금도 같으므로 기존 값을 유지한다.
+ */
+export function addToCart(
+  productId: string,
+  option: string,
+  quantity = 1,
+  additionalPrice?: number,
+  optionCombinationId?: number,
+): void {
   const key = cartLineKey(productId, option)
   const existing = items.find(i => keyOf(i) === key)
   if (existing) {
@@ -48,7 +58,7 @@ export function addToCart(productId: string, option: string, quantity = 1): void
       keyOf(i) === key ? { ...i, quantity: i.quantity + quantity } : i,
     )
   } else {
-    items = [...items, { productId, option, quantity, selected: true }]
+    items = [...items, { productId, option, quantity, selected: true, additionalPrice, optionCombinationId }]
   }
   emit()
 }

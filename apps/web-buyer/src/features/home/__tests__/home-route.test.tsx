@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -71,11 +71,11 @@ describe('/ (홈 카테고리 칩 인플레이스 필터)', () => {
     await user.click(screen.getByRole('button', { name: '위생/미용' }))
     await user.click(screen.getByRole('button', { name: '마켓에서 더 보기' }))
 
-    // 마켓으로 전환(홈 앱바 '애착'이 사라짐)되고, 위생/미용 카테고리가 적용돼
-    // 홈 랭킹엔 없던 위생/미용 상품(슬리커 브러시)이 마켓 그리드에 보인다
-    expect(await screen.findByText('슬리커 브러시 이중모용')).toBeInTheDocument()
+    // 마켓으로 전환(홈 앱바 '애착'이 사라짐)되고, 위생/미용(실 트리 categoryId 21) 카테고리가 적용돼
+    // 그 카테고리의 실 API 상품(벤토나이트 고양이 모래)이 마켓 그리드에 보인다.
+    await waitFor(() => expect(screen.getByText('벤토나이트 고양이 모래 8.5L')).toBeInTheDocument())
     expect(screen.queryByText('애착')).not.toBeInTheDocument()
-    // 다른 카테고리(사료/간식) 상품은 마켓 그리드에서도 걸러진다
+    // 홈 랭킹(목업)에 있던 사료/간식 상품 문구는 마켓(실 API)에 없다
     expect(screen.queryByText('츄르 참치맛 40개입')).not.toBeInTheDocument()
   })
 })

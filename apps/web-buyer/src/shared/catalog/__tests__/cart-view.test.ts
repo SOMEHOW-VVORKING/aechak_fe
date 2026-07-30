@@ -87,4 +87,22 @@ describe('buildCartView', () => {
     expect(view.selectedQuantity).toBe(3)
     expect(view.shippingTotal).toBe(0) // 41,700 ≥ 30,000 → 무료
   })
+
+  it('[AC-CART-007] 옵션 조합 추가금이 라인 합계·주문 금액에 반영된다', () => {
+    const items: CartItem[] = [
+      { productId: 'p-feeder-5l', option: '프리미엄형', quantity: 2, selected: true, additionalPrice: 5000 },
+    ]
+    const view = buildCartView(items)
+    const line = view.groups.flatMap(g => g.lines)[0]
+    expect(line?.additionalPrice).toBe(5000)
+    expect(line?.lineTotal).toBe((64000 + 5000) * 2)
+    expect(view.itemsTotal).toBe((64000 + 5000) * 2)
+  })
+
+  it('[AC-CART-008] additionalPrice 미설정 라인은 추가금 0으로 취급한다(하위 호환)', () => {
+    const view = buildCartView([{ productId: 'p-feeder-5l', option: '기본', quantity: 1, selected: true }])
+    const line = view.groups.flatMap(g => g.lines)[0]
+    expect(line?.additionalPrice).toBe(0)
+    expect(view.itemsTotal).toBe(64000)
+  })
 })

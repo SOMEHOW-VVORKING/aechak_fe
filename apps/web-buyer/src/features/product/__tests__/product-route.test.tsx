@@ -2,7 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { resetAuth } from '@/shared/auth'
+import { resetRegistry } from '@/shared/catalog'
+import { PRODUCT_OPTIONS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -20,9 +24,53 @@ function renderAt(path: string) {
 }
 
 describe('/products/$productId', () => {
+  beforeEach(() => {
+    resetAuth()
+    resetRegistry()
+  })
+
   it('[AC-PRODUCT-005] 존재하는 상품은 상세를 렌더한다', async () => {
     renderAt('/products/p-feeder-5l')
     expect(await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-011] 실 ULID 상품은 실 API 상세(이름·설명)를 렌더한다', async () => {
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    expect(await screen.findByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    expect(screen.getByText('앱으로 급여 시간을 관리하는 실데이터 급식기예요.')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-012] 옵션 시트에서 조합을 고르면 총액에 추가금이 반영된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    // 하단 액션바 "장바구니" → 옵션 시트(실 옵션 로드)
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    const select = await screen.findByRole('combobox')
+    // 프리미엄형(+5,000원) 선택 시 기본가 64,000 + 5,000 = 69,000원(시트 총액에만 등장)
+    await user.selectOptions(select, '프리미엄형')
+    expect(await screen.findByText('69,000원')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-013] 실 옵션 조회가 오류면 옵션 시트가 담기/구매를 막고 재시도를 보여준다', async () => {
+    // 실 상품의 /options를 500으로 강제 — 실 옵션 실패를 "기본 구성" 기본가로 위장하면 안 된다(codex 리뷰 #8).
+    server.use(
+      http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
+        params.productId === REAL_PRODUCT_ID
+          ? new HttpResponse(null, { status: 500 })
+          : new HttpResponse(null, { status: 404 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    expect(await screen.findByText('옵션 정보를 불러오지 못했어요')).toBeInTheDocument()
+    // 담기/구매 버튼은 렌더되지 않는다(잘못된 기본가 주문 차단).
+    expect(screen.queryByRole('button', { name: '장바구니 담기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '바로 구매' })).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-006] 알 수 없는 productId는 not-found 상태를 렌더한다', async () => {

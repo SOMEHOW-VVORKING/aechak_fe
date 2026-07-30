@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Flag, Heart, Share2, Truck } from 'lucide-react'
 import {
@@ -21,19 +21,40 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
 import { addToCart } from '@/shared/cart'
-import { SUB_CATEGORIES, toggleWish, useIsWished } from '@/shared/catalog'
+import { addWish, SUB_CATEGORIES, toggleWish, useIsWished } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
-import { useProductDetail } from '../product.queries'
+import { useProductDetail, useProductOptions } from '../product.queries'
 import type { ProductDetail } from '../product.mock'
+import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } from '../product.map'
 import { AddedToCartSheet } from './AddedToCartSheet'
 
 // 상세 리뷰 섹션은 최대 3개만 노출하고 나머지는 "전체보기"(상품 리뷰 목록)로 넘긴다.
 const DETAIL_REVIEW_LIMIT = 3
 
+// 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
+// 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
+function buildOptionChoices(
+  raw: ProductOptionsView | null | undefined,
+  detail: ProductDetail | null | undefined,
+): OptionChoice[] {
+  const source = raw ?? (detail ? mockOptionsFromDetail(detail) : null)
+  if (source && source.choices.length > 0) return source.choices
+  return [
+    {
+      key: '기본 구성',
+      label: '기본 구성',
+      additionalPrice: 0,
+      remainingStock: detail?.isSoldOut ? 0 : null,
+      soldOut: Boolean(detail?.isSoldOut),
+    },
+  ]
+}
+
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
+// 실 API(GET /products/{id}, /options)로 구동하되, mock id는 상세 쿼리가 목업으로 폴백한다.
 export function ProductDetailScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
-  const { data, isLoading } = useProductDetail(productId)
+  const { data, isLoading, isError, refetch } = useProductDetail(productId)
 
   const wished = useIsWished(productId)
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
@@ -45,6 +66,16 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
     message: '',
     variant: 'success',
   })
+
+  // 옵션은 시트를 열 때만 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
+  const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
+  const optionChoices = buildOptionChoices(optionsQuery.data, data)
+
+  // 서버 상세의 isLiked를 찜 스토어에 단방향 시드한다(like API가 없어 세션 토글이 우선 — false여도
+  // 강제 해제하지 않는다). addWish는 멱등이라 재호출/StrictMode 이중 실행에 안전하다.
+  useEffect(() => {
+    if (data?.isLiked) addWish(productId)
+  }, [productId, data?.isLiked])
 
   const goBack = useSafeBack({ to: '/' })
 
@@ -72,6 +103,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
         data ? (
           <ActionBar
             wished={wished}
+            soldOut={data.isSoldOut}
             onToggleWish={() =>
               requireAuth('wish', () => {
                 toggleWish(productId)
@@ -86,6 +118,15 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
     >
       {isLoading ? (
         <DetailSkeleton />
+      ) : isError ? (
+        // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다(codex 리뷰 #7).
+        <div className="flex h-full items-center justify-center p-6">
+          <EmptyState
+            title="상품 정보를 불러오지 못했어요"
+            description="네트워크 상태를 확인하고 다시 시도해 주세요."
+            action={{ label: '다시 시도', onClick: () => void refetch() }}
+          />
+        </div>
       ) : !data ? (
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
@@ -138,13 +179,15 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 dim + "품절" 오버레이가 담당한다. */}
             <PriceBlock product={data} />
 
-            {/* 배송 안내 — 무료배송 여부는 검색 무료배송 필터와 같은 규칙(isFreeShipping)이라 모순 없음 */}
+            {/* 배송 안내 — 무료배송 여부는 상품별 실 shipping이 정한다 */}
             <div className="flex items-center gap-2 text-text-secondary">
               <Truck className="size-[18px] flex-none text-icon" />
               <span className="text-caption">
                 {data.freeShipping
-                  ? '무료배송 / 내일(화) 도착 예정'
-                  : `배송비 ${formatKRW(data.deliveryFee)} (도서산간지역 ${formatKRW(data.remoteAreaFee)})`}
+                  ? '무료배송'
+                  : data.remoteAreaFee != null
+                    ? `배송비 ${formatKRW(data.deliveryFee)} (도서산간지역 ${formatKRW(data.remoteAreaFee)})`
+                    : `배송비 ${formatKRW(data.deliveryFee)}`}
               </span>
             </div>
 
@@ -156,7 +199,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 <span className="text-subheading font-semibold text-text-primary">
                   리뷰 {data.reviewSummary.total.toLocaleString('ko-KR')}
                 </span>
-                {data.reviewSummary.total > 0 && (
+                {/* 전체보기는 실제로 보여줄 리뷰 목록이 있을 때만 — 실 상품은 집계만 있고 목록 소스가
+                    없어 링크를 감춘다(codex 리뷰 #13). 목록 API가 생기면 되살린다. */}
+                {data.reviews.length > 0 && (
                   <button
                     type="button"
                     onClick={() =>
@@ -205,17 +250,25 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             {/* 상품 정보 */}
             <div className="flex flex-col gap-3">
               <span className="text-subheading font-semibold text-text-primary">상품 정보</span>
-              <div className="flex h-48 items-center justify-center rounded-image bg-surface-sunken text-icon-muted">
-                <span className="text-caption">상품 상세 이미지</span>
-              </div>
-              <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
-                {data.specs.map(spec => (
-                  <div key={spec.label} className="flex items-start justify-between gap-4 text-body-sm">
-                    <span className="flex-none text-text-tertiary">{spec.label}</span>
-                    <span className="text-right text-text-primary">{spec.value}</span>
-                  </div>
-                ))}
-              </div>
+              {data.description && (
+                <p className="whitespace-pre-wrap text-body-sm leading-relaxed text-text-secondary">
+                  {data.description}
+                </p>
+              )}
+              {/* 회색 "상품 상세 이미지" 박스는 실 상세 이미지가 없는 장식/깨진 이미지처럼 보이는 죽은
+                  UI라 제거했다 — 실제 이미지는 상단 캐러셀에 있고, 실 상세 미디어 API가 생기면 그때 렌더한다(codex UI/UX #12). */}
+              {/* 사양표는 실 API 소스가 없어 실 상품에선 비어 온다 — 목업 사양을 실데이터로 위장하지
+                  않으려고 값이 있을 때만 렌더한다(codex 리뷰 #13). */}
+              {data.specs.length > 0 && (
+                <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+                  {data.specs.map(spec => (
+                    <div key={spec.label} className="flex items-start justify-between gap-4 text-body-sm">
+                      <span className="flex-none text-text-tertiary">{spec.label}</span>
+                      <span className="text-right text-text-primary">{spec.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 상품 신고 진입점 */}
@@ -234,18 +287,22 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       {data && (
         <OptionSheet
           open={sheetOpen}
-          product={data}
+          basePrice={data.price}
+          choices={optionChoices}
+          loading={optionsQuery.isLoading}
+          error={optionsQuery.isError}
+          onRetry={() => void optionsQuery.refetch()}
           onClose={() => setSheetOpen(false)}
-          onAddToCart={(option, qty) => {
-            addToCart(productId, option, qty)
+          onAddToCart={(option, qty, additionalPrice) => {
+            addToCart(productId, option, qty, additionalPrice)
             setSheetOpen(false)
             // 하단 중앙 토스트가 하단 액션바를 덮던 문제를 근본 해소 — 토스트 대신 확인 바텀시트를
             // 올려 담긴 사실 + 추천 상품을 보여준다.
             setAddedSheetOpen(true)
           }}
-          onBuyNow={(option, qty) => {
+          onBuyNow={(option, qty, additionalPrice) => {
             setSheetOpen(false)
-            navigate({ to: '/checkout', search: { buyNow: productId, option, qty } })
+            navigate({ to: '/checkout', search: { buyNow: productId, option, qty, addl: additionalPrice } })
           }}
         />
       )}
@@ -300,6 +357,23 @@ function getDiscount(product: ProductDetail): number | null {
 }
 
 function ReviewSummaryCard({ summary }: { summary: ProductDetail['reviewSummary'] }) {
+  // 분포 소스가 없는 실 상품(집계 전용)은 큰 빈 오른쪽 여백 대신 평균/별점/건수를 한 줄로 콤팩트하게
+  // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지, codex UI/UX #11).
+  if (!summary.distribution) {
+    return (
+      <div className="flex items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
+        <span className="text-title font-bold leading-none text-text-primary">
+          {summary.average.toFixed(1)}
+        </span>
+        <div className="flex flex-col gap-1">
+          <RatingInput value={summary.average} readonly size={16} />
+          <span className="text-caption text-text-tertiary">
+            리뷰 {summary.total.toLocaleString('ko-KR')}개
+          </span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-4 rounded-card border border-border-subtle bg-surface-raised p-4">
       <div className="flex flex-none flex-col items-center gap-1">
@@ -368,11 +442,13 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
 
 function ActionBar({
   wished,
+  soldOut,
   onToggleWish,
   onCart,
   onBuy,
 }: {
   wished: boolean
+  soldOut?: boolean
   onToggleWish: () => void
   onCart: () => void
   onBuy: () => void
@@ -388,62 +464,142 @@ function ActionBar({
         aria-pressed={wished}
         aria-label={wished ? '찜 해제' : '찜하기'}
         className={[
-          'flex size-12 flex-none items-center justify-center rounded-input border border-border transition-colors',
+          'flex size-12 flex-none items-center justify-center rounded-input border border-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
           wished ? 'text-brand' : 'text-icon',
         ].join(' ')}
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
       </button>
-      <Button variant="secondary" size="lg" onClick={onCart} className="flex-1">
+      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다(codex UI/UX #9). 찜은 유지. */}
+      <Button variant="secondary" size="lg" onClick={onCart} className="flex-1" disabled={soldOut}>
         장바구니
       </Button>
-      <Button size="lg" onClick={onBuy} className="flex-[1.4]">
-        구매하기
+      <Button size="lg" onClick={onBuy} className="flex-[1.4]" disabled={soldOut}>
+        {soldOut ? '품절' : '구매하기'}
       </Button>
     </div>
   )
 }
 
+// 옵션 조합 하나를 선택 항목 하나로 평탄화한 목록(choices)을 소비한다. 조합 추가금은 총액과
+// 콜백에 실어 다운스트림 장바구니/주문 합계에 반영된다. 선택 조합이 품절이면 담기/구매를 막는다.
 function OptionSheet({
   open,
-  product,
+  basePrice,
+  choices,
+  loading,
+  error,
+  onRetry,
   onClose,
   onAddToCart,
   onBuyNow,
 }: {
   open: boolean
-  product: ProductDetail
+  basePrice: number
+  choices: OptionChoice[]
+  loading: boolean
+  error: boolean
+  onRetry: () => void
   onClose: () => void
-  onAddToCart: (option: string, qty: number) => void
-  onBuyNow: (option: string, qty: number) => void
+  onAddToCart: (option: string, qty: number, additionalPrice: number) => void
+  onBuyNow: (option: string, qty: number, additionalPrice: number) => void
 }) {
-  const [option, setOption] = useState(product.options[0] ?? '')
+  const [selectedKey, setSelectedKey] = useState('')
   const [qty, setQty] = useState(1)
-  const total = product.price * qty
+  // 기본 선택은 주문 가능한(품절 아닌) 첫 조합 — 첫 조합이 품절인데 뒤에 판매 조합이 있으면 첫인상이
+  // "구매 불가"가 되지 않게 한다(codex UI/UX #8).
+  const choice = choices.find(c => c.key === selectedKey) ?? choices.find(c => !c.soldOut) ?? choices[0]
+  const allSoldOut = choices.length > 0 && choices.every(c => c.soldOut)
+
+  // 선택 조합이 바뀌면 수량을 1로 되돌려 재고 초과를 막는다.
+  useEffect(() => {
+    setQty(1)
+  }, [choice?.key])
+
+  // 옵션 조회가 (404 아닌) 오류면 담기/구매를 막는다 — 조용히 "기본 구성" 기본가로 주문하게 두면
+  // 실제 옵션/재고를 무시한 잘못된 주문이 된다(codex 리뷰 #8).
+  if (error) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="옵션 선택">
+        <div role="alert" className="flex flex-col items-center gap-3 py-8 text-center">
+          <p className="text-body-sm text-text-secondary">옵션 정보를 불러오지 못했어요</p>
+          <Button variant="secondary" size="md" onClick={onRetry}>
+            다시 시도
+          </Button>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  if (loading || !choice) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="옵션 선택">
+        <div role="status" aria-live="polite" className="py-10 text-center text-body-sm text-text-tertiary">
+          옵션을 불러오는 중이에요
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  // 모든 조합이 품절이면 선택/담기 UI 대신 명확한 전량 품절 안내를 보여준다(codex UI/UX #8).
+  if (allSoldOut) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="옵션 선택">
+        <div role="status" className="py-10 text-center text-body-sm text-text-secondary">
+          모든 옵션이 품절이에요
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  const maxStock = choice.remainingStock ?? 99
+  const total = (basePrice + choice.additionalPrice) * qty
+  const orderDisabled = choice.soldOut || maxStock <= 0
 
   return (
     <BottomSheet open={open} onClose={onClose} title="옵션 선택">
       <div className="flex flex-col gap-3.5">
         <Select
-          options={product.options.map(o => ({ value: o, label: o }))}
-          value={option}
-          onChange={setOption}
+          options={choices.map(c => ({
+            value: c.key,
+            label: c.soldOut
+              ? `${c.label} (품절)`
+              : c.additionalPrice > 0
+                ? `${c.label} (+${formatKRW(c.additionalPrice)})`
+                : c.label,
+          }))}
+          value={choice.key}
+          onChange={setSelectedKey}
         />
         <div className="flex items-center justify-between">
           <span className="text-body text-text-secondary">수량</span>
-          <NumberInput value={qty} onChange={setQty} min={1} max={Math.max(1, product.stockCount)} size="sm" />
+          <NumberInput value={qty} onChange={setQty} min={1} max={Math.max(1, maxStock)} size="sm" />
         </div>
-        <p className="text-right text-caption text-text-tertiary">재고 {product.stockCount}개</p>
+        {choice.remainingStock != null && (
+          <p className="text-right text-caption text-text-tertiary">재고 {choice.remainingStock}개</p>
+        )}
         <div className="h-px bg-border-subtle" />
         <div className="flex items-center justify-between">
           <span className="text-body text-text-secondary">총 {qty}개</span>
           <span className="text-price-lg font-bold text-text-price">{formatKRW(total)}</span>
         </div>
+        {orderDisabled && <p className="text-caption text-error-fg">선택한 옵션은 품절이라 주문할 수 없어요</p>}
         <div className="flex gap-2.5">
-          <Button variant="secondary" size="lg" onClick={() => onAddToCart(option, qty)} className="flex-1">
+          <Button
+            variant="secondary"
+            size="lg"
+            disabled={orderDisabled}
+            onClick={() => onAddToCart(choice.key, qty, choice.additionalPrice)}
+            className="flex-1"
+          >
             장바구니 담기
           </Button>
-          <Button size="lg" onClick={() => onBuyNow(option, qty)} className="flex-1">
+          <Button
+            size="lg"
+            disabled={orderDisabled}
+            onClick={() => onBuyNow(choice.key, qty, choice.additionalPrice)}
+            className="flex-1"
+          >
             바로 구매
           </Button>
         </div>

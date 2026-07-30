@@ -1,6 +1,7 @@
 import type { Product } from '@aechak/domain'
 import type { MainCategory } from './categories'
 import { placeholderImage } from './placeholder'
+import { getRegistered } from './registry'
 
 // 구매자 화면 전 공용 mock 상품 카탈로그. 도메인 `Product`를 그대로 쓰되(임의 병렬 타입 금지),
 // 필터링에 필요한 대분류(mainCategory)만 뷰용으로 얹은 `CatalogProduct`로 확장한다.
@@ -87,7 +88,16 @@ export function isFreeShipping(product: Pick<Product, 'price'>): boolean {
   return product.price >= FREE_SHIPPING_THRESHOLD
 }
 
+// 실 API 상품(레지스트리) 우선, 없으면 목업 카탈로그 폴백. 실 ULID와 목업 `p-*` id는 충돌하지
+// 않아 순서는 안전망이다 — 마켓/상세에서 등록된 실 상품이 장바구니/주문에서 그대로 해석된다.
 export function findProduct(id: string): CatalogProduct | undefined {
+  return getRegistered(id) ?? CATALOG_PRODUCTS.find(p => p.id === id)
+}
+
+// 목업 카탈로그만 조회(레지스트리 제외). 실 상세 404 폴백에 쓴다 — findProduct를 쓰면 목록에서
+// 이미 등록된 실 ULID를 되살려 백엔드가 미존재로 판정한 상품을 가짜 상세로 보여주는 회귀가 난다
+// (codex 리뷰 #9). 목업 id만 폴백 대상이므로 레지스트리를 건너뛴다.
+export function findMockProduct(id: string): CatalogProduct | undefined {
   return CATALOG_PRODUCTS.find(p => p.id === id)
 }
 

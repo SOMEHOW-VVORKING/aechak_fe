@@ -35,7 +35,8 @@ export function buildOrderFromContext(input: OrderBuildInput): BuyerOrder | null
       name: l.product.name,
       option: l.option,
       quantity: l.quantity,
-      unitPrice: l.product.price,
+      // 주문 단가에 옵션 조합 추가금을 포함해 주문 스냅샷이 결제 금액과 일치하게 고정한다.
+      unitPrice: l.product.price + l.additionalPrice,
       thumbnailUrl: l.product.thumbnailUrl,
     })),
   }))
