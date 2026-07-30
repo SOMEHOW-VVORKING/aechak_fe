@@ -12,6 +12,8 @@ export interface PaymentResultSearch {
   buyNow?: string
   option?: string
   qty?: number
+  /** 바로구매 옵션 조합 추가금(원) — 주문 스냅샷 단가에 반영. */
+  addl?: number
   orderedKeys?: string[]
 }
 
@@ -45,6 +47,7 @@ export const Route = createFileRoute('/payment/result')({
     buyNow: typeof search.buyNow === 'string' ? search.buyNow : undefined,
     option: typeof search.option === 'string' ? search.option : undefined,
     qty: toNumber(search.qty),
+    addl: toNumber(search.addl),
     orderedKeys: Array.isArray(search.orderedKeys)
       ? search.orderedKeys.filter((k): k is string => typeof k === 'string')
       : undefined,
@@ -56,7 +59,7 @@ export const Route = createFileRoute('/payment/result')({
 })
 
 function PaymentResultRoute() {
-  const { amount, method, source, buyNow, option, qty, orderedKeys } = Route.useSearch()
+  const { amount, method, source, buyNow, option, qty, addl, orderedKeys } = Route.useSearch()
   return (
     <PaymentResultScreen
       amount={amount}
@@ -65,6 +68,7 @@ function PaymentResultRoute() {
       buyNow={buyNow}
       option={option}
       qty={qty}
+      addl={addl}
       orderedKeys={orderedKeys}
     />
   )

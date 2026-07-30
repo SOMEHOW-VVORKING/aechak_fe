@@ -33,6 +33,8 @@ export interface CartLineView {
   /** 주문 대상 여부(=품절 아님). 주문 합계·주문 가능 판정은 selected && orderable만 센다. */
   orderable: boolean
   soldOut: boolean
+  /** 선택한 옵션 조합의 추가금(원, 단위당). 목업 라인은 0. lineTotal/주문 단가에 반영된다. */
+  additionalPrice: number
   lineTotal: number
   product: CatalogProduct
 }
@@ -72,6 +74,7 @@ function resolveLine(item: CartItem): CartLineView | null {
   const product = findProduct(item.productId)
   if (!product) return null
   const soldOut = product.isSoldOut ?? false
+  const additionalPrice = item.additionalPrice ?? 0
   return {
     key: cartLineKey(item.productId, item.option),
     productId: item.productId,
@@ -83,7 +86,9 @@ function resolveLine(item: CartItem): CartLineView | null {
     // 주문 대상은 품절이 아닌 라인뿐 — 주문 합계·주문 가능 판정에만 쓴다.
     orderable: !soldOut,
     soldOut,
-    lineTotal: product.price * item.quantity,
+    additionalPrice,
+    // 조합 추가금을 단가에 더해 합계에 반영한다(상품 기본가 + 조합 추가금) * 수량.
+    lineTotal: (product.price + additionalPrice) * item.quantity,
     product,
   }
 }

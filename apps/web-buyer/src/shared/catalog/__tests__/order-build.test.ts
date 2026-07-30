@@ -34,6 +34,19 @@ describe('buildOrderFromContext', () => {
     expect(order!.paidAmount).toBe(63200)
   })
 
+  it('[AC-ORDER-BUILD-004] 옵션 조합 추가금이 주문 스냅샷 단가에 포함된다', () => {
+    const order = buildOrderFromContext({
+      orderNo: '20260710-0002',
+      method: 'kakaopay',
+      paidAmount: 69000,
+      orderedAt: '2026.07.10 09:41',
+      items: [{ productId: 'p-feeder-5l', option: '프리미엄형', quantity: 1, selected: true, additionalPrice: 5000 }],
+    })
+    // 급식기 기본가 64,000 + 조합 추가금 5,000 = 단가 69,000, 상품합계도 69,000.
+    expect(order!.groups[0]?.items[0]?.unitPrice).toBe(69000)
+    expect(order!.itemsTotal).toBe(69000)
+  })
+
   it('[AC-ORDER-BUILD-003] 카탈로그에 없는 상품만 있으면 null을 반환한다', () => {
     const order = buildOrderFromContext({
       orderNo: '20260710-9999',

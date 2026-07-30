@@ -1,5 +1,5 @@
 import type { Product } from '@aechak/domain'
-import { findProduct, isFreeShipping, mainCategoryLabel, placeholderImage, type CatalogProduct } from '@/shared/catalog'
+import { findMockProduct, isFreeShipping, mainCategoryLabel, placeholderImage, type CatalogProduct } from '@/shared/catalog'
 
 export interface ProductSpec {
   label: string
@@ -19,8 +19,8 @@ export interface ProductReviewEntry {
 export interface ProductReviewSummary {
   average: number
   total: number
-  // 5★→1★ 순 비율(%). 합이 100에 가깝게 구성.
-  distribution: [number, number, number, number, number]
+  // 5★→1★ 순 비율(%). 실 API엔 분포 소스가 없어 실 상품에선 undefined(막대 숨김) — 목업만 값이 있다.
+  distribution?: [number, number, number, number, number]
 }
 
 // 도메인 `Product`를 상세 화면용으로 확장한 뷰모델(임의 병렬 타입 아님 — Product를 그대로 상속).
@@ -30,12 +30,17 @@ export interface ProductDetail extends Product {
   // 무료배송 여부는 shared/catalog의 isFreeShipping이 단일 원본(검색 무료배송 필터와 동일 규칙).
   freeShipping: boolean
   deliveryFee: number
-  remoteAreaFee: number
+  // 도서산간 배송비. 목업만 값이 있고 실 API엔 소스가 없어 실 상품에선 undefined(문구 숨김).
+  remoteAreaFee?: number
   options: string[]
   stockCount: number
   specs: ProductSpec[]
   reviewSummary: ProductReviewSummary
   reviews: ProductReviewEntry[]
+  // 상품 설명(실 API description). 목업 상품에는 없다.
+  description?: string
+  // 서버 상세의 isLiked(로그인 시 찜 여부). 목업에는 없다 — 화면에서 찜 스토어 시드에 쓴다.
+  isLiked?: boolean
 }
 
 const FEEDER_SPECS: ProductSpec[] = [
@@ -78,7 +83,7 @@ function sampleReviews(product: Product): ProductReviewEntry[] {
       author: '멍멍****',
       rating: 4,
       date: '2026.06.08',
-      content: '조립이 쉽고 청소도 편해요. 배송도 빨랐습니다.',
+      content: '조립이 쉽고 청소도 편해요. 배송도 빨랐어요.',
       option,
       verifiedPurchase: true,
     },
@@ -129,7 +134,8 @@ function buildDetail(base: CatalogProduct): ProductDetail {
 // 알 수 없는 id는 첫 상품으로 조용히 대체하지 않고 null을 반환한다 — 소비 측에서
 // not-found 상태를 렌더링하게 해 잘못된 URL에 엉뚱한 상품/찜 상태가 보이지 않게 한다.
 export function getProductDetailMock(id: string): ProductDetail | null {
-  const found = findProduct(id)
+  // 레지스트리 제외 목업 전용 조회 — 실 상세 404는 목업으로 되살리지 않고 null(=not-found)이어야 한다.
+  const found = findMockProduct(id)
   return found ? buildDetail(found) : null
 }
 

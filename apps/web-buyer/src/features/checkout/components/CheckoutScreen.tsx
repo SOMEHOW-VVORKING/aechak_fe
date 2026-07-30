@@ -6,6 +6,7 @@ import {
   BottomFixedAction,
   Button,
   Checkbox,
+  EmptyState,
   Input,
   MobileScreen,
   Radio,
@@ -30,11 +31,13 @@ export interface CheckoutScreenProps {
   buyNow?: string
   option?: string
   qty?: number
+  /** 바로 구매 시 선택한 옵션 조합 추가금(원). 합계·주문 단가에 반영한다. */
+  addl?: number
 }
 
 // 주문서(b1-st-4). 배송지 선택 + 주문상품 요약(셀러별) + 적립금 적용 + 결제수단 라디오 +
 // 약관 동의 + 최종 결제금액 계산. 쿠폰/정기배송 OFF.
-export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutScreenProps) {
+export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: CheckoutScreenProps) {
   const navigate = useNavigate()
   const router = useRouter()
 
@@ -50,10 +53,10 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
   // 바로 구매면 단일 상품으로 즉석 뷰를, 아니면 장바구니 라인으로 뷰를 만든다(같은 buildCartView 재사용).
   const view = useMemo(() => {
     const items: CartItem[] = buyNow
-      ? [{ productId: buyNow, option, quantity: Math.max(1, qty), selected: true }]
+      ? [{ productId: buyNow, option, quantity: Math.max(1, qty), selected: true, additionalPrice: addl }]
       : [...cartItems]
     return buildCartView(items)
-  }, [buyNow, option, qty, cartItems])
+  }, [buyNow, option, qty, addl, cartItems])
 
   // 주문 요약에는 선택된(=결제 대상) 라인만 노출한다.
   const orderGroups = view.groups
@@ -78,6 +81,11 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
   const hasOrder = orderGroups.length > 0
   const canPay = hasOrder && defaultAddress != null && agree
 
+  // 바로구매인데 상품이 해석되지 않으면(예: 실 상품 URL로 하드 리프레시 → 인메모리 레지스트리가
+  // 비어 findProduct 미스) 빈 주문서 대신 안내를 띄운다(codex 리뷰 #4). 정상 SPA 흐름은 레지스트리가
+  // 채워져 있어 이 분기를 타지 않는다.
+  const unresolvedBuyNow = buyNow != null && view.isEmpty
+
   const handlePay = () => {
     if (!canPay) return
     // 결제 결과는 일회성 전환 화면이라 주문서를 replace로 교체한다 — 결제 완료 후 뒤로가기가
@@ -87,7 +95,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
       // 잘못 청구하지 않게 한다.
       navigate({
         to: '/payment/result',
-        search: { amount: payable, method, source: 'buynow', buyNow, option, qty: Math.max(1, qty) },
+        search: { amount: payable, method, source: 'buynow', buyNow, option, qty: Math.max(1, qty), addl },
         replace: true,
       })
       return
@@ -99,6 +107,20 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1 }: CheckoutS
       search: { amount: payable, method, source: 'cart', orderedKeys },
       replace: true,
     })
+  }
+
+  if (unresolvedBuyNow) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="주문서" />}>
+        <div className="flex h-full items-center justify-center p-6">
+          <EmptyState
+            title="주문할 상품을 확인할 수 없어요"
+            description="상품을 다시 선택해 주세요."
+            action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
+          />
+        </div>
+      </MobileScreen>
+    )
   }
 
   return (
