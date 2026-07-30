@@ -49,7 +49,9 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
     return (
       <MobileScreen
         footer={
-          <BottomFixedAction primary={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }} />
+          <BottomFixedAction
+            primary={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders', replace: true }) }}
+          />
         }
       >
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">

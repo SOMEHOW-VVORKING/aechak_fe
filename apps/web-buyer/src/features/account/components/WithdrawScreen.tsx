@@ -53,7 +53,7 @@ export function WithdrawScreen() {
             icon={<UserX className="size-8" />}
             title="탈퇴가 완료됐어요"
             description="그동안 애착을 이용해 주셔서 고마워요. 거래 기록은 관련 법령에 따라 보관돼요."
-            action={{ label: '홈으로', onClick: () => navigate({ to: '/' }) }}
+            action={{ label: '홈으로', onClick: () => navigate({ to: '/', replace: true }) }}
           />
         </div>
       </MobileScreen>
