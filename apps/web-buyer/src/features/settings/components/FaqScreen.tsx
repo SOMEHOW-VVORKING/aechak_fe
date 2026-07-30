@@ -36,7 +36,7 @@ export function FaqScreen() {
         {/* 카테고리 칩 (단일 선택) */}
         <div
           className="flex gap-2 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
+          role="group"
           aria-label="FAQ 카테고리"
         >
           {FAQ_CATEGORIES.map(cat => {
@@ -45,11 +45,10 @@ export function FaqScreen() {
               <button
                 key={cat.value}
                 type="button"
-                role="tab"
-                aria-selected={active}
+                aria-pressed={active}
                 onClick={() => setCategory(cat.value)}
                 className={[
-                  'h-8 flex-none rounded-chip border px-3 text-body-sm transition-colors',
+                  'h-8 flex-none rounded-chip border px-3 text-body-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
                   active
                     ? 'border-brand-border bg-brand-subtle font-semibold text-brand'
                     : 'border-border bg-surface-base text-text-secondary',
@@ -77,7 +76,7 @@ export function FaqScreen() {
               title="검색 결과가 없어요"
               description={
                 query.trim() !== ''
-                  ? `‘${query.trim()}’에 대한 답변을 찾지 못했어요. 다른 키워드로 검색해 주세요.`
+                  ? `${query.trim()} 검색 결과가 없어요. 다른 키워드로 검색해 주세요.`
                   : '해당 카테고리에 등록된 질문이 없어요.'
               }
             />

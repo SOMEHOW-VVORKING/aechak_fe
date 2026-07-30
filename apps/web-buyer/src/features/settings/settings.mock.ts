@@ -77,12 +77,15 @@ export interface RequiredConsent {
   id: string
   label: string
   agreedAt: string
+  // 해당 동의의 문서 라우트. 문서 화면이 있는 항목만 연결하고, 없는 항목은 이동 불가 행으로 둔다
+  // (없는데 다른 문서로 보내면 잘못된 문서를 여는 오내비게이션이 된다).
+  route?: '/settings/privacy'
 }
 
-// 필수 동의 항목 — 철회 불가, 각 항목은 정책 문서(개인정보 처리방침)로 연결.
+// 필수 동의 항목 — 철회 불가. 문서 화면이 있는 항목(개인정보 처리방침)만 해당 문서로 연결한다.
 export const REQUIRED_CONSENTS: RequiredConsent[] = [
   { id: 'terms', label: '이용약관', agreedAt: '2026.03.10' },
-  { id: 'privacy', label: '개인정보 처리방침', agreedAt: '2026.03.10' },
+  { id: 'privacy', label: '개인정보 처리방침', agreedAt: '2026.03.10', route: '/settings/privacy' },
   { id: 'location', label: '위치기반 서비스 약관', agreedAt: '2026.03.10' },
 ]
 

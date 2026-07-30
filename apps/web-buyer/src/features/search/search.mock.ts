@@ -54,7 +54,7 @@ export interface ResultSortOption {
 export const RESULT_SORTS: ResultSortOption[] = [
   { value: 'recommend', label: '추천순' },
   { value: 'popular', label: '인기순' },
-  { value: 'price-asc', label: '낮은가격순' },
+  { value: 'price-asc', label: '낮은 가격순' },
 ]
 
 export const PRICE_MIN = 0

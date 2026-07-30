@@ -26,6 +26,8 @@ export type ProductReviewsView = Omit<ProductReviewData, 'reviews'> & {
 export function useProductReviews(productId: string): {
   data: ProductReviewsView | null | undefined
   isLoading: boolean
+  isError: boolean
+  refetch: () => void
 } {
   const base = useQuery<ProductReviewData | null>({
     queryKey: ['reviews', 'product', productId],
@@ -44,7 +46,7 @@ export function useProductReviews(productId: string): {
     return { ...base.data, reviews: [...mine, ...others] }
   }, [base.data, userReviews, productId])
 
-  return { data, isLoading: base.isLoading }
+  return { data, isLoading: base.isLoading, isError: base.isError, refetch: () => void base.refetch() }
 }
 
 // 리뷰 작성 mutation(신규). 리뷰 스토어에 반영되면 내 리뷰/상품 리뷰에 즉시 나타난다.

@@ -37,7 +37,7 @@ export function NotificationSettingsScreen() {
         >
           <SettingsControlRow
             title="전체 알림"
-            control={<Toggle checked={allOn} onChange={handleAllChange} />}
+            control={<Toggle checked={allOn} onChange={handleAllChange} ariaLabel="전체 알림" />}
           />
         </SettingsGroup>
 
@@ -47,7 +47,12 @@ export function NotificationSettingsScreen() {
             description="오후 9시부터 오전 8시까지 알림을 받을지 설정해요."
             disabled={!allOn}
             control={
-              <Toggle checked={allOn && nightOn} disabled={!allOn} onChange={setNightOn} />
+              <Toggle
+                checked={allOn && nightOn}
+                disabled={!allOn}
+                onChange={setNightOn}
+                ariaLabel="야간 알림 받기"
+              />
             }
           />
         </SettingsGroup>
