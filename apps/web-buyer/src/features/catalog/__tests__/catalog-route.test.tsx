@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { logout, resetAuth } from '@/shared/auth'
+import { resetRegistry, resetWishlist } from '@/shared/catalog'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -11,74 +13,110 @@ function renderAt(path: string) {
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return router
 }
 
 describe('/market', () => {
-  it('[AC-CATALOG-005] ?category= 바로가기로 진입하면 해당 중분류가 초기 선택돼 결과가 걸러진다', async () => {
+  beforeEach(() => {
+    resetAuth()
+    resetRegistry()
+    resetWishlist()
+  })
+
+  it('[AC-CATALOG-005] ?category=<라벨> 진입 시 이름이 같은 중분류가 초기 선택돼 결과가 걸러진다', async () => {
     renderAt('/market?category=' + encodeURIComponent('산책용품'))
 
-    // 산책용품 카테고리 상품이 그리드에 보인다
-    expect(await screen.findByText('자동 리드줄 5m 대형견용')).toBeInTheDocument()
-    // 다른 카테고리(급식기) 상품은 걸러져 보이지 않는다
-    expect(screen.queryByText('앱 연동 자동 급식기 6L 듀얼 호퍼')).not.toBeInTheDocument()
+    // 트리 로드 후 필터(category=12)가 비동기로 적용된다. 필터 전 임시 목록의 노드를 잡지 않도록
+    // 먼저 사료 상품이 사라질 때까지 기다린 뒤(=필터 확정), 안정된 산책용품 상품을 확인한다.
+    await waitFor(() => expect(screen.queryByText('강아지 연어 사료 2kg')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('자동 리드줄 5m 대형견용')).toBeInTheDocument())
   })
 
-  it('[AC-CATALOG-007] 첫 진입 시 카테고리 그리드는 닫혀 있고 토글로 펼치고 다시 접을 수 있다', async () => {
+  it('[AC-CATALOG-007] 대분류 선택 시 중분류 그리드가 뜨고 카테고리 토글로 접고 펼칠 수 있다', async () => {
     const user = userEvent.setup()
     renderAt('/market')
 
-    // 첫 진입 시 결과가 로드될 때까지 기다린다 (품절 제외 토글 버튼 등장으로 판단)
-    await screen.findByRole('button', { name: '품절 제외' })
-    // 기본은 닫힘 — 중분류 아이콘(산책용품)이 안 보인다
-    expect(screen.queryByRole('button', { name: '산책용품' })).not.toBeInTheDocument()
-
-    // 펼치면 중분류 그리드가 나타난다
-    await user.click(screen.getByRole('button', { name: '카테고리' }))
+    // 대분류 칩은 트리 로드 후 뜬다.
+    await user.click(await screen.findByRole('button', { name: '강아지' }))
+    // 대분류를 고르면 중분류 그리드가 열려 하위 중분류(산책용품)가 보인다.
     expect(await screen.findByRole('button', { name: '산책용품' })).toBeInTheDocument()
 
-    // 다시 접으면 사라진다
-    await user.click(screen.getByRole('button', { name: '카테고리' }))
+    // 카테고리 토글로 접으면 사라지고 다시 펼치면 나타난다.
+    await user.click(screen.getByRole('button', { name: /카테고리/ }))
     expect(screen.queryByRole('button', { name: '산책용품' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /카테고리/ }))
+    expect(await screen.findByRole('button', { name: '산책용품' })).toBeInTheDocument()
   })
 
-  it('[AC-CATALOG-008] 품절 제외를 끄면 품절 상품이 그리드에 실제로 나타난다', async () => {
+  it('[AC-CATALOG-008] 품절 상품은 품절 배지로 표시된다', async () => {
     const user = userEvent.setup()
     renderAt('/market')
 
-    // 기본(품절 제외 on)에서는 품절 상품이 걸러져 안 보인다
-    expect(await screen.findByText('츄르 참치맛 40개입')).toBeInTheDocument()
-    expect(screen.queryByText('스크래쳐 하우스 2종 세트')).not.toBeInTheDocument()
+    // 고양이 > 위생/미용(id 21)에는 품절 상품(스크래쳐)이 있다.
+    await user.click(await screen.findByRole('button', { name: '고양이' }))
+    await user.click(await screen.findByRole('button', { name: '위생/미용' }))
 
-    // 품절 제외 토글을 끄면 품절 상품이 나타난다
-    await user.click(screen.getByRole('button', { name: '품절 제외' }))
     expect(await screen.findByText('스크래쳐 하우스 2종 세트')).toBeInTheDocument()
+    expect(screen.getByText('품절')).toBeInTheDocument()
   })
 
-  it('[AC-CATALOG-009] 마켓 대분류 탭에서 브랜드관이 제거되고 남은 탭 전환은 정상 동작한다', async () => {
+  it('[AC-CATALOG-009] 대분류 탭은 서버 트리에서 오고(브랜드관 없음) 전환 시 결과가 걸러진다', async () => {
     const user = userEvent.setup()
     renderAt('/market')
 
-    // 결과가 로드될 때까지 대기
-    await screen.findByRole('button', { name: '품절 제외' })
-
-    // 브랜드관 탭은 더 이상 렌더되지 않는다
+    // 대분류 칩 = 전체 + 트리 depth-1(강아지/고양이). 목업의 브랜드관/공통은 없다.
+    expect(await screen.findByRole('button', { name: '강아지' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전체' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '고양이' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '브랜드관' })).not.toBeInTheDocument()
-    // 남은 대분류 탭(전체/강아지/고양이/공통)은 정상 렌더된다
-    for (const label of ['전체', '강아지', '고양이', '공통']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
-    }
+    expect(screen.queryByRole('button', { name: '공통' })).not.toBeInTheDocument()
 
-    // 기본(전체)에서는 강아지 상품이 보인다
-    expect(await screen.findByText('강아지 사료 연어 2kg')).toBeInTheDocument()
-
-    // 고양이 탭으로 전환하면 고양이 상품만 남고 강아지 상품은 걸러진다
+    // 고양이 대분류로 전환하면 고양이 상품만 남고 강아지 상품은 걸러진다.
     await user.click(screen.getByRole('button', { name: '고양이' }))
-    expect(await screen.findByText('츄르 참치맛 40개입')).toBeInTheDocument()
-    expect(screen.queryByText('강아지 사료 연어 2kg')).not.toBeInTheDocument()
+    expect(await screen.findByText('벤토나이트 고양이 모래 8.5L')).toBeInTheDocument()
+    expect(screen.queryByText('강아지 연어 사료 2kg')).not.toBeInTheDocument()
+  })
+
+  it('[AC-CATALOG-010] 더보기로 다음 페이지 상품이 이어 붙는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/market')
+
+    // 첫 페이지(2개)만 먼저 뜬다 — 3번째 상품은 아직 없다.
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    expect(screen.queryByText('벤토나이트 고양이 모래 8.5L')).not.toBeInTheDocument()
+
+    // 더보기를 누르면 다음 페이지가 이어 붙는다.
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(await screen.findByText('벤토나이트 고양이 모래 8.5L')).toBeInTheDocument()
+  })
+
+  it('[AC-CATALOG-011] 낮은가격순으로 바꾸면 결과가 가격 오름차순으로 다시 정렬된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/market')
+
+    // 최신순 첫 페이지엔 연어 사료가 있고 가장 싼 츄르는 없다.
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    expect(screen.queryByText('참치 츄르 40개입')).not.toBeInTheDocument()
+
+    // 낮은 가격순으로 바꾸면 가장 싼 츄르가 첫 페이지로 올라오고 연어 사료는 밀려난다.
+    await user.click(screen.getByRole('tab', { name: '낮은 가격순' }))
+    expect(await screen.findByText('참치 츄르 40개입')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('강아지 연어 사료 2kg')).not.toBeInTheDocument())
+  })
+
+  it('[AC-CATALOG-012] 비회원은 카테고리 트랩 없이 상품만 본다(대분류 칩은 전체만)', async () => {
+    logout()
+    renderAt('/market')
+
+    // 상품 목록(permitAll)은 그대로 뜬다.
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    // 카테고리 트리(인증 필요)는 요청하지 않아 대분류 칩은 전체만 남는다.
+    expect(screen.getByRole('button', { name: '전체' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '강아지' })).not.toBeInTheDocument()
   })
 })

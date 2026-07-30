@@ -10,6 +10,131 @@ const base = axiosInstance.defaults.baseURL ?? ''
 export const BREEDS_URL = `${base}/breeds`
 export const WEB_REFRESH_URL = `${base}/auth/web/refresh`
 export const DELIVERY_ADDRESSES_URL = `${base}/delivery-addresses`
+export const CATEGORIES_URL = `${base}/categories`
+export const PRODUCTS_URL = `${base}/products`
+export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
+export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
+
+// 카테고리 트리 픽스처 — 대분류 2 + 각 중분류 2. name은 마켓 칩/그리드 라벨로 그대로 쓰인다.
+export const CATEGORY_FIXTURES = [
+  {
+    categoryId: 1,
+    name: '강아지',
+    iconUrl: null,
+    sortOrder: 1,
+    children: [
+      { categoryId: 11, name: '사료/간식', iconUrl: null, sortOrder: 1, children: [] },
+      { categoryId: 12, name: '산책용품', iconUrl: null, sortOrder: 2, children: [] },
+    ],
+  },
+  {
+    categoryId: 2,
+    name: '고양이',
+    iconUrl: null,
+    sortOrder: 2,
+    children: [
+      { categoryId: 21, name: '위생/미용', iconUrl: null, sortOrder: 1, children: [] },
+      { categoryId: 22, name: '사료/간식', iconUrl: null, sortOrder: 2, children: [] },
+    ],
+  },
+]
+
+// 중분류 -> 대분류 부모 맵(카테고리 필터의 category.id==it OR parent.id==it 흉내용).
+const CATEGORY_PARENT: Record<number, number | undefined> = { 11: 1, 12: 1, 21: 2, 22: 2 }
+
+interface ProductFixture {
+  categoryId: number
+  product: {
+    productId: string
+    name: string
+    sellerName: string
+    thumbnailImageKey: string | null
+    regularPrice: number
+    discountPrice: number | null
+    discountRate: number | null
+    saleStatus: 'ON_SALE' | 'OUT_OF_STOCK' | 'SUSPENDED' | 'ENDED'
+    averageRating: number | null
+    reviewCount: number
+  }
+}
+
+// 상품 목록 픽스처. categoryId(중분류)로 필터, price_asc면 유효가격 오름차순, 커서는 인덱스(2개씩).
+export const PRODUCT_FIXTURES: ProductFixture[] = [
+  makeFixture(11, 'p-real-1', '강아지 연어 사료 2kg', 28000, null),
+  makeFixture(12, 'p-real-2', '자동 리드줄 5m 대형견용', 33000, 24000),
+  makeFixture(21, 'p-real-3', '벤토나이트 고양이 모래 8.5L', 16000, null),
+  makeFixture(22, 'p-real-4', '참치 츄르 40개입', 13900, null),
+  makeFixture(21, 'p-real-5', '스크래쳐 하우스 2종 세트', 29000, null, 'OUT_OF_STOCK'),
+  makeFixture(22, 'p-real-6', '원목 캣타워 3단 대형', 89000, null),
+]
+
+function makeFixture(
+  categoryId: number,
+  productId: string,
+  name: string,
+  regularPrice: number,
+  discountPrice: number | null,
+  saleStatus: ProductFixture['product']['saleStatus'] = 'ON_SALE',
+): ProductFixture {
+  return {
+    categoryId,
+    product: {
+      productId,
+      name,
+      sellerName: '리얼상점',
+      thumbnailImageKey: null,
+      regularPrice,
+      discountPrice,
+      discountRate: discountPrice != null ? Math.round((1 - discountPrice / regularPrice) * 100) : null,
+      saleStatus,
+      averageRating: 4.5,
+      reviewCount: 12,
+    },
+  }
+}
+
+// 상품 상세/옵션 실 픽스처(ULID). 이 id만 200이고 나머지(목업 id 포함)는 404 -> 화면 폴백 경로를 탄다.
+export const REAL_PRODUCT_ID = '01J000000000000000000TEST'
+
+export const REAL_PRODUCT_DETAIL = {
+  productId: REAL_PRODUCT_ID,
+  name: '리얼 프리미엄 자동 급식기',
+  description: '앱으로 급여 시간을 관리하는 실데이터 급식기예요.',
+  representativeImageKey: null,
+  images: [],
+  regularPrice: 89000,
+  discountPrice: 64000,
+  discountRate: 28,
+  saleStatus: 'ON_SALE' as const,
+  shipping: { baseShippingFee: 3000, freeShippingThreshold: 50000 },
+  seller: { storeName: '리얼상점', profileImageKey: null },
+  review: { reviewCount: 128, averageRating: 4.7 },
+  categories: [
+    { categoryId: 1, name: '강아지', depth: 1 },
+    { categoryId: 11, name: '사료/간식', depth: 2 },
+  ],
+  isLiked: false,
+}
+
+export const REAL_PRODUCT_OPTIONS = {
+  optionGroups: [
+    {
+      optionGroupId: 1,
+      name: '구성',
+      sortOrder: 1,
+      values: [
+        { optionValueId: 1, name: '기본형', sortOrder: 1 },
+        { optionValueId: 2, name: '프리미엄형', sortOrder: 2 },
+        { optionValueId: 3, name: '한정형', sortOrder: 3 },
+      ],
+    },
+  ],
+  optionCombinations: [
+    { optionCombinationId: 1, name: '기본형', additionalPrice: 0, optionValueIds: [1], remainingStock: 10, soldOut: false },
+    { optionCombinationId: 2, name: '프리미엄형', additionalPrice: 5000, optionValueIds: [2], remainingStock: 5, soldOut: false },
+    { optionCombinationId: 3, name: '한정형', additionalPrice: 0, optionValueIds: [3], remainingStock: 0, soldOut: true },
+  ],
+}
 
 // 서버 시드(V1__create_and_seed_breeds.sql)의 실제 id·라벨 부분집합 — 종별 정렬(가나다순) +
 // sentinel('세상에 하나뿐인 믹스'/'기타') 후순 구조를 그대로 축소했다.
@@ -109,6 +234,46 @@ export const handlers = [
   // 통과해버린다 — 기본 핸들러는 반드시 401 고정.
   http.post(WEB_REFRESH_URL, () =>
     HttpResponse.json({ errorCode: 20005, message: '인증이 필요합니다.' }, { status: 401 }),
+  ),
+  // 카테고리 트리(마켓 대분류/중분류).
+  http.get(CATEGORIES_URL, () => HttpResponse.json({ data: CATEGORY_FIXTURES })),
+  // 상품 목록 — category 필터 + sort(price_asc) + 커서(인덱스 2개씩) 페이지네이션.
+  http.get(PRODUCTS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    const catParam = url.searchParams.get('category')
+    const sort = url.searchParams.get('sort')
+    const cursor = url.searchParams.get('cursor')
+    let list = PRODUCT_FIXTURES
+    if (catParam) {
+      const id = Number(catParam)
+      list = PRODUCT_FIXTURES.filter(f => f.categoryId === id || CATEGORY_PARENT[f.categoryId] === id)
+    }
+    let products = list.map(f => f.product)
+    if (sort === 'price_asc') {
+      products = [...products].sort(
+        (a, b) => (a.discountPrice ?? a.regularPrice) - (b.discountPrice ?? b.regularPrice),
+      )
+    }
+    const pageSize = 2
+    const start = cursor ? Number(cursor) : 0
+    const page = products.slice(start, start + pageSize)
+    const nextIndex = start + pageSize
+    const hasNext = nextIndex < products.length
+    return HttpResponse.json({
+      data: { products: page, totalCount: products.length, nextCursor: hasNext ? String(nextIndex) : null, hasNext },
+    })
+  }),
+  // 상품 상세 — 실 픽스처 id만 200, 나머지(목업 id 포함)는 404 -> 화면이 목업으로 폴백.
+  http.get(PRODUCT_DETAIL_URL, ({ params }) =>
+    params.productId === REAL_PRODUCT_ID
+      ? HttpResponse.json({ data: REAL_PRODUCT_DETAIL })
+      : new HttpResponse(null, { status: 404 }),
+  ),
+  // 상품 옵션 — 상세와 동일하게 실 픽스처 id만 200, 나머지는 404 -> 목업 옵션 폴백.
+  http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
+    params.productId === REAL_PRODUCT_ID
+      ? HttpResponse.json({ data: REAL_PRODUCT_OPTIONS })
+      : new HttpResponse(null, { status: 404 }),
   ),
 ]
 
