@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { CartItem, PaymentMethod } from '@aechak/domain'
@@ -7,7 +7,7 @@ import { Button, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { getCartItems, removeManyFromCart } from '@/shared/cart'
-import { buildOrderFromContext } from '@/shared/catalog'
+import { buildCartView, buildOrderFromContext } from '@/shared/catalog'
 import { addOrder } from '@/shared/order'
 import { useProcessPayment } from '../payment.queries'
 import { generateOrderNo } from '../payment.mock'
@@ -24,6 +24,8 @@ export interface PaymentResultScreenProps {
   buyNow?: string
   option?: string
   qty?: number
+  /** 바로구매 옵션 조합 추가금(원) — 주문 스냅샷 단가에 반영한다. */
+  addl?: number
   /** 장바구니 결제(source==='cart')로 실제 주문된 라인 키 — 성공 시 정확히 이 라인만 제거한다. */
   orderedKeys?: string[]
 }
@@ -36,6 +38,7 @@ export function PaymentResultScreen({
   buyNow,
   option,
   qty,
+  addl,
   orderedKeys,
 }: PaymentResultScreenProps) {
   const navigate = useNavigate()
@@ -46,21 +49,36 @@ export function PaymentResultScreen({
   // 주문번호(→ 주문 스토어 upsert 1건), 서로 다른 결제(다른 인스턴스)는 다른 번호(→ 별개 주문).
   const [orderNo] = useState(generateOrderNo)
 
+  // 주문할 라인(바로구매=단일 상품, 장바구니=주문된 키). 하드 리프레시 시 레지스트리/장바구니가
+  // 비어 상품이 해석되지 않을 수 있어, 결제 실행 여부 판정과 주문 조립이 같은 값을 쓰도록 메모이즈한다.
+  const orderedItems = useMemo<CartItem[]>(
+    () =>
+      source === 'buynow'
+        ? buyNow
+          ? [
+              {
+                productId: buyNow,
+                option: option ?? '기본',
+                quantity: Math.max(1, qty ?? 1),
+                selected: true,
+                additionalPrice: addl,
+              },
+            ]
+          : []
+        : getCartItems().filter(i => (orderedKeys ?? []).includes(cartLineKey(i.productId, i.option))),
+    [source, buyNow, option, qty, addl, orderedKeys],
+  )
+
+  // 주문 컨텍스트가 상품으로 해석되지 않으면(하드 리프레시로 인메모리 상태가 빔) 목업 결제를
+  // 실행해 "결제 성공했지만 주문 없음"을 만들지 않고 장바구니로 되돌린다(codex 리뷰 #4).
+  const orderResolvable = !buildCartView(orderedItems).isEmpty
+
   const run = () => {
     mutation.mutate(
       { amount, method, orderNo },
       {
         onSuccess: res => {
           if (!res.ok) return
-          // 장바구니는 비우기 전에 주문 라인을 먼저 조립한다(비운 뒤엔 라인을 못 읽음).
-          const orderedItems: CartItem[] =
-            source === 'buynow'
-              ? buyNow
-                ? [{ productId: buyNow, option: option ?? '기본', quantity: Math.max(1, qty ?? 1), selected: true }]
-                : []
-              : getCartItems().filter(i =>
-                  (orderedKeys ?? []).includes(cartLineKey(i.productId, i.option)),
-                )
           // 방금 결제한 주문을 이력에 추가한다(주문번호가 결정적이라 StrictMode 이중 실행에도 중복 안 됨).
           const order = buildOrderFromContext({
             orderNo: res.orderNo,
@@ -83,7 +101,7 @@ export function PaymentResultScreen({
   const changeMethod = () => {
     // 결제 화면을 replace로 나가 히스토리에서 빼면 실패 화면이 뒤로가기로 재진입되지 않는다.
     if (source === 'buynow' && buyNow) {
-      navigate({ to: '/checkout', search: { buyNow, option, qty }, replace: true })
+      navigate({ to: '/checkout', search: { buyNow, option, qty, addl }, replace: true })
     } else {
       navigate({ to: '/checkout', replace: true })
     }
@@ -93,12 +111,30 @@ export function PaymentResultScreen({
   // onSuccess의 removeManyFromCart(orderedKeys)도 멱등이라 안전하다 — ref 가드를 두면 StrictMode
   // 리마운트 시 살아남는 인스턴스의 mutation이 발화하지 않아 진행 스피너에서 멈추므로 가드를 두지 않는다.
   useEffect(() => {
+    // 컨텍스트가 해석 불가면 결제를 발화하지 않고 장바구니로 되돌린다(가짜 결제 성공 방지).
+    if (!orderResolvable) {
+      navigate({ to: '/cart', replace: true })
+      return
+    }
     run()
     // 재시도는 "다시 시도" 버튼이 run()을 다시 호출해 처리한다.
   }, [])
 
   const result = mutation.data
   const processing = !result
+
+  // 컨텍스트가 해석되지 않으면 결제 진행 스피너를 보여주지 않는다 — 느린 웹뷰에서 결제가 시작된 것처럼
+  // 보이지 않게 복구 안내만 렌더하고, 위 이펙트가 곧 장바구니로 이동시킨다(codex UI/UX #13).
+  if (!orderResolvable) {
+    return (
+      <MobileScreen>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-10 text-center">
+          <p className="text-heading font-bold text-text-primary">주문 정보를 확인할 수 없어요</p>
+          <p className="text-body-sm text-text-tertiary">장바구니로 이동해 다시 시도해 주세요.</p>
+        </div>
+      </MobileScreen>
+    )
+  }
 
   // 진행 중 — 이탈 방지를 위해 뒤로가기 앱바를 두지 않는다.
   if (processing) {

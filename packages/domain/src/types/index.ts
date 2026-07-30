@@ -53,6 +53,16 @@ export interface CartItem {
   option: string
   quantity: number
   selected: boolean
+  // 선택한 옵션 조합의 추가금(원). 조합별로 다르므로 상품 단위 캐시가 아니라 라인에 싣는다.
+  // `selected`와 같은 순수 클라이언트 값이며 additive optional이라 목업 라인은 미설정(=추가금 0).
+  additionalPrice?: number
+  // 선택한 옵션 조합 id(전방 호환 — 서버 장바구니 연동 시 조합 식별용). 표시/합계는 option 문자열과
+  // additionalPrice로 충분해 지금은 저장만 한다.
+  //
+  // TODO(후속, 실 cart/order/payment API 착수 전 필수): 가격/재고는 URL의 addl·option 문자열을
+  // 신뢰하지 말고 서버에서 재검증하고, 라인 정체성을 조합명(option)이 아니라 optionCombinationId로
+  // 삼을 것 — 조합명 중복 시 라인 충돌, 클라이언트 addl 변조로 결제 금액 조작이 가능하다(codex 리뷰 #11).
+  optionCombinationId?: number
 }
 
 // 장바구니 라인 키(productId + option). 라인 스토어(shared/cart)와 파생 뷰(shared/catalog)가

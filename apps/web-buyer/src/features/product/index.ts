@@ -1,4 +1,6 @@
 export { ProductDetailScreen } from './components/ProductDetailScreen'
-export { useProductDetail } from './product.queries'
+export { useProductDetail, useProductOptions } from './product.queries'
 export { getProductDetailMock } from './product.mock'
 export type { ProductDetail, ProductSpec, ProductReviewEntry, ProductReviewSummary } from './product.mock'
+export { mapProductDetail, mapProductOptions, mockOptionsFromDetail, toCatalogProduct } from './product.map'
+export type { OptionChoice, ProductOptionsView } from './product.map'

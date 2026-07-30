@@ -114,12 +114,180 @@ export interface DeleteDeliveryAddressResponse {
   data: DeleteDeliveryAddressResponseData
 }
 
+export interface CategoryResponse {
+  categoryId: number
+  name: string
+  /** @nullable */
+  iconUrl: string | null
+  sortOrder: number
+  children: CategoryResponse[]
+}
+
+export interface CategoryListResponse {
+  data: CategoryResponse[]
+}
+
+export type ProductSort = (typeof ProductSort)[keyof typeof ProductSort]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductSort = {
+  latest: 'latest',
+  price_asc: 'price_asc',
+} as const
+
+export type SaleStatus = (typeof SaleStatus)[keyof typeof SaleStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SaleStatus = {
+  ON_SALE: 'ON_SALE',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  SUSPENDED: 'SUSPENDED',
+  ENDED: 'ENDED',
+} as const
+
+export interface ProductSummaryResponse {
+  productId: string
+  name: string
+  sellerName: string
+  /** @nullable */
+  thumbnailImageKey: string | null
+  regularPrice: number
+  /** @nullable */
+  discountPrice: number | null
+  /** @nullable */
+  discountRate: number | null
+  saleStatus: SaleStatus
+  /** @nullable */
+  averageRating: number | null
+  reviewCount: number
+}
+
+export interface ProductListData {
+  products: ProductSummaryResponse[]
+  /** @nullable */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface ProductListResponse {
+  data: ProductListData
+}
+
+export interface ProductImage {
+  imageType: string
+  storageKey: string
+  sortOrder: number
+}
+
+export interface ProductShipping {
+  baseShippingFee: number
+  /** @nullable */
+  freeShippingThreshold: number | null
+}
+
+export interface ProductSeller {
+  storeName: string
+  /** @nullable */
+  profileImageKey: string | null
+}
+
+export interface ProductReviewSummary {
+  reviewCount: number
+  /** @nullable */
+  averageRating: number | null
+}
+
+export interface ProductCategory {
+  categoryId: number
+  name: string
+  depth: number
+}
+
+export interface ProductDetailResponse {
+  productId: string
+  name: string
+  /** @nullable */
+  description: string | null
+  /** @nullable */
+  representativeImageKey: string | null
+  images: ProductImage[]
+  regularPrice: number
+  /** @nullable */
+  discountPrice: number | null
+  /** @nullable */
+  discountRate: number | null
+  saleStatus: SaleStatus
+  shipping: ProductShipping
+  seller: ProductSeller
+  review: ProductReviewSummary
+  categories: ProductCategory[]
+  isLiked: boolean
+}
+
+export interface ProductDetailEnvelope {
+  data: ProductDetailResponse
+}
+
+export interface OptionValue {
+  optionValueId: number
+  name: string
+  sortOrder: number
+}
+
+export interface OptionGroup {
+  optionGroupId: number
+  name: string
+  sortOrder: number
+  values: OptionValue[]
+}
+
+export interface OptionCombination {
+  optionCombinationId: number
+  name: string
+  additionalPrice: number
+  optionValueIds: number[]
+  /** @nullable */
+  remainingStock: number | null
+  soldOut: boolean
+}
+
+export interface ProductOptionsResponse {
+  optionGroups: OptionGroup[]
+  optionCombinations: OptionCombination[]
+}
+
+export interface ProductOptionsEnvelope {
+  data: ProductOptionsResponse
+}
+
 export type HealthCheck200 = {
   status?: string
 }
 
 export type GetBreedsParams = {
   species: Species
+}
+
+export type GetProductsParams = {
+  /**
+   * categoryId 필터
+   */
+  category?: number
+  /**
+   * 정렬(기본 latest)
+   */
+  sort?: ProductSort
+  /**
+   * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
 }
 
 /**
@@ -981,4 +1149,786 @@ export const useSetDefaultDeliveryAddress = <TError = unknown, TContext = unknow
   const mutationOptions = getSetDefaultDeliveryAddressMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 대>중>소(depth<=3) 재귀 카테고리 트리. 인증 필요(SCRUM-106 SecurityConfig 기준 permitAll 아님, 비로그인 401).
+ * @summary 카테고리 트리 조회
+ */
+export const getCategories = (signal?: AbortSignal) => {
+  return customInstance<CategoryListResponse>({ url: `/categories`, method: 'GET', signal })
+}
+
+export const getGetCategoriesQueryKey = () => {
+  return [`/categories`] as const
+}
+
+export const getGetCategoriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCategoriesQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCategories>>> = ({ signal }) =>
+    getCategories(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCategories>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getCategories>>>
+export type GetCategoriesQueryError = unknown
+
+export function useGetCategories<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCategories>>,
+          TError,
+          Awaited<ReturnType<typeof getCategories>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCategories<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCategories>>,
+          TError,
+          Awaited<ReturnType<typeof getCategories>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCategories<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 카테고리 트리 조회
+ */
+
+export function useGetCategories<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCategoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetCategoriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCategoriesQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCategories>>> = ({ signal }) =>
+    getCategories(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getCategories>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCategoriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCategories>>
+>
+export type GetCategoriesSuspenseQueryError = unknown
+
+export function useGetCategoriesSuspense<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCategoriesSuspense<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCategoriesSuspense<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 카테고리 트리 조회
+ */
+
+export function useGetCategoriesSuspense<
+  TData = Awaited<ReturnType<typeof getCategories>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCategories>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCategoriesSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 카테고리/정렬/커서 기반 상품 목록. 비로그인 허용(permitAll). category는 categoryId이며 해당 카테고리와 직계 하위(1단계) 상품을 매칭한다(전체 하위 트리 아님).
+ * @summary 상품 목록 조회(커서 페이지네이션)
+ */
+export const getProducts = (params?: GetProductsParams, signal?: AbortSignal) => {
+  return customInstance<ProductListResponse>({ url: `/products`, method: 'GET', params, signal })
+}
+
+export const getGetProductsQueryKey = (params?: GetProductsParams) => {
+  return [`/products`, ...(params ? [params] : [])] as const
+}
+
+export const getGetProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProducts>>> = ({ signal }) =>
+    getProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductsQueryResult = NonNullable<Awaited<ReturnType<typeof getProducts>>>
+export type GetProductsQueryError = unknown
+
+export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, TError = unknown>(
+  params: undefined | GetProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, TError = unknown>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, TError = unknown>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, TError = unknown>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProducts>>> = ({ signal }) =>
+    getProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductsSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getProducts>>>
+export type GetProductsSuspenseQueryError = unknown
+
+export function useGetProductsSuspense<
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params: undefined | GetProductsParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductsSuspense<
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductsSuspense<
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetProductsSuspense<
+  TData = Awaited<ReturnType<typeof getProducts>>,
+  TError = unknown,
+>(
+  params?: GetProductsParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404.
+ * @summary 상품 상세 조회
+ */
+export const getProductDetail = (productId: string, signal?: AbortSignal) => {
+  return customInstance<ProductDetailEnvelope>({
+    url: `/products/${productId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetProductDetailQueryKey = (productId?: string) => {
+  return [`/products/${productId}`] as const
+}
+
+export const getGetProductDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductDetailQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductDetail>>> = ({ signal }) =>
+    getProductDetail(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductDetailQueryResult = NonNullable<Awaited<ReturnType<typeof getProductDetail>>>
+export type GetProductDetailQueryError = void
+
+export function useGetProductDetail<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getProductDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductDetail<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getProductDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductDetail<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 상세 조회
+ */
+
+export function useGetProductDetail<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductDetailQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductDetailQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductDetail>>> = ({ signal }) =>
+    getProductDetail(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProductDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductDetail>>
+>
+export type GetProductDetailSuspenseQueryError = void
+
+export function useGetProductDetailSuspense<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductDetailSuspense<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductDetailSuspense<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 상세 조회
+ */
+
+export function useGetProductDetailSuspense<
+  TData = Awaited<ReturnType<typeof getProductDetail>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductDetailSuspenseQueryOptions(productId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404.
+ * @summary 상품 옵션 조회
+ */
+export const getProductOptions = (productId: string, signal?: AbortSignal) => {
+  return customInstance<ProductOptionsEnvelope>({
+    url: `/products/${productId}/options`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetProductOptionsQueryKey = (productId?: string) => {
+  return [`/products/${productId}/options`] as const
+}
+
+export const getGetProductOptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductOptionsQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductOptions>>> = ({ signal }) =>
+    getProductOptions(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductOptions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductOptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductOptions>>
+>
+export type GetProductOptionsQueryError = void
+
+export function useGetProductOptions<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductOptions>>,
+          TError,
+          Awaited<ReturnType<typeof getProductOptions>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductOptions<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductOptions>>,
+          TError,
+          Awaited<ReturnType<typeof getProductOptions>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductOptions<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 옵션 조회
+ */
+
+export function useGetProductOptions<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductOptionsQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductOptionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductOptionsQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductOptions>>> = ({ signal }) =>
+    getProductOptions(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProductOptions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductOptionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductOptions>>
+>
+export type GetProductOptionsSuspenseQueryError = void
+
+export function useGetProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 옵션 조회
+ */
+
+export function useGetProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getProductOptions>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductOptionsSuspenseQueryOptions(productId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }

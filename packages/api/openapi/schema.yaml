@@ -147,6 +147,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SetDefaultDeliveryAddressResponse"
+  /categories:
+    get:
+      summary: "카테고리 트리 조회"
+      description: "대>중>소(depth<=3) 재귀 카테고리 트리. 인증 필요(SCRUM-106 SecurityConfig 기준 permitAll 아님, 비로그인 401)."
+      operationId: "getCategories"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryListResponse"
+  /products:
+    get:
+      summary: "상품 목록 조회(커서 페이지네이션)"
+      description: "카테고리/정렬/커서 기반 상품 목록. 비로그인 허용(permitAll). category는 categoryId이며 해당 카테고리와 직계 하위(1단계) 상품을 매칭한다(전체 하위 트리 아님)."
+      operationId: "getProducts"
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: "categoryId 필터"
+          schema:
+            type: integer
+            format: int64
+        - name: sort
+          in: query
+          required: false
+          description: "정렬(기본 latest)"
+          schema:
+            $ref: "#/components/schemas/ProductSort"
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+  /products/{productId}:
+    get:
+      summary: "상품 상세 조회"
+      description: "상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404."
+      operationId: "getProductDetail"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetailEnvelope"
+        "404":
+          description: "존재하지 않는 상품"
+  /products/{productId}/options:
+    get:
+      summary: "상품 옵션 조회"
+      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404."
+      operationId: "getProductOptions"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductOptionsEnvelope"
+        "404":
+          description: "존재하지 않는 상품"
 components:
   schemas:
     Species:
@@ -276,6 +376,258 @@ components:
               format: int64
               nullable: true
               description: "기본 삭제로 자동 승격된 배송지 id — 승격 없으면 null"
+    CategoryResponse:
+      type: object
+      required: [categoryId, name, iconUrl, sortOrder, children]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        iconUrl:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryResponse"
+    CategoryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryResponse"
+    ProductSort:
+      type: string
+      enum: [latest, price_asc]
+      default: latest
+    SaleStatus:
+      type: string
+      enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
+    ProductSummaryResponse:
+      type: object
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount]
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        sellerName:
+          type: string
+        thumbnailImageKey:
+          type: string
+          nullable: true
+        regularPrice:
+          type: integer
+          format: int64
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountRate:
+          type: integer
+          nullable: true
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        averageRating:
+          type: number
+          format: double
+          nullable: true
+        reviewCount:
+          type: integer
+    ProductListData:
+      type: object
+      required: [products, totalCount, nextCursor, hasNext]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummaryResponse"
+        totalCount:
+          type: integer
+          nullable: true
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    ProductListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProductListData"
+    ProductImage:
+      type: object
+      required: [imageType, storageKey, sortOrder]
+      properties:
+        imageType:
+          type: string
+        storageKey:
+          type: string
+        sortOrder:
+          type: integer
+    ProductShipping:
+      type: object
+      required: [baseShippingFee, freeShippingThreshold]
+      properties:
+        baseShippingFee:
+          type: integer
+          format: int64
+        freeShippingThreshold:
+          type: integer
+          format: int64
+          nullable: true
+    ProductSeller:
+      type: object
+      required: [storeName, profileImageKey]
+      properties:
+        storeName:
+          type: string
+        profileImageKey:
+          type: string
+          nullable: true
+    ProductReviewSummary:
+      type: object
+      required: [reviewCount, averageRating]
+      properties:
+        reviewCount:
+          type: integer
+        averageRating:
+          type: number
+          format: double
+          nullable: true
+    ProductCategory:
+      type: object
+      required: [categoryId, name, depth]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        depth:
+          type: integer
+    ProductDetailResponse:
+      type: object
+      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked]
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        representativeImageKey:
+          type: string
+          nullable: true
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductImage"
+        regularPrice:
+          type: integer
+          format: int64
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountRate:
+          type: integer
+          nullable: true
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        shipping:
+          $ref: "#/components/schemas/ProductShipping"
+        seller:
+          $ref: "#/components/schemas/ProductSeller"
+        review:
+          $ref: "#/components/schemas/ProductReviewSummary"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductCategory"
+        isLiked:
+          type: boolean
+    ProductDetailEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProductDetailResponse"
+    OptionValue:
+      type: object
+      required: [optionValueId, name, sortOrder]
+      properties:
+        optionValueId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sortOrder:
+          type: integer
+    OptionGroup:
+      type: object
+      required: [optionGroupId, name, sortOrder, values]
+      properties:
+        optionGroupId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionValue"
+    OptionCombination:
+      type: object
+      required: [optionCombinationId, name, additionalPrice, optionValueIds, remainingStock, soldOut]
+      properties:
+        optionCombinationId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        additionalPrice:
+          type: integer
+          format: int64
+        optionValueIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        remainingStock:
+          type: integer
+          format: int64
+          nullable: true
+        soldOut:
+          type: boolean
+    ProductOptionsResponse:
+      type: object
+      required: [optionGroups, optionCombinations]
+      properties:
+        optionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionGroup"
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionCombination"
+    ProductOptionsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProductOptionsResponse"
   securitySchemes:
     bearerAuth:
       type: http

@@ -31,7 +31,9 @@ export const SUB_CATEGORIES: string[] = [
   '훈련/행동',
 ]
 
-export type CatalogSort = 'popular' | 'newest' | 'price-asc'
+// 마켓 정렬 — 서버(GET /products)가 지원하는 2종만 노출한다. 값은 서버 enum(latest/price_asc)과
+// 동일해 매핑 계층 없이 그대로 넘긴다. 목업 시절의 '인기순'(popular)은 서버 미지원이라 제거했다.
+export type CatalogSort = 'latest' | 'price_asc'
 
 export interface CatalogSortOption {
   value: CatalogSort
@@ -39,9 +41,8 @@ export interface CatalogSortOption {
 }
 
 export const CATALOG_SORTS: CatalogSortOption[] = [
-  { value: 'popular', label: '인기순' },
-  { value: 'newest', label: '신상품' },
-  { value: 'price-asc', label: '낮은가격' },
+  { value: 'latest', label: '최신순' },
+  { value: 'price_asc', label: '낮은 가격순' },
 ]
 
 export function mainCategoryLabel(value: MainCategory): string {
