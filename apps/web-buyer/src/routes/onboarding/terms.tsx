@@ -10,7 +10,7 @@ interface TermItem {
 }
 
 const TERMS: TermItem[] = [
-  { key: 'age', label: '만 14세 이상입니다', required: true },
+  { key: 'age', label: '만 14세 이상이에요', required: true },
   { key: 'service', label: '서비스 이용약관', required: true },
   { key: 'privacy', label: '개인정보 처리방침', required: true },
   { key: 'location', label: '위치기반 서비스 약관', required: true },

@@ -1,16 +1,14 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
 import { BadgeCheck } from 'lucide-react'
 import { Alert, BottomFixedAction, Button, Input, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { useAccount } from '@/shared/account'
 import { useSendOtp, useVerifyPhone } from '../account.queries'
 import { OTP_LENGTH, isValidOtp } from '../account.mock'
 
 // 본인 인증(b10-st-9). 미인증(9-A) → 휴대폰 OTP 인증 → 인증 완료(9-B). 테스트 고정 인증번호로 목업.
 export function VerifyScreen() {
-  const navigate = useNavigate()
-  const router = useRouter()
   const account = useAccount()
   const sendOtp = useSendOtp()
   const verifyPhone = useVerifyPhone()
@@ -20,10 +18,7 @@ export function VerifyScreen() {
   const [code, setCode] = useState('')
   const [error, setError] = useState(false)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
-  }
+  const goBack = useSafeBack({ to: '/mypage' })
 
   const handleSend = () => {
     sendOtp.mutate(phone, {

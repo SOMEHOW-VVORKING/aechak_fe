@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Image as ImageIcon } from 'lucide-react'
 import type { Review } from '@aechak/domain'
 import {
@@ -12,6 +12,7 @@ import {
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { findProduct, placeholderImage } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
 import { useCreateReview, useEditReview, useReviewById } from '../review.queries'
@@ -29,7 +30,6 @@ const RATING_WORDS = ['', '별로예요', '그저 그래요', '괜찮아요', '�
 // 리뷰 작성(b4-st-2). 별점·사진·본문 + 최소 글자/금칙어 검증. 등록 → 내 리뷰로 이동(토스트).
 export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteScreenProps) {
   const navigate = useNavigate()
-  const router = useRouter()
   const editing = useReviewById(reviewId)
   const orders = useOrders()
   const createReview = useCreateReview()
@@ -52,10 +52,7 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
   const [content, setContent] = useState(editing?.content ?? '')
   const [images, setImages] = useState<string[]>(editing?.images ?? [])
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/reviews/mine', search: { submitted: false } })
-  }
+  const goBack = useSafeBack({ to: '/reviews/mine', search: { submitted: false } })
 
   const validation = validateReview(rating, content)
   const submitting = createReview.isPending || editReview.isPending

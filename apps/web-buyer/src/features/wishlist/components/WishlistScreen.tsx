@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Heart } from 'lucide-react'
 import { EmptyState, MobileScreen } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { addWish, type CatalogProduct, ProductGrid } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useWishlistProducts } from '../wishlist.queries'
@@ -11,17 +12,13 @@ import { useWishlistProducts } from '../wishlist.queries'
 // 찜 목록(b3-st-4). 상품 찜 탭만(스토어 찜 탭 OFF). 하트 해제 시 실행 취소 토스트.
 export function WishlistScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const products = useWishlistProducts()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
 
   const [toastOpen, setToastOpen] = useState(false)
   const [lastRemoved, setLastRemoved] = useState<CatalogProduct | null>(null)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   return (
     <MobileScreen header={<BackAppBar onBack={goBack} title="찜" />}>

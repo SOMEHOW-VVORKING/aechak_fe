@@ -2,10 +2,12 @@ export interface ToggleProps {
   checked: boolean
   disabled?: boolean
   label?: string
+  /** label을 시각적으로 붙이지 않고(예: 행 제목이 별도 span일 때) 스위치의 접근성 이름만 줄 때 사용. */
+  ariaLabel?: string
   onChange?: (checked: boolean) => void
 }
 
-export function Toggle({ checked, disabled, label, onChange }: ToggleProps) {
+export function Toggle({ checked, disabled, label, ariaLabel, onChange }: ToggleProps) {
   return (
     <label
       className={[
@@ -17,6 +19,7 @@ export function Toggle({ checked, disabled, label, onChange }: ToggleProps) {
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label ? undefined : ariaLabel}
         disabled={disabled}
         onClick={() => onChange?.(!checked)}
         className={[

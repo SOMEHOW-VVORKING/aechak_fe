@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Flag, Heart, Share2, Truck } from 'lucide-react'
 import {
   Avatar,
@@ -17,6 +17,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
 import { addToCart } from '@/shared/cart'
@@ -52,7 +53,6 @@ function buildOptionChoices(
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
 // 실 API(GET /products/{id}, /options)로 구동하되, mock id는 상세 쿼리가 목업으로 폴백한다.
 export function ProductDetailScreen({ productId }: { productId: string }) {
-  const router = useRouter()
   const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useProductDetail(productId)
 
@@ -77,10 +77,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
     if (data?.isLiked) addWish(productId)
   }, [productId, data?.isLiked])
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   const showToast = (message: string, variant: ToastVariant = 'success') =>
     setToast({ open: true, message, variant })

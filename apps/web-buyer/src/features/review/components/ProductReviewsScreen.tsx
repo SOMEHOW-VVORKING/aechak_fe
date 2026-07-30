@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { Review } from '@aechak/domain'
 import {
   EmptyState,
@@ -11,6 +11,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
 import { useDeleteReview, useProductReviews, type ProductReviewsView } from '../review.queries'
@@ -20,14 +21,10 @@ import { MyReviewCard } from './MyReviewCard'
 // 상품 리뷰 목록(b4-st-3). 별점 분포 + 정렬(최신순/별점높은순/포토리뷰만) + 리뷰 카드 목록.
 export function ProductReviewsScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
-  const { data, isLoading } = useProductReviews(productId)
+  const { data, isLoading, isError, refetch } = useProductReviews(productId)
   const [sort, setSort] = useState<ReviewSort>('latest')
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/products/$productId', params: { productId } })
-  }
+  const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
 
   const title = data ? `리뷰 ${data.total.toLocaleString('ko-KR')}` : '리뷰'
 
@@ -35,6 +32,15 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
     <MobileScreen header={<BackAppBar onBack={goBack} title={title} />}>
       {isLoading ? (
         <ReviewsSkeleton />
+      ) : isError ? (
+        // 서버 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다(codex 리뷰 #6).
+        <div className="flex h-full items-center justify-center p-6">
+          <EmptyState
+            title="리뷰를 불러오지 못했어요"
+            description="네트워크 상태를 확인하고 다시 시도해 주세요."
+            action={{ label: '다시 시도', onClick: () => refetch() }}
+          />
+        </div>
       ) : !data ? (
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
@@ -101,18 +107,17 @@ function ReviewsBody({
       </div>
 
       {/* 정렬/필터 칩 */}
-      <div className="flex gap-2 px-4 py-3" role="tablist" aria-label="리뷰 정렬">
+      <div className="flex gap-2 px-4 py-3" role="group" aria-label="리뷰 정렬">
         {REVIEW_SORTS.map(option => {
           const active = option.value === sort
           return (
             <button
               key={option.value}
               type="button"
-              role="tab"
-              aria-selected={active}
+              aria-pressed={active}
               onClick={() => onSort(option.value)}
               className={[
-                'h-8 rounded-chip border px-3 text-body-sm transition-colors',
+                'h-8 rounded-chip border px-3 text-body-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
                 active
                   ? 'border-brand-border bg-brand-subtle font-semibold text-brand'
                   : 'border-border bg-surface-base text-text-secondary',

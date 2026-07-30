@@ -28,7 +28,7 @@ describe('/onboarding/terms', () => {
     expect(next).toBeDisabled()
 
     // 필수 4개 중 3개만 체크 → 여전히 비활성
-    await user.click(screen.getByRole('button', { name: /만 14세 이상입니다/ }))
+    await user.click(screen.getByRole('button', { name: /만 14세 이상이에요/ }))
     await user.click(screen.getByRole('button', { name: /서비스 이용약관/ }))
     await user.click(screen.getByRole('button', { name: /개인정보 처리방침/ }))
     expect(next).toBeDisabled()

@@ -1,16 +1,13 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
 import { SearchX } from 'lucide-react'
 import { Accordion, EmptyState, MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { FAQ_CATEGORIES, FAQ_ITEMS, filterFaq, type FaqCategory } from '../settings.mock'
 
 // 자주 묻는 질문(b11-st-5). 검색 + 카테고리 칩 필터가 실제로 아코디언 목록을 좁힌다.
 // 결과가 없으면 5-B 빈 상태를 보여준다. 고객센터 문의(b6-st-3)는 앱에 없어 안내 문구도 두지 않는다.
 export function FaqScreen() {
-  const navigate = useNavigate()
-  const router = useRouter()
-
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<FaqCategory>('all')
   const [openKeys, setOpenKeys] = useState<string[]>(() => {
@@ -18,10 +15,7 @@ export function FaqScreen() {
     return first ? [first.id] : []
   })
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/settings' })
-  }
+  const goBack = useSafeBack({ to: '/settings' })
 
   const results = useMemo(() => filterFaq(FAQ_ITEMS, category, query), [category, query])
 
@@ -36,7 +30,7 @@ export function FaqScreen() {
         {/* 카테고리 칩 (단일 선택) */}
         <div
           className="flex gap-2 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
+          role="group"
           aria-label="FAQ 카테고리"
         >
           {FAQ_CATEGORIES.map(cat => {
@@ -45,11 +39,10 @@ export function FaqScreen() {
               <button
                 key={cat.value}
                 type="button"
-                role="tab"
-                aria-selected={active}
+                aria-pressed={active}
                 onClick={() => setCategory(cat.value)}
                 className={[
-                  'h-8 flex-none rounded-chip border px-3 text-body-sm transition-colors',
+                  'h-8 flex-none rounded-chip border px-3 text-body-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
                   active
                     ? 'border-brand-border bg-brand-subtle font-semibold text-brand'
                     : 'border-border bg-surface-base text-text-secondary',
@@ -77,7 +70,7 @@ export function FaqScreen() {
               title="검색 결과가 없어요"
               description={
                 query.trim() !== ''
-                  ? `‘${query.trim()}’에 대한 답변을 찾지 못했어요. 다른 키워드로 검색해 주세요.`
+                  ? `${query.trim()} 검색 결과가 없어요. 다른 키워드로 검색해 주세요.`
                   : '해당 카테고리에 등록된 질문이 없어요.'
               }
             />

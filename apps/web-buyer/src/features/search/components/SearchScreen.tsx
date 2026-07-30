@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Clock, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { useSearchLanding } from '../search.queries'
 import type { KeywordTrend } from '../search.mock'
 
@@ -10,7 +11,6 @@ import type { KeywordTrend } from '../search.mock'
 // — 있음/없음 두 상태(2-A/2-B)가 실제 동작으로 전환된다.
 export function SearchScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const { data } = useSearchLanding()
 
   const [query, setQuery] = useState('')
@@ -30,10 +30,7 @@ export function SearchScreen() {
     navigate({ to: '/search/results', search: { q } })
   }
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   return (
     <MobileScreen

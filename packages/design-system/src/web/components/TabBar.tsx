@@ -39,6 +39,7 @@ export function TabBar({ tabs, activeKey, onSelect, className = '' }: TabBarProp
             type="button"
             role="tab"
             aria-selected={isActive}
+            aria-current={isActive ? 'page' : undefined}
             aria-label={tab.label}
             onClick={() => onSelect(tab.key)}
             className="flex flex-1 flex-col items-center gap-0.5 py-2 transition-colors"

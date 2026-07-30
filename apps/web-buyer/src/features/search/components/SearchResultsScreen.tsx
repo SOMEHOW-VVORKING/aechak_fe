@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronDown, SearchX, SlidersHorizontal, Star } from 'lucide-react'
 import {
   BottomSheet,
@@ -10,6 +10,7 @@ import {
   Skeleton,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useSearchResults } from '../search.queries'
@@ -45,8 +46,8 @@ const RATING_PRESETS: { label: string; value: number }[] = [
 // 검색 결과 + 필터(b3-st-3). full-bleed(탭바 없음). query는 라우트 검색 파라미터에서 받는다.
 export function SearchResultsScreen({ query }: { query: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
+  const goBack = useSafeBack({ to: '/' })
 
   const [draftQuery, setDraftQuery] = useState(query)
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS)
@@ -58,7 +59,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
   // 같은 라우트로 인페이지 재검색(무결과 화면의 추천어 탭 등) 시 검색창을 새 키워드로 동기화.
   useEffect(() => setDraftQuery(query), [query])
 
-  const { data, isLoading } = useSearchResults(query, filters, sort)
+  const { data, isLoading, isError, refetch } = useSearchResults(query, filters, sort)
 
   const goProduct = (product: CatalogProduct) =>
     navigate({ to: '/products/$productId', params: { productId: product.id } })
@@ -84,7 +85,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
   return (
     <MobileScreen
       header={
-        <BackAppBar onBack={() => (window.history.length > 1 ? router.history.back() : navigate({ to: '/' }))}>
+        <BackAppBar onBack={goBack}>
           <SearchInput
             value={draftQuery}
             onChange={setDraftQuery}
@@ -103,6 +104,8 @@ export function SearchResultsScreen({ query }: { query: string }) {
           <button
             type="button"
             onClick={() => setFilterOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={filterOpen}
             className={[
               'inline-flex h-9 flex-none items-center gap-1.5 rounded-chip border px-3.5 text-body-sm transition-colors',
               filterCount > 0
@@ -131,7 +134,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
             {filters.freeShippingOnly && <Check className="size-3.5" />}
           </FilterChipButton>
           {/* 가격은 즉시 토글이 아니라 가격대 전용 시트를 연다(무료배송/별점과 달리 선택지가 여러 개라서). */}
-          <FilterChipButton selected={priceActive} onClick={() => setPriceOpen(true)}>
+          <FilterChipButton selected={priceActive} expanded={priceOpen} onClick={() => setPriceOpen(true)}>
             {priceChipLabel}
             <ChevronDown className="size-3.5" />
           </FilterChipButton>
@@ -153,6 +156,8 @@ export function SearchResultsScreen({ query }: { query: string }) {
           <button
             type="button"
             onClick={() => setSortOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={sortOpen}
             className="inline-flex items-center gap-1 text-body-sm text-text-secondary"
           >
             {sortLabel}
@@ -162,7 +167,21 @@ export function SearchResultsScreen({ query }: { query: string }) {
 
         {/* 결과 그리드 / 빈 상태 */}
         <div className="px-4">
-          {isLoading || !data ? (
+          {isError ? (
+            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다(codex UI/UX #4).
+            <div className="flex flex-col items-center gap-4 py-16 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
+                <SearchX className="size-7" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-body font-medium text-text-primary">검색 결과를 불러오지 못했어요</p>
+                <p className="text-body-sm text-text-tertiary">네트워크 상태를 확인하고 다시 시도해 주세요.</p>
+              </div>
+              <Button variant="secondary" size="md" onClick={() => void refetch()}>
+                다시 시도
+              </Button>
+            </div>
+          ) : isLoading || !data ? (
             <div className="grid grid-cols-2 gap-x-3 gap-y-5">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-2">
@@ -394,16 +413,21 @@ function FilterChipButton({
   selected,
   onClick,
   children,
+  expanded,
 }: {
   selected: boolean
   onClick: () => void
   children: ReactNode
+  /** 시트를 여는 칩이면 열림 상태를 준다 — 토글 칩은 aria-pressed만, 시트 칩은 haspopup/expanded까지. */
+  expanded?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
+      aria-haspopup={expanded === undefined ? undefined : 'dialog'}
+      aria-expanded={expanded}
       className={[
         'inline-flex h-9 flex-none items-center gap-1 rounded-chip border px-3.5 text-body-sm transition-colors',
         selected

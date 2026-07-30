@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { MobileScreen, Toggle } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { MARKETING_CONSENT_DEFAULT, REQUIRED_CONSENTS } from '../settings.mock'
 import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 
@@ -11,7 +12,6 @@ import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 // 선택 동의(마케팅 수신, 토글로 철회/재동의 → 설명·토스트가 현재 상태를 그대로 반영).
 export function ConsentSettingsScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
 
   const [marketingOn, setMarketingOn] = useState(MARKETING_CONSENT_DEFAULT.agreed)
   // 토스트는 마지막 동작(동의/철회)을 기억해 문구/아이콘을 그에 맞게 보여준다.
@@ -20,10 +20,7 @@ export function ConsentSettingsScreen() {
     agreed: false,
   })
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/settings' })
-  }
+  const goBack = useSafeBack({ to: '/settings' })
 
   const handleMarketingChange = (next: boolean) => {
     setMarketingOn(next)
@@ -37,20 +34,36 @@ export function ConsentSettingsScreen() {
           label="필수 동의 항목"
           footnote="필수 항목은 서비스 이용에 반드시 필요해 철회할 수 없어요. 내용은 각 항목에서 확인할 수 있어요."
         >
-          {REQUIRED_CONSENTS.map(consent => (
-            <button
-              key={consent.id}
-              type="button"
-              onClick={() => navigate({ to: '/settings/privacy' })}
-              className="flex min-h-[52px] w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:shadow-focus-ring [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border-subtle"
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-body text-text-primary">{consent.label}</span>
-                <span className="text-caption text-text-tertiary">{consent.agreedAt} 동의</span>
+          {REQUIRED_CONSENTS.map(consent => {
+            const route = consent.route
+            const rowBase =
+              'flex min-h-[52px] w-full items-center gap-3 px-4 py-3 text-left [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border-subtle'
+            const body = (
+              <>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="text-body text-text-primary">{consent.label}</span>
+                  <span className="text-caption text-text-tertiary">{consent.agreedAt} 동의</span>
+                </div>
+                {route && <ChevronRight className="size-[18px] flex-none text-icon-muted" />}
+              </>
+            )
+            // 문서 라우트가 있는 항목만 그 문서로 이동한다 — 없는 항목을 다른 문서로 보내면
+            // 잘못된 문서를 여는 오내비게이션이 된다(codex/리뷰 지적).
+            return route ? (
+              <button
+                key={consent.id}
+                type="button"
+                onClick={() => navigate({ to: route })}
+                className={`${rowBase} transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:shadow-focus-ring`}
+              >
+                {body}
+              </button>
+            ) : (
+              <div key={consent.id} className={rowBase}>
+                {body}
               </div>
-              <ChevronRight className="size-[18px] flex-none text-icon-muted" />
-            </button>
-          ))}
+            )
+          })}
         </SettingsGroup>
 
         <SettingsGroup
@@ -64,7 +77,9 @@ export function ConsentSettingsScreen() {
                 ? `혜택/이벤트/신상품 소식을 알림/이메일로 받아요. ${MARKETING_CONSENT_DEFAULT.agreedAt} 동의`
                 : '수신 동의를 철회해 마케팅 알림/이메일을 받지 않아요. 다시 켜면 혜택 소식을 받을 수 있어요.'
             }
-            control={<Toggle checked={marketingOn} onChange={handleMarketingChange} />}
+            control={
+              <Toggle checked={marketingOn} onChange={handleMarketingChange} ariaLabel="마케팅 정보 수신 동의" />
+            }
           />
         </SettingsGroup>
       </div>

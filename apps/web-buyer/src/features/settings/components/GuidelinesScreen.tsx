@@ -1,7 +1,7 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
 import { Check, X } from 'lucide-react'
 import { Alert, DocumentHeader, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { GUIDELINE_BAD, GUIDELINE_GOOD, GUIDELINE_REVISION } from '../settings.mock'
 import { DocSection } from './DocLayout'
 
@@ -9,13 +9,7 @@ import { DocSection } from './DocLayout'
 // 목업의 하단 "신고하기"는 SNS 게시물 신고(범위 밖)로 향하고 우리 앱엔 일반 신고 진입점이
 // 없어(상품 신고는 상품 상세에서 진입) 죽은 nav 대신 생략한다.
 export function GuidelinesScreen() {
-  const navigate = useNavigate()
-  const router = useRouter()
-
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/settings' })
-  }
+  const goBack = useSafeBack({ to: '/settings' })
 
   return (
     <MobileScreen header={<BackAppBar onBack={goBack} title="커뮤니티 가이드라인" />} contentClassName="pb-8">

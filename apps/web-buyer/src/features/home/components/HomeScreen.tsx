@@ -15,7 +15,7 @@ import { ALL_CATEGORY_LABEL, filterRankingByCategory, type HomeRankingItem } fro
 // MobileScreen으로 감싸지 않는다. 상단 앱바만 sticky로 고정한다.
 export function HomeScreen() {
   const navigate = useNavigate()
-  const { data, isLoading } = useHomeFeed()
+  const { data, isLoading, isError, refetch } = useHomeFeed()
   const cartCount = useCartCount()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
 
@@ -71,7 +71,16 @@ export function HomeScreen() {
         })}
       </div>
 
-      {isLoading || !data ? (
+      {isError ? (
+        // 로드 실패는 영구 스켈레톤이 아니라 재시도 가능한 에러로 구분한다(codex UI/UX #5).
+        <div className="flex flex-col items-center px-6 py-16">
+          <EmptyState
+            title="홈을 불러오지 못했어요"
+            description="네트워크 상태를 확인하고 다시 시도해 주세요."
+            action={{ label: '다시 시도', onClick: () => void refetch() }}
+          />
+        </div>
+      ) : isLoading || !data ? (
         <div className="flex flex-col gap-4 p-4">
           <Skeleton variant="rect" className="h-24 w-full rounded-card" />
           <Skeleton variant="rect" className="h-40 w-full rounded-card" />

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { AlertCircle, Camera, User } from 'lucide-react'
 import {
   BottomFixedAction,
@@ -11,6 +11,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { maskPhone, useAccount } from '@/shared/account'
 import { placeholderImage } from '@/shared/catalog'
 import { useUpdateProfile } from '../account.queries'
@@ -19,7 +20,6 @@ import { BIO_MAX, NICKNAME_MAX, validateNickname } from '../account.mock'
 // 프로필 수정(b10-st-2). 닉네임/자기소개/아바타 편집 + 본인 인증 상태 표시. 저장 → 성공 토스트.
 export function ProfileEditScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const account = useAccount()
   const updateProfile = useUpdateProfile()
 
@@ -30,10 +30,7 @@ export function ProfileEditScreen() {
   const [toastOpen, setToastOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/mypage' })
-  }
+  const goBack = useSafeBack({ to: '/mypage' })
 
   const nicknameCheck = validateNickname(nickname)
   const showNicknameMsg = nickname.trim().length > 0

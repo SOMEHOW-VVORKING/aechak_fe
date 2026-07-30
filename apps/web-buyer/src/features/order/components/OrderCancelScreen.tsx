@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2 } from 'lucide-react'
 import type { BuyerOrder } from '@aechak/domain'
 import {
@@ -13,13 +13,13 @@ import {
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { useCancelOrder, useOrder } from '../order.queries'
 import { CANCEL_REASONS, isCancelable } from '../order.mock'
 
 // 주문 취소(b4-st-4). 배송 시작 전 주문만 취소 가능 — 배송중/완료 등은 취소 불가 안내를 보여준다.
 export function OrderCancelScreen({ orderId }: { orderId: string }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const order = useOrder(orderId)
   const cancel = useCancelOrder()
 
@@ -28,10 +28,7 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [done, setDone] = useState(false)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/orders/$orderId', params: { orderId } })
-  }
+  const goBack = useSafeBack({ to: '/orders/$orderId', params: { orderId } })
 
   if (!order) {
     return (
@@ -51,9 +48,10 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
   if (done) {
     return (
       <MobileScreen
-        header={<BackAppBar onBack={() => navigate({ to: '/orders' })} title="주문 취소" />}
         footer={
-          <BottomFixedAction primary={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }} />
+          <BottomFixedAction
+            primary={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders', replace: true }) }}
+          />
         }
       >
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">

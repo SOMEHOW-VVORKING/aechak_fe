@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Package } from 'lucide-react'
 import { EmptyState, MobileScreen, SegmentedControl } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { useSafeBack } from '@/shared/useSafeBack'
 import { useOrderList } from '../order.queries'
 import { ORDER_SEGMENTS, type OrderSegment } from '../order.mock'
 import { OrderCard } from './OrderCard'
@@ -10,14 +11,10 @@ import { OrderCard } from './OrderCard'
 // 주문 목록(b4-st-1). 상태 세그먼트 필터(전체/진행중/완료/취소)는 실제로 목록을 거른다.
 export function OrderListScreen() {
   const navigate = useNavigate()
-  const router = useRouter()
   const [segment, setSegment] = useState<OrderSegment>('all')
   const orders = useOrderList(segment)
 
-  const goBack = () => {
-    if (window.history.length > 1) router.history.back()
-    else navigate({ to: '/' })
-  }
+  const goBack = useSafeBack({ to: '/' })
 
   const openOrder = (id: string) => navigate({ to: '/orders/$orderId', params: { orderId: id } })
 
