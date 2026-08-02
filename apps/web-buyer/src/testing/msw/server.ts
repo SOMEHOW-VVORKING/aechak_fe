@@ -135,8 +135,10 @@ export const REAL_PRODUCT_OPTIONS = {
     { optionCombinationId: 3, name: '한정형', additionalPrice: 0, optionValueIds: [3], remainingStock: 0, soldOut: true },
   ],
 }
+export const PETS_URL = `${base}/users/me/pets`
+export const PRESIGNED_URL = `${base}/files/presigned-url`
 
-// 서버 시드(V1__create_and_seed_breeds.sql)의 실제 id·라벨 부분집합 — 종별 정렬(가나다순) +
+// 서버 시드(V1__create_and_seed_breeds.sql)의 실제 id·라벨 부분집합. 종별 정렬(가나다순) +
 // sentinel('세상에 하나뿐인 믹스'/'기타') 후순 구조를 그대로 축소했다.
 export const BREED_FIXTURES = {
   DOG: [
@@ -153,7 +155,7 @@ export const BREED_FIXTURES = {
 }
 
 // 배송지는 상태가 있는 리소스라 요청 간 값이 이어져야 한다(추가→목록 반영 등).
-// 서버가 소유하는 불변식(기본 유일성·개수 제한)은 흉내 내지 않는다 — 응답 계약만 재현한다.
+// 서버가 소유하는 불변식(기본 유일성·개수 제한)은 흉내 내지 않는다. 응답 계약만 재현한다.
 // 예외는 삭제 응답의 promotedDefaultAddressId: 화면이 이 값으로 분기하므로 없으면 그 경로가 죽는다.
 export interface DeliveryAddressRow {
   addressId: number
@@ -185,7 +187,7 @@ const deliveryAddressHandlers = [
   http.post(DELIVERY_ADDRESSES_URL, async ({ request }) => {
     const body = (await request.json()) as Partial<DeliveryAddressRow>
     deliveryAddressSeq += 1
-    // 서버는 활성 배송지가 없을 때 첫 건을 기본으로 만든다 — 응답 isDefault가 달라지므로 재현한다.
+    // 서버는 활성 배송지가 없을 때 첫 건을 기본으로 만든다. 응답 isDefault가 달라지므로 재현한다.
     const isDefault = (body.isDefault ?? false) || deliveryAddressRows.length === 0
     const row = { ...body, addressId: deliveryAddressSeq, isDefault } as DeliveryAddressRow
     deliveryAddressRows = [...deliveryAddressRows, row]
@@ -220,8 +222,129 @@ const deliveryAddressHandlers = [
   }),
 ]
 
+// 펫도 상태가 있는 리소스다(등록→목록 반영, 대표 전환, 삭제 승격). 배송지와 같은 이유로
+// 응답 계약만 재현하고 서버 불변식은 흉내 내지 않는다. 단 화면이 분기에 쓰는 두 가지는 예외:
+// 첫 펫 자동 대표(등록 응답 isDefault)와 삭제 응답 promotedDefaultPetId.
+export interface PetRow {
+  petId: number
+  species: 'DOG' | 'CAT'
+  name: string
+  breedId: number
+  breedLabel: string
+  birthYearMonth?: string | null
+  weight?: number | null
+  profileImageKey?: string | null
+  isDefault: boolean
+  status: 'ACTIVE' | 'DELETED'
+  version: number
+}
+
+let petRows: PetRow[] = []
+let petSeq = 0
+
+/** 테스트마다 펫 상태를 세운다. 인자 없이 부르면 빈 목록. */
+export function seedPets(rows: PetRow[] = []): void {
+  petRows = rows.map(row => ({ ...row }))
+  petSeq = rows.reduce((max, row) => Math.max(max, row.petId), 0)
+}
+
+/** 핸들러가 쌓아둔 현재 상태. 테스트가 저장 결과를 단언할 때 읽는다. */
+export function currentPets(): PetRow[] {
+  return petRows.map(row => ({ ...row }))
+}
+
+// 서버는 키 말고 표시용 URL도 같이 내려준다. 도메인은 아무 값이나 되지만 키에서 파생돼야 한다.
+function withImageUrl(row: PetRow) {
+  return {
+    ...row,
+    profileImageUrl: row.profileImageKey == null ? null : `https://mock-cdn.local/${row.profileImageKey}`,
+  }
+}
+
+// 서버는 species를 breed에서 파생시킨다. 요청에 실리지 않으므로 여기서도 breedId로 되짚는다.
+function speciesOf(breedId: number): 'DOG' | 'CAT' {
+  return BREED_FIXTURES.CAT.some(b => b.breedId === breedId) ? 'CAT' : 'DOG'
+}
+
+function labelOf(breedId: number): string {
+  return (
+    [...BREED_FIXTURES.DOG, ...BREED_FIXTURES.CAT].find(b => b.breedId === breedId)?.label ?? '알 수 없음'
+  )
+}
+
+const petHandlers = [
+  http.get(PETS_URL, () => HttpResponse.json({ data: { pets: petRows.map(withImageUrl) } })),
+  http.post(PETS_URL, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>
+    petSeq += 1
+    // 서버는 첫 펫을 요청값과 무관하게 대표로 만든다. 응답 isDefault가 달라지므로 재현한다.
+    const isDefault = (body['isDefault'] as boolean | undefined) === true || petRows.length === 0
+    if (isDefault) petRows = petRows.map(row => ({ ...row, isDefault: false }))
+    const breedId = Number(body['breedId'])
+    const row: PetRow = {
+      petId: petSeq,
+      species: speciesOf(breedId),
+      name: String(body['name']),
+      breedId,
+      breedLabel: labelOf(breedId),
+      birthYearMonth: (body['birthYearMonth'] as string | undefined) ?? null,
+      weight: (body['weight'] as number | undefined) ?? null,
+      profileImageKey: (body['profileImageKey'] as string | undefined) ?? null,
+      isDefault,
+      status: 'ACTIVE',
+      version: 0,
+    }
+    petRows = [...petRows, row]
+    return HttpResponse.json({ data: { ...withImageUrl(row), userId: 1 } }, { status: 201 })
+  }),
+  http.patch(`${PETS_URL}/:petId/default`, ({ params }) => {
+    const id = Number(params['petId'])
+    petRows = petRows.map(row => ({ ...row, isDefault: row.petId === id }))
+    return HttpResponse.json({ data: { petId: id, isDefault: true } })
+  }),
+  http.put(`${PETS_URL}/:petId`, async ({ params, request }) => {
+    const id = Number(params['petId'])
+    const body = (await request.json()) as Record<string, unknown>
+    const breedId = Number(body['breedId'])
+    petRows = petRows.map(row =>
+      row.petId === id
+        ? {
+            ...row,
+            name: String(body['name']),
+            breedId,
+            breedLabel: labelOf(breedId),
+            birthYearMonth: (body['birthYearMonth'] as string | undefined) ?? null,
+            weight: (body['weight'] as number | undefined) ?? null,
+            profileImageKey: (body['profileImageKey'] as string | undefined) ?? null,
+            version: row.version + 1,
+          }
+        : row,
+    )
+    const updated = petRows.find(row => row.petId === id)
+    return HttpResponse.json({ data: updated == null ? undefined : withImageUrl(updated) })
+  }),
+  http.delete(`${PETS_URL}/:petId`, ({ params }) => {
+    const id = Number(params['petId'])
+    const wasDefault = petRows.find(row => row.petId === id)?.isDefault ?? false
+    petRows = petRows.filter(row => row.petId !== id)
+    const promoted = wasDefault ? (petRows[0]?.petId ?? null) : null
+    if (promoted != null) {
+      petRows = petRows.map(row => ({ ...row, isDefault: row.petId === promoted }))
+    }
+    return HttpResponse.json({ data: { promotedDefaultPetId: promoted } })
+  }),
+  http.post(PRESIGNED_URL, async ({ request }) => {
+    const body = (await request.json()) as { purpose: string; contentType: string }
+    const key = `tmp/1/pets/profile/fixture.${body.contentType.split('/')[1]}`
+    return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
+  }),
+  // presigned PUT은 S3 직행이라 baseURL 밖이다. 절대 URL로 따로 가로챈다.
+  http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
+]
+
 export const handlers = [
   ...deliveryAddressHandlers,
+  ...petHandlers,
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {
@@ -231,7 +354,7 @@ export const handlers = [
     return HttpResponse.json({ data: BREED_FIXTURES[species] })
   }),
   // 401 시나리오에서 axios 인터셉터의 refresh 재시도가 성공으로 새면 에러 테스트가 조용히
-  // 통과해버린다 — 기본 핸들러는 반드시 401 고정.
+  // 통과해버린다. 기본 핸들러는 반드시 401 고정.
   http.post(WEB_REFRESH_URL, () =>
     HttpResponse.json({ errorCode: 20005, message: '인증이 필요합니다.' }, { status: 401 }),
   ),

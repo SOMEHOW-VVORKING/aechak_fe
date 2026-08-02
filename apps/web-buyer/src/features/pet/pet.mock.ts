@@ -4,7 +4,7 @@ import type { SegmentedControlOption, SelectOption } from '@aechak/design-system
 // 펫 프로필(b10-st-3 관리 / b10-st-8 작성) 공용 상수·파생 로직. 실제 펫 데이터는 shared/pet
 // 스토어가 단일 소스이고, 여기서는 라벨/옵션/표기 파생만 다룬다.
 
-// 오늘 연도/월(세션 고정값 — new Date() 미사용). 나이 파생에 쓴다.
+// 오늘 연도/월(세션 고정값. new Date() 미사용). 나이 파생에 쓴다.
 const CURRENT_YEAR = 2026
 const CURRENT_MONTH = 7
 
@@ -13,14 +13,14 @@ export const SPECIES_LABEL: Record<PetSpecies, string> = {
   cat: '고양이',
 }
 
-// 종 선택(목업 세그먼트대로 강아지/고양이 2종 — SegmentedControl로 구현.
+// 종 선택(목업 세그먼트대로 강아지/고양이 2종. SegmentedControl로 구현.
 // 라우트 리맵 리포의 'Radio' 표기 대신 실제 목업 마크업(segmented)을 따랐다).
 export const SPECIES_OPTIONS: SegmentedControlOption[] = [
   { value: 'dog', label: '강아지' },
   { value: 'cat', label: '고양이' },
 ]
 
-// 품종 옵션은 하드코딩하지 않는다 — 서버 breeds API(pet.queries.ts의 useBreedOptions)가 단일 원본.
+// 품종 옵션은 하드코딩하지 않는다. 서버 breeds API(pet.queries.ts의 useBreedOptions)가 단일 원본.
 
 // 생년 선택(현재 연도부터 20년 전까지, 최신순).
 export const BIRTH_YEAR_OPTIONS: SelectOption[] = Array.from({ length: 21 }, (_, i) => {
@@ -45,7 +45,7 @@ export function petAge(
   return Math.max(0, CURRENT_YEAR - birthYear - notYetThisYear)
 }
 
-// 펫 카드 보조 텍스트 — "고양이 / 코리안 숏헤어 / 3살 / 4.2kg"(카피 컨벤션에 따라 구분자는 '/').
+// 펫 카드 보조 텍스트. "고양이 / 코리안 숏헤어 / 3살 / 4.2kg"(카피 컨벤션에 따라 구분자는 '/').
 // 값이 없는 항목은 건너뛴다.
 export function formatPetMeta(pet: PetProfile): string {
   const parts: string[] = [SPECIES_LABEL[pet.species]]
