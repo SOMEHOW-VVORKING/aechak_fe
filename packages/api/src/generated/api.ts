@@ -32,6 +32,181 @@ export const Species = {
   CAT: 'CAT',
 } as const
 
+export type PetStatus = (typeof PetStatus)[keyof typeof PetStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PetStatus = {
+  ACTIVE: 'ACTIVE',
+  DELETED: 'DELETED',
+} as const
+
+export interface RegisterPetProfileRequest {
+  /** @maxLength 50 */
+  name: string
+  /** breeds 마스터의 id. 종이 일치하지 않으면 400 errorCode 30134 */
+  breedId: number
+  /**
+   * 생년월. 생월을 모르면 연도만(YYYY) 보내도 되고 서버가 1월로 맞춰 저장한다. 미래는 400 errorCode 30135. 완전히 모르면 보내지 않는다.
+   * @nullable
+   * @pattern ^\d{4}(-(0[1-9]|1[0-2]))?$
+   */
+  birthYearMonth?: string | null
+  /**
+   * 체중 kg. 0.1~200.0, 소수점 첫째자리까지
+   * @nullable
+   */
+  weight?: number | null
+  /**
+   * 업로드 presigned로 받은 tmp 키. 서버가 정식 위치로 옮기고 옮겨진 키를 저장한다. 타인이 발급받은 키는 403 errorCode 110003.
+   * @nullable
+   */
+  profileImageKey?: string | null
+  /**
+   * 대표 펫 지정. 생략하면 false로 접힌다
+   * @nullable
+   */
+  isDefault?: boolean | null
+}
+
+export interface PetProfileResponse {
+  petId: number
+  species: Species
+  name: string
+  breedId: number
+  breedLabel: string
+  /** @nullable */
+  birthYearMonth?: string | null
+  /** @nullable */
+  weight?: number | null
+  /**
+   * 스토리지 키. 수정은 전체 객체 전송이라 사진을 유지하려면 이 값을 되돌려 보낸다
+   * @nullable
+   */
+  profileImageKey?: string | null
+  /**
+   * 표시용 URL. 서버가 조립해 내려준다
+   * @nullable
+   */
+  profileImageUrl?: string | null
+  isDefault: boolean
+  status: PetStatus
+  /** 낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다 */
+  version: number
+}
+
+export type UploadPurpose = (typeof UploadPurpose)[keyof typeof UploadPurpose]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UploadPurpose = {
+  USER_PROFILE: 'USER_PROFILE',
+  PET_PROFILE: 'PET_PROFILE',
+} as const
+
+export interface IssuePresignedUrlRequest {
+  purpose: UploadPurpose
+  /** image/png, image/jpeg, image/webp (프로필 사진). 허용 밖이면 400 errorCode 110001 */
+  contentType: string
+}
+
+export type PresignedUrlResponseData = {
+  /** 이 URL에 파일을 PUT한다. 유효시간이 있다 */
+  url: string
+  /** 도메인 API에 실어 보낼 tmp 키 */
+  key: string
+}
+
+export interface PresignedUrlResponse {
+  data: PresignedUrlResponseData
+}
+
+/**
+ * 전체 객체 전송 — 유지할 값도 다 보낸다. species는 없다(등록 시 확정)
+ */
+export interface UpdatePetProfileRequest {
+  /** @maxLength 50 */
+  name: string
+  breedId: number
+  /**
+   * @nullable
+   * @pattern ^\d{4}(-(0[1-9]|1[0-2]))?$
+   */
+  birthYearMonth?: string | null
+  /** @nullable */
+  weight?: number | null
+  /**
+   * 새 tmp 키 또는 유지할 기존 키. 빼면 사진이 지워진다
+   * @nullable
+   */
+  profileImageKey?: string | null
+  /**
+   * true면 대표로 전환. false·생략은 변경 없음 — 대표 해제는 다른 펫 지정으로만
+   * @nullable
+   */
+  isDefault?: boolean | null
+  /**
+   * 목록·수정 응답에서 받은 값. 보내면 그 사이 선점됐는지 검사하고 어긋나면 409 errorCode 90004
+   * @nullable
+   */
+  version?: number | null
+}
+
+export interface UpdatePetProfileResponse {
+  data: PetProfileResponse
+}
+
+export type DeletePetProfileResponseData = {
+  /**
+   * 대표를 지워 승격이 일어났을 때만 값이 있다
+   * @nullable
+   */
+  promotedDefaultPetId?: number | null
+}
+
+export interface DeletePetProfileResponse {
+  data: DeletePetProfileResponseData
+}
+
+export type SetDefaultPetResponseData = {
+  petId: number
+  isDefault: boolean
+}
+
+export interface SetDefaultPetResponse {
+  data: SetDefaultPetResponseData
+}
+
+export type PetProfileListResponseData = {
+  pets: PetProfileResponse[]
+}
+
+export interface PetProfileListResponse {
+  data: PetProfileListResponseData
+}
+
+export type RegisterPetProfileResponseData = {
+  petId: number
+  /** 등록 응답에만 있다 — 조회는 /users/me 경로라 소유자가 자명해 생략한다 */
+  userId: number
+  species: Species
+  name: string
+  breedId: number
+  breedLabel: string
+  /** @nullable */
+  birthYearMonth?: string | null
+  /** @nullable */
+  weight?: number | null
+  /** @nullable */
+  profileImageKey?: string | null
+  /** @nullable */
+  profileImageUrl?: string | null
+  isDefault: boolean
+  status: PetStatus
+}
+
+export interface RegisterPetProfileResponse {
+  data: RegisterPetProfileResponseData
+}
+
 export interface BreedResponse {
   breedId: number
   label: string
@@ -1931,4 +2106,531 @@ export function useGetProductOptionsSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 발급받은 url에 파일을 PUT하고, 돌려받은 key를 도메인 API(펫 등록·수정 등)에 실어 보낸다. 키는 tmp 영역이고 도메인 API가 정식 위치로 옮긴다. 지원 형식은 purpose별로 다르다.
+ * @summary 업로드 presigned URL 발급
+ */
+export const issuePresignedUrl = (
+  issuePresignedUrlRequest: IssuePresignedUrlRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PresignedUrlResponse>({
+    url: `/files/presigned-url`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: issuePresignedUrlRequest,
+    signal,
+  })
+}
+
+export const getIssuePresignedUrlMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuePresignedUrl>>,
+    TError,
+    { data: IssuePresignedUrlRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuePresignedUrl>>,
+  TError,
+  { data: IssuePresignedUrlRequest },
+  TContext
+> => {
+  const mutationKey = ['issuePresignedUrl']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuePresignedUrl>>,
+    { data: IssuePresignedUrlRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return issuePresignedUrl(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type IssuePresignedUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuePresignedUrl>>
+>
+export type IssuePresignedUrlMutationBody = IssuePresignedUrlRequest
+export type IssuePresignedUrlMutationError = unknown
+
+/**
+ * @summary 업로드 presigned URL 발급
+ */
+export const useIssuePresignedUrl = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuePresignedUrl>>,
+      TError,
+      { data: IssuePresignedUrlRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuePresignedUrl>>,
+  TError,
+  { data: IssuePresignedUrlRequest },
+  TContext
+> => {
+  const mutationOptions = getIssuePresignedUrlMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 본인 펫만(소프트 삭제 제외). 대표 펫이 최상단, 그 아래는 등록순. 온보딩 미완료 계정은 403 errorCode 20007.
+ * @summary 내 펫 프로필 목록 조회
+ */
+export const getPets = (signal?: AbortSignal) => {
+  return customInstance<PetProfileListResponse>({ url: `/users/me/pets`, method: 'GET', signal })
+}
+
+export const getGetPetsQueryKey = () => {
+  return [`/users/me/pets`] as const
+}
+
+export const getGetPetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPets>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetPetsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPets>>> = ({ signal }) =>
+    getPets(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPets>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPetsQueryResult = NonNullable<Awaited<ReturnType<typeof getPets>>>
+export type GetPetsQueryError = unknown
+
+export function useGetPets<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPets>>,
+          TError,
+          Awaited<ReturnType<typeof getPets>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPets<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPets>>,
+          TError,
+          Awaited<ReturnType<typeof getPets>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPets<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 펫 프로필 목록 조회
+ */
+
+export function useGetPets<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetPetsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetPetsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPets>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetPetsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPets>>> = ({ signal }) =>
+    getPets(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getPets>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPetsSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getPets>>>
+export type GetPetsSuspenseQueryError = unknown
+
+export function useGetPetsSuspense<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPetsSuspense<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPetsSuspense<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 펫 프로필 목록 조회
+ */
+
+export function useGetPetsSuspense<TData = Awaited<ReturnType<typeof getPets>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPets>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetPetsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 종·이름·품종은 필수, 생년월·체중·사진은 선택. 회원당 최대 10마리(초과 시 422 errorCode 30130). 첫 펫은 isDefault 값과 무관하게 대표로 저장된다. isDefault=true면 기존 대표는 서버가 해제한다.
+ * @summary 펫 프로필 등록
+ */
+export const registerPet = (
+  registerPetProfileRequest: RegisterPetProfileRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<RegisterPetProfileResponse>({
+    url: `/users/me/pets`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: registerPetProfileRequest,
+    signal,
+  })
+}
+
+export const getRegisterPetMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerPet>>,
+    TError,
+    { data: RegisterPetProfileRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerPet>>,
+  TError,
+  { data: RegisterPetProfileRequest },
+  TContext
+> => {
+  const mutationKey = ['registerPet']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerPet>>,
+    { data: RegisterPetProfileRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return registerPet(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RegisterPetMutationResult = NonNullable<Awaited<ReturnType<typeof registerPet>>>
+export type RegisterPetMutationBody = RegisterPetProfileRequest
+export type RegisterPetMutationError = unknown
+
+/**
+ * @summary 펫 프로필 등록
+ */
+export const useRegisterPet = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof registerPet>>,
+      TError,
+      { data: RegisterPetProfileRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof registerPet>>,
+  TError,
+  { data: RegisterPetProfileRequest },
+  TContext
+> => {
+  const mutationOptions = getRegisterPetMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 부분 수정이 아니라 전체 객체 전송이다 — 유지할 값도 그대로 실어 보내야 하고, profileImageKey를 빼면 기존 사진이 지워진다. species는 수정 대상이 아니다. 타인 펫은 403 errorCode 30132, 없는 펫은 404 errorCode 30131.
+ * @summary 펫 프로필 수정
+ */
+export const updatePet = (petId: number, updatePetProfileRequest: UpdatePetProfileRequest) => {
+  return customInstance<UpdatePetProfileResponse>({
+    url: `/users/me/pets/${petId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: updatePetProfileRequest,
+  })
+}
+
+export const getUpdatePetMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePet>>,
+    TError,
+    { petId: number; data: UpdatePetProfileRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePet>>,
+  TError,
+  { petId: number; data: UpdatePetProfileRequest },
+  TContext
+> => {
+  const mutationKey = ['updatePet']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePet>>,
+    { petId: number; data: UpdatePetProfileRequest }
+  > = props => {
+    const { petId, data } = props ?? {}
+
+    return updatePet(petId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdatePetMutationResult = NonNullable<Awaited<ReturnType<typeof updatePet>>>
+export type UpdatePetMutationBody = UpdatePetProfileRequest
+export type UpdatePetMutationError = unknown
+
+/**
+ * @summary 펫 프로필 수정
+ */
+export const useUpdatePet = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updatePet>>,
+      TError,
+      { petId: number; data: UpdatePetProfileRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updatePet>>,
+  TError,
+  { petId: number; data: UpdatePetProfileRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdatePetMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 소프트 삭제. 대표 펫을 지우면 남은 펫 중 가장 최근 등록·수정 건이 대표로 올라가고 그 id를 돌려준다.
+ * @summary 펫 프로필 삭제
+ */
+export const deletePet = (petId: number) => {
+  return customInstance<DeletePetProfileResponse>({
+    url: `/users/me/pets/${petId}`,
+    method: 'DELETE',
+  })
+}
+
+export const getDeletePetMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePet>>,
+    TError,
+    { petId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePet>>,
+  TError,
+  { petId: number },
+  TContext
+> => {
+  const mutationKey = ['deletePet']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePet>>,
+    { petId: number }
+  > = props => {
+    const { petId } = props ?? {}
+
+    return deletePet(petId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeletePetMutationResult = NonNullable<Awaited<ReturnType<typeof deletePet>>>
+
+export type DeletePetMutationError = unknown
+
+/**
+ * @summary 펫 프로필 삭제
+ */
+export const useDeletePet = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deletePet>>,
+      TError,
+      { petId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deletePet>>,
+  TError,
+  { petId: number },
+  TContext
+> => {
+  const mutationOptions = getDeletePetMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 기존 대표는 서버가 해제한다. 바뀐 필드만 돌려주므로 전체가 필요하면 목록을 재조회한다.
+ * @summary 대표 펫 지정
+ */
+export const setDefaultPet = (petId: number) => {
+  return customInstance<SetDefaultPetResponse>({
+    url: `/users/me/pets/${petId}/default`,
+    method: 'PATCH',
+  })
+}
+
+export const getSetDefaultPetMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultPet>>,
+    TError,
+    { petId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDefaultPet>>,
+  TError,
+  { petId: number },
+  TContext
+> => {
+  const mutationKey = ['setDefaultPet']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDefaultPet>>,
+    { petId: number }
+  > = props => {
+    const { petId } = props ?? {}
+
+    return setDefaultPet(petId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SetDefaultPetMutationResult = NonNullable<Awaited<ReturnType<typeof setDefaultPet>>>
+
+export type SetDefaultPetMutationError = unknown
+
+/**
+ * @summary 대표 펫 지정
+ */
+export const useSetDefaultPet = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setDefaultPet>>,
+      TError,
+      { petId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setDefaultPet>>,
+  TError,
+  { petId: number },
+  TContext
+> => {
+  const mutationOptions = getSetDefaultPetMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }

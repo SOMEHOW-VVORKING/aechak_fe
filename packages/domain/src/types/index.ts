@@ -204,7 +204,7 @@ export interface ReviewDraft {
 // 반려동물 종. 목업 세그먼트대로 강아지/고양이 2종만 수집한다.
 export type PetSpecies = 'dog' | 'cat'
 
-// 반려동물 프로필(b10-st-3 관리 / b10-st-8 작성). 대표 펫은 항상 정확히 하나로 정규화한다.
+// 반려동물 프로필(b10-st-3 관리 / b10-st-8 작성). 대표 펫이 정확히 하나인 건 서버가 보장한다.
 export interface PetProfile {
   id: string
   name: string
@@ -214,8 +214,11 @@ export interface PetProfile {
   birthYear?: number // 생년(예: 2023) — 나이는 표시 시 파생. 생년월 '모름'이면 birthYear/birthMonth 둘 다 undefined
   birthMonth?: number // 생월(1~12) — 생년이 있을 때만 유효. 나이 파생을 생일 경과 여부까지 반영하는 데 쓴다
   weightKg?: number // 체중(kg)
-  photoUrl?: string
-  isRepresentative: boolean // 대표 펫
+  photoUrl?: string // 표시용. 수정 왕복에는 profileImageKey를 쓴다.
+  // 서버가 저장한 스토리지 키. 수정이 전체 객체 전송이라 이 값을 그대로 되돌려 보내지 않으면 사진이 지워진다
+  profileImageKey?: string
+  version?: number // 낙관적 락 토큰. 수정 요청에 실어 보내면 그 사이 선점됐는지 서버가 검사한다
+  isDefault: boolean // 대표 펫
 }
 
 // 본인 인증 상태(b10-st-9). 미인증 → 휴대폰 OTP 인증 → 인증 완료.
