@@ -7,12 +7,12 @@ function makePet(over: Partial<PetProfile>): PetProfile {
     id: 'pet-1',
     name: '코코',
     species: 'cat',
-    isRepresentative: false,
+    isDefault: false,
     ...over,
   }
 }
 
-describe('pet.mock — 파생 표기', () => {
+describe('pet.mock: 파생 표기', () => {
   it('[AC-PET-001] 생년으로 나이를 파생한다(생월 없으면 연도만, 생년 없으면 undefined)', () => {
     // 세션 고정 오늘: 2026년 7월
     expect(petAge(2023)).toBe(3)
@@ -58,6 +58,6 @@ describe('pet.mock — 파생 표기', () => {
     ).toBe('강아지')
   })
 
-  // [AC-PET-004]는 하드코딩 품종 옵션 테스트였다 — breeds API 연동으로 삭제,
+  // [AC-PET-004]는 하드코딩 품종 옵션 테스트였다. breeds API 연동으로 삭제,
   // [AC-PET-BREEDS-001](pet.queries.test.ts)이 대체한다.
 })

@@ -5,8 +5,15 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import { HttpResponse, delay, http } from 'msw'
 import { setAccessToken, setOnAuthExpired } from '@aechak/api'
-import { getPets, resetPets } from '@/shared/pet'
-import { BREEDS_URL, WEB_REFRESH_URL, server } from '@/testing/msw/server'
+import { MAX_PHOTO_BYTES, OVERSIZED_PHOTO_MESSAGE } from '@/shared/pet'
+import {
+  BREEDS_URL,
+  currentPets,
+  PRESIGNED_URL,
+  seedPets,
+  WEB_REFRESH_URL,
+  server,
+} from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -26,9 +33,24 @@ function renderAt(path: string) {
   )
 }
 
-describe('펫 폼 품종 Select — breeds API 연동', () => {
+// 시드 펫. 라벨만 있고 breedId가 없는 '연동 전 데이터'를 재현해 프리필·백필을 검증한다.
+const COCO = {
+  petId: 1,
+  species: 'CAT' as const,
+  name: '코코',
+  breedId: 369,
+  breedLabel: '코리안 숏헤어',
+  birthYearMonth: '2023-01',
+  weight: 4.2,
+  profileImageKey: null,
+  isDefault: true,
+  status: 'ACTIVE' as const,
+  version: 0,
+}
+
+describe('펫 폼 품종 Select: breeds API 연동', () => {
   beforeEach(() => {
-    resetPets()
+    seedPets()
   })
   afterEach(() => {
     setOnAuthExpired(null)
@@ -112,12 +134,12 @@ describe('펫 폼 품종 Select — breeds API 연동', () => {
     )
     renderAt('/mypage/pets/new')
 
-    // 재시도가 새 토큰을 달고 나가야 품종이 뜬다 — 헤더를 안 갈아끼우면 계속 401 → 로그인으로 튕긴다.
+    // 재시도가 새 토큰을 달고 나가야 품종이 뜬다. 헤더를 안 갈아끼우면 계속 401 → 로그인으로 튕긴다.
     expect(await screen.findByRole('option', { name: '코리안 숏헤어' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '카카오로 시작하기' })).not.toBeInTheDocument()
   })
 
-  it('[AC-PET-BREEDS-006] 품종 선택 후 저장하면 breed 라벨과 breedId가 함께 저장된다', async () => {
+  it('[AC-PET-BREEDS-006] 품종 선택 후 저장하면 breedId가 전송되고 종은 그 품종에서 파생된다', async () => {
     const user = userEvent.setup()
     renderAt('/mypage/pets/new')
 
@@ -127,40 +149,35 @@ describe('펫 폼 품종 Select — breeds API 연동', () => {
     await user.type(screen.getByLabelText('이름'), '탄이')
     await user.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitFor(
-      () => {
-        expect(getPets().find(p => p.name === '탄이')).toMatchObject({
-          species: 'dog',
-          breed: '푸들',
-          breedId: 279,
-        })
-      },
-      { timeout: 2000 }, // useSavePet의 실제 400ms 지연
-    )
+    await waitFor(() => {
+      expect(currentPets().find(p => p.name === '탄이')).toMatchObject({
+        species: 'DOG',
+        breedId: 279,
+      })
+    })
   })
 
-  it('[AC-PET-BREEDS-007] 라벨만 저장된 시드 펫 편집 시 품종이 프리필되고 저장하면 breedId가 백필된다', async () => {
+  it('[AC-PET-BREEDS-007] 시드 펫 편집 시 품종이 프리필되고 저장하면 그 breedId가 전송된다', async () => {
+    seedPets([{ ...COCO, breedId: 369 }])
     const user = userEvent.setup()
     renderAt('/mypage/pets')
 
-    // 첫 카드 = 코코(cat, breed '코리안 숏헤어', breedId 없음)
     await user.click((await screen.findAllByRole('button', { name: '수정' }))[0]!)
     const select = await screen.findByLabelText('품종')
     await waitFor(() => expect(select).toHaveValue('369'))
 
     await user.click(screen.getByRole('button', { name: '저장' }))
-    await waitFor(
-      () => {
-        expect(getPets().find(p => p.id === 'pet-coco')).toMatchObject({
-          breed: '코리안 숏헤어',
-          breedId: 369,
-        })
-      },
-      { timeout: 2000 },
-    )
+    await waitFor(() => {
+      expect(currentPets().find(p => p.petId === 1)).toMatchObject({
+        breedId: 369,
+        breedLabel: '코리안 숏헤어',
+      })
+    })
   })
 
-  it('[AC-PET-BREEDS-008] 편집 중 종을 바꾸고 품종 미선택으로 저장하면 breed/breedId가 모두 비워진다', async () => {
+  it('[AC-PET-BREEDS-008] 종을 바꿔 품종이 미선택이 되면 저장 버튼이 막힌다', async () => {
+    // 품종은 서버 필수 계약이라 미선택 저장은 400이다. 눌리기 전에 막는 게 맞는 동작.
+    seedPets([COCO])
     const user = userEvent.setup()
     renderAt('/mypage/pets')
 
@@ -169,15 +186,62 @@ describe('펫 폼 품종 Select — breeds API 연동', () => {
     await user.click(screen.getByRole('tab', { name: '강아지' }))
     await screen.findByRole('option', { name: '푸들' }) // DOG 목록 로드 대기
 
-    await user.click(screen.getByRole('button', { name: '저장' }))
-    await waitFor(
-      () => {
-        const coco = getPets().find(p => p.id === 'pet-coco')!
-        expect(coco.species).toBe('dog')
-        expect(coco.breed).toBeUndefined()
-        expect(coco.breedId).toBeUndefined()
-      },
-      { timeout: 2000 },
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+  })
+
+  // PhotoUpload의 file input은 라벨 없이 버튼으로 트리거되는 숨은 input이라 직접 집는다.
+  function photoInput(container: HTMLElement): HTMLInputElement {
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    if (input == null) throw new Error('사진 업로드 input을 찾지 못했다')
+    return input
+  }
+
+  it('[AC-PET-PHOTO-001] 업로드가 끝나기 전에는 저장을 막는다', async () => {
+    // 막지 않으면 미리보기는 떠 있는데 tmp 키가 없어 사진 없는 펫이 저장되고, 사용자는 붙은 줄 안다.
+    server.use(
+      http.post(PRESIGNED_URL, async () => {
+        await delay('infinite')
+      }),
     )
+    const user = userEvent.setup()
+    const { container } = renderAt('/mypage/pets/new')
+
+    await user.selectOptions(
+      await screen.findByLabelText('품종'),
+      await screen.findByRole('option', { name: '코리안 숏헤어' }),
+    )
+    await user.type(screen.getByLabelText('이름'), '초코')
+    expect(screen.getByRole('button', { name: '저장' })).toBeEnabled()
+
+    await user.upload(photoInput(container), new File(['x'], 'photo.png', { type: 'image/png' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeDisabled())
+  })
+
+  it('[AC-PET-PHOTO-002] 크기 상한을 넘는 사진은 업로드하지 않고 인라인으로 알린다', async () => {
+    const user = userEvent.setup()
+    const { container } = renderAt('/mypage/pets/new')
+    await screen.findByLabelText('품종')
+
+    const oversized = new File([new Uint8Array(MAX_PHOTO_BYTES + 1)], 'big.png', { type: 'image/png' })
+    await user.upload(photoInput(container), oversized)
+
+    expect(await screen.findByText(OVERSIZED_PHOTO_MESSAGE)).toBeInTheDocument()
+  })
+
+  it('[AC-PET-BREEDS-011] 체중이 허용 범위를 벗어나면 인라인으로 알리고 저장을 막는다', async () => {
+    // 예전엔 범위 밖 값을 조용히 버려서, 사용자는 입력했다고 믿는데 저장이 안 됐다.
+    const user = userEvent.setup()
+    renderAt('/mypage/pets/new')
+
+    await user.selectOptions(
+      await screen.findByLabelText('품종'),
+      await screen.findByRole('option', { name: '코리안 숏헤어' }),
+    )
+    await user.type(screen.getByLabelText('이름'), '초코')
+    await user.type(screen.getByLabelText('체중'), '150')
+
+    expect(await screen.findByText('체중은 0.1~100kg 사이로 입력해주세요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
   })
 })

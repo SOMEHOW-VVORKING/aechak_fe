@@ -5,19 +5,22 @@ import type { PetProfile } from '@aechak/domain'
 import { Button, EmptyState, MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { removePet, setRepresentativePet } from '@/shared/pet'
-import { usePetList } from '../pet.queries'
+import { petErrorMessage, usePetList, useRemovePet, useSetDefaultPet } from '@/shared/pet'
 import { formatPetMeta } from '../pet.mock'
 import { PetFormScreen } from './PetFormScreen'
 
 // 펫 프로필 관리(b10-st-3). 목록(추가 → pets/new) + 인라인 편집 + 삭제 확인 Modal + 대표 펫 지정.
+// 대표 유일성·삭제 시 자동 승격·정렬은 서버가 정하고, 성공하면 목록을 다시 읽어 반영한다.
 export function PetListScreen() {
   const navigate = useNavigate()
-  const pets = usePetList()
+  const { pets, isLoading, isError, refetch } = usePetList()
+  const removePet = useRemovePet()
+  const setDefault = useSetDefaultPet()
 
   // undefined = 목록, 객체 = 해당 펫 편집(인라인 폼).
   const [editTarget, setEditTarget] = useState<PetProfile | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<PetProfile | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const goBack = useSafeBack({ to: '/mypage' })
 
@@ -32,8 +35,39 @@ export function PetListScreen() {
     )
   }
 
+  if (isLoading) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+        <div className="flex flex-col gap-3.5 p-4">
+          <div className="h-[52px] animate-pulse rounded-card bg-surface-sunken" />
+          <div className="h-[52px] animate-pulse rounded-card bg-surface-sunken" />
+        </div>
+      </MobileScreen>
+    )
+  }
+
+  if (isError) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+        <div className="flex h-full items-center justify-center p-6">
+          <EmptyState
+            icon={<PawPrint className="size-8" />}
+            title="목록을 불러오지 못했어요"
+            description="잠시 후 다시 시도해주세요."
+            action={{ label: '다시 시도', onClick: () => void refetch() }}
+          />
+        </div>
+      </MobileScreen>
+    )
+  }
+
   return (
     <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+      {errorMessage != null && (
+        <p role="alert" className="px-4 pt-3 text-body-sm text-error-fg">
+          {errorMessage}
+        </p>
+      )}
       {pets.length === 0 ? (
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
@@ -51,7 +85,12 @@ export function PetListScreen() {
               pet={pet}
               onEdit={() => setEditTarget(pet)}
               onDelete={() => setDeleteTarget(pet)}
-              onSetRepresentative={() => setRepresentativePet(pet.id)}
+              onSetDefault={() =>
+                setDefault.mutate(pet.id, {
+                  onSuccess: () => setErrorMessage(null),
+                  onError: e => setErrorMessage(petErrorMessage(e)),
+                })
+              }
             />
           ))}
 
@@ -75,8 +114,13 @@ export function PetListScreen() {
         confirmLabel="삭제"
         confirmVariant="danger"
         onConfirm={() => {
-          if (deleteTarget) removePet(deleteTarget.id)
+          const target = deleteTarget
           setDeleteTarget(null)
+          if (target == null) return
+          removePet.mutate(target.id, {
+            onSuccess: () => setErrorMessage(null),
+            onError: e => setErrorMessage(petErrorMessage(e)),
+          })
         }}
       />
     </MobileScreen>
@@ -92,12 +136,12 @@ function PetCard({
   pet,
   onEdit,
   onDelete,
-  onSetRepresentative,
+  onSetDefault,
 }: {
   pet: PetProfile
   onEdit: () => void
   onDelete: () => void
-  onSetRepresentative: () => void
+  onSetDefault: () => void
 }) {
   const SpeciesIcon = SPECIES_ICON[pet.species]
 
@@ -114,7 +158,7 @@ function PetCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-label font-semibold text-text-primary">{pet.name}</span>
-            {pet.isRepresentative && (
+            {pet.isDefault && (
               <StatusPill variant="brand" size="sm">
                 <Star className="mr-0.5 inline size-3" />
                 대표
@@ -132,8 +176,8 @@ function PetCard({
           </button>
         </span>
       </div>
-      {!pet.isRepresentative && (
-        <Button variant="secondary" size="sm" fullWidth onClick={onSetRepresentative} className="mt-3">
+      {!pet.isDefault && (
+        <Button variant="secondary" size="sm" fullWidth onClick={onSetDefault} className="mt-3">
           대표 펫으로 지정
         </Button>
       )}
