@@ -43,10 +43,10 @@ export const PetStatus = {
 export interface RegisterPetProfileRequest {
   /** @maxLength 50 */
   name: string
-  /** breeds 마스터의 id. 종이 일치하지 않으면 400 errorCode 30134 */
+  /** breeds 마스터의 id. 종이 일치하지 않으면 400 errorCode 30700 */
   breedId: number
   /**
-   * 생년월. 생월을 모르면 연도만(YYYY) 보내도 되고 서버가 1월로 맞춰 저장한다. 미래는 400 errorCode 30135. 완전히 모르면 보내지 않는다.
+   * 생년월. 생월을 모르면 연도만(YYYY) 보내도 되고 서버가 1월로 맞춰 저장한다. 미래는 400 errorCode 30604. 완전히 모르면 보내지 않는다.
    * @nullable
    * @pattern ^\d{4}(-(0[1-9]|1[0-2]))?$
    */
@@ -57,7 +57,7 @@ export interface RegisterPetProfileRequest {
    */
   weight?: number | null
   /**
-   * 업로드 presigned로 받은 tmp 키. 서버가 정식 위치로 옮기고 옮겨진 키를 저장한다. 타인이 발급받은 키는 403 errorCode 110003.
+   * 업로드 presigned로 받은 tmp 키. 서버가 정식 위치로 옮기고 옮겨진 키를 저장한다. 타인이 발급받은 키는 403 errorCode 100002.
    * @nullable
    */
   profileImageKey?: string | null
@@ -104,7 +104,7 @@ export const UploadPurpose = {
 
 export interface IssuePresignedUrlRequest {
   purpose: UploadPurpose
-  /** image/png, image/jpeg, image/webp (프로필 사진). 허용 밖이면 400 errorCode 110001 */
+  /** image/png, image/jpeg, image/webp (프로필 사진). 허용 밖이면 400 errorCode 100000 */
   contentType: string
 }
 
@@ -144,7 +144,7 @@ export interface UpdatePetProfileRequest {
    */
   isDefault?: boolean | null
   /**
-   * 목록·수정 응답에서 받은 값. 보내면 그 사이 선점됐는지 검사하고 어긋나면 409 errorCode 90004
+   * 목록·수정 응답에서 받은 값. 보내면 그 사이 선점됐는지 검사하고 어긋나면 409 errorCode 90003
    * @nullable
    */
   version?: number | null
@@ -630,7 +630,7 @@ export function useHealthCheckSuspense<
 }
 
 /**
- * 종별 품종 목록(가나다순, 종별 '세상에 하나뿐인 믹스'/'기타'가 마지막). 인증 필요(비로그인 401 errorCode 20005) — PENDING_ONBOARDING 유저 허용.
+ * 종별 품종 목록(가나다순, 종별 '세상에 하나뿐인 믹스'/'기타'가 마지막). 인증 필요(비로그인 401 errorCode 20004) — PENDING_ONBOARDING 유저 허용.
  * @summary 품종 목록 조회
  */
 export const getBreeds = (params: GetBreedsParams, signal?: AbortSignal) => {
@@ -1012,7 +1012,7 @@ export function useGetDeliveryAddressesSuspense<
 }
 
 /**
- * 최대 10개(초과 422 errorCode 30120). isDefault=true면 기존 기본은 자동 해제.
+ * 최대 10개(초과 422 errorCode 30500). isDefault=true면 기존 기본은 자동 해제.
  * @summary 배송지 추가
  */
 export const addDeliveryAddress = (
@@ -2191,7 +2191,7 @@ export const useIssuePresignedUrl = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 본인 펫만(소프트 삭제 제외). 대표 펫이 최상단, 그 아래는 등록순. 온보딩 미완료 계정은 403 errorCode 20007.
+ * 본인 펫만(소프트 삭제 제외). 대표 펫이 최상단, 그 아래는 등록순. 온보딩 미완료 계정은 403 errorCode 20006.
  * @summary 내 펫 프로필 목록 조회
  */
 export const getPets = (signal?: AbortSignal) => {
@@ -2344,7 +2344,7 @@ export function useGetPetsSuspense<TData = Awaited<ReturnType<typeof getPets>>, 
 }
 
 /**
- * 종·이름·품종은 필수, 생년월·체중·사진은 선택. 회원당 최대 10마리(초과 시 422 errorCode 30130). 첫 펫은 isDefault 값과 무관하게 대표로 저장된다. isDefault=true면 기존 대표는 서버가 해제한다.
+ * 종·이름·품종은 필수, 생년월·체중·사진은 선택. 회원당 최대 10마리(초과 시 422 errorCode 30600). 첫 펫은 isDefault 값과 무관하게 대표로 저장된다. isDefault=true면 기존 대표는 서버가 해제한다.
  * @summary 펫 프로필 등록
  */
 export const registerPet = (
@@ -2421,7 +2421,7 @@ export const useRegisterPet = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 부분 수정이 아니라 전체 객체 전송이다 — 유지할 값도 그대로 실어 보내야 하고, profileImageKey를 빼면 기존 사진이 지워진다. species는 수정 대상이 아니다. 타인 펫은 403 errorCode 30132, 없는 펫은 404 errorCode 30131.
+ * 부분 수정이 아니라 전체 객체 전송이다 — 유지할 값도 그대로 실어 보내야 하고, profileImageKey를 빼면 기존 사진이 지워진다. species는 수정 대상이 아니다. 타인 펫은 403 errorCode 30602, 없는 펫은 404 errorCode 30601.
  * @summary 펫 프로필 수정
  */
 export const updatePet = (petId: number, updatePetProfileRequest: UpdatePetProfileRequest) => {
