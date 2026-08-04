@@ -437,6 +437,85 @@ export interface ProductOptionsEnvelope {
   data: ProductOptionsResponse
 }
 
+export type TermType = (typeof TermType)[keyof typeof TermType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TermType = {
+  SERVICE: 'SERVICE',
+  PRIVACY: 'PRIVACY',
+  LOCATION: 'LOCATION',
+  MARKETING: 'MARKETING',
+  AGE_OVER_14: 'AGE_OVER_14',
+} as const
+
+export interface TermItem {
+  termId: number
+  type: TermType
+  /** 필수 약관 여부. true면 동의 제출 시 isAgreed=true로 포함해야 한다 */
+  isRequired: boolean
+  version: string
+  title: string
+  /** 약관 본문(원문) */
+  body: string
+  /** 시행일시(ISO-8601) */
+  effectiveAt: string
+}
+
+export interface TermListResponse {
+  data: TermItem[]
+}
+
+export type SubmitConsentsRequestItemsItem = {
+  termId: number
+  isAgreed: boolean
+}
+
+export interface SubmitConsentsRequest {
+  /** 활성 약관 전체. 필수는 isAgreed=true, 선택은 실제 체크값(true/false) */
+  items: SubmitConsentsRequestItemsItem[]
+}
+
+export interface NicknameCheckData {
+  /** 사용 가능 여부. 본인 현재 닉네임도 true */
+  available: boolean
+}
+
+export interface NicknameCheckResponse {
+  data: NicknameCheckData
+}
+
+export interface NicknameRequest {
+  nickname: string
+}
+
+export interface UserMe {
+  /** 계정 상태(PENDING_ONBOARDING·ACTIVE 등). 닉네임 설정 완료 후 ACTIVE */
+  status: string
+  /** @nullable */
+  nickname: string | null
+  /**
+   * 표시용 URL
+   * @nullable
+   */
+  profileImageUrl: string | null
+  /**
+   * 프로필 수정 PUT에서 유지용으로 되돌려 보낼 원본 키. 역파싱 금지
+   * @nullable
+   */
+  profileImageKey: string | null
+  /** @nullable */
+  bio: string | null
+  /** @nullable */
+  email: string | null
+  /** @nullable */
+  phoneNumber: string | null
+  isPhoneVerified: boolean
+}
+
+export interface UserMeResponse {
+  data: UserMe
+}
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -463,6 +542,10 @@ export type GetProductsParams = {
    * @maximum 100
    */
   size?: number
+}
+
+export type CheckNicknameParams = {
+  nickname: string
 }
 
 /**
@@ -2631,6 +2714,517 @@ export const useSetDefaultPet = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getSetDefaultPetMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 가입/온보딩 화면이 그리는 활성 약관 전체(필수·선택 혼합). 인증 필요(비로그인 401 errorCode 20004) — PENDING_ONBOARDING 유저 허용. isRequired가 true인 약관은 동의 제출 시 모두 isAgreed=true여야 한다.
+ * @summary 활성 약관 목록 조회
+ */
+export const getTerms = (signal?: AbortSignal) => {
+  return customInstance<TermListResponse>({ url: `/terms`, method: 'GET', signal })
+}
+
+export const getGetTermsQueryKey = () => {
+  return [`/terms`] as const
+}
+
+export const getGetTermsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTerms>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetTermsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTerms>>> = ({ signal }) =>
+    getTerms(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTerms>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTermsQueryResult = NonNullable<Awaited<ReturnType<typeof getTerms>>>
+export type GetTermsQueryError = unknown
+
+export function useGetTerms<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTerms>>,
+          TError,
+          Awaited<ReturnType<typeof getTerms>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTerms<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTerms>>,
+          TError,
+          Awaited<ReturnType<typeof getTerms>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTerms<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 활성 약관 목록 조회
+ */
+
+export function useGetTerms<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetTermsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetTermsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTerms>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetTermsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTerms>>> = ({ signal }) =>
+    getTerms(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getTerms>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTermsSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getTerms>>>
+export type GetTermsSuspenseQueryError = unknown
+
+export function useGetTermsSuspense<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTermsSuspense<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTermsSuspense<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 활성 약관 목록 조회
+ */
+
+export function useGetTermsSuspense<TData = Awaited<ReturnType<typeof getTerms>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getTerms>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetTermsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 활성 약관에 대한 동의를 한 번에 제출한다. 활성 필수 약관은 전부 isAgreed=true로 포함해야 하고, 선택(마케팅)은 true/false 모두 수집해 보낸다. items가 비었거나 termId가 중복이면 400 errorCode 90001, 비활성/미지 termId면 400 errorCode 30400, 필수 동의가 누락/false면 403 errorCode 30300, 이미 ACTIVE 계정이면 409 errorCode 30004. 성공은 204 No Content(빈 바디).
+ * @summary 약관 동의 제출(온보딩)
+ */
+export const submitConsents = (
+  submitConsentsRequest: SubmitConsentsRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/users/me/consents`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: submitConsentsRequest,
+    signal,
+  })
+}
+
+export const getSubmitConsentsMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitConsents>>,
+    TError,
+    { data: SubmitConsentsRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitConsents>>,
+  TError,
+  { data: SubmitConsentsRequest },
+  TContext
+> => {
+  const mutationKey = ['submitConsents']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitConsents>>,
+    { data: SubmitConsentsRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return submitConsents(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SubmitConsentsMutationResult = NonNullable<Awaited<ReturnType<typeof submitConsents>>>
+export type SubmitConsentsMutationBody = SubmitConsentsRequest
+export type SubmitConsentsMutationError = unknown
+
+/**
+ * @summary 약관 동의 제출(온보딩)
+ */
+export const useSubmitConsents = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof submitConsents>>,
+      TError,
+      { data: SubmitConsentsRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof submitConsents>>,
+  TError,
+  { data: SubmitConsentsRequest },
+  TContext
+> => {
+  const mutationOptions = getSubmitConsentsMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 닉네임 중복·형식을 미리 확인한다. 본인 현재 닉네임은 available=true. NFC 정규화 후 완성형 한글·영문·숫자 2~12자가 아니면 400 errorCode 30002, 파라미터 누락은 400 errorCode 90001. 보조 판정일 뿐이며 최종 중복 판정은 PUT /users/me/nickname의 409 errorCode 30001이다.
+ * @summary 닉네임 가용성 확인(UX 보조)
+ */
+export const checkNickname = (params: CheckNicknameParams, signal?: AbortSignal) => {
+  return customInstance<NicknameCheckResponse>({
+    url: `/users/nickname/check`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getCheckNicknameQueryKey = (params?: CheckNicknameParams) => {
+  return [`/users/nickname/check`, ...(params ? [params] : [])] as const
+}
+
+export const getCheckNicknameQueryOptions = <
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCheckNicknameQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof checkNickname>>> = ({ signal }) =>
+    checkNickname(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof checkNickname>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CheckNicknameQueryResult = NonNullable<Awaited<ReturnType<typeof checkNickname>>>
+export type CheckNicknameQueryError = unknown
+
+export function useCheckNickname<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof checkNickname>>,
+          TError,
+          Awaited<ReturnType<typeof checkNickname>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckNickname<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof checkNickname>>,
+          TError,
+          Awaited<ReturnType<typeof checkNickname>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckNickname<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 닉네임 가용성 확인(UX 보조)
+ */
+
+export function useCheckNickname<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCheckNicknameQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getCheckNicknameSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCheckNicknameQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof checkNickname>>> = ({ signal }) =>
+    checkNickname(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof checkNickname>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CheckNicknameSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof checkNickname>>
+>
+export type CheckNicknameSuspenseQueryError = unknown
+
+export function useCheckNicknameSuspense<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckNicknameSuspense<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckNicknameSuspense<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 닉네임 가용성 확인(UX 보조)
+ */
+
+export function useCheckNicknameSuspense<
+  TData = Awaited<ReturnType<typeof checkNickname>>,
+  TError = unknown,
+>(
+  params: CheckNicknameParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkNickname>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCheckNicknameSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 닉네임을 확정하며 PENDING_ONBOARDING → ACTIVE로 전이한다(PENDING 전용). 응답 status는 ACTIVE. 필수 동의가 미완이면 403 errorCode 30300, 형식 위반은 400 errorCode 30002, 중복은 409 errorCode 30001(커밋 시점 최종 판정), 이미 ACTIVE면 409 errorCode 30004, 유저 없음은 404 errorCode 30000.
+ * @summary 닉네임 설정·온보딩 완료 전이
+ */
+export const setNickname = (nicknameRequest: NicknameRequest) => {
+  return customInstance<UserMeResponse>({
+    url: `/users/me/nickname`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: nicknameRequest,
+  })
+}
+
+export const getSetNicknameMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setNickname>>,
+    TError,
+    { data: NicknameRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setNickname>>,
+  TError,
+  { data: NicknameRequest },
+  TContext
+> => {
+  const mutationKey = ['setNickname']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setNickname>>,
+    { data: NicknameRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return setNickname(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SetNicknameMutationResult = NonNullable<Awaited<ReturnType<typeof setNickname>>>
+export type SetNicknameMutationBody = NicknameRequest
+export type SetNicknameMutationError = unknown
+
+/**
+ * @summary 닉네임 설정·온보딩 완료 전이
+ */
+export const useSetNickname = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setNickname>>,
+      TError,
+      { data: NicknameRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setNickname>>,
+  TError,
+  { data: NicknameRequest },
+  TContext
+> => {
+  const mutationOptions = getSetNicknameMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
