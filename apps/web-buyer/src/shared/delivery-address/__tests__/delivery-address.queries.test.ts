@@ -101,8 +101,8 @@ describe('delivery-address.queries 어댑터', () => {
   })
 
   it('[AC-ADDR-ERR-001] deliveryAddressErrorMessage는 HTTP status를 사용자 문구로 매핑한다', () => {
-    // 422는 개수 초과 전용이 아니라 errorCode(30120)까지 봐야 한다
-    expect(deliveryAddressErrorMessage({ response: { status: 422, data: { errorCode: 30120 } } })).toBe(
+    // 422는 개수 초과 전용이 아니라 errorCode(30500)까지 봐야 한다
+    expect(deliveryAddressErrorMessage({ response: { status: 422, data: { errorCode: 30500 } } })).toBe(
       '배송지는 최대 10개까지 등록할 수 있어요',
     )
     expect(

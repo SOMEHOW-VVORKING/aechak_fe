@@ -21,7 +21,7 @@ import type { PetProfile, PetSpecies } from '@aechak/domain'
 // 서버 한도와 같은 값
 const MAX_PETS = 10
 
-const PET_LIMIT_EXCEEDED = 30130
+const PET_LIMIT_EXCEEDED = 30600
 
 const PETS_QUERY_KEY = ['pets'] as const
 
