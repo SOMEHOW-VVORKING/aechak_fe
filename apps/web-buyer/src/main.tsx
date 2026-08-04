@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired } from '@aechak/api'
+import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
 import { routeTree } from './routeTree.gen'
@@ -32,6 +32,15 @@ setOnAuthExpired(() => {
   void router.navigate({ to: '/onboarding/login' }).finally(() => {
     redirectingToLogin = false
   })
+})
+
+// PENDING(온보딩 미완) 계정이 화이트리스트 밖 경로를 부르면 서버가 403/20006을 준다 —
+// 어느 화면에서 부딪히든 전역으로 온보딩 약관 화면으로 유도한다. 이미 온보딩 경로면 이동하지
+// 않는다(리다이렉트 루프 방지 — 위 로그인 가드와 동일 결).
+setOnOnboardingRequired(() => {
+  const path = router.state.location.pathname
+  if (path.startsWith('/onboarding')) return
+  void router.navigate({ to: '/onboarding/terms' })
 })
 
 const queryClient = new QueryClient({

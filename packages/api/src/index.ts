@@ -5,5 +5,6 @@ export {
   getAccessToken,
   setAccessToken,
   setOnAuthExpired,
+  setOnOnboardingRequired,
 } from './client'
 export * from './generated/api'
