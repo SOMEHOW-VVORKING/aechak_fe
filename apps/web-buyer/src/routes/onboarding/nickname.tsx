@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CheckCircle2 } from 'lucide-react'
-import { BottomFixedAction, Input, MobileScreen } from '@aechak/design-system/web'
-import { NICKNAME_MIN_LENGTH, OnboardingHeader, useNicknameAvailability } from '@/features/onboarding'
-import { setNickname as persistNickname } from '@/shared/account'
+import { Alert, BottomFixedAction, Input, MobileScreen } from '@aechak/design-system/web'
+import {
+  NICKNAME_MAX_LENGTH,
+  OnboardingHeader,
+  isValidNicknameFormat,
+  onboardingErrorMessage,
+  readErrorCode,
+  useNicknameAvailability,
+  useSetNickname,
+} from '@/features/onboarding'
 
-const NICKNAME_MAX_LENGTH = 12
 const DEBOUNCE_MS = 400
 
 export const Route = createFileRoute('/onboarding/nickname')({
@@ -14,38 +20,64 @@ export const Route = createFileRoute('/onboarding/nickname')({
 
 function NicknameSetupRoute() {
   const navigate = useNavigate()
+  const submit = useSetNickname()
   const [nickname, setNickname] = useState('')
   const [debounced, setDebounced] = useState('')
   const [completed, setCompleted] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(nickname), DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [nickname])
 
+  // 형식은 서버 규칙(NFC + 정규식)으로 사전 판정한다. 통과할 때만 중복 확인이 서버로 나간다.
+  const isValidFormat = isValidNicknameFormat(nickname)
   const { data: isAvailable, isFetching } = useNicknameAvailability(debounced)
 
-  const isValidLength = nickname.length >= NICKNAME_MIN_LENGTH && nickname.length <= NICKNAME_MAX_LENGTH
-  const isChecking = isValidLength && (debounced !== nickname || isFetching)
-  const canSubmit = isValidLength && !isChecking && isAvailable === true
+  const isChecking = isValidFormat && (debounced !== nickname || isFetching)
+  const canSubmit = isValidFormat && !isChecking && isAvailable === true && !submit.isPending
 
   let state: 'default' | 'error' | 'success' = 'default'
   let helperText: string | undefined
-  if (isChecking) {
+  if (nickname.length > 0 && !isValidFormat) {
+    // 형식 위반은 서버 호출 없이 즉시 인라인으로 안내한다.
+    state = 'error'
+    helperText = '2~12자의 한글, 영문, 숫자로 입력해 주세요'
+  } else if (isChecking) {
     helperText = '중복 확인 중...'
-  } else if (isValidLength && isAvailable === true) {
+  } else if (isValidFormat && isAvailable === true) {
     state = 'success'
     helperText = '사용할 수 있는 닉네임이에요'
-  } else if (isValidLength && isAvailable === false) {
+  } else if (isValidFormat && isAvailable === false) {
     state = 'error'
     helperText = '이미 사용 중인 닉네임이에요'
   }
 
   const handleStart = () => {
     if (!canSubmit) return
-    // 입력한 닉네임을 계정에 저장한다(마이페이지/리뷰가 이 닉네임을 본다). 그 뒤 완료 화면을 띄운다.
-    persistNickname(nickname)
-    setCompleted(true)
+    setSubmitError(null)
+    // 최종 판정은 PUT이 한다(중복 확인은 보조). 성공 응답의 status=ACTIVE로 전이를 확인한다.
+    submit.mutate(nickname, {
+      onSuccess: user => {
+        if (user.status === 'ACTIVE') setCompleted(true)
+      },
+      onError: error => {
+        const { errorCode } = readErrorCode(error)
+        // 필수 동의 미완(30300): 약관 화면으로 되돌린다.
+        if (errorCode === 30300) {
+          navigate({ to: '/onboarding/terms' })
+          return
+        }
+        // 이미 ACTIVE(30004): 온보딩을 다시 탈 필요가 없으니 홈으로 보낸다.
+        if (errorCode === 30004) {
+          navigate({ to: '/', replace: true })
+          return
+        }
+        // 30001(중복)·30002(형식)는 인라인으로 표시한다.
+        setSubmitError(onboardingErrorMessage(error))
+      },
+    })
   }
 
   // 완료 화면 — 사용자가 매듭을 짓고 스스로 홈으로 들어가게 한다(자동 이동/타이머 없음).
@@ -77,7 +109,12 @@ function NicknameSetupRoute() {
       }
       footer={
         <BottomFixedAction
-          primary={{ label: '애착 시작하기', onClick: handleStart, disabled: !canSubmit }}
+          primary={{
+            label: '애착 시작하기',
+            onClick: handleStart,
+            disabled: !canSubmit,
+            loading: submit.isPending,
+          }}
         />
       }
       contentClassName="flex flex-col gap-5 px-4 py-4"
@@ -86,6 +123,13 @@ function NicknameSetupRoute() {
         <h1 className="text-heading font-bold text-text-primary">닉네임을 정해 주세요</h1>
         <p className="text-body-sm text-text-secondary">2~12자, 한글/영문/숫자를 사용할 수 있어요</p>
       </div>
+
+      {submitError && (
+        <Alert variant="error" onDismiss={() => setSubmitError(null)}>
+          {submitError}
+        </Alert>
+      )}
+
       <Input
         label="닉네임 *"
         value={nickname}
