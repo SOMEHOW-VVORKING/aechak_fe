@@ -216,6 +216,18 @@ export interface BreedListResponse {
   data: BreedResponse[]
 }
 
+export interface PointBalanceData {
+  /**
+   * 적립금 잔액(원 단위, 0 이상 정수)
+   * @minimum 0
+   */
+  balance: number
+}
+
+export interface PointBalanceResponse {
+  data: PointBalanceData
+}
+
 export interface DeliveryAddressResponse {
   addressId: number
   receiverName: string
@@ -2633,4 +2645,193 @@ export const useSetDefaultPet = <TError = unknown, TContext = unknown>(
   const mutationOptions = getSetDefaultPetMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 원 단위 적립금 잔액(0 이상 정수). ACTIVE 전용 — 온보딩 미완료(PENDING) 계정이 부르면 403 errorCode 20006, 유저 없음은 404 errorCode 30000. 내역(히스토리)은 범위 밖으로 잔액만 내려준다.
+ * @summary 내 적립금 잔액 조회
+ */
+export const getPointBalance = (signal?: AbortSignal) => {
+  return customInstance<PointBalanceResponse>({ url: `/users/me/points`, method: 'GET', signal })
+}
+
+export const getGetPointBalanceQueryKey = () => {
+  return [`/users/me/points`] as const
+}
+
+export const getGetPointBalanceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetPointBalanceQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPointBalance>>> = ({ signal }) =>
+    getPointBalance(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPointBalance>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPointBalanceQueryResult = NonNullable<Awaited<ReturnType<typeof getPointBalance>>>
+export type GetPointBalanceQueryError = unknown
+
+export function useGetPointBalance<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPointBalance>>,
+          TError,
+          Awaited<ReturnType<typeof getPointBalance>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPointBalance<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPointBalance>>,
+          TError,
+          Awaited<ReturnType<typeof getPointBalance>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPointBalance<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 적립금 잔액 조회
+ */
+
+export function useGetPointBalance<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetPointBalanceQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetPointBalanceSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetPointBalanceQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPointBalance>>> = ({ signal }) =>
+    getPointBalance(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getPointBalance>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPointBalanceSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPointBalance>>
+>
+export type GetPointBalanceSuspenseQueryError = unknown
+
+export function useGetPointBalanceSuspense<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPointBalanceSuspense<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPointBalanceSuspense<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 적립금 잔액 조회
+ */
+
+export function useGetPointBalanceSuspense<
+  TData = Awaited<ReturnType<typeof getPointBalance>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getPointBalance>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetPointBalanceSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }
