@@ -137,6 +137,15 @@ export const REAL_PRODUCT_OPTIONS = {
 }
 export const PETS_URL = `${base}/users/me/pets`
 export const PRESIGNED_URL = `${base}/files/presigned-url`
+export const POINTS_URL = `${base}/users/me/points`
+
+// 적립금 잔액은 서버가 소유하는 단일 정수(원 단위). 상태로 두어 테스트가 잔액을 세울 수 있게 한다.
+let pointBalance = 0
+
+/** 테스트마다 적립금 잔액을 세운다. 인자 없이 부르면 0(미시드 기본값). */
+export function seedPointBalance(balance = 0): void {
+  pointBalance = balance
+}
 
 // 서버 시드(V1__create_and_seed_breeds.sql)의 실제 id·라벨 부분집합. 종별 정렬(가나다순) +
 // sentinel('세상에 하나뿐인 믹스'/'기타') 후순 구조를 그대로 축소했다.
@@ -358,6 +367,8 @@ export const handlers = [
   http.post(WEB_REFRESH_URL, () =>
     HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
   ),
+  // 적립금 잔액 — seedPointBalance로 세운 값을 봉투에 담아 내려준다(미시드면 0).
+  http.get(POINTS_URL, () => HttpResponse.json({ data: { balance: pointBalance } })),
   // 카테고리 트리(마켓 대분류/중분류).
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: CATEGORY_FIXTURES })),
   // 상품 목록 — category 필터 + sort(price_asc) + 커서(인덱스 2개씩) 페이지네이션.

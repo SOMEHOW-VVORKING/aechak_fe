@@ -2,7 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { resetAccount, verifyPhone } from '@/shared/account'
+import { POINTS_URL, seedPointBalance, server } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -41,5 +43,39 @@ describe('/mypage 프로필 요약 카드 인증 배지', () => {
     expect(await screen.findByText('본인 인증')).toBeInTheDocument()
     expect(screen.getAllByText('미인증')).toHaveLength(2)
     expect(screen.queryByText('인증완료')).not.toBeInTheDocument()
+  })
+})
+
+describe('/mypage 적립금 표시 행', () => {
+  beforeEach(() => {
+    resetAccount()
+    seedPointBalance(0)
+  })
+
+  it('[AC-POINT-HUB-001] 서버 잔액을 원화로 표시한다', async () => {
+    seedPointBalance(12345)
+    renderAt('/mypage')
+
+    expect(await screen.findByText('적립금')).toBeInTheDocument()
+    expect(await screen.findByText('12,345원')).toBeInTheDocument()
+  })
+
+  it('[AC-POINT-HUB-002] 잔액 0도 0원으로 정상 표시한다', async () => {
+    seedPointBalance(0)
+    renderAt('/mypage')
+
+    expect(await screen.findByText('적립금')).toBeInTheDocument()
+    expect(await screen.findByText('0원')).toBeInTheDocument()
+  })
+
+  it('[AC-POINT-HUB-003] 조회 실패 시 허브는 정상 렌더되고 금액만 —로 표시한다', async () => {
+    server.use(http.get(POINTS_URL, () => HttpResponse.error()))
+    renderAt('/mypage')
+
+    // 허브 전체는 살아 있다(메뉴 행 정상 렌더).
+    expect(await screen.findByText('본인 인증')).toBeInTheDocument()
+    expect(screen.getByText('적립금')).toBeInTheDocument()
+    // 금액만 '—'로 강하한다.
+    expect(await screen.findByText('—')).toBeInTheDocument()
   })
 })

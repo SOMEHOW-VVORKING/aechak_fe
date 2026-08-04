@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   AlertCircle,
   ChevronRight,
+  Coins,
   Heart,
   MapPin,
   PawPrint,
@@ -14,6 +15,8 @@ import {
 } from 'lucide-react'
 import { Avatar, ListItem, StatusPill } from '@aechak/design-system/web'
 import { useAccount } from '@/shared/account'
+import { usePointBalance } from '@/shared/points'
+import { formatKRW } from '@/shared/formatKRW'
 import { MYPAGE_MENU_GROUPS } from '../mypage.mock'
 
 // 마이페이지 허브(b10-st-1). _tabs 레이아웃의 MobileScreen 안(스크롤 영역)에 렌더되므로 여기서
@@ -22,6 +25,11 @@ export function MyPageHubScreen() {
   const navigate = useNavigate()
   const account = useAccount()
   const verified = account.verification === 'verified'
+
+  // 적립금 잔액(서버 소유). 내역 화면이 없어 클릭 불가 표시 행으로만 노출한다. 로딩·조회 실패 시
+  // 금액만 '—'로 두고(허브 전체를 막지 않는다), 성공하면 0원도 정상 표시한다.
+  const { balance: pointBalance, isLoading: pointsLoading, isError: pointsError } = usePointBalance()
+  const pointsDisplay = pointsLoading || pointsError ? '—' : formatKRW(pointBalance ?? 0)
 
   // 메뉴 key → 아이콘/이동. mock은 순수 데이터라 여기서 매핑한다.
   const icons: Record<string, ReactNode> = {
@@ -108,6 +116,19 @@ export function MyPageHubScreen() {
           </div>
           <ChevronRight className="size-5 flex-none text-icon-muted" />
         </button>
+
+        {/* 적립금 — 내역 화면이 없어 이동 없는 표시 전용 행(onClick 없이 ListItem이 비인터랙티브
+            div로 렌더). 금액은 서버 잔액이며 로딩·실패 시 '—'. 메뉴 그룹과 같은 카드 스타일. */}
+        <div className="overflow-hidden rounded-card border border-border-subtle bg-surface-raised">
+          <ListItem
+            leading={<Coins className="size-[22px]" />}
+            title="적립금"
+            trailing={
+              <span className="text-body-sm font-semibold text-text-primary">{pointsDisplay}</span>
+            }
+            className="px-4"
+          />
+        </div>
 
         {/* 메뉴 그룹 — hover 배경이 행 전체 폭을 덮도록 px-4를 컨테이너가 아니라 ListItem에 준다
             (컨테이너 px-4면 hover가 좌우 16px 안쪽만 칠해짐). 구분선만 mx-4로 안쪽에 유지. */}
