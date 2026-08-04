@@ -348,15 +348,15 @@ export const handlers = [
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {
-      // 서버 계약: 잘못된 species는 400 + CommonErrorCode.INVALID_REQUEST(90002)
-      return HttpResponse.json({ errorCode: 90002, message: 'invalid species' }, { status: 400 })
+      // 서버 계약: 잘못된 species는 400 + CommonErrorCode.INVALID_REQUEST(90001)
+      return HttpResponse.json({ errorCode: 90001, message: 'invalid species' }, { status: 400 })
     }
     return HttpResponse.json({ data: BREED_FIXTURES[species] })
   }),
   // 401 시나리오에서 axios 인터셉터의 refresh 재시도가 성공으로 새면 에러 테스트가 조용히
   // 통과해버린다. 기본 핸들러는 반드시 401 고정.
   http.post(WEB_REFRESH_URL, () =>
-    HttpResponse.json({ errorCode: 20005, message: '인증이 필요합니다.' }, { status: 401 }),
+    HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
   ),
   // 카테고리 트리(마켓 대분류/중분류).
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: CATEGORY_FIXTURES })),

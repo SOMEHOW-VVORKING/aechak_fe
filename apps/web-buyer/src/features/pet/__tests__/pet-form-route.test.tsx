@@ -97,7 +97,7 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
     // 기본 refresh 핸들러가 401이라 인터셉터 재발급이 실패 → 전역 onAuthExpired가 로그인으로 보낸다.
     server.use(
       http.get(BREEDS_URL, () =>
-        HttpResponse.json({ errorCode: 20005, message: '로그인이 필요합니다.' }, { status: 401 }),
+        HttpResponse.json({ errorCode: 20004, message: '로그인이 필요합니다.' }, { status: 401 }),
       ),
     )
     renderAt('/mypage/pets/new')
@@ -126,7 +126,7 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
       http.get(BREEDS_URL, ({ request }) =>
         request.headers.get('Authorization') === 'Bearer new-token'
           ? HttpResponse.json({ data: [{ breedId: 369, label: '코리안 숏헤어' }] })
-          : HttpResponse.json({ errorCode: 20005, message: '만료' }, { status: 401 }),
+          : HttpResponse.json({ errorCode: 20004, message: '만료' }, { status: 401 }),
       ),
       http.post(WEB_REFRESH_URL, () =>
         HttpResponse.json({ data: { accessToken: 'new-token', tokenType: 'Bearer', expiresIn: 3600 } }),

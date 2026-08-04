@@ -136,11 +136,11 @@ test('[AC-PET-BREEDS-E2E-003] 품종을 안 고르면 저장이 막힌다', asyn
 
 test('[AC-PET-BREEDS-E2E-002] 세션 없이 진입하면(401 → refresh 실패) 로그인 화면으로 튕긴다', async ({ page }) => {
   await page.route('**/api/v1/breeds**', route =>
-    fulfillJson(route, 401, { errorCode: 20005, message: '로그인이 필요합니다.' }),
+    fulfillJson(route, 401, { errorCode: 20004, message: '로그인이 필요합니다.' }),
   )
   // 401을 받은 인터셉터가 refresh를 시도한다. 성공으로 새면 안 튕기므로 refresh도 401 고정.
   await page.route('**/api/v1/auth/web/refresh', route =>
-    fulfillJson(route, 401, { errorCode: 20005, message: '인증이 필요합니다.' }),
+    fulfillJson(route, 401, { errorCode: 20004, message: '인증이 필요합니다.' }),
   )
 
   await page.goto('/mypage/pets/new')

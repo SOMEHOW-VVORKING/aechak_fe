@@ -20,8 +20,8 @@ import {
 
 export const MAX_DELIVERY_ADDRESSES = 10
 
-/** 서버 에러코드 — 배송지 최대 개수 초과(사용자 대역 30120). */
-const DELIVERY_ADDRESS_LIMIT_EXCEEDED = 30120
+/** 서버 에러코드 — 배송지 최대 개수 초과(사용자 대역 30500). */
+const DELIVERY_ADDRESS_LIMIT_EXCEEDED = 30500
 
 const DELIVERY_ADDRESSES_QUERY_KEY = ['delivery-addresses'] as const
 
@@ -96,7 +96,7 @@ export function deliveryAddressErrorMessage(error: unknown): string {
     ?.data
   const serverMessage = data?.message
   switch (status) {
-    // 422는 개수 초과(30120) 전용이 아니다 — 코드까지 봐야 다른 검증 실패를 오안내하지 않는다.
+    // 422는 개수 초과(30500) 전용이 아니다 — 코드까지 봐야 다른 검증 실패를 오안내하지 않는다.
     case 422:
       return data?.errorCode === DELIVERY_ADDRESS_LIMIT_EXCEEDED
         ? '배송지는 최대 10개까지 등록할 수 있어요'

@@ -32,8 +32,8 @@ export const Route = createFileRoute('/login/complete')({
     try {
       await bootstrapSession()
     } catch {
-      // 쿠키 부재·만료 등 — 처음부터 다시 (20003 = 유효하지 않은 토큰)
-      throw redirect({ to: '/onboarding/login', search: { error: 20003 }, replace: true })
+      // 쿠키 부재·만료 등 — 처음부터 다시 (20002 = 유효하지 않은 토큰)
+      throw redirect({ to: '/onboarding/login', search: { error: 20002 }, replace: true })
     }
     login()
     if (search.status === 'PENDING_ONBOARDING') {
