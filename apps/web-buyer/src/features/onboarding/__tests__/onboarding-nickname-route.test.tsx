@@ -42,25 +42,34 @@ describe('/onboarding/nickname', () => {
     seedConsentsSubmitted(true)
   })
 
-  it('[AC-ONBOARD-009] 형식 위반(길이 2지만 자모)은 서버 호출 없이 인라인 형식 에러만 낸다', async () => {
-    const user = userEvent.setup()
-    let checkCalls = 0
-    server.use(
-      http.get(NICKNAME_CHECK_URL, () => {
-        checkCalls += 1
-        return HttpResponse.json({ data: { available: true } })
-      }),
-    )
-    renderNicknameRoute()
+  // 형식 위반 3종(1자·자모·이모지)은 모두 서버 호출 없이 인라인 형식 에러로 끝나야 한다.
+  // 이모지는 maxLength slice(서로게이트 쌍)와도 겹치는 입력이라 정규식 공유만 믿지 않고 함께 검증한다.
+  it.each([
+    ['한 글자', 'a'],
+    ['자모', 'ㄱㄴ'],
+    ['이모지', '😀😀'],
+  ])(
+    '[AC-ONBOARD-009] 형식 위반(%s)은 서버 호출 없이 인라인 형식 에러만 낸다',
+    async (_label, value) => {
+      const user = userEvent.setup()
+      let checkCalls = 0
+      server.use(
+        http.get(NICKNAME_CHECK_URL, () => {
+          checkCalls += 1
+          return HttpResponse.json({ data: { available: true } })
+        }),
+      )
+      renderNicknameRoute()
 
-    await user.type(await screen.findByLabelText(/닉네임/), 'ㄱㄴ')
-    // 디바운스(400ms)를 넉넉히 넘겨도 중복확인 요청이 나가지 않아야 한다.
-    await new Promise(resolve => setTimeout(resolve, 700))
+      await user.type(await screen.findByLabelText(/닉네임/), value)
+      // 디바운스(400ms)를 넉넉히 넘겨도 중복확인 요청이 나가지 않아야 한다.
+      await new Promise(resolve => setTimeout(resolve, 700))
 
-    expect(screen.getByText('2~12자의 한글, 영문, 숫자로 입력해 주세요')).toBeInTheDocument()
-    expect(checkCalls).toBe(0)
-    expect(screen.getByRole('button', { name: '애착 시작하기' })).toBeDisabled()
-  })
+      expect(screen.getByText('2~12자의 한글, 영문, 숫자로 입력해 주세요')).toBeInTheDocument()
+      expect(checkCalls).toBe(0)
+      expect(screen.getByRole('button', { name: '애착 시작하기' })).toBeDisabled()
+    },
+  )
 
   it('[AC-ONBOARD-010] 가용 닉네임을 제출하면 완료 화면이 뜨고 CTA로 홈에 들어간다', async () => {
     const user = userEvent.setup()
