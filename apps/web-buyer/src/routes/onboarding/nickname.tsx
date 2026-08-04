@@ -11,6 +11,7 @@ import {
   useNicknameAvailability,
   useSetNickname,
 } from '@/features/onboarding'
+import { setNickname as syncAccountNickname } from '@/shared/account'
 
 const DEBOUNCE_MS = 400
 
@@ -60,7 +61,13 @@ function NicknameSetupRoute() {
     // 최종 판정은 PUT이 한다(중복 확인은 보조). 성공 응답의 status=ACTIVE로 전이를 확인한다.
     submit.mutate(nickname, {
       onSuccess: user => {
-        if (user.status === 'ACTIVE') setCompleted(true)
+        if (user.status === 'ACTIVE') {
+          // 온보딩으로 확정된 닉네임을 마이페이지·리뷰 화면이 읽는 계정 스토어에도 반영한다.
+          // 스토어는 아직 목업이라(서버 GET /users/me 기반 전환 전) 온보딩 완료 시 동기화가 필요하다 —
+          // 안 하면 실서버로 닉네임을 바꿔도 마이/리뷰 화면이 시드값을 계속 보여준다.
+          syncAccountNickname(user.nickname ?? nickname)
+          setCompleted(true)
+        }
       },
       onError: error => {
         const { errorCode } = readErrorCode(error)

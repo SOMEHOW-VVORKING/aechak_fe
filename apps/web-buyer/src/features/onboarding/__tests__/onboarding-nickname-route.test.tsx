@@ -11,6 +11,7 @@ import {
   seedTerms,
   server,
 } from '@/testing/msw/server'
+import { getAccount, resetAccount } from '@/shared/account'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderNicknameRoute() {
@@ -40,6 +41,8 @@ describe('/onboarding/nickname', () => {
     seedTerms()
     seedTakenNicknames(['애착'])
     seedConsentsSubmitted(true)
+    // 계정 스토어는 전역 싱글턴이라 온보딩 완료 동기화가 테스트 간 새지 않게 시드로 되돌린다.
+    resetAccount()
   })
 
   // 형식 위반 3종(1자·자모·이모지)은 모두 서버 호출 없이 인라인 형식 에러로 끝나야 한다.
@@ -83,6 +86,18 @@ describe('/onboarding/nickname', () => {
 
     await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
+  it('[AC-ONBOARD-013] 온보딩으로 확정한 닉네임이 계정 스토어(마이/리뷰 화면 소스)에 반영된다', async () => {
+    const user = userEvent.setup()
+    // 시드값과 다른 닉네임으로 온보딩을 완료했는데도 스토어가 시드('코코집사')에 머물면 버그다.
+    expect(getAccount().nickname).toBe('코코집사')
+    renderNicknameRoute()
+
+    await fillNicknameAndSubmit(user, '초코집사')
+
+    expect(await screen.findByRole('heading', { name: '가입 완료!' })).toBeInTheDocument()
+    await waitFor(() => expect(getAccount().nickname).toBe('초코집사'))
   })
 
   it('[AC-ONBOARD-011] 확인은 통과했지만 커밋 시점 중복(409/30001)이면 인라인으로 사용 중을 알린다', async () => {
