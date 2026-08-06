@@ -3,6 +3,7 @@ import {
   deleteAllRecentKeywords,
   deleteRecentKeyword,
   customInstance,
+  getCategories,
   searchProducts,
   type ProductKeywordSearchSort,
   type SearchKeywordsEnvelope,
@@ -63,6 +64,17 @@ export const useSearchLanding = (enabled = true) =>
     retry: false,
   })
 
+// 검색 결과 필터의 카테고리 선택지. catalog의 useCategoryTree와 같은 캐시 키를 써 중복 조회를 막는다.
+// /categories는 인증 필요라 로그인 사용자만 조회한다(비회원은 카테고리 필터 없이 전체 검색).
+export const useSearchCategories = (enabled = true) =>
+  useQuery({
+    queryKey: ['catalog', 'categories'],
+    queryFn: ({ signal }) => getCategories(signal),
+    select: res => res.data,
+    staleTime: Infinity,
+    enabled,
+  })
+
 export function useDeleteRecentKeyword() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -116,6 +128,7 @@ async function fetchSearchPage(
       minRating: filters.minRating > 0 ? filters.minRating : undefined,
       freeShipping: filters.freeShippingOnly,
       excludeSoldOut: filters.excludeSoldOut,
+      category: filters.category ?? undefined,
       cursor,
       size: 20,
     },

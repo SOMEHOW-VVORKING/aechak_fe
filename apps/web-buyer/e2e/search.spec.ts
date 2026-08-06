@@ -42,6 +42,32 @@ function keywordsEnvelope(recent: typeof RECENT_KEYWORDS) {
   return { data: { recentKeywords: recent, recommendedKeywords: RECOMMENDED_KEYWORDS } }
 }
 
+// 카테고리 트리(대분류 2 + 중분류). 중분류 이름은 트리 안에서 유일하게 둬 테스트에서 칩을 명확히 고른다.
+const CATEGORIES = {
+  data: [
+    {
+      categoryId: 1,
+      name: '강아지',
+      iconUrl: null,
+      sortOrder: 1,
+      children: [
+        { categoryId: 11, name: '사료/간식', iconUrl: null, sortOrder: 1, children: [] },
+        { categoryId: 12, name: '산책용품', iconUrl: null, sortOrder: 2, children: [] },
+      ],
+    },
+    {
+      categoryId: 2,
+      name: '고양이',
+      iconUrl: null,
+      sortOrder: 2,
+      children: [
+        { categoryId: 21, name: '모래/위생', iconUrl: null, sortOrder: 1, children: [] },
+        { categoryId: 22, name: '캣타워', iconUrl: null, sortOrder: 2, children: [] },
+      ],
+    },
+  ],
+}
+
 function product(productId: string, name: string, price: number) {
   return {
     productId,
@@ -64,14 +90,29 @@ const SEARCH_HITS = [
   product('p-search-3', '대형견 대용량 사료 15kg', 68000),
   product('p-search-4', '유기농 오리 사료 1.5kg', 21000),
 ]
+// 상품 -> 중분류 categoryId. 카테고리 필터가 결과를 실제로 좁히는지 검증하는 데 쓴다.
+const CATEGORY_OF: Record<string, number> = {
+  'p-search-1': 11,
+  'p-search-2': 21,
+  'p-search-3': 11,
+  'p-search-4': 11,
+}
 
 function stubProducts(route: Route) {
-  const keyword = new URL(route.request().url()).searchParams.get('keyword') ?? ''
-  const products = keyword.includes('사료') ? SEARCH_HITS : []
+  const params = new URL(route.request().url()).searchParams
+  const keyword = params.get('keyword') ?? ''
+  const category = params.get('category')
+  let hits = keyword.includes('사료') ? SEARCH_HITS : []
+  if (category) hits = hits.filter(p => CATEGORY_OF[p.productId] === Number(category))
   return fulfillJson(route, 200, {
-    data: { products, totalCount: products.length, nextCursor: null, hasNext: false },
+    data: { products: hits, totalCount: hits.length, nextCursor: null, hasNext: false },
   })
 }
+
+test.beforeEach(async ({ page }) => {
+  // 결과 화면의 카테고리 필터가 조회하는 /categories(로그인 사용자 전용). 결과 화면 진입 시 항상 발사된다.
+  await page.route('**/api/v1/categories', route => fulfillJson(route, 200, CATEGORIES))
+})
 
 test('[AC-SEARCH-E2E-001] 최근·추천 검색어(2-A)를 렌더하고, 없을 때(2-B) 빈 상태를 보여준다', async ({ page }) => {
   // 2-A: 최근 검색어 있음.
@@ -90,7 +131,7 @@ test('[AC-SEARCH-E2E-001] 최근·추천 검색어(2-A)를 렌더하고, 없을 
   await shot(page, `${SHOTS}/02-search-empty.png`)
 })
 
-test('[AC-SEARCH-E2E-002] 검색 결과 그리드(3-A)와 필터 시트(3-B)를 보여준다', async ({ page }) => {
+test('[AC-SEARCH-E2E-002] 결과 그리드(3-A)·필터 시트(3-B)와 카테고리 필터 적용을 보여준다', async ({ page }) => {
   await page.route('**/api/v1/search/products*', stubProducts)
 
   // 3-A: 결과 그리드 + 결과 수.
@@ -100,11 +141,18 @@ test('[AC-SEARCH-E2E-002] 검색 결과 그리드(3-A)와 필터 시트(3-B)를 
   await expect(page.getByText('대형견 대용량 사료 15kg')).toBeVisible()
   await shot(page, `${SHOTS}/03-results-grid.png`)
 
-  // 3-B: 필터 시트 열림.
+  // 3-B: 필터 시트 열림 — 가격대·카테고리 섹션.
   await page.getByRole('button', { name: '필터' }).click()
   await expect(page.getByText('가격대')).toBeVisible()
-  await expect(page.getByRole('button', { name: '결과 보기' })).toBeVisible()
+  await expect(page.getByText('카테고리')).toBeVisible()
+  await expect(page.getByRole('button', { name: '사료/간식' })).toBeVisible()
   await shot(page, `${SHOTS}/04-filter-sheet.png`)
+
+  // 카테고리(강아지 > 사료/간식, id 11)를 골라 적용하면 고양이 상품이 걸러진다.
+  await page.getByRole('button', { name: '사료/간식' }).click()
+  await page.getByRole('button', { name: '결과 보기' }).click()
+  await expect(page.getByText('고양이 그레인프리 사료 5kg')).toHaveCount(0)
+  await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
 })
 
 test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 대체 검색어를 보여준다', async ({ page }) => {

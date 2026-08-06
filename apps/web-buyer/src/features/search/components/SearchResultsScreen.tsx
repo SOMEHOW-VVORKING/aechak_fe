@@ -9,11 +9,12 @@ import {
   SearchInput,
   Skeleton,
 } from '@aechak/design-system/web'
+import type { CategoryResponse } from '@aechak/api'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
-import { LoginGate, useLoginGate } from '@/shared/auth'
-import { useSearchResults } from '../search.queries'
+import { LoginGate, useLoginGate, useIsLoggedIn } from '@/shared/auth'
+import { useSearchCategories, useSearchResults } from '../search.queries'
 import {
   DEFAULT_FILTERS,
   RESULT_SORTS,
@@ -48,6 +49,8 @@ export function SearchResultsScreen({ query }: { query: string }) {
   const navigate = useNavigate()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
   const goBack = useSafeBack({ to: '/' })
+  const isLoggedIn = useIsLoggedIn()
+  const { data: categories } = useSearchCategories(isLoggedIn)
 
   const [draftQuery, setDraftQuery] = useState(query)
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS)
@@ -284,6 +287,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
       <FilterSheet
         open={filterOpen}
         initial={filters}
+        categories={categories}
         onClose={() => setFilterOpen(false)}
         onApply={next => {
           setFilters(next)
@@ -350,11 +354,13 @@ export function SearchResultsScreen({ query }: { query: string }) {
 function FilterSheet({
   open,
   initial,
+  categories,
   onClose,
   onApply,
 }: {
   open: boolean
   initial: SearchFilters
+  categories?: CategoryResponse[]
   onClose: () => void
   onApply: (filters: SearchFilters) => void
 }) {
@@ -375,6 +381,42 @@ function FilterSheet({
   return (
     <BottomSheet open={open} onClose={onClose} title="필터">
       <div className="flex flex-col gap-5">
+        {/* 카테고리 — /categories는 인증 필요라 로그인 사용자만 조회. categories가 있을 때만 노출한다. */}
+        {categories && categories.length > 0 && (
+          <>
+            <section className="flex flex-col gap-2.5">
+              <span className="text-label font-semibold text-text-primary">카테고리</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <FilterChipButton
+                    selected={draft.category == null}
+                    onClick={() => patch({ category: null })}
+                  >
+                    전체
+                  </FilterChipButton>
+                </div>
+                {categories.map(major => (
+                  <div key={major.categoryId} className="flex flex-col gap-1.5">
+                    <span className="text-caption text-text-tertiary">{major.name}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {major.children.map(sub => (
+                        <FilterChipButton
+                          key={sub.categoryId}
+                          selected={draft.category === sub.categoryId}
+                          onClick={() => patch({ category: sub.categoryId })}
+                        >
+                          {sub.name}
+                        </FilterChipButton>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <div className="h-px bg-border-subtle" />
+          </>
+        )}
+
         {/* 가격대 */}
         <section className="flex flex-col gap-2.5">
           <span className="text-label font-semibold text-text-primary">가격대</span>

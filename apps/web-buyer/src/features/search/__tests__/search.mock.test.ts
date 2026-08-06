@@ -6,5 +6,7 @@ describe('activeFilterCount', () => {
     expect(activeFilterCount(DEFAULT_FILTERS)).toBe(0)
     expect(activeFilterCount({ ...DEFAULT_FILTERS, minRating: 4, freeShippingOnly: true })).toBe(2)
     expect(activeFilterCount({ ...DEFAULT_FILTERS, excludeSoldOut: false })).toBe(1)
+    expect(activeFilterCount({ ...DEFAULT_FILTERS, category: 11 })).toBe(1)
+    expect(activeFilterCount({ ...DEFAULT_FILTERS, category: 11, minRating: 4 })).toBe(2)
   })
 })

@@ -22,6 +22,8 @@ export interface SearchFilters {
   freeShippingOnly: boolean
   excludeSoldOut: boolean
   minRating: number
+  // 중분류 categoryId로 결과를 좁힌다(null이면 전체). 서버 /search/products의 category 파라미터로 전달.
+  category: number | null
 }
 
 export const DEFAULT_FILTERS: SearchFilters = {
@@ -30,6 +32,7 @@ export const DEFAULT_FILTERS: SearchFilters = {
   freeShippingOnly: false,
   excludeSoldOut: true,
   minRating: 0,
+  category: null,
 }
 
 // 검색 결과 API는 대체 검색어를 반환하지 않아 무결과 UI에만 쓰는 제품 카피다.
@@ -47,5 +50,6 @@ export function activeFilterCount(filters: SearchFilters): number {
   if (filters.freeShippingOnly) n += 1
   if (filters.excludeSoldOut !== DEFAULT_FILTERS.excludeSoldOut) n += 1
   if (filters.minRating > 0) n += 1
+  if (filters.category != null) n += 1
   return n
 }
