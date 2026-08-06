@@ -33,6 +33,15 @@ export function setOnAuthExpired(handler: (() => void) | null): void {
   onAuthExpired = handler
 }
 
+// 온보딩 미완(PENDING) 계정이 화이트리스트 밖 경로를 부르면 서버가 403 errorCode 20006을 준다.
+// 세션 만료와 달리 이건 로그인이 아니라 온보딩 화면으로 전역 유도해야 한다. setOnAuthExpired와
+// 같은 결로, 라우터를 모르는 이 패키지는 핸들러만 호출하고 소비 앱(main.tsx)이 이동을 배선한다.
+let onOnboardingRequired: (() => void) | null = null
+
+export function setOnOnboardingRequired(handler: (() => void) | null): void {
+  onOnboardingRequired = handler
+}
+
 axiosInstance.interceptors.request.use(config => {
   if (accessToken && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${accessToken}`
@@ -68,6 +77,15 @@ const retriedRequests = new WeakSet<object>()
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: unknown) => {
+    // 온보딩 미완(403/20006)은 전역 핸들러를 깨워 온보딩으로 유도하되, promise는 계속 reject한다
+    // — 호출부(화면·쿼리)도 실패를 인지해 로딩/성공으로 새지 않게 한다.
+    if (
+      axios.isAxiosError(error) &&
+      error.response?.status === 403 &&
+      (error.response.data as { errorCode?: number } | undefined)?.errorCode === 20006
+    ) {
+      onOnboardingRequired?.()
+    }
     if (!axios.isAxiosError(error) || error.response?.status !== 401) {
       return Promise.reject(error)
     }
