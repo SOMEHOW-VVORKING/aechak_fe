@@ -344,16 +344,239 @@ const petHandlers = [
   }),
   http.post(PRESIGNED_URL, async ({ request }) => {
     const body = (await request.json()) as { purpose: string; contentType: string }
-    const key = `tmp/1/pets/profile/fixture.${body.contentType.split('/')[1]}`
+    // 키 경로에 purpose를 반영해 프로필(USER_PROFILE)과 펫(PET_PROFILE) 업로드를 재현한다.
+    const folder = body.purpose === 'USER_PROFILE' ? 'users/profile' : 'pets/profile'
+    const key = `tmp/1/${folder}/fixture.${body.contentType.split('/')[1]}`
     return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
   }),
   // presigned PUT은 S3 직행이라 baseURL 밖이다. 절대 URL로 따로 가로챈다.
   http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
 ]
 
+export const USER_ME_URL = `${base}/users/me`
+export const USER_PROFILE_URL = `${base}/users/me/profile`
+
+// 닉네임 점유 상태는 프로필 수정(PUT /users/me/profile)과 온보딩 닉네임(check·PUT)이 공유한다.
+let takenNicknames = new Set<string>()
+
+/** 다른 사용자가 이미 점유한 닉네임(NFC 정규화·대소문자 무시). 프로필 수정·온보딩 핸들러 공용. */
+export function seedTakenNicknames(nicknames: string[] = []): void {
+  takenNicknames = new Set(nicknames.map(name => name.normalize('NFC').toLowerCase()))
+}
+
+function isNicknameTaken(nickname: string): boolean {
+  return takenNicknames.has(nickname.normalize('NFC').toLowerCase())
+}
+
+// 내 정보도 상태가 있는 리소스다(프로필 수정 → 조회 반영). GET /users/me는 이 상태를 그대로 내려주고,
+// PUT /users/me/profile은 전체 교체(nickname·bio·profileImageKey)를 반영한다. 서버 불변식 중 화면이
+// 실제로 분기에 쓰는 것만 재현한다: 닉네임 점유 중복(409/30001)과 낙관락 충돌(409/90003) 옵션.
+export interface AccountState {
+  status: string
+  nickname: string | null
+  profileImageUrl: string | null
+  profileImageKey: string | null
+  bio: string | null
+  email: string | null
+  phoneNumber: string | null
+  isPhoneVerified: boolean
+}
+
+const DEFAULT_ACCOUNT: AccountState = {
+  status: 'ACTIVE',
+  nickname: '코코집사',
+  profileImageUrl: 'https://mock-cdn.local/users/profile/seed.png',
+  profileImageKey: 'users/profile/seed.png',
+  bio: '코코랑 함께하는 집사일기',
+  email: 'coco****@aechak.co.kr',
+  phoneNumber: null,
+  isPhoneVerified: false,
+}
+
+let account: AccountState = { ...DEFAULT_ACCOUNT }
+let concurrentModOnce = false
+
+/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락 옵션도 함께 초기화한다. */
+export function seedAccount(overrides: Partial<AccountState> = {}): void {
+  account = { ...DEFAULT_ACCOUNT, ...overrides }
+  takenNicknames = new Set()
+  concurrentModOnce = false
+}
+
+/** 핸들러가 반영한 현재 내 정보. 테스트가 저장 결과를 단언할 때 읽는다. */
+export function currentAccount(): AccountState {
+  return { ...account }
+}
+
+/** 다음 프로필 수정 1회를 낙관락 충돌(409/90003)로 시뮬레이션한다. */
+export function seedConcurrentModification(): void {
+  concurrentModOnce = true
+}
+
+const accountHandlers = [
+  http.get(USER_ME_URL, () => HttpResponse.json({ data: account })),
+  http.put(USER_PROFILE_URL, async ({ request }) => {
+    const body = (await request.json()) as {
+      nickname: string
+      bio: string | null
+      profileImageKey: string | null
+    }
+    if (concurrentModOnce) {
+      concurrentModOnce = false
+      return HttpResponse.json({ errorCode: 90003, message: '다른 곳에서 먼저 수정했습니다.' }, { status: 409 })
+    }
+    const nfc = body.nickname.normalize('NFC').toLowerCase()
+    const keepsOwn = nfc === (account.nickname ?? '').normalize('NFC').toLowerCase()
+    if (!keepsOwn && isNicknameTaken(body.nickname)) {
+      return HttpResponse.json({ errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' }, { status: 409 })
+    }
+    // 전체 교체. 저장한 키에서 표시용 URL을 파생한다(키가 null이면 사진 제거).
+    account = {
+      ...account,
+      nickname: body.nickname.normalize('NFC'),
+      bio: body.bio,
+      profileImageKey: body.profileImageKey,
+      profileImageUrl:
+        body.profileImageKey == null ? null : `https://mock-cdn.local/${body.profileImageKey}`,
+    }
+    return HttpResponse.json({ data: account })
+  }),
+]
+
+// ── 온보딩(약관·동의·닉네임) ──────────────────────────────────────────────────
+// 서버 불변식(필수 동의 게이트·닉네임 중복/형식·PENDING→ACTIVE 전이)을 상태로 재현한다.
+// 각 시더가 자신의 슬라이스와 온보딩 전이 상태를 리셋해 테스트 간 누수를 막는다.
+export const TERMS_URL = `${base}/terms`
+export const CONSENTS_URL = `${base}/users/me/consents`
+export const NICKNAME_CHECK_URL = `${base}/users/nickname/check`
+export const NICKNAME_URL = `${base}/users/me/nickname`
+
+export interface TermRow {
+  termId: number
+  type: 'SERVICE' | 'PRIVACY' | 'LOCATION' | 'MARKETING' | 'AGE_OVER_14'
+  isRequired: boolean
+  version: string
+  title: string
+  body: string
+  effectiveAt: string
+}
+
+// 시드 약관: 필수 4 + 선택(마케팅) 1. title은 화면 라벨로 그대로 쓰인다.
+export const DEFAULT_TERMS: TermRow[] = [
+  { termId: 1, type: 'AGE_OVER_14', isRequired: true, version: '1.0', title: '만 14세 이상이에요', body: '만 14세 이상 확인', effectiveAt: '2026-01-01T00:00:00Z' },
+  { termId: 2, type: 'SERVICE', isRequired: true, version: '1.0', title: '서비스 이용약관', body: '서비스 이용약관 본문', effectiveAt: '2026-01-01T00:00:00Z' },
+  { termId: 3, type: 'PRIVACY', isRequired: true, version: '1.0', title: '개인정보 처리방침', body: '개인정보 처리방침 본문', effectiveAt: '2026-01-01T00:00:00Z' },
+  { termId: 4, type: 'LOCATION', isRequired: true, version: '1.0', title: '위치기반 서비스 약관', body: '위치기반 서비스 약관 본문', effectiveAt: '2026-01-01T00:00:00Z' },
+  { termId: 5, type: 'MARKETING', isRequired: false, version: '1.0', title: '마케팅 정보 수신 동의', body: '마케팅 정보 수신 동의 본문', effectiveAt: '2026-01-01T00:00:00Z' },
+]
+
+const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
+
+interface SubmittedConsent {
+  termId: number
+  isAgreed: boolean
+}
+
+let termRows: TermRow[] = []
+let submittedConsents: SubmittedConsent[] = []
+let requiredConsentSatisfied = false
+let onboardingCompleted = false
+
+/** 약관 목록을 세우고 온보딩 전이 상태를 초기(PENDING·미동의)로 리셋한다. */
+export function seedTerms(rows: TermRow[] = DEFAULT_TERMS): void {
+  termRows = rows.map(row => ({ ...row }))
+  submittedConsents = []
+  requiredConsentSatisfied = false
+  onboardingCompleted = false
+}
+
+/** 필수 동의를 이미 마친 상태로 세운다(닉네임 단독 테스트용). 온보딩 전이도 초기화. */
+export function seedConsentsSubmitted(satisfied = true): void {
+  requiredConsentSatisfied = satisfied
+  onboardingCompleted = false
+}
+
+/** 핸들러가 기록한 제출 동의. 테스트가 전송 payload를 단언할 때 읽는다. */
+export function currentConsents(): SubmittedConsent[] {
+  return submittedConsents.map(item => ({ ...item }))
+}
+
+const onboardingHandlers = [
+  http.get(TERMS_URL, () => HttpResponse.json({ data: termRows })),
+  http.post(CONSENTS_URL, async ({ request }) => {
+    if (onboardingCompleted) {
+      return HttpResponse.json({ errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' }, { status: 409 })
+    }
+    const body = (await request.json()) as { items?: SubmittedConsent[] }
+    const items = body.items ?? []
+    if (items.length === 0) {
+      return HttpResponse.json({ errorCode: 90001, message: '동의 항목이 비었습니다.' }, { status: 400 })
+    }
+    const ids = items.map(item => item.termId)
+    if (new Set(ids).size !== ids.length) {
+      return HttpResponse.json({ errorCode: 90001, message: 'termId가 중복됩니다.' }, { status: 400 })
+    }
+    if (ids.some(id => !termRows.some(term => term.termId === id))) {
+      return HttpResponse.json({ errorCode: 30400, message: '비활성이거나 알 수 없는 약관입니다.' }, { status: 400 })
+    }
+    // 활성 필수 약관은 전부 isAgreed=true로 포함돼야 한다.
+    const requiredOk = termRows
+      .filter(term => term.isRequired)
+      .every(term => items.some(item => item.termId === term.termId && item.isAgreed))
+    if (!requiredOk) {
+      return HttpResponse.json({ errorCode: 30300, message: '필수 약관에 동의해야 합니다.' }, { status: 403 })
+    }
+    submittedConsents = items.map(item => ({ ...item }))
+    requiredConsentSatisfied = true
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.get(NICKNAME_CHECK_URL, ({ request }) => {
+    const nickname = new URL(request.url).searchParams.get('nickname')
+    if (nickname == null || nickname.length === 0) {
+      return HttpResponse.json({ errorCode: 90001, message: 'nickname 파라미터가 필요합니다.' }, { status: 400 })
+    }
+    if (!NICKNAME_PATTERN.test(nickname.normalize('NFC'))) {
+      return HttpResponse.json({ errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' }, { status: 400 })
+    }
+    return HttpResponse.json({ data: { available: !isNicknameTaken(nickname) } })
+  }),
+  http.put(NICKNAME_URL, async ({ request }) => {
+    if (onboardingCompleted) {
+      return HttpResponse.json({ errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' }, { status: 409 })
+    }
+    const body = (await request.json()) as { nickname?: string }
+    const nickname = (body.nickname ?? '').normalize('NFC')
+    if (!NICKNAME_PATTERN.test(nickname)) {
+      return HttpResponse.json({ errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' }, { status: 400 })
+    }
+    if (!requiredConsentSatisfied) {
+      return HttpResponse.json({ errorCode: 30300, message: '필수 약관 동의가 필요합니다.' }, { status: 403 })
+    }
+    // 커밋 시점 최종 판정: 중복이면 409 30001.
+    if (isNicknameTaken(nickname)) {
+      return HttpResponse.json({ errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' }, { status: 409 })
+    }
+    onboardingCompleted = true
+    return HttpResponse.json({
+      data: {
+        status: 'ACTIVE',
+        nickname,
+        profileImageUrl: null,
+        profileImageKey: null,
+        bio: null,
+        email: null,
+        phoneNumber: null,
+        isPhoneVerified: false,
+      },
+    })
+  }),
+]
+
 export const handlers = [
   ...deliveryAddressHandlers,
   ...petHandlers,
+  ...accountHandlers,
+  ...onboardingHandlers,
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {

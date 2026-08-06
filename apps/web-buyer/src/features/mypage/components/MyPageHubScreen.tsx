@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   AlertCircle,
@@ -13,8 +13,8 @@ import {
   Star,
   UserX,
 } from 'lucide-react'
-import { Avatar, ListItem, StatusPill } from '@aechak/design-system/web'
-import { useAccount } from '@/shared/account'
+import { Avatar, EmptyState, ListItem, StatusPill } from '@aechak/design-system/web'
+import { useMe } from '@/shared/account'
 import { usePointBalance } from '@/shared/points'
 import { formatKRW } from '@/shared/formatKRW'
 import { MYPAGE_MENU_GROUPS } from '../mypage.mock'
@@ -23,8 +23,15 @@ import { MYPAGE_MENU_GROUPS } from '../mypage.mock'
 // 다시 MobileScreen으로 감싸지 않는다(홈 탭과 동일). 프로필 요약 + 메뉴 리스트 → 각 화면 실제 이동.
 export function MyPageHubScreen() {
   const navigate = useNavigate()
-  const account = useAccount()
-  const verified = account.verification === 'verified'
+  const { account, isLoading, isError, refetch } = useMe()
+  const verified = account?.verification === 'verified'
+
+  // GET /users/me는 PENDING도 200(화이트리스트)이라 허브가 온보딩 미완료 유저를 여기서 잡는다.
+  // 빈 닉네임·빈 이메일의 퇴화된 프로필 카드를 보여주지 않고 온보딩 약관 화면으로 보낸다(design 결정 #10).
+  const isPendingOnboarding = account?.isPendingOnboarding ?? false
+  useEffect(() => {
+    if (isPendingOnboarding) navigate({ to: '/onboarding/terms', replace: true })
+  }, [isPendingOnboarding, navigate])
 
   // 적립금 잔액(서버 소유). 내역 화면이 없어 클릭 불가 표시 행으로만 노출한다. 로딩·조회 실패 시
   // 금액만 '—'로 두고(허브 전체를 막지 않는다), 성공하면 0원도 정상 표시한다.
@@ -91,31 +98,44 @@ export function MyPageHubScreen() {
       </div>
 
       <div className="flex flex-col gap-3 p-4">
-        {/* 프로필 요약 → 프로필 수정 */}
-        <button
-          type="button"
-          onClick={() => navigate({ to: '/mypage/profile' })}
-          className="flex items-center gap-3.5 rounded-card border border-border-subtle bg-surface-raised p-4 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
-        >
-          <Avatar name={account.nickname} src={account.avatarUrl} size="xl" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-subheading font-semibold text-text-primary">
-                {account.nickname}
-              </span>
-              {/* 인증 완료 시 프로필 카드 배지는 '본인 인증' 메뉴 행과 중복이라 안 그린다.
-                  미인증 배지는 인증 유도 역할이라 유지. */}
-              {!verified && (
-                <StatusPill variant="warning" size="sm">
-                  <AlertCircle className="mr-0.5 inline size-3" />
-                  미인증
-                </StatusPill>
-              )}
-            </div>
-            <p className="mt-0.5 truncate text-caption text-text-tertiary">{account.email}</p>
+        {/* 프로필 요약 → 프로필 수정. 데이터는 GET /users/me. 로딩은 스켈레톤, 실패는 재시도 EmptyState.
+            PENDING이면 위 effect가 온보딩으로 보내므로 그 사이 퇴화된 카드 대신 스켈레톤만 보여준다. */}
+        {isLoading || isPendingOnboarding ? (
+          <div className="h-[88px] animate-pulse rounded-card bg-surface-sunken" />
+        ) : isError || !account ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <EmptyState
+              title="프로필을 불러오지 못했어요"
+              description="잠시 후 다시 시도해주세요."
+              action={{ label: '다시 시도', onClick: () => void refetch() }}
+            />
           </div>
-          <ChevronRight className="size-5 flex-none text-icon-muted" />
-        </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate({ to: '/mypage/profile' })}
+            className="flex items-center gap-3.5 rounded-card border border-border-subtle bg-surface-raised p-4 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
+          >
+            <Avatar name={account.nickname} src={account.avatarUrl} size="xl" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-subheading font-semibold text-text-primary">
+                  {account.nickname}
+                </span>
+                {/* 인증 완료 시 프로필 카드 배지는 '본인 인증' 메뉴 행과 중복이라 안 그린다.
+                    미인증 배지는 인증 유도 역할이라 유지. */}
+                {!verified && (
+                  <StatusPill variant="warning" size="sm">
+                    <AlertCircle className="mr-0.5 inline size-3" />
+                    미인증
+                  </StatusPill>
+                )}
+              </div>
+              <p className="mt-0.5 truncate text-caption text-text-tertiary">{account.email}</p>
+            </div>
+            <ChevronRight className="size-5 flex-none text-icon-muted" />
+          </button>
+        )}
 
         {/* 적립금 — 내역 화면이 없어 이동 없는 표시 전용 행(onClick 없이 ListItem이 비인터랙티브
             div로 렌더). 금액은 서버 잔액이며 로딩·실패 시 '—'. 메뉴 그룹과 같은 카드 스타일. */}

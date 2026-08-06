@@ -230,7 +230,9 @@ export interface BuyerAccount {
   bio: string // 자기소개(프로필에 노출)
   email: string // 마스킹 표시용
   phone: string // 본인 인증 입력 프리필용 전체 번호
-  avatarUrl?: string
+  avatarUrl?: string // 표시용 URL
+  profileImageKey?: string // 프로필 수정 시 사진 유지로 되돌려 보낼 원본 키(avatarUrl에서 역파싱 금지)
+  isPendingOnboarding?: boolean // 온보딩 미완료(PENDING) 여부 — 이 유저는 마이 허브 대신 온보딩으로 보낸다
   verification: VerificationStatus
   verifiedPhoneMasked?: string // 인증 완료 시 마스킹된 번호
   verifiedAt?: string // 'YYYY.MM.DD'
