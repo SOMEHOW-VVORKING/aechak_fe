@@ -10,3 +10,19 @@ export {
   useAccount,
 } from './account.store'
 export type { ProfilePatch } from './account.store'
+export {
+  ACCOUNT_QUERY_KEY,
+  accountErrorMessage,
+  isOnboardingRequired,
+  toBuyerAccount,
+  useMe,
+  useUpdateProfile,
+} from './account.queries'
+export {
+  isSupportedAvatar,
+  isWithinAvatarSizeLimit,
+  uploadAvatar,
+  MAX_AVATAR_BYTES,
+  OVERSIZED_AVATAR_MESSAGE,
+  UNSUPPORTED_AVATAR_MESSAGE,
+} from './account.upload'

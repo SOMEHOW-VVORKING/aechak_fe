@@ -335,11 +335,103 @@ const petHandlers = [
   }),
   http.post(PRESIGNED_URL, async ({ request }) => {
     const body = (await request.json()) as { purpose: string; contentType: string }
-    const key = `tmp/1/pets/profile/fixture.${body.contentType.split('/')[1]}`
+    // 키 경로에 purpose를 반영해 프로필(USER_PROFILE)과 펫(PET_PROFILE) 업로드를 재현한다.
+    const folder = body.purpose === 'USER_PROFILE' ? 'users/profile' : 'pets/profile'
+    const key = `tmp/1/${folder}/fixture.${body.contentType.split('/')[1]}`
     return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
   }),
   // presigned PUT은 S3 직행이라 baseURL 밖이다. 절대 URL로 따로 가로챈다.
   http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
+]
+
+export const USER_ME_URL = `${base}/users/me`
+export const USER_PROFILE_URL = `${base}/users/me/profile`
+
+// 닉네임 점유 상태는 프로필 수정(PUT /users/me/profile)과 온보딩 닉네임(check·PUT)이 공유한다.
+let takenNicknames = new Set<string>()
+
+/** 다른 사용자가 이미 점유한 닉네임(NFC 정규화·대소문자 무시). 프로필 수정·온보딩 핸들러 공용. */
+export function seedTakenNicknames(nicknames: string[] = []): void {
+  takenNicknames = new Set(nicknames.map(name => name.normalize('NFC').toLowerCase()))
+}
+
+function isNicknameTaken(nickname: string): boolean {
+  return takenNicknames.has(nickname.normalize('NFC').toLowerCase())
+}
+
+// 내 정보도 상태가 있는 리소스다(프로필 수정 → 조회 반영). GET /users/me는 이 상태를 그대로 내려주고,
+// PUT /users/me/profile은 전체 교체(nickname·bio·profileImageKey)를 반영한다. 서버 불변식 중 화면이
+// 실제로 분기에 쓰는 것만 재현한다: 닉네임 점유 중복(409/30001)과 낙관락 충돌(409/90003) 옵션.
+export interface AccountState {
+  status: string
+  nickname: string | null
+  profileImageUrl: string | null
+  profileImageKey: string | null
+  bio: string | null
+  email: string | null
+  phoneNumber: string | null
+  isPhoneVerified: boolean
+}
+
+const DEFAULT_ACCOUNT: AccountState = {
+  status: 'ACTIVE',
+  nickname: '코코집사',
+  profileImageUrl: 'https://mock-cdn.local/users/profile/seed.png',
+  profileImageKey: 'users/profile/seed.png',
+  bio: '코코랑 함께하는 집사일기',
+  email: 'coco****@aechak.co.kr',
+  phoneNumber: null,
+  isPhoneVerified: false,
+}
+
+let account: AccountState = { ...DEFAULT_ACCOUNT }
+let concurrentModOnce = false
+
+/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락 옵션도 함께 초기화한다. */
+export function seedAccount(overrides: Partial<AccountState> = {}): void {
+  account = { ...DEFAULT_ACCOUNT, ...overrides }
+  takenNicknames = new Set()
+  concurrentModOnce = false
+}
+
+/** 핸들러가 반영한 현재 내 정보. 테스트가 저장 결과를 단언할 때 읽는다. */
+export function currentAccount(): AccountState {
+  return { ...account }
+}
+
+/** 다음 프로필 수정 1회를 낙관락 충돌(409/90003)로 시뮬레이션한다. */
+export function seedConcurrentModification(): void {
+  concurrentModOnce = true
+}
+
+const accountHandlers = [
+  http.get(USER_ME_URL, () => HttpResponse.json({ data: account })),
+  http.put(USER_PROFILE_URL, async ({ request }) => {
+    const body = (await request.json()) as {
+      nickname: string
+      bio: string | null
+      profileImageKey: string | null
+    }
+    if (concurrentModOnce) {
+      concurrentModOnce = false
+      return HttpResponse.json({ errorCode: 90003, message: '다른 곳에서 먼저 수정했습니다.' }, { status: 409 })
+    }
+    const nfc = body.nickname.normalize('NFC').toLowerCase()
+    const keepsOwn = nfc === (account.nickname ?? '').normalize('NFC').toLowerCase()
+    if (!keepsOwn && isNicknameTaken(body.nickname)) {
+      return HttpResponse.json({ errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' }, { status: 409 })
+    }
+    // 전체 교체. 저장한 키에서 표시용 URL을 파생한다(키가 null이면 사진 제거).
+    account = {
+      ...account,
+      nickname: body.nickname.normalize('NFC'),
+      bio: body.bio,
+      profileImageKey: body.profileImageKey,
+      profileImageUrl:
+        body.profileImageKey == null ? null : `https://mock-cdn.local/${body.profileImageKey}`,
+    }
+    return HttpResponse.json({ data: account })
+  }),
 ]
 
 // ── 온보딩(약관·동의·닉네임) ──────────────────────────────────────────────────
@@ -377,7 +469,6 @@ interface SubmittedConsent {
 }
 
 let termRows: TermRow[] = []
-let takenNicknames = new Set<string>()
 let submittedConsents: SubmittedConsent[] = []
 let requiredConsentSatisfied = false
 let onboardingCompleted = false
@@ -390,11 +481,6 @@ export function seedTerms(rows: TermRow[] = DEFAULT_TERMS): void {
   onboardingCompleted = false
 }
 
-/** 점유(사용 중) 닉네임을 세운다. 중복 판정은 대소문자 무시. */
-export function seedTakenNicknames(names: string[] = []): void {
-  takenNicknames = new Set(names.map(name => name.toLowerCase()))
-}
-
 /** 필수 동의를 이미 마친 상태로 세운다(닉네임 단독 테스트용). 온보딩 전이도 초기화. */
 export function seedConsentsSubmitted(satisfied = true): void {
   requiredConsentSatisfied = satisfied
@@ -404,10 +490,6 @@ export function seedConsentsSubmitted(satisfied = true): void {
 /** 핸들러가 기록한 제출 동의. 테스트가 전송 payload를 단언할 때 읽는다. */
 export function currentConsents(): SubmittedConsent[] {
   return submittedConsents.map(item => ({ ...item }))
-}
-
-function isNicknameTaken(nickname: string): boolean {
-  return takenNicknames.has(nickname.normalize('NFC').toLowerCase())
 }
 
 const onboardingHandlers = [
@@ -484,6 +566,7 @@ const onboardingHandlers = [
 export const handlers = [
   ...deliveryAddressHandlers,
   ...petHandlers,
+  ...accountHandlers,
   ...onboardingHandlers,
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')

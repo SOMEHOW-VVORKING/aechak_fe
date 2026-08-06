@@ -42,6 +42,21 @@ describe('account.mock — 닉네임/OTP 검증', () => {
     expect(result.message).toContain('사용할 수 있는')
   })
 
+  it('[AC-ACCOUNT-009] 2자 미만 닉네임은 실패한다(실서버 정규식 2~12자)', () => {
+    expect(validateNickname('코').ok).toBe(false)
+    expect(validateNickname('a').ok).toBe(false)
+  })
+
+  it('[AC-ACCOUNT-010] 공백·이모지·자모가 섞이면 실패한다', () => {
+    expect(validateNickname('코코 집사').ok).toBe(false) // 내부 공백
+    expect(validateNickname('코코🐾').ok).toBe(false) // 이모지
+    expect(validateNickname('ㄱㄴ').ok).toBe(false) // 완성형 아닌 자모
+  })
+
+  it('[AC-ACCOUNT-011] 영문·숫자 조합 2~12자는 통과한다', () => {
+    expect(validateNickname('coco123').ok).toBe(true)
+  })
+
   it('[AC-ACCOUNT-004] 고정 인증번호만 OTP 검증을 통과한다', () => {
     expect(isValidOtp(TEST_OTP_CODE)).toBe(true)
     expect(isValidOtp('123456')).toBe(false)

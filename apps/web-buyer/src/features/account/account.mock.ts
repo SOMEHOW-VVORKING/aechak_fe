@@ -4,18 +4,23 @@ import type { BuyerOrder, BuyerOrderStatus } from '@aechak/domain'
 // 실제 계정/주문 데이터는 shared/account·shared/order 스토어가 단일 소스이고, 여기서는 검증·판정만 둔다.
 
 export const NICKNAME_MAX = 12
+
+// 서버(온보딩·프로필 수정 공통) 닉네임 규칙: NFC 정규화 후 완성형 한글·영문·숫자 2~12자.
+// 공백·이모지·자모는 불가. 중복은 서버가 PUT 시점에 최종 판정(30001)하므로 여기선 형식만 검사한다.
+const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
+
 export const BIO_MAX = 150
 
 // 본인 인증 목업 — 테스트 고정 인증번호(실제 SMS 연동은 범위 밖). 이 코드만 인증 성공 처리한다.
 export const TEST_OTP_CODE = '000000'
 export const OTP_LENGTH = 6
 
-// 닉네임 검증(빈 값·길이). 성공 시 목업의 "사용할 수 있는 닉네임이에요" 메시지를 돌려준다.
+// 닉네임 형식 검증(실서버 정규식). 성공 시 목업의 "사용할 수 있는 닉네임이에요" 메시지를 돌려준다.
 export function validateNickname(nickname: string): { ok: boolean; message: string } {
-  const trimmed = nickname.trim()
-  if (trimmed.length === 0) return { ok: false, message: '닉네임을 입력해 주세요.' }
-  if (trimmed.length > NICKNAME_MAX)
-    return { ok: false, message: `닉네임은 ${NICKNAME_MAX}자 이하로 입력해 주세요.` }
+  const normalized = nickname.trim().normalize('NFC')
+  if (normalized.length === 0) return { ok: false, message: '닉네임을 입력해 주세요.' }
+  if (!NICKNAME_PATTERN.test(normalized))
+    return { ok: false, message: '닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요.' }
   return { ok: true, message: '사용할 수 있는 닉네임이에요.' }
 }
 

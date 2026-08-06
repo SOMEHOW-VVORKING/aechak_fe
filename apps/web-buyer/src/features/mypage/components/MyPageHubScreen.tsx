@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   AlertCircle,
@@ -12,16 +12,23 @@ import {
   Star,
   UserX,
 } from 'lucide-react'
-import { Avatar, ListItem, StatusPill } from '@aechak/design-system/web'
-import { useAccount } from '@/shared/account'
+import { Avatar, EmptyState, ListItem, StatusPill } from '@aechak/design-system/web'
+import { useMe } from '@/shared/account'
 import { MYPAGE_MENU_GROUPS } from '../mypage.mock'
 
 // 마이페이지 허브(b10-st-1). _tabs 레이아웃의 MobileScreen 안(스크롤 영역)에 렌더되므로 여기서
 // 다시 MobileScreen으로 감싸지 않는다(홈 탭과 동일). 프로필 요약 + 메뉴 리스트 → 각 화면 실제 이동.
 export function MyPageHubScreen() {
   const navigate = useNavigate()
-  const account = useAccount()
-  const verified = account.verification === 'verified'
+  const { account, isLoading, isError, refetch } = useMe()
+  const verified = account?.verification === 'verified'
+
+  // GET /users/me는 PENDING도 200(화이트리스트)이라 허브가 온보딩 미완료 유저를 여기서 잡는다.
+  // 빈 닉네임·빈 이메일의 퇴화된 프로필 카드를 보여주지 않고 온보딩 약관 화면으로 보낸다(design 결정 #10).
+  const isPendingOnboarding = account?.isPendingOnboarding ?? false
+  useEffect(() => {
+    if (isPendingOnboarding) navigate({ to: '/onboarding/terms', replace: true })
+  }, [isPendingOnboarding, navigate])
 
   // 메뉴 key → 아이콘/이동. mock은 순수 데이터라 여기서 매핑한다.
   const icons: Record<string, ReactNode> = {
@@ -83,31 +90,44 @@ export function MyPageHubScreen() {
       </div>
 
       <div className="flex flex-col gap-3 p-4">
-        {/* 프로필 요약 → 프로필 수정 */}
-        <button
-          type="button"
-          onClick={() => navigate({ to: '/mypage/profile' })}
-          className="flex items-center gap-3.5 rounded-card border border-border-subtle bg-surface-raised p-4 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
-        >
-          <Avatar name={account.nickname} src={account.avatarUrl} size="xl" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-subheading font-semibold text-text-primary">
-                {account.nickname}
-              </span>
-              {/* 인증 완료 시 프로필 카드 배지는 '본인 인증' 메뉴 행과 중복이라 안 그린다.
-                  미인증 배지는 인증 유도 역할이라 유지. */}
-              {!verified && (
-                <StatusPill variant="warning" size="sm">
-                  <AlertCircle className="mr-0.5 inline size-3" />
-                  미인증
-                </StatusPill>
-              )}
-            </div>
-            <p className="mt-0.5 truncate text-caption text-text-tertiary">{account.email}</p>
+        {/* 프로필 요약 → 프로필 수정. 데이터는 GET /users/me. 로딩은 스켈레톤, 실패는 재시도 EmptyState.
+            PENDING이면 위 effect가 온보딩으로 보내므로 그 사이 퇴화된 카드 대신 스켈레톤만 보여준다. */}
+        {isLoading || isPendingOnboarding ? (
+          <div className="h-[88px] animate-pulse rounded-card bg-surface-sunken" />
+        ) : isError || !account ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <EmptyState
+              title="프로필을 불러오지 못했어요"
+              description="잠시 후 다시 시도해주세요."
+              action={{ label: '다시 시도', onClick: () => void refetch() }}
+            />
           </div>
-          <ChevronRight className="size-5 flex-none text-icon-muted" />
-        </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate({ to: '/mypage/profile' })}
+            className="flex items-center gap-3.5 rounded-card border border-border-subtle bg-surface-raised p-4 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
+          >
+            <Avatar name={account.nickname} src={account.avatarUrl} size="xl" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-subheading font-semibold text-text-primary">
+                  {account.nickname}
+                </span>
+                {/* 인증 완료 시 프로필 카드 배지는 '본인 인증' 메뉴 행과 중복이라 안 그린다.
+                    미인증 배지는 인증 유도 역할이라 유지. */}
+                {!verified && (
+                  <StatusPill variant="warning" size="sm">
+                    <AlertCircle className="mr-0.5 inline size-3" />
+                    미인증
+                  </StatusPill>
+                )}
+              </div>
+              <p className="mt-0.5 truncate text-caption text-text-tertiary">{account.email}</p>
+            </div>
+            <ChevronRight className="size-5 flex-none text-icon-muted" />
+          </button>
+        )}
 
         {/* 메뉴 그룹 — hover 배경이 행 전체 폭을 덮도록 px-4를 컨테이너가 아니라 ListItem에 준다
             (컨테이너 px-4면 hover가 좌우 16px 안쪽만 칠해짐). 구분선만 mx-4로 안쪽에 유지. */}

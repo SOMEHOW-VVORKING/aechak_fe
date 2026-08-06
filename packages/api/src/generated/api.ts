@@ -489,31 +489,56 @@ export interface NicknameRequest {
 }
 
 export interface UserMe {
-  /** 계정 상태(PENDING_ONBOARDING·ACTIVE 등). 닉네임 설정 완료 후 ACTIVE */
+  /** 계정 상태 — PENDING_ONBOARDING | ACTIVE | SUSPENDED | WITHDRAWN. 닉네임 설정 완료 후 ACTIVE */
   status: string
   /** @nullable */
   nickname: string | null
   /**
-   * 표시용 URL
+   * 표시용 URL. 서버가 조립해 내려준다
    * @nullable
    */
   profileImageUrl: string | null
   /**
-   * 프로필 수정 PUT에서 유지용으로 되돌려 보낼 원본 키. 역파싱 금지
+   * 스토리지 키. 프로필 수정에서 사진을 유지하려면 이 값을 그대로 되돌려 보낸다(URL 역파싱 금지)
    * @nullable
    */
   profileImageKey: string | null
   /** @nullable */
   bio: string | null
-  /** @nullable */
+  /**
+   * 마스킹 표시용
+   * @nullable
+   */
   email: string | null
-  /** @nullable */
+  /**
+   * 현재 항상 null(전화 인증 연동 전)
+   * @nullable
+   */
   phoneNumber: string | null
   isPhoneVerified: boolean
 }
 
 export interface UserMeResponse {
   data: UserMe
+}
+
+/**
+ * 전체 교체 — 세 필드를 항상 보낸다. bio·profileImageKey가 null이면 값이 지워진다.
+ */
+export interface UpdateProfileRequest {
+  /** NFC 정규화 후 ^[가-힣a-zA-Z0-9]{2,12}$. 위반 400 errorCode 30002, 중복 409 errorCode 30001 */
+  nickname: string
+  /**
+   * 자기소개. 150자 초과 400 errorCode 90001. 비우려면 null
+   * @maxLength 150
+   * @nullable
+   */
+  bio: string | null
+  /**
+   * 유지할 기존 키 또는 새 tmp 키. null이면 사진 제거
+   * @nullable
+   */
+  profileImageKey: string | null
 }
 
 export type HealthCheck200 = {
@@ -2269,6 +2294,226 @@ export const useIssuePresignedUrl = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getIssuePresignedUrlMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 로그인 사용자의 프로필. PENDING_ONBOARDING이면 nickname·profileImageUrl·profileImageKey·bio가 모두 null이다. profileImageKey는 프로필 수정에서 사진을 유지할 때 그대로 되돌려 보낼 원본 키다(역파싱 금지).
+ * @summary 내 정보 조회
+ */
+export const getMe = (signal?: AbortSignal) => {
+  return customInstance<UserMeResponse>({ url: `/users/me`, method: 'GET', signal })
+}
+
+export const getGetMeQueryKey = () => {
+  return [`/users/me`] as const
+}
+
+export const getGetMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMe>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) => getMe(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMe>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMeQueryResult = NonNullable<Awaited<ReturnType<typeof getMe>>>
+export type GetMeQueryError = unknown
+
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMe>>,
+          TError,
+          Awaited<ReturnType<typeof getMe>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMe>>,
+          TError,
+          Awaited<ReturnType<typeof getMe>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: { query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 정보 조회
+ */
+
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: { query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMeSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMe>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) => getMe(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMe>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMeSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getMe>>>
+export type GetMeSuspenseQueryError = unknown
+
+export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 정보 조회
+ */
+
+export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 부분 수정이 아니라 전체 교체다 — nickname·bio·profileImageKey 세 필드를 항상 보낸다. bio·profileImageKey에 null을 보내면 값이 지워진다. 사진을 유지하려면 조회에서 받은 profileImageKey를 그대로 되돌려 보내고, 새 사진은 presigned로 받은 tmp 키를 보낸다. ACTIVE 전용(PENDING 접근은 403 errorCode 20006). 닉네임 형식 위반은 400 errorCode 30002, 중복은 409 errorCode 30001, 동시 수정 충돌은 409 errorCode 90003.
+ * @summary 프로필 수정
+ */
+export const updateProfile = (updateProfileRequest: UpdateProfileRequest) => {
+  return customInstance<UserMeResponse>({
+    url: `/users/me/profile`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: updateProfileRequest,
+  })
+}
+
+export const getUpdateProfileMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProfile>>,
+    TError,
+    { data: UpdateProfileRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProfile>>,
+  TError,
+  { data: UpdateProfileRequest },
+  TContext
+> => {
+  const mutationKey = ['updateProfile']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProfile>>,
+    { data: UpdateProfileRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return updateProfile(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateProfile>>>
+export type UpdateProfileMutationBody = UpdateProfileRequest
+export type UpdateProfileMutationError = unknown
+
+/**
+ * @summary 프로필 수정
+ */
+export const useUpdateProfile = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateProfile>>,
+      TError,
+      { data: UpdateProfileRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateProfile>>,
+  TError,
+  { data: UpdateProfileRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateProfileMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
