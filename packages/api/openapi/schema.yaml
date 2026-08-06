@@ -201,6 +201,125 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProductListResponse"
+  /search/products:
+    get:
+      summary: "키워드 상품 검색(커서 페이지네이션)"
+      description: "상품명·셀러명 키워드 검색. 비로그인 허용하며 로그인 사용자의 첫 페이지 검색은 최근 검색어로 기록한다."
+      operationId: "searchProducts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: sort
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProductKeywordSearchSort"
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: minRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+        - name: category
+          in: query
+          required: false
+          description: "중분류 categoryId"
+          schema:
+            type: integer
+            format: int64
+        - name: freeShipping
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: excludeSoldOut
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+  /search/keywords:
+    get:
+      summary: "최근·추천 검색어 조회"
+      operationId: "getSearchKeywords"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchKeywordsEnvelope"
+  /search/recent-keywords:
+    delete:
+      summary: "최근 검색어 전체 삭제"
+      operationId: "deleteAllRecentKeywords"
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: "No Content"
+  /search/recent-keywords/{id}:
+    delete:
+      summary: "최근 검색어 단건 삭제"
+      operationId: "deleteRecentKeyword"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content"
   /products/{productId}:
     get:
       summary: "상품 상세 조회"
@@ -805,6 +924,46 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ProductListData"
+    ProductKeywordSearchSort:
+      type: string
+      enum: [popular, price_asc, latest]
+      default: popular
+    RecentKeywordResponse:
+      type: object
+      required: [id, keyword, searchedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        keyword:
+          type: string
+        searchedAt:
+          type: string
+          format: date-time
+    RecommendedKeywordResponse:
+      type: object
+      required: [keyword]
+      properties:
+        keyword:
+          type: string
+    SearchKeywordsData:
+      type: object
+      required: [recentKeywords, recommendedKeywords]
+      properties:
+        recentKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentKeywordResponse"
+        recommendedKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecommendedKeywordResponse"
+    SearchKeywordsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SearchKeywordsData"
     ProductImage:
       type: object
       required: [imageType, storageKey, sortOrder]
