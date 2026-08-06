@@ -19,13 +19,8 @@ import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
 import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
 import { buildCartView, type CartLineView } from '@/shared/catalog'
-import {
-  PAYMENT_METHODS,
-  POINT_BALANCE,
-  clampPoints,
-  finalPayable,
-  maxUsablePoints,
-} from '../checkout.mock'
+import { usePointBalance } from '@/shared/points'
+import { PAYMENT_METHODS, clampPoints, finalPayable, maxUsablePoints } from '../checkout.mock'
 
 export interface CheckoutScreenProps {
   /** 바로 구매 진입 시 단일 상품 id(없으면 장바구니 선택 항목으로 주문). */
@@ -63,12 +58,17 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
     .map(g => ({ storeName: g.storeName, lines: g.lines.filter(l => l.selected) }))
     .filter(g => g.lines.length > 0)
 
+  // 적립금 잔액은 서버 소유다(shared/points). 로딩·조회 실패 시 사용 가능 포인트를 0으로 안전
+  // 강하시켜(폴백 undefined → 0) 잘못된 잔액으로 과다 차감되지 않게 한다 — 화면 동작은 유지.
+  const { balance: rawPointBalance } = usePointBalance()
+  const pointBalance = rawPointBalance ?? 0
+
   const [method, setMethod] = useState<PaymentMethod>('kakaopay')
   const [points, setPoints] = useState(0)
   const [agree, setAgree] = useState(false)
 
   const payableBeforePoints = view.itemsTotal + view.shippingTotal
-  const usablePoints = maxUsablePoints(payableBeforePoints)
+  const usablePoints = maxUsablePoints(payableBeforePoints, pointBalance)
   const payable = finalPayable(view.itemsTotal, view.shippingTotal, points)
 
   const goBack = useSafeBack({ to: '/cart' })
@@ -218,7 +218,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
         <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="text-label font-semibold text-text-primary">적립금</span>
-            <span className="text-caption text-text-tertiary">보유 {formatKRW(POINT_BALANCE)}</span>
+            <span className="text-caption text-text-tertiary">보유 {formatKRW(pointBalance)}</span>
           </div>
           <div className="flex items-center gap-2">
             {/* Input을 flex-1 래퍼로 감싼다 — DS Input에 flex-1을 직접 주면 field div(내부
@@ -230,7 +230,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
                 rightAddon={<span className="text-body-sm text-text-tertiary">원</span>}
                 onChange={e => {
                   const parsed = Number(e.target.value.replace(/[^0-9]/g, ''))
-                  setPoints(clampPoints(parsed, payableBeforePoints))
+                  setPoints(clampPoints(parsed, payableBeforePoints, pointBalance))
                 }}
               />
             </div>

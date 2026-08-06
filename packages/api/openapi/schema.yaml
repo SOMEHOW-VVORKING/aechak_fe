@@ -416,6 +416,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SetDefaultPetResponse"
+  /users/me/points:
+    get:
+      summary: "내 적립금 잔액 조회"
+      description: "원 단위 적립금 잔액(0 이상 정수). ACTIVE 전용 — 온보딩 미완료(PENDING) 계정이 부르면 403 errorCode 20006, 유저 없음은 404 errorCode 30000. 내역(히스토리)은 범위 밖으로 잔액만 내려준다."
+      operationId: "getPointBalance"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointBalanceResponse"
   /terms:
     get:
       summary: "활성 약관 목록 조회"
@@ -735,6 +749,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BreedResponse"
+    PointBalanceData:
+      type: object
+      required: [balance]
+      properties:
+        balance:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "적립금 잔액(원 단위, 0 이상 정수)"
+    PointBalanceResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PointBalanceData"
     DeliveryAddressResponse:
       type: object
       required: [addressId, receiverName, contactNumber, zipCode, baseAddress, isDefault]
