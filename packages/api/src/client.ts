@@ -1,6 +1,13 @@
 import axios from 'axios'
 import type { AxiosRequestConfig, AxiosResponse } from 'axios'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** refresh 실패를 오류로 반환하되 소비 앱의 전역 로그인 이동은 실행하지 않는다. */
+    suppressAuthExpiredRedirect?: boolean
+  }
+}
+
 /** 서버 API 경로 접두 — 서버 계약이라 origin(env)과 분리해 상수로 고정한다. */
 export const API_PATH_PREFIX = '/api/v1'
 
@@ -89,7 +96,7 @@ axiosInstance.interceptors.response.use(
       // refresh까지 실패 = 진짜로 세션이 없다. 토큰을 비우고 전역 핸들러(로그인 이동)를 깨운다.
       // 각 화면이 401을 인라인 에러로 떠안지 않고 여기 한 곳에서 로그인으로 튕기게 하는 지점이다.
       setAccessToken(null)
-      onAuthExpired?.()
+      if (!config.suppressAuthExpiredRedirect) onAuthExpired?.()
       return Promise.reject(error)
     }
     return axiosInstance(config)

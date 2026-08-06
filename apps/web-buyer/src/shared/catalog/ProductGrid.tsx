@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ProductCard } from '@aechak/design-system/web'
 import type { CatalogProduct } from './products'
+import { registerProducts } from './registry'
 import { toggleWish, useWishedIds } from './wishlist.store'
 
 export interface ProductGridProps {
@@ -45,12 +46,20 @@ export function ProductGrid({
             price={product.price}
             originalPrice={product.originalPrice}
             isSold={product.isSoldOut}
-            onClick={product.isSoldOut ? undefined : () => onSelect(product)}
+            onClick={
+              product.isSoldOut
+                ? undefined
+                : () => {
+                    registerProducts([product])
+                    onSelect(product)
+                  }
+            }
             wished={showWish ? wished.has(product.id) : undefined}
             onWishToggle={
               showWish
                 ? () => {
                     const proceed = () => {
+                      registerProducts([product])
                       toggleWish(product.id)
                       onWishChange?.(product, !wished.has(product.id))
                     }

@@ -1,21 +1,149 @@
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchSearchLanding,
-  fetchSearchResults,
-  type ResultSort,
-  type SearchFilters,
-  type SearchLanding,
-  type SearchResult,
-} from './search.mock'
+  deleteAllRecentKeywords,
+  deleteRecentKeyword,
+  customInstance,
+  searchProducts,
+  type ProductKeywordSearchSort,
+  type SearchKeywordsEnvelope,
+} from '@aechak/api'
+import type { CatalogProduct } from '@/shared/catalog'
+import { toCatalogProduct } from '@/features/catalog/catalog.mapper'
+import { PRICE_MAX, type ResultSort, type SearchFilters } from './search.mock'
 
-export const useSearchLanding = () =>
+export interface RecentKeyword {
+  id: number
+  keyword: string
+  searchedAt: string
+}
+
+export interface SearchLanding {
+  recentKeywords: RecentKeyword[]
+  suggestedKeywords: string[]
+}
+
+interface SearchPage {
+  products: CatalogProduct[]
+  totalCount: number | null
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SearchResult {
+  products: CatalogProduct[]
+  total: number
+}
+
+const landingKey = ['search', 'landing'] as const
+
+const SORT_PARAM: Record<ResultSort, ProductKeywordSearchSort> = {
+  popular: 'popular',
+  'price-asc': 'price_asc',
+  latest: 'latest',
+}
+
+export const useSearchLanding = (enabled = true) =>
   useQuery<SearchLanding>({
-    queryKey: ['search', 'landing'],
-    queryFn: fetchSearchLanding,
+    queryKey: landingKey,
+    queryFn: async ({ signal }) => {
+      // refresh cookie가 있으면 일반 보호 API처럼 세션을 복원하되, 진짜 게스트여서
+      // refresh까지 실패한 경우에는 검색 화면에서 전역 로그인 이동만 억제한다.
+      const response = await customInstance<SearchKeywordsEnvelope>({
+        url: '/search/keywords',
+        method: 'GET',
+        signal,
+        suppressAuthExpiredRedirect: true,
+      })
+      return {
+        recentKeywords: response.data.recentKeywords,
+        suggestedKeywords: response.data.recommendedKeywords.map(item => item.keyword),
+      }
+    },
+    enabled,
+    retry: false,
   })
 
-export const useSearchResults = (query: string, filters: SearchFilters, sort: ResultSort) =>
-  useQuery<SearchResult>({
-    queryKey: ['search', 'results', query, filters, sort],
-    queryFn: () => fetchSearchResults(query, filters, sort),
+export function useDeleteRecentKeyword() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: deleteRecentKeyword,
+    onMutate: async id => {
+      await queryClient.cancelQueries({ queryKey: landingKey })
+      const previous = queryClient.getQueryData<SearchLanding>(landingKey)
+      queryClient.setQueryData<SearchLanding>(landingKey, current =>
+        current
+          ? { ...current, recentKeywords: current.recentKeywords.filter(item => item.id !== id) }
+          : current,
+      )
+      return { previous }
+    },
+    onError: (_error, _id, context) => queryClient.setQueryData(landingKey, context?.previous),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: landingKey }),
   })
+}
+
+export function useDeleteAllRecentKeywords() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: deleteAllRecentKeywords,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: landingKey })
+      const previous = queryClient.getQueryData<SearchLanding>(landingKey)
+      queryClient.setQueryData<SearchLanding>(landingKey, current =>
+        current ? { ...current, recentKeywords: [] } : current,
+      )
+      return { previous }
+    },
+    onError: (_error, _variables, context) =>
+      queryClient.setQueryData(landingKey, context?.previous),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: landingKey }),
+  })
+}
+
+async function fetchSearchPage(
+  query: string,
+  filters: SearchFilters,
+  sort: ResultSort,
+  cursor: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<SearchPage> {
+  const response = await searchProducts(
+    {
+      keyword: query.trim(),
+      sort: SORT_PARAM[sort],
+      minPrice: filters.minPrice > 0 ? filters.minPrice : undefined,
+      maxPrice: filters.maxPrice < PRICE_MAX ? filters.maxPrice : undefined,
+      minRating: filters.minRating > 0 ? filters.minRating : undefined,
+      freeShipping: filters.freeShippingOnly,
+      excludeSoldOut: filters.excludeSoldOut,
+      cursor,
+      size: 20,
+    },
+    signal,
+  )
+  const products = response.data.products.map(toCatalogProduct)
+  return { ...response.data, products }
+}
+
+function selectSearchResults(data: { pages: SearchPage[] }): SearchResult {
+  return {
+    products: data.pages.flatMap(page => page.products),
+    total: data.pages[0]?.totalCount ?? 0,
+  }
+}
+
+export const useSearchResults = (query: string, filters: SearchFilters, sort: ResultSort) => {
+  const queryClient = useQueryClient()
+  return useInfiniteQuery({
+    queryKey: ['search', 'results', query.trim(), filters, sort],
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await fetchSearchPage(query, filters, sort, pageParam, signal)
+      if (pageParam === undefined) void queryClient.invalidateQueries({ queryKey: landingKey })
+      return page
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    select: selectSearchResults,
+    enabled: query.trim().length > 0,
+  })
+}
