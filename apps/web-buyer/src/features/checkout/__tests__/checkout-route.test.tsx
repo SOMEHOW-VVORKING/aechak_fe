@@ -4,8 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { resetCart } from '@/shared/cart'
-import { DELIVERY_ADDRESSES_URL, seedDeliveryAddresses, server } from '../../../testing/msw/server'
+import { addToCart, resetCart } from '@/shared/cart'
+import {
+  DELIVERY_ADDRESSES_URL,
+  POINTS_URL,
+  seedDeliveryAddresses,
+  seedPointBalance,
+  server,
+} from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 // 배송지는 MSW로 네트워크에서 가로챈다(모듈 모킹 X) — "빈 목록"과 "조회 실패"를 화면이
@@ -58,5 +64,35 @@ describe('/checkout 배송지 없음 상태', () => {
 
     await user.click(await screen.findByRole('button', { name: '배송지 추가' }))
     expect(await screen.findByText('배송지 관리')).toBeInTheDocument()
+  })
+})
+
+describe('/checkout 적립금 사용 한도(서버 잔액)', () => {
+  beforeEach(() => {
+    resetCart()
+    seedDeliveryAddresses([])
+    seedPointBalance(0)
+    // 목업 카탈로그 상품을 담아 결제금액을 만든다(주문 자체는 아직 목업). p-churu = 13,900원.
+    addToCart('p-churu', '기본', 1)
+  })
+
+  it('[AC-POINT-CHECKOUT-004] 사용 한도는 서버 잔액이다(잔액 < 주문금액이면 최대 = 잔액)', async () => {
+    seedPointBalance(700)
+    renderAt('/checkout')
+
+    // 보유·최대 사용 모두 서버 잔액(700)으로 제한된다 — 주문금액(13,900)이 아니라 잔액이 상한.
+    expect(await screen.findByText('보유 700원')).toBeInTheDocument()
+    expect(await screen.findByText('최대 700원까지 사용할 수 있어요')).toBeInTheDocument()
+  })
+
+  it('[AC-POINT-CHECKOUT-005] 잔액 조회 실패 시 사용 가능 0으로 강하하고 화면은 계속 동작한다', async () => {
+    seedPointBalance(700)
+    server.use(http.get(POINTS_URL, () => HttpResponse.error()))
+    renderAt('/checkout')
+
+    // 잔액을 못 읽으면 0으로 안전 강하 — 전액사용 비활성, 화면(결제 버튼)은 그대로 렌더.
+    expect(await screen.findByText('보유 0원')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전액사용' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /결제하기/ })).toBeInTheDocument()
   })
 })

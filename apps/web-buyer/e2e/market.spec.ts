@@ -79,8 +79,9 @@ test('[AC-MARKET-E2E-001] 마켓은 실 API 상품을 보여주고 대분류 전
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
 
-  // 고양이 대분류로 전환하면 고양이 상품만 남는다.
-  await page.getByRole('button', { name: '고양이' }).click()
+  // 고양이 대분류로 전환하면 고양이 상품만 남는다. exact 필수 — 비exact 매칭은 상품 카드의
+  // stretched 버튼 aria-label('벤토나이트 고양이 모래 8.5L 상세 보기')까지 잡아 strict mode 위반.
+  await page.getByRole('button', { name: '고양이', exact: true }).click()
   await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
   await expect(page.getByText('강아지 연어 사료 2kg')).toHaveCount(0)
 })

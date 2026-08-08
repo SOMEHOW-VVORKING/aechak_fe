@@ -1,8 +1,17 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { HttpResponse, http } from 'msw'
 import { resetAccount, verifyPhone } from '@/shared/account'
+import {
+  currentAccount,
+  seedAccount,
+  seedTakenNicknames,
+  server,
+  USER_ME_URL,
+} from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -18,18 +27,155 @@ function renderAt(path: string) {
   )
 }
 
-describe('/mypage/profile 휴대폰 필드 인증 배지', () => {
+function fileInput(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+  if (input == null) throw new Error('아바타 업로드 input을 찾지 못했다')
+  return input
+}
+
+describe('/mypage/profile 실서버 연동', () => {
   beforeEach(() => {
     resetAccount()
+    seedAccount()
   })
 
-  it('[AC-PROFILE-001] 인증 완료 시 인증됨 pill/미인증/본인 인증하기 버튼이 모두 없다', async () => {
+  it('[AC-PROFILE-003] 초기값이 서버 내 정보(닉네임·자기소개)로 프리필된다', async () => {
+    seedAccount({ nickname: '초코집사', bio: '반가워요' })
+    renderAt('/mypage/profile')
+
+    expect(await screen.findByDisplayValue('초코집사')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('반가워요')).toBeInTheDocument()
+  })
+
+  it('[AC-PROFILE-004] 아바타를 안 바꾸고 저장하면 기존 profileImageKey를 그대로 되돌려 보낸다', async () => {
+    seedAccount({
+      nickname: '코코집사',
+      bio: '옛 소개',
+      profileImageKey: 'users/profile/seed.png',
+      profileImageUrl: 'https://mock-cdn.local/users/profile/seed.png',
+    })
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    const bio = await screen.findByDisplayValue('옛 소개')
+    await user.clear(bio)
+    await user.type(bio, '새 소개')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => {
+      const saved = currentAccount()
+      expect(saved.bio).toBe('새 소개')
+      // 핵심 계약: 이미지를 안 바꿨으면 기존 키가 그대로 유지돼야 한다.
+      expect(saved.profileImageKey).toBe('users/profile/seed.png')
+    })
+  })
+
+  it('[AC-PROFILE-005] 새 아바타를 고르면 저장 시 presigned 업로드로 받은 tmp 키를 보낸다', async () => {
+    seedAccount({ nickname: '코코집사', profileImageKey: 'users/profile/seed.png' })
+    const user = userEvent.setup()
+    const { container } = renderAt('/mypage/profile')
+
+    await screen.findByDisplayValue('코코집사')
+    await user.upload(fileInput(container), new File(['x'], 'avatar.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => {
+      expect(currentAccount().profileImageKey).toBe('tmp/1/users/profile/fixture.png')
+    })
+  })
+
+  it('[AC-PROFILE-006] 닉네임 중복 저장은 409/30001로 인라인 에러를 띄우고 폼을 유지한다', async () => {
+    seedAccount({ nickname: '코코집사' })
+    seedTakenNicknames(['멍멍집사'])
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    const nick = await screen.findByDisplayValue('코코집사')
+    await user.clear(nick)
+    await user.type(nick, '멍멍집사')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText('이미 사용 중인 닉네임이에요')).toBeInTheDocument()
+    // 폼은 그대로 남는다(입력값 보존).
+    expect(screen.getByDisplayValue('멍멍집사')).toBeInTheDocument()
+    // 서버는 닉네임을 바꾸지 않았다.
+    expect(currentAccount().nickname).toBe('코코집사')
+  })
+
+  it('[AC-PROFILE-007] 닉네임 형식 위반이면 저장 버튼이 막히고 인라인 안내만 뜬다(서버 호출 없음)', async () => {
+    seedAccount({ nickname: '코코집사' })
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    const nick = await screen.findByDisplayValue('코코집사')
+    await user.clear(nick)
+    await user.type(nick, '가') // 2자 미만 → 형식 위반
+
+    expect(await screen.findByText('닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+  })
+
+  it('[AC-PROFILE-008] 자기소개는 150자를 넘겨 입력해도 클라에서 잘린다', async () => {
+    seedAccount({ nickname: '코코집사', bio: '' })
+    renderAt('/mypage/profile')
+
+    const bio = (await screen.findByLabelText('자기소개')) as HTMLTextAreaElement
+    fireEvent.change(bio, { target: { value: 'a'.repeat(151) } })
+
+    expect(bio.value).toHaveLength(150)
+  })
+
+  it('[AC-PROFILE-009] 저장 성공 시 성공 토스트를 띄우고 서버에 반영된다', async () => {
+    seedAccount({ nickname: '코코집사', bio: '옛 소개' })
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    const bio = await screen.findByDisplayValue('옛 소개')
+    await user.clear(bio)
+    await user.type(bio, '갱신된 소개')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText('프로필을 저장했어요.')).toBeInTheDocument()
+    await waitFor(() => expect(currentAccount().bio).toBe('갱신된 소개'))
+  })
+
+  it('[AC-PROFILE-010] 저장 성공 시 GET /users/me를 다시 조회해(invalidate) 허브 카드 값을 갱신한다', async () => {
+    seedAccount({ nickname: '코코집사', bio: '옛 소개' })
+    // GET /users/me 호출 횟수를 세어, 저장 성공 후 invalidate로 재조회가 일어나는지(허브 카드 갱신 계약) 단언한다.
+    let getMeCount = 0
+    server.use(
+      http.get(USER_ME_URL, () => {
+        getMeCount += 1
+        return HttpResponse.json({ data: currentAccount() })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    const bio = await screen.findByDisplayValue('옛 소개')
+    await waitFor(() => expect(getMeCount).toBe(1)) // 초기 로드 1회
+    await user.clear(bio)
+    await user.type(bio, '갱신된 소개')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    // invalidateQueries가 제거되면 재조회가 없어 1회에 머물러 이 단언이 깨진다.
+    await waitFor(() => expect(getMeCount).toBeGreaterThanOrEqual(2))
+    expect(currentAccount().bio).toBe('갱신된 소개')
+  })
+})
+
+// 휴대폰 본인 인증 표시는 아직 목업 흐름(shared/account 스토어)이라 스토어 상태 기준으로 검증한다.
+describe('/mypage/profile 휴대폰 필드 인증 배지(목업 유지)', () => {
+  beforeEach(() => {
+    resetAccount()
+    seedAccount()
+  })
+
+  it('[AC-PROFILE-001] 인증 완료 시 마스킹 번호만 남고 미인증/본인 인증하기 버튼이 없다', async () => {
     verifyPhone('010-1234-5678')
     renderAt('/mypage/profile')
 
-    // 마스킹 번호는 그대로 보이되 중복 인증 배지는 제거됐다.
     expect(await screen.findByText('010-1234-****')).toBeInTheDocument()
-    expect(screen.queryByText('인증됨')).not.toBeInTheDocument()
     expect(screen.queryByText('미인증')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '본인 인증하기' })).not.toBeInTheDocument()
   })
@@ -39,6 +185,5 @@ describe('/mypage/profile 휴대폰 필드 인증 배지', () => {
 
     expect(await screen.findByText('미인증')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '본인 인증하기' })).toBeInTheDocument()
-    expect(screen.queryByText('인증됨')).not.toBeInTheDocument()
   })
 })

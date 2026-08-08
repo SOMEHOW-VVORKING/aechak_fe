@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { AlertCircle, Camera, User } from 'lucide-react'
 import {
+  Alert,
   BottomFixedAction,
   Button,
+  EmptyState,
   Input,
   MobileScreen,
   StatusPill,
@@ -12,25 +14,73 @@ import {
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { maskPhone, useAccount } from '@/shared/account'
+import {
+  accountErrorMessage,
+  isOnboardingRequired,
+  isSupportedAvatar,
+  isWithinAvatarSizeLimit,
+  maskPhone,
+  OVERSIZED_AVATAR_MESSAGE,
+  UNSUPPORTED_AVATAR_MESSAGE,
+  uploadAvatar,
+  useAccount,
+  useMe,
+  useUpdateProfile,
+} from '@/shared/account'
 import { placeholderImage } from '@/shared/catalog'
-import { useUpdateProfile } from '../account.queries'
 import { BIO_MAX, NICKNAME_MAX, validateNickname } from '../account.mock'
 
-// 프로필 수정(b10-st-2). 닉네임/자기소개/아바타 편집 + 본인 인증 상태 표시. 저장 → 성공 토스트.
+// 저장 성공 토스트를 잠깐 보여준 뒤 뒤로 가기까지의 시간. 내비게이션은 이 타이머로만 돌린다.
+const PROFILE_SAVED_TOAST_MS = 1500
+
+// 프로필 수정(b10-st-2). 닉네임/자기소개/아바타 편집. 초기값·저장은 실서버(GET /users/me · PUT /users/me/profile).
+// 아바타는 저장 시점에 presigned(USER_PROFILE) 업로드로 tmp 키를 만들고, 안 바꾸면 조회에서 받은 기존 키를 그대로 되돌려 보낸다.
+// 휴대폰 본인 인증 표시는 아직 목업 흐름(shared/account 스토어)이라 그대로 스토어를 읽는다(전화 인증 EP 미머지).
 export function ProfileEditScreen() {
   const navigate = useNavigate()
-  const account = useAccount()
+  const { account, isLoading, isError, refetch } = useMe()
+  const storeAccount = useAccount()
   const updateProfile = useUpdateProfile()
-
-  // 폼 상태는 시드 계정에서 한 번만 초기화한다(주소록 폼과 동일 — 저장 후 재시딩하지 않음).
-  const [nickname, setNickname] = useState(account.nickname)
-  const [bio, setBio] = useState(account.bio)
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(account.avatarUrl)
-  const [toastOpen, setToastOpen] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-
   const goBack = useSafeBack({ to: '/mypage' })
+
+  const [nickname, setNickname] = useState('')
+  const [bio, setBio] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
+  // 유지 회신용 기존 키(조회가 준 값). 새 파일을 안 고르면 저장 시 이 값을 그대로 되돌려 보낸다(URL 역파싱 금지).
+  const [imageKey, setImageKey] = useState<string | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [toastOpen, setToastOpen] = useState(false)
+
+  const fileRef = useRef<HTMLInputElement>(null)
+  const previewUrlRef = useRef<string | null>(null)
+  const seededRef = useRef(false)
+  const backTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 서버 값으로 폼을 한 번만 시드한다(저장 후 invalidate로 재조회돼도 재시딩하지 않아 입력 값을 보존).
+  useEffect(() => {
+    if (account && !seededRef.current) {
+      seededRef.current = true
+      setNickname(account.nickname)
+      setBio(account.bio)
+      setAvatarUrl(account.avatarUrl)
+      setImageKey(account.profileImageKey ?? null)
+    }
+  }, [account])
+
+  // 마지막 프리뷰 objectURL은 언마운트 시 정리한다(누수 방지). 예약된 뒤로가기 타이머도 함께 정리한다.
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+      if (backTimerRef.current) clearTimeout(backTimerRef.current)
+    }
+  }, [])
+
+  // 토스트 닫힘은 리렌더마다 새로 만들면 DS Toast의 자동 닫힘 타이머(deps에 onClose 포함)가 리셋된다.
+  // useCallback으로 안정화해 입력 중 리렌더가 토스트 타이머를 되감지 않게 한다. 내비게이션은 아래 자체 타이머로만 돈다.
+  const handleToastClose = useCallback(() => setToastOpen(false), [])
 
   const nicknameCheck = validateNickname(nickname)
   const showNicknameMsg = nickname.trim().length > 0
@@ -39,39 +89,124 @@ export function ProfileEditScreen() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const url =
-      typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-        ? URL.createObjectURL(file)
-        : placeholderImage(120)
+    setUploadError(null)
+    if (!isSupportedAvatar(file)) {
+      setUploadError(UNSUPPORTED_AVATAR_MESSAGE)
+      return
+    }
+    if (!isWithinAvatarSizeLimit(file)) {
+      setUploadError(OVERSIZED_AVATAR_MESSAGE)
+      return
+    }
+    // 이전 프리뷰 URL을 먼저 정리하고 새 프리뷰를 만든다. 업로드는 저장 시점에 한 번만 한다.
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    const canObjectUrl = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+    const url = canObjectUrl ? URL.createObjectURL(file) : placeholderImage(120)
+    previewUrlRef.current = canObjectUrl ? url : null
     setAvatarUrl(url)
+    setPendingFile(file)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!nicknameCheck.ok) return
+    setSaveError(null)
+    // 안 바꿨으면 기존 키를 유지, 새로 골랐으면 저장 시점에 업로드해 tmp 키로 교체.
+    let keyToSubmit = imageKey
+    if (pendingFile) {
+      setIsUploading(true)
+      try {
+        keyToSubmit = await uploadAvatar(pendingFile)
+      } catch (err) {
+        setIsUploading(false)
+        setSaveError(err instanceof Error ? err.message : '사진 업로드에 실패했어요')
+        return
+      }
+      setIsUploading(false)
+    }
+    const trimmedBio = bio.trim()
     updateProfile.mutate(
-      { nickname: nickname.trim(), bio, avatarUrl },
-      { onSuccess: () => setToastOpen(true) },
+      {
+        // 세 필드 항상 전송(전체 교체). 자기소개가 비면 null로 지운다.
+        nickname: nickname.trim().normalize('NFC'),
+        bio: trimmedBio.length > 0 ? trimmedBio : null,
+        profileImageKey: keyToSubmit,
+      },
+      {
+        onSuccess: () => {
+          setToastOpen(true)
+          // 성공 시점에 한 번만 뒤로가기를 예약한다(리렌더로 리셋되지 않게 Toast onClose가 아니라 자체 타이머로).
+          if (backTimerRef.current == null) {
+            backTimerRef.current = setTimeout(() => goBack(), PROFILE_SAVED_TOAST_MS)
+          }
+        },
+        onError: err => {
+          // PENDING이 ACTIVE 전용 PUT을 부르면 20006 — 인라인 문구로 막다른 길 대신 온보딩으로 보낸다.
+          if (isOnboardingRequired(err)) {
+            navigate({ to: '/onboarding/terms', replace: true })
+            return
+          }
+          setSaveError(accountErrorMessage(err))
+        },
+      },
     )
   }
 
-  const verified = account.verification === 'verified'
-  const maskedPhone = verified ? account.verifiedPhoneMasked ?? maskPhone(account.phone) : maskPhone(account.phone)
+  const saving = isUploading || updateProfile.isPending
+
+  const goBackHeader = <BackAppBar onBack={goBack} title="프로필 수정" />
+
+  if (isLoading || (!account && !isError)) {
+    return (
+      <MobileScreen header={goBackHeader}>
+        <div className="flex flex-col gap-6 p-4">
+          <div className="mx-auto size-[88px] animate-pulse rounded-full bg-surface-sunken" />
+          <div className="h-10 animate-pulse rounded-input bg-surface-sunken" />
+          <div className="h-24 animate-pulse rounded-input bg-surface-sunken" />
+        </div>
+      </MobileScreen>
+    )
+  }
+
+  if (isError) {
+    return (
+      <MobileScreen header={goBackHeader}>
+        <div className="flex h-full items-center justify-center p-6">
+          <EmptyState
+            title="프로필을 불러오지 못했어요"
+            description="잠시 후 다시 시도해주세요."
+            action={{ label: '다시 시도', onClick: () => void refetch() }}
+          />
+        </div>
+      </MobileScreen>
+    )
+  }
+
+  const verified = storeAccount.verification === 'verified'
+  const maskedPhone = verified
+    ? storeAccount.verifiedPhoneMasked ?? maskPhone(storeAccount.phone)
+    : maskPhone(storeAccount.phone)
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={goBack} title="프로필 수정" />}
+      header={goBackHeader}
       footer={
         <BottomFixedAction
           primary={{
             label: '저장',
-            onClick: handleSave,
+            onClick: () => void handleSave(),
             disabled: !nicknameCheck.ok,
-            loading: updateProfile.isPending,
+            loading: saving,
           }}
         />
       }
     >
       <div className="flex flex-col gap-6 p-4">
+        {saveError && (
+          <Alert variant="error" onDismiss={() => setSaveError(null)}>
+            {saveError}
+          </Alert>
+        )}
+
         {/* 프로필 사진 */}
         <div className="flex flex-col items-center gap-2 pt-2">
           <button
@@ -94,6 +229,11 @@ export function ProfileEditScreen() {
           <button type="button" onClick={onPickPhoto} className="text-label font-medium text-text-link">
             사진 변경
           </button>
+          {uploadError && (
+            <p role="alert" className="text-caption text-error-fg">
+              {uploadError}
+            </p>
+          )}
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
         </div>
 
@@ -122,7 +262,7 @@ export function ProfileEditScreen() {
         <Textarea
           label="자기소개"
           value={bio}
-          onChange={setBio}
+          onChange={v => setBio(v.slice(0, BIO_MAX))}
           maxLength={BIO_MAX}
           rows={4}
           helperText="프로필에 표시돼요."
@@ -159,7 +299,8 @@ export function ProfileEditScreen() {
 
       <AppToast
         open={toastOpen}
-        onClose={() => setToastOpen(false)}
+        onClose={handleToastClose}
+        duration={PROFILE_SAVED_TOAST_MS}
         message="프로필을 저장했어요."
         variant="success"
         aboveActionBar
