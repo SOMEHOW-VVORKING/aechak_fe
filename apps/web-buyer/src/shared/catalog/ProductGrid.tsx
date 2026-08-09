@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { ProductCard } from '@aechak/design-system/web'
 import type { CatalogProduct } from './products'
 import { registerProducts } from './registry'
-import { toggleWish, useWishedIds } from './wishlist.store'
+import { toggleWishlist } from './wishlist.queries'
+import { useWishedIds } from './wishlist.store'
 
 export interface ProductGridProps {
   products: CatalogProduct[]
@@ -60,7 +61,7 @@ export function ProductGrid({
                 ? () => {
                     const proceed = () => {
                       registerProducts([product])
-                      toggleWish(product.id)
+                      toggleWishlist(product.id)
                       onWishChange?.(product, !wished.has(product.id))
                     }
                     if (wishGuard) wishGuard(proceed)

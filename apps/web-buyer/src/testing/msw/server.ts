@@ -15,6 +15,8 @@ export const CATEGORIES_URL = `${base}/categories`
 export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
+export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
+export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
 export const SEARCH_KEYWORDS_URL = `${base}/search/keywords`
 export const RECENT_KEYWORDS_URL = `${base}/search/recent-keywords`
@@ -173,6 +175,57 @@ export const REAL_PRODUCT_OPTIONS = {
     },
   ],
 }
+
+// 내 찜 목록 상태(서버 소유 목록의 축소). seedLikedProducts로 세우고 like/unlike로 갱신한다.
+// 카드 형태는 상품 목록과 동일한 ProductSummaryResponse(= ProductFixture['product']).
+let likedProductRows: ProductFixture['product'][] = []
+
+/** 테스트마다 찜 목록을 세운다. 인자 없이 부르면 빈 목록. */
+export function seedLikedProducts(rows: ProductFixture['product'][] = []): void {
+  likedProductRows = rows.map(row => ({ ...row }))
+}
+
+/** 상태 누수 방지 — test-setup afterEach에서 호출. */
+export function resetLikedProducts(): void {
+  likedProductRows = []
+}
+
+const likedProductHandlers = [
+  // 내 찜 목록 — 커서(인덱스) 페이지네이션. 상품 목록과 동일한 ProductListResponse 봉투.
+  http.get(LIKED_PRODUCTS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    const cursor = url.searchParams.get('cursor')
+    const size = Number(url.searchParams.get('size') ?? 20)
+    const start = cursor ? Number(cursor) : 0
+    const page = likedProductRows.slice(start, start + size)
+    const nextIndex = start + size
+    const hasNext = nextIndex < likedProductRows.length
+    return HttpResponse.json({
+      data: {
+        products: page,
+        totalCount: start === 0 ? likedProductRows.length : null,
+        nextCursor: hasNext ? String(nextIndex) : null,
+        hasNext,
+      },
+    })
+  }),
+  // 찜하기 — 멱등(이미 찜한 상품도 201). 픽스처에 있으면 목록 앞에 추가한다(undo 재-like 대비).
+  http.post(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    if (!likedProductRows.some(p => p.productId === id)) {
+      const fixture = PRODUCT_FIXTURES.find(f => f.product.productId === id)?.product
+      if (fixture) likedProductRows = [fixture, ...likedProductRows]
+    }
+    return new HttpResponse(null, { status: 201 })
+  }),
+  // 찜 해제 — 멱등(찜하지 않은 상품도 204).
+  http.delete(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    likedProductRows = likedProductRows.filter(p => p.productId !== id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const PETS_URL = `${base}/users/me/pets`
 export const PRESIGNED_URL = `${base}/files/presigned-url`
 export const POINTS_URL = `${base}/users/me/points`
@@ -627,6 +680,7 @@ export const handlers = [
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
+  ...likedProductHandlers,
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {
