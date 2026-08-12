@@ -2,10 +2,12 @@ import { useSyncExternalStore } from 'react'
 
 // 찜(위시) 전역 스토어. 홈/카테고리/검색결과/상세/찜목록 어디서 하트를 눌러도 같은 상태를
 // 공유하도록 앱 전역 1개 인스턴스로 둔다. 서버 찜 상태의 클라이언트 미러(하트 표시용 id 집합)다 —
-// 상품 카드 응답(ProductSummaryResponse)에 isLiked가 없어(상세 응답에만 있음) 화면 전반 하트
-// 상태를 위해 이 미러가 필요하다. 실제 상품 데이터는 TanStack Query가 소유하고 이 스토어는 id만
-// 담는다. 서버 반영은 wishlist.queries.ts의 toggleWishlist가 낙관적으로 add/remove하면서
-// like/unlike를 발사한다. feature 간 직접 import 금지라 이 스토어를 shared에 두고 각 feature가 읽는다.
+// 상품 카드 응답(ProductSummaryResponse)의 isLiked(SCRUM-190)는 fetch 시점에 이 미러로 시드하고
+// (wishlist.queries.ts의 hydrateLikedFromSummaries), 도메인 CatalogProduct는 의도적으로 isLiked를
+// 담지 않으므로 화면 전반 하트 상태의 단일 원본으로 이 미러가 필요하다. 실제 상품 데이터는 TanStack
+// Query가 소유하고 이 스토어는 id만 담는다. 서버 반영은 wishlist.queries.ts의 toggleWishlist가
+// 낙관적으로 add/remove하면서 like/unlike를 발사한다. feature 간 직접 import 금지라 이 스토어를
+// shared에 두고 각 feature가 읽는다.
 
 let wished: ReadonlySet<string> = new Set()
 const listeners = new Set<() => void>()

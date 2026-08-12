@@ -1957,6 +1957,39 @@ codex(gpt-5.6)와 병렬 코드리뷰 후 이견을 수렴해 반영했다.
 - MSW 커서(offset)·POST 픽스처 게이팅은 mock 전용 정합성 이슈로 현재 테스트가 건드리지 않아 후속으로
   남겼다(production은 keyset 커서).
 
+### 상품 카드 isLiked 소비 (SCRUM-190) — 하트 미러 시드 + 해제 툼스톤/epoch 가드 (2026-08-12)
+
+BE(SCRUM-190, PR #62)가 `ProductSummaryResponse`에 필수·비-nullable `isLiked`를 추가하면서(목록/검색은
+로그인 시 카드별, 찜목록은 전부 true, 비로그인은 전부 false), 위 "찜 API 연동" 절의 알려진 한계(마켓/검색에서
+이전 세션 찜이 빈 하트로 보이던 문제)를 FE가 소비해 해소했다. **핵심 결정: 카드에 isLiked를 얹지 않고
+(도메인 `CatalogProduct`/`Product` 무변경, seller/admin typecheck 무영향) 미러(`wishlist.store.ts`)를 여전히
+하트의 단일 원본으로 두되, fetch 시점에 raw `ProductSummaryResponse[]`에서 미러를 시드**한다. `ProductGrid`는
+그대로 `wished.has(id)`만 읽으므로 컴포넌트 무변경. 스키마는 `packages/api/openapi/schema.yaml`에 `isLiked`를
+`required`+`properties`로 넣고 `pnpm --filter @aechak/api openapi:generate`로 생성물을 재생성해 커밋했다.
+
+- **시드 헬퍼 `hydrateLikedFromSummaries(summaries, epoch?)`(`shared/catalog/wishlist.queries.ts`)** — `isLiked=true`
+  이고 툼스톤에 없는 id만 union 머지, `isLiked=false`는 툼스톤 해제. 마켓/검색/찜목록 세 fetcher가 공유 호출.
+  빈 id면 `hydrateWished`를 아예 호출하지 않아 불필요한 `new Set` 복사도 없앴다.
+- **해제 툼스톤 `locallyUnliked: Set<string>`(핵심 버그 픽스, 코드리뷰 교차 확인)** — 최초 구현은 `desiredState.get(id)
+  !== false`로 "진행 중 해제 의도"만 걸렀는데, `reconcile`이 DELETE 성공 즉시 `desiredState[id]`를 지우므로 **요청이
+  끝난 뒤** 늦게 도착한 stale `isLiked=true` 페이지 응답이 방금 해제한 하트를 되살리고 union-only 미러가 그걸
+  세션 내내 유지하는 major 버그가 있었다(codex + 내부 워크플로가 독립적으로 동일 지적). 툼스톤은 `toggleWishlist`
+  해제 시 add, 재-찜 시 delete, `reconcile`은 건드리지 않고, 서버가 `isLiked=false`로 확정하는 hydrate에서만 풀린다
+  → 요청 완료 후 창까지 덮는다. 찜목록 화면의 해제 후 리페치 재부활도 같은 원리로 함께 막힌다.
+- **`sessionEpoch` 가드** — hydrate 경로엔 `reconcile`과 달리 epoch 가드가 없어, 로그아웃을 가로질러 resolve된
+  목록/검색 fetch가 방금 비운 미러에 이전 세션 찜을 재-시드하는 누수가 있었다. 각 fetcher가 요청 시작 전
+  `currentSessionEpoch()`를 캡처해 넘기고, hydrate는 `epoch !== sessionEpoch`면 early-return한다. `onWishlistLogout`은
+  툼스톤도 함께 clear한다.
+- **의도적으로 이번 배치에서 안 한 것(코드리뷰 수렴 결과 후속 PR로 분리)**: (a) `ProductGrid`가 미러 전체 Set을
+  구독해 하트 시드 emit 시 이미 로드된 카드가 전부 리렌더되는 pre-existing 비용 — 셀렉터를 per-card boolean 스냅샷
+  (`useIsWished`)으로 바꾸고 카드를 자식 컴포넌트로 쪼개는 공용 컴포넌트 리팩터라 isLiked 기능 PR과 분리(머지 리스크
+  최소화). (b) catalog/search 쿼리 키의 auth-세션 스코프화 — 로그인 직후 리페치 전까지 하트가 잠깐 비어 보이는 UX
+  갭은 위 union-only hydrate 한계와 동류라 문서화만 하고 캐시 키 재설계는 후속 auth-세션 작업으로 미룸(누수 자체는
+  epoch 가드로 이미 차단). **다음에 이 두 가지를 실제로 손댈 때는 여기 결정을 참고할 것.**
+- **테스트**: `wishlist.queries.test`에 툼스톤(진행 중/요청 완료 후 stale true 모두 차단, false로 해제 후 재-찜 반영)과
+  epoch 가드 회귀를 추가(`AC-WISH-013~016`). 마켓/검색 첫 렌더 하트는 `catalog-route`/`search-route`
+  (`AC-CATALOG-013`/`AC-SEARCH-018`), MSW 세 리스트 핸들러는 `likedProductRows`에서 `isLiked`를 주입한다.
+
 ---
 
 ## 리포 구조

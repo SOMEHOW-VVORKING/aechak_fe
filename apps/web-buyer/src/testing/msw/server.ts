@@ -190,6 +190,12 @@ export function resetLikedProducts(): void {
   likedProductRows = []
 }
 
+// 카드 응답의 isLiked 판정 — BE는 로그인 사용자면 목록/검색/찜목록 카드마다 찜 여부를 채운다.
+// 여기선 seedLikedProducts/like-POST로 쌓인 likedProductRows를 진실 소스로 삼는다(미시드면 전부 false).
+function isLikedFixture(productId: string): boolean {
+  return likedProductRows.some(row => row.productId === productId)
+}
+
 const likedProductHandlers = [
   // 내 찜 목록 — 커서(인덱스) 페이지네이션. 상품 목록과 동일한 ProductListResponse 봉투.
   http.get(LIKED_PRODUCTS_URL, ({ request }) => {
@@ -202,7 +208,8 @@ const likedProductHandlers = [
     const hasNext = nextIndex < likedProductRows.length
     return HttpResponse.json({
       data: {
-        products: page,
+        // 찜 목록 카드는 정의상 전부 찜 상태다.
+        products: page.map(product => ({ ...product, isLiked: true })),
         totalCount: start === 0 ? likedProductRows.length : null,
         nextCursor: hasNext ? String(nextIndex) : null,
         hasNext,
@@ -724,7 +731,7 @@ export const handlers = [
     const hasNext = nextIndex < products.length
     return HttpResponse.json({
       data: {
-        products: page,
+        products: page.map(product => ({ ...product, isLiked: isLikedFixture(product.productId) })),
         totalCount: products.length,
         nextCursor: hasNext ? String(nextIndex) : null,
         hasNext,
@@ -800,6 +807,7 @@ export const handlers = [
           saleStatus: product.isSoldOut ? 'OUT_OF_STOCK' : 'ON_SALE',
           averageRating: product.rating ?? null,
           reviewCount: product.reviewCount ?? 0,
+          isLiked: isLikedFixture(product.id),
         })),
         totalCount: cursor === 0 ? products.length : null,
         nextCursor: hasNext ? String(next) : null,

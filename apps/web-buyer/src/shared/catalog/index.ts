@@ -32,7 +32,13 @@ export { buildOrderFromContext } from './order-build'
 export type { OrderBuildInput } from './order-build'
 export { ProductGrid } from './ProductGrid'
 export type { ProductGridProps } from './ProductGrid'
-export { toggleWishlist, onWishlistLogout, LIKED_PRODUCTS_QUERY_KEY } from './wishlist.queries'
+export {
+  toggleWishlist,
+  onWishlistLogout,
+  hydrateLikedFromSummaries,
+  currentSessionEpoch,
+  LIKED_PRODUCTS_QUERY_KEY,
+} from './wishlist.queries'
 export {
   isWished,
   addWish,

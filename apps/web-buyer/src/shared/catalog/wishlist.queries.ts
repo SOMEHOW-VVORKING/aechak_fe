@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { likeProduct, unlikeProduct } from '@aechak/api'
+import { likeProduct, unlikeProduct, type ProductSummaryResponse } from '@aechak/api'
 import { findMockProduct } from './products'
-import { addWish, clearWished, isWished, removeWish } from './wishlist.store'
+import { addWish, clearWished, hydrateWished, isWished, removeWish } from './wishlist.store'
 
 // 찜 목록 무한쿼리 키(찜 목록 화면과 공유). 토글은 이 쿼리를 invalidate하지 않는다 —
 // 목록 표시는 pool ∩ id-set 필터가 담당하므로(features/wishlist), invalidate하면 다중 페이지
@@ -19,9 +19,21 @@ const desiredState = new Map<string, boolean>()
 const generation = new Map<string, number>()
 const running = new Set<string>()
 
+// 로컬 해제 툼스톤 — 사용자가 이 세션에 직접 해제한 상품 id. reconcile의 DELETE가 끝나면
+// desiredState[id]는 지워지지만 이 집합은 유지된다. 그래서 해제 요청보다 늦게 도착한 stale
+// isLiked=true 페이지 응답이 방금 해제한 하트를 되살리는 걸 막는다(desiredState 가드는 요청이
+// 진행 중인 창만 덮어 이 뒤 창을 놓쳤다 — codex/워크플로 교차 리뷰에서 확인). 서버가 isLiked=false로
+// 확정하거나(hydrate에서 해제) 사용자가 다시 찜하면(toggle) 풀린다.
+const locallyUnliked = new Set<string>()
+
 // 세션 epoch — 로그아웃 시 증가시켜, 이전 세션에서 진행 중이던 요청의 늦은 롤백이 새 세션의
 // 미러를 오염시키지 않게 한다.
 let sessionEpoch = 0
+
+/** 현재 세션 epoch. fetch 시작 시점에 캡처해 hydrate가 로그아웃을 가로지른 응답을 무시하게 한다. */
+export function currentSessionEpoch(): number {
+  return sessionEpoch
+}
 
 /**
  * 로그아웃 정리(단일 진입점). 진행 중 찜 동기화 의도를 폐기하고(epoch 증가), 미러를 비우고,
@@ -33,6 +45,7 @@ export function onWishlistLogout(queryClient: QueryClient): void {
   desiredState.clear()
   generation.clear()
   running.clear()
+  locallyUnliked.clear()
   clearWished()
   queryClient.removeQueries({ queryKey: LIKED_PRODUCTS_QUERY_KEY })
 }
@@ -80,12 +93,41 @@ async function reconcile(id: string): Promise<void> {
  */
 export function toggleWishlist(id: string): void {
   const next = !isWished(id)
-  if (next) addWish(id)
-  else removeWish(id)
+  if (next) {
+    addWish(id)
+    locallyUnliked.delete(id) // 다시 찜 → 툼스톤 해제
+  } else {
+    removeWish(id)
+    locallyUnliked.add(id) // 해제 → 서버가 false로 확정할 때까지 툼스톤 유지
+  }
 
   if (findMockProduct(id)) return // 목업 상품: 클라이언트 토글만
 
   desiredState.set(id, next)
   generation.set(id, (generation.get(id) ?? 0) + 1)
   void reconcile(id)
+}
+
+/**
+ * 카드 응답의 isLiked를 미러에 시드한다(마켓/검색/찜목록 fetch 시점 1회). union 머지라 제거는 하지
+ * 않고(다른 페이지 id·낙관적 찜 보존), 로컬 해제 툼스톤(locallyUnliked)이 있는 id는 stale
+ * isLiked=true여도 재-추가하지 않는다 — 해제 요청이 끝난 뒤 늦게 도착한 페이지 응답이 방금 해제한
+ * 하트를 되살리는 걸 막는다. isLiked=false는 서버가 해제를 확정한 것이므로 해당 id의 툼스톤을 푼다
+ * (이후의 true 응답은 정당한 재-찜으로 반영). `epoch`를 넘기면(각 fetcher가 요청 시작 전 캡처) 그
+ * 사이 세션이 바뀐(로그아웃) 응답은 무시해 이전 세션의 찜이 새 세션 미러로 새지 않게 한다.
+ */
+export function hydrateLikedFromSummaries(
+  summaries: readonly ProductSummaryResponse[],
+  epoch?: number,
+): void {
+  if (epoch !== undefined && epoch !== sessionEpoch) return
+  const ids: string[] = []
+  for (const summary of summaries) {
+    if (summary.isLiked) {
+      if (!locallyUnliked.has(summary.productId)) ids.push(summary.productId)
+    } else {
+      locallyUnliked.delete(summary.productId)
+    }
+  }
+  if (ids.length > 0) hydrateWished(ids)
 }

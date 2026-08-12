@@ -5,7 +5,12 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { describe, it, expect, beforeEach } from 'vitest'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry, resetWishlist } from '@/shared/catalog'
+import { PRODUCT_FIXTURES, seedLikedProducts } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
+
+function likedSeed(ids: string[]) {
+  return PRODUCT_FIXTURES.filter(f => ids.includes(f.product.productId)).map(f => f.product)
+}
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -107,6 +112,17 @@ describe('/market', () => {
     await user.click(screen.getByRole('tab', { name: '낮은 가격순' }))
     expect(await screen.findByText('참치 츄르 40개입')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('강아지 연어 사료 2kg')).not.toBeInTheDocument())
+  })
+
+  it('[AC-CATALOG-013] 이전에 찜한 상품은 찜 목록 방문 없이 첫 렌더부터 하트가 채워진다', async () => {
+    // 카드 응답 isLiked(SCRUM-190)를 fetch 시점에 미러로 시드한다. 첫 페이지 = p-real-1/p-real-2 중
+    // p-real-1만 찜 상태로 내려오므로 그 카드만 '찜 해제'(채워짐), 나머지는 '찜하기'(빈 하트).
+    seedLikedProducts(likedSeed(['p-real-1']))
+    renderAt('/market')
+
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '찜 해제' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜하기' })).toBeInTheDocument()
   })
 
   it('[AC-CATALOG-012] 비회원은 카테고리 트랩 없이 상품만 본다(대분류 칩은 전체만)', async () => {
