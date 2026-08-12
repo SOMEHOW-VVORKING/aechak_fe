@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
-import { /* Bell, */ Database, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
+import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -9,9 +9,10 @@ import { logout } from '@/shared/auth'
 import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 
-// 설정 홈(b11-st-1). 섹션형 설정 목록 + 로그아웃(확인 Modal). 목업의 본인 인증/펫 프로필/
-// 고객센터 문의/회원 탈퇴/셀러 입점은 각각 다른 배치(Phase 4·범위 밖) 소관이라, 이번 배치가
-// 실제로 소유한 하위 화면으로만 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
+// 설정 홈(b11-st-1). 섹션형 설정 목록 + 로그아웃(확인 Modal). 고객센터 문의(b6-st-3)는
+// SCRUM-189에서 추가돼 /settings/inquiry로 배선했다. 목업의 본인 인증/펫 프로필/회원 탈퇴/
+// 셀러 입점은 각각 다른 배치(Phase 4·범위 밖) 소관이라, 이번 배치가 실제로 소유한 하위 화면으로만
+// 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
 export function SettingsHomeScreen() {
   const navigate = useNavigate()
   const [logoutOpen, setLogoutOpen] = useState(false)
@@ -43,6 +44,11 @@ export function SettingsHomeScreen() {
             icon={<HelpCircle className="size-5" />}
             label="자주 묻는 질문"
             onClick={() => navigate({ to: '/settings/faq' })}
+          />
+          <SettingsNavRow
+            icon={<Headphones className="size-5" />}
+            label="고객센터 문의"
+            onClick={() => navigate({ to: '/settings/inquiry' })}
           />
         </SettingsGroup>
 

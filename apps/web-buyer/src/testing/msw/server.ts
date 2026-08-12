@@ -500,6 +500,7 @@ export const TERMS_URL = `${base}/terms`
 export const CONSENTS_URL = `${base}/users/me/consents`
 export const NICKNAME_CHECK_URL = `${base}/users/nickname/check`
 export const NICKNAME_URL = `${base}/users/me/nickname`
+export const INQUIRIES_URL = `${base}/inquiries`
 
 export interface TermRow {
   termId: number
@@ -627,6 +628,13 @@ export const handlers = [
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
+  // POST /inquiries — 접수 성공(RECEIVED). 실제 저장/통지는 BE 소관이라 계약(201 + data)만 재현한다.
+  http.post(INQUIRIES_URL, () =>
+    HttpResponse.json(
+      { data: { status: 'RECEIVED', createdAt: '2026-08-09T20:00:00' } },
+      { status: 201 },
+    ),
+  ),
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {
