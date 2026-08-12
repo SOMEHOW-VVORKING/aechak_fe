@@ -362,6 +362,35 @@ export interface ProductListResponse {
   data: ProductListData
 }
 
+export type ProductKeywordSearchSort =
+  (typeof ProductKeywordSearchSort)[keyof typeof ProductKeywordSearchSort]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductKeywordSearchSort = {
+  popular: 'popular',
+  price_asc: 'price_asc',
+  latest: 'latest',
+} as const
+
+export interface RecentKeywordResponse {
+  id: number
+  keyword: string
+  searchedAt: string
+}
+
+export interface RecommendedKeywordResponse {
+  keyword: string
+}
+
+export interface SearchKeywordsData {
+  recentKeywords: RecentKeywordResponse[]
+  recommendedKeywords: RecommendedKeywordResponse[]
+}
+
+export interface SearchKeywordsEnvelope {
+  data: SearchKeywordsData
+}
+
 export interface ProductImage {
   imageType: string
   storageKey: string
@@ -573,6 +602,40 @@ export type GetProductsParams = {
   /**
    * 다음 페이지 커서(이전 응답의 nextCursor)
    */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type SearchProductsParams = {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  keyword: string
+  sort?: ProductKeywordSearchSort
+  /**
+   * @minimum 0
+   */
+  minPrice?: number
+  /**
+   * @minimum 0
+   */
+  maxPrice?: number
+  /**
+   * @minimum 0
+   * @maximum 5
+   */
+  minRating?: number
+  /**
+   * 중분류 categoryId
+   */
+  category?: number
+  freeShipping?: boolean
+  excludeSoldOut?: boolean
   cursor?: string
   /**
    * @minimum 1
@@ -1810,6 +1873,546 @@ export function useGetProductsSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 상품명·셀러명 키워드 검색. 비로그인 허용하며 로그인 사용자의 첫 페이지 검색은 최근 검색어로 기록한다.
+ * @summary 키워드 상품 검색(커서 페이지네이션)
+ */
+export const searchProducts = (params: SearchProductsParams, signal?: AbortSignal) => {
+  return customInstance<ProductListResponse>({
+    url: `/search/products`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getSearchProductsQueryKey = (params?: SearchProductsParams) => {
+  return [`/search/products`, ...(params ? [params] : [])] as const
+}
+
+export const getSearchProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchProducts>>> = ({ signal }) =>
+    searchProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchProductsQueryResult = NonNullable<Awaited<ReturnType<typeof searchProducts>>>
+export type SearchProductsQueryError = unknown
+
+export function useSearchProducts<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchProducts>>,
+          TError,
+          Awaited<ReturnType<typeof searchProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchProducts<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchProducts>>,
+          TError,
+          Awaited<ReturnType<typeof searchProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchProducts<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 키워드 상품 검색(커서 페이지네이션)
+ */
+
+export function useSearchProducts<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getSearchProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchProducts>>> = ({ signal }) =>
+    searchProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof searchProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchProductsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchProducts>>
+>
+export type SearchProductsSuspenseQueryError = unknown
+
+export function useSearchProductsSuspense<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchProductsSuspense<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchProductsSuspense<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 키워드 상품 검색(커서 페이지네이션)
+ */
+
+export function useSearchProductsSuspense<
+  TData = Awaited<ReturnType<typeof searchProducts>>,
+  TError = unknown,
+>(
+  params: SearchProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchProductsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * @summary 최근·추천 검색어 조회
+ */
+export const getSearchKeywords = (signal?: AbortSignal) => {
+  return customInstance<SearchKeywordsEnvelope>({ url: `/search/keywords`, method: 'GET', signal })
+}
+
+export const getGetSearchKeywordsQueryKey = () => {
+  return [`/search/keywords`] as const
+}
+
+export const getGetSearchKeywordsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSearchKeywordsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSearchKeywords>>> = ({ signal }) =>
+    getSearchKeywords(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSearchKeywords>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSearchKeywordsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSearchKeywords>>
+>
+export type GetSearchKeywordsQueryError = unknown
+
+export function useGetSearchKeywords<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSearchKeywords>>,
+          TError,
+          Awaited<ReturnType<typeof getSearchKeywords>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSearchKeywords<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSearchKeywords>>,
+          TError,
+          Awaited<ReturnType<typeof getSearchKeywords>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSearchKeywords<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 최근·추천 검색어 조회
+ */
+
+export function useGetSearchKeywords<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSearchKeywordsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSearchKeywordsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSearchKeywordsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSearchKeywords>>> = ({ signal }) =>
+    getSearchKeywords(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSearchKeywords>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSearchKeywordsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSearchKeywords>>
+>
+export type GetSearchKeywordsSuspenseQueryError = unknown
+
+export function useGetSearchKeywordsSuspense<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSearchKeywordsSuspense<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSearchKeywordsSuspense<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 최근·추천 검색어 조회
+ */
+
+export function useGetSearchKeywordsSuspense<
+  TData = Awaited<ReturnType<typeof getSearchKeywords>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSearchKeywords>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSearchKeywordsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * @summary 최근 검색어 전체 삭제
+ */
+export const deleteAllRecentKeywords = () => {
+  return customInstance<void>({ url: `/search/recent-keywords`, method: 'DELETE' })
+}
+
+export const getDeleteAllRecentKeywordsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAllRecentKeywords>>,
+    TError,
+    void,
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAllRecentKeywords>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ['deleteAllRecentKeywords']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAllRecentKeywords>>,
+    void
+  > = () => {
+    return deleteAllRecentKeywords()
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteAllRecentKeywordsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAllRecentKeywords>>
+>
+
+export type DeleteAllRecentKeywordsMutationError = unknown
+
+/**
+ * @summary 최근 검색어 전체 삭제
+ */
+export const useDeleteAllRecentKeywords = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteAllRecentKeywords>>,
+      TError,
+      void,
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAllRecentKeywords>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationOptions = getDeleteAllRecentKeywordsMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * @summary 최근 검색어 단건 삭제
+ */
+export const deleteRecentKeyword = (id: number) => {
+  return customInstance<void>({ url: `/search/recent-keywords/${id}`, method: 'DELETE' })
+}
+
+export const getDeleteRecentKeywordMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRecentKeyword>>,
+    TError,
+    { id: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteRecentKeyword>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ['deleteRecentKeyword']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteRecentKeyword>>,
+    { id: number }
+  > = props => {
+    const { id } = props ?? {}
+
+    return deleteRecentKeyword(id)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteRecentKeywordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteRecentKeyword>>
+>
+
+export type DeleteRecentKeywordMutationError = unknown
+
+/**
+ * @summary 최근 검색어 단건 삭제
+ */
+export const useDeleteRecentKeyword = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteRecentKeyword>>,
+      TError,
+      { id: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteRecentKeyword>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteRecentKeywordMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**

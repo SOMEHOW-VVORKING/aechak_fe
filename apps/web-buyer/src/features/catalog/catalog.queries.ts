@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getCategories, getProducts } from '@aechak/api'
-import { registerProducts, type CatalogProduct, type CatalogSort } from '@/shared/catalog'
+import type { CatalogProduct, CatalogSort } from '@/shared/catalog'
 import { toCatalogProduct } from './catalog.mapper'
 
 // 카테고리 트리(대>중>소). 세션 내 불변이라 staleTime Infinity. enabled로 비회원 트랩을 막는다 —
@@ -23,8 +23,9 @@ interface ProductPage {
   hasNext: boolean
 }
 
-// 페이지를 fetch당 한 번만 CatalogProduct로 매핑하고 레지스트리에 등록한다. select에서 다시
-// 매핑하지 않도록 완성 형태로 반환한다(codex 리뷰 #5 — select 재매핑/참조 불안정 제거).
+// 페이지를 fetch당 한 번만 CatalogProduct로 매핑한다. select에서 다시 매핑하지 않도록 완성
+// 형태로 반환한다(codex 리뷰 #5 — select 재매핑/참조 불안정 제거). 레지스트리에는 ProductGrid에서
+// 상세 진입/찜처럼 후속 화면이 상품 스냅샷을 실제 소비할 때만 등록해 장기 세션 누적을 제한한다.
 async function fetchProductPage(
   params: { category?: number; sort: CatalogSort },
   pageParam: string | undefined,
@@ -35,7 +36,6 @@ async function fetchProductPage(
     signal,
   )
   const products = res.data.products.map(toCatalogProduct)
-  registerProducts(products)
   return {
     products,
     totalCount: res.data.totalCount,

@@ -9,16 +9,17 @@ import {
   SearchInput,
   Skeleton,
 } from '@aechak/design-system/web'
+import type { CategoryResponse } from '@aechak/api'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
-import { LoginGate, useLoginGate } from '@/shared/auth'
-import { useSearchResults } from '../search.queries'
+import { LoginGate, useLoginGate, useIsLoggedIn } from '@/shared/auth'
+import { useSearchCategories, useSearchResults } from '../search.queries'
 import {
   DEFAULT_FILTERS,
   RESULT_SORTS,
   activeFilterCount,
-  buildSearchResults,
+  FALLBACK_SUGGESTIONS,
   type ResultSort,
   type SearchFilters,
 } from '../search.mock'
@@ -48,10 +49,12 @@ export function SearchResultsScreen({ query }: { query: string }) {
   const navigate = useNavigate()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
   const goBack = useSafeBack({ to: '/' })
+  const isLoggedIn = useIsLoggedIn()
+  const { data: categories } = useSearchCategories(isLoggedIn)
 
   const [draftQuery, setDraftQuery] = useState(query)
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS)
-  const [sort, setSort] = useState<ResultSort>('recommend')
+  const [sort, setSort] = useState<ResultSort>('popular')
   const [filterOpen, setFilterOpen] = useState(false)
   const [priceOpen, setPriceOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
@@ -59,7 +62,16 @@ export function SearchResultsScreen({ query }: { query: string }) {
   // 같은 라우트로 인페이지 재검색(무결과 화면의 추천어 탭 등) 시 검색창을 새 키워드로 동기화.
   useEffect(() => setDraftQuery(query), [query])
 
-  const { data, isLoading, isError, refetch } = useSearchResults(query, filters, sort)
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useSearchResults(query, filters, sort)
 
   const goProduct = (product: CatalogProduct) =>
     navigate({ to: '/products/$productId', params: { productId: product.id } })
@@ -70,7 +82,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
     navigate({ to: '/search/results', search: { q: trimmed } })
   }
 
-  const sortLabel = RESULT_SORTS.find(s => s.value === sort)?.label ?? '추천순'
+  const sortLabel = RESULT_SORTS.find(s => s.value === sort)?.label ?? '인기순'
   const filterCount = activeFilterCount(filters)
   const priceActive =
     filters.minPrice !== DEFAULT_FILTERS.minPrice || filters.maxPrice !== DEFAULT_FILTERS.maxPrice
@@ -134,7 +146,11 @@ export function SearchResultsScreen({ query }: { query: string }) {
             {filters.freeShippingOnly && <Check className="size-3.5" />}
           </FilterChipButton>
           {/* 가격은 즉시 토글이 아니라 가격대 전용 시트를 연다(무료배송/별점과 달리 선택지가 여러 개라서). */}
-          <FilterChipButton selected={priceActive} expanded={priceOpen} onClick={() => setPriceOpen(true)}>
+          <FilterChipButton
+            selected={priceActive}
+            expanded={priceOpen}
+            onClick={() => setPriceOpen(true)}
+          >
             {priceChipLabel}
             <ChevronDown className="size-3.5" />
           </FilterChipButton>
@@ -150,7 +166,10 @@ export function SearchResultsScreen({ query }: { query: string }) {
         <div className="flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <span className="text-caption text-text-tertiary">
-              <span className="font-semibold text-text-secondary">{(data?.total ?? 0).toLocaleString('ko-KR')}</span>개
+              <span className="font-semibold text-text-secondary">
+                {(data?.total ?? 0).toLocaleString('ko-KR')}
+              </span>
+              개
             </span>
           </div>
           <button
@@ -167,15 +186,19 @@ export function SearchResultsScreen({ query }: { query: string }) {
 
         {/* 결과 그리드 / 빈 상태 */}
         <div className="px-4">
-          {isError ? (
+          {isError && !data ? (
             // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다(codex UI/UX #4).
             <div className="flex flex-col items-center gap-4 py-16 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
                 <SearchX className="size-7" />
               </div>
               <div className="space-y-1">
-                <p className="text-body font-medium text-text-primary">검색 결과를 불러오지 못했어요</p>
-                <p className="text-body-sm text-text-tertiary">네트워크 상태를 확인하고 다시 시도해 주세요.</p>
+                <p className="text-body font-medium text-text-primary">
+                  검색 결과를 불러오지 못했어요
+                </p>
+                <p className="text-body-sm text-text-tertiary">
+                  네트워크 상태를 확인하고 다시 시도해 주세요.
+                </p>
               </div>
               <Button variant="secondary" size="md" onClick={() => void refetch()}>
                 다시 시도
@@ -208,9 +231,11 @@ export function SearchResultsScreen({ query }: { query: string }) {
                 </div>
               </div>
               <div className="flex flex-col gap-2.5">
-                <span className="text-label font-semibold text-text-secondary">이런 검색어는 어때요?</span>
+                <span className="text-label font-semibold text-text-secondary">
+                  이런 검색어는 어때요?
+                </span>
                 <div className="flex flex-wrap gap-2">
-                  {data.suggestions.map(keyword => (
+                  {FALLBACK_SUGGESTIONS.map(keyword => (
                     <button
                       key={keyword}
                       type="button"
@@ -233,21 +258,36 @@ export function SearchResultsScreen({ query }: { query: string }) {
                   <div className="mt-1 flex items-center gap-1 text-text-tertiary">
                     <Star className="size-3 flex-none text-warning" fill="currentColor" />
                     <span className="text-caption">
-                      {product.rating.toFixed(1)} ({(product.reviewCount ?? 0).toLocaleString('ko-KR')})
+                      {product.rating.toFixed(1)} (
+                      {(product.reviewCount ?? 0).toLocaleString('ko-KR')})
                     </span>
                   </div>
                 ) : null
               }
             />
           )}
+          {data && data.products.length > 0 && hasNextPage && (
+            <div className="mt-6 flex flex-col items-center gap-2">
+              {isFetchNextPageError && (
+                <p className="text-body-sm text-error-fg">다음 상품을 불러오지 못했어요.</p>
+              )}
+              <Button
+                variant="secondary"
+                className="w-full"
+                loading={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchNextPageError ? '다시 시도' : '상품 더 보기'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
       <FilterSheet
         open={filterOpen}
-        query={query}
-        sort={sort}
         initial={filters}
+        categories={categories}
         onClose={() => setFilterOpen(false)}
         onApply={next => {
           setFilters(next)
@@ -313,16 +353,14 @@ export function SearchResultsScreen({ query }: { query: string }) {
 
 function FilterSheet({
   open,
-  query,
-  sort,
   initial,
+  categories,
   onClose,
   onApply,
 }: {
   open: boolean
-  query: string
-  sort: ResultSort
   initial: SearchFilters
+  categories?: CategoryResponse[]
   onClose: () => void
   onApply: (filters: SearchFilters) => void
 }) {
@@ -335,14 +373,50 @@ function FilterSheet({
     if (open) setDraft(initial)
   }
 
-  const previewCount = buildSearchResults(query, draft, sort).total
-
   const patch = (p: Partial<SearchFilters>) => setDraft(prev => ({ ...prev, ...p }))
-  const activePricePreset = PRICE_PRESETS.find(p => p.min === draft.minPrice && p.max === draft.maxPrice)
+  const activePricePreset = PRICE_PRESETS.find(
+    p => p.min === draft.minPrice && p.max === draft.maxPrice,
+  )
 
   return (
     <BottomSheet open={open} onClose={onClose} title="필터">
       <div className="flex flex-col gap-5">
+        {/* 카테고리 — /categories는 인증 필요라 로그인 사용자만 조회. categories가 있을 때만 노출한다. */}
+        {categories && categories.length > 0 && (
+          <>
+            <section className="flex flex-col gap-2.5">
+              <span className="text-label font-semibold text-text-primary">카테고리</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <FilterChipButton
+                    selected={draft.category == null}
+                    onClick={() => patch({ category: null })}
+                  >
+                    전체
+                  </FilterChipButton>
+                </div>
+                {categories.map(major => (
+                  <div key={major.categoryId} className="flex flex-col gap-1.5">
+                    <span className="text-caption text-text-tertiary">{major.name}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {major.children.map(sub => (
+                        <FilterChipButton
+                          key={sub.categoryId}
+                          selected={draft.category === sub.categoryId}
+                          onClick={() => patch({ category: sub.categoryId })}
+                        >
+                          {sub.name}
+                        </FilterChipButton>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <div className="h-px bg-border-subtle" />
+          </>
+        )}
+
         {/* 가격대 */}
         <section className="flex flex-col gap-2.5">
           <span className="text-label font-semibold text-text-primary">가격대</span>
@@ -401,7 +475,7 @@ function FilterSheet({
             초기화
           </Button>
           <Button onClick={() => onApply(draft)} className="flex-[1.6]">
-            결과 {previewCount.toLocaleString('ko-KR')}개 보기
+            결과 보기
           </Button>
         </div>
       </div>
