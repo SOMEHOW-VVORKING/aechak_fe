@@ -603,7 +603,8 @@ export interface SubmitInquiryRequest {
   /** 답변받을 이메일. 형식 위반 400 INVALID_REQUEST */
   replyEmail: string
   /**
-   * 문의 내용. 2000자 이하
+   * 문의 내용. 1~2000자
+   * @minLength 1
    * @maxLength 2000
    */
   content: string

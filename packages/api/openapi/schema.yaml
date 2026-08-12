@@ -1435,11 +1435,13 @@ components:
           description: "문의 유형"
         replyEmail:
           type: string
+          format: email
           description: "답변받을 이메일. 형식 위반 400 INVALID_REQUEST"
         content:
           type: string
+          minLength: 1
           maxLength: 2000
-          description: "문의 내용. 2000자 이하"
+          description: "문의 내용. 1~2000자"
     SubmitInquiryResponse:
       type: object
       required: [data]

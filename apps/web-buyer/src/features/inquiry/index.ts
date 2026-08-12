@@ -1,10 +1,3 @@
+// feature 밖에서 실제로 소비되는 건 화면뿐이다(라우트가 import). 검증/옵션/mutation은 feature
+// 내부에서만 쓰이고 테스트는 각 파일을 직접 import하므로 공개 표면에 두지 않는다.
 export { InquiryScreen } from './components/InquiryScreen'
-export {
-  INQUIRY_TYPE_OPTIONS,
-  MAX_INQUIRY_CONTENT_LENGTH,
-  isValidEmail,
-  isValidInquiry,
-} from './inquiry.mock'
-export type { InquiryDraft, ValidInquiryDraft } from './inquiry.mock'
-export { useSubmitInquiry, inquiryErrorMessage } from './inquiry.queries'
-export type { SubmitInquiryInput } from './inquiry.queries'

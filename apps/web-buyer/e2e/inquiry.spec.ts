@@ -38,11 +38,11 @@ async function stubInquiries(page: Page): Promise<Record<string, unknown>[]> {
   await page.route('**/api/v1/inquiries', route => {
     if (route.request().method() === 'POST') {
       received.push(route.request().postDataJSON() as Record<string, unknown>)
-      return fulfillJson(route, 201, {
-        data: { status: 'RECEIVED', createdAt: '2026-08-09T20:00:00' },
-      })
     }
-    return fulfillJson(route, 405, {})
+    // OPTIONS 프리플라이트는 fulfillJson이 가로채고, POST는 접수 성공(201)으로 응답한다.
+    return fulfillJson(route, 201, {
+      data: { status: 'RECEIVED', createdAt: '2026-08-09T20:00:00' },
+    })
   })
   return received
 }
@@ -65,12 +65,15 @@ test('[AC-INQUIRY-E2E-001] 작성 폼 → 유형 시트 → 이메일 검증 →
   await expect(page.getByRole('button', { name: '서비스 이용 / 기타' })).toBeVisible()
   await shot(page, `${SHOTS}/02-type-sheet.png`)
 
-  // 유형 선택 → 트리거에 반영(시트 닫힘)
+  // 유형 선택 → 트리거에 반영. 시트 스크림이 pointer-events-none이라 닫힘 애니메이션 중에도
+  // 다음 입력이 진행되므로, 3-C 캡처가 닫히는 시트를 잡지 않게 시트 언마운트를 명시적으로 기다린다.
   await page.getByRole('button', { name: '주문 / 결제' }).click()
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0)
 
-  // 3-C: 이메일 형식 오류 + 제출 비활성
+  // 3-C: 이메일 형식 오류 + 제출 비활성 — 오류는 필드를 벗어난(blur) 뒤에만 노출된다.
   const email = page.getByPlaceholder('답변 받을 이메일 주소를 입력해주세요')
   await email.fill('kongi.mom@')
+  await email.blur()
   await expect(
     page.getByText('이메일 형식이 올바르지 않아요. 예: name@aechak.co.kr'),
   ).toBeVisible()
@@ -97,6 +100,9 @@ test('[AC-INQUIRY-E2E-001] 작성 폼 → 유형 시트 → 이메일 검증 →
     replyEmail: 'kongi.mom@aechak.co.kr',
     content: '결제는 완료됐는데 주문 내역에 안 보여요. 확인 부탁드립니다.',
   })
+
+  // 접수 성공 후 잠깐 뒤 설정 홈으로 자동 복귀한다(replace 이동이라 뒤로가기가 폼을 재진입하지 않음).
+  await expect(page).toHaveURL(/\/settings$/)
 })
 
 test('[AC-INQUIRY-E2E-002] 세션 없이 제출하면(401 → refresh 실패) 로그인 화면으로 튕긴다', async ({
