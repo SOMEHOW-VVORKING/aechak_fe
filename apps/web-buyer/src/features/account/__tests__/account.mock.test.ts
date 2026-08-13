@@ -2,10 +2,9 @@ import { describe, it, expect } from 'vitest'
 import type { BuyerOrder, BuyerOrderStatus } from '@aechak/domain'
 import {
   NICKNAME_MAX,
-  TEST_OTP_CODE,
   blockingBreakdown,
   getBlockingOrders,
-  isValidOtp,
+  isValidPhoneNumber,
   isWithdrawBlocked,
   validateNickname,
 } from '../account.mock'
@@ -27,7 +26,7 @@ function makeOrder(status: BuyerOrderStatus): BuyerOrder {
   }
 }
 
-describe('account.mock — 닉네임/OTP 검증', () => {
+describe('account.mock — 닉네임/휴대폰 번호 검증', () => {
   it('[AC-ACCOUNT-001] 빈 닉네임은 검증 실패한다', () => {
     expect(validateNickname('   ').ok).toBe(false)
   })
@@ -57,10 +56,14 @@ describe('account.mock — 닉네임/OTP 검증', () => {
     expect(validateNickname('coco123').ok).toBe(true)
   })
 
-  it('[AC-ACCOUNT-004] 고정 인증번호만 OTP 검증을 통과한다', () => {
-    expect(isValidOtp(TEST_OTP_CODE)).toBe(true)
-    expect(isValidOtp('123456')).toBe(false)
-    expect(isValidOtp('')).toBe(false)
+  it('[AC-ACCOUNT-004] 휴대폰 번호는 서버 규칙(01x, 하이픈 유무 허용)으로 사전 검증한다', () => {
+    expect(isValidPhoneNumber('010-1234-5678')).toBe(true)
+    expect(isValidPhoneNumber('01012345678')).toBe(true)
+    expect(isValidPhoneNumber('011-123-4567')).toBe(true) // 중간 3자리 허용
+    expect(isValidPhoneNumber(' 010-1234-5678 ')).toBe(true) // 앞뒤 공백은 다듬는다
+    expect(isValidPhoneNumber('02-1234-5678')).toBe(false) // 지역번호
+    expect(isValidPhoneNumber('010-1234-567')).toBe(false) // 끝 4자리 미달
+    expect(isValidPhoneNumber('')).toBe(false)
   })
 })
 

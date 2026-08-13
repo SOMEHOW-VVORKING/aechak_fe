@@ -355,6 +355,8 @@ const petHandlers = [
 
 export const USER_ME_URL = `${base}/users/me`
 export const USER_PROFILE_URL = `${base}/users/me/profile`
+export const PHONE_VERIFICATIONS_URL = `${base}/users/me/phone/verifications`
+export const PHONE_VERIFICATIONS_CONFIRM_URL = `${base}/users/me/phone/verifications/confirm`
 
 // 닉네임 점유 상태는 프로필 수정(PUT /users/me/profile)과 온보딩 닉네임(check·PUT)이 공유한다.
 let takenNicknames = new Set<string>()
@@ -396,11 +398,25 @@ const DEFAULT_ACCOUNT: AccountState = {
 let account: AccountState = { ...DEFAULT_ACCOUNT }
 let concurrentModOnce = false
 
-/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락 옵션도 함께 초기화한다. */
+// 휴대폰 인증(발송→확인) 상태. 기본 핸들러는 항상 이 고정 코드를 발급하고(응답엔 미노출),
+// confirm이 발송 때의 번호 + 코드를 대조한다 — 서버의 30005(불일치)/30009(만료=미발송)를 재현.
+export const MSW_PHONE_CODE = '123456'
+export const PHONE_CODE_EXPIRES_IN_SECONDS = 180
+export const PHONE_RESEND_COOLDOWN_SECONDS = 60
+let issuedPhoneCode: { phoneNumber: string } | null = null
+
+// BE PhoneNumberMasker 재현: 하이픈 제거 후 앞 3·뒤 4 사이를 '*'로 가린다('01012345678' → '010-****-5678').
+function maskPhoneWire(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/-/g, '')
+  return `${digits.slice(0, 3)}-${'*'.repeat(Math.max(0, digits.length - 7))}-${digits.slice(-4)}`
+}
+
+/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락·발송된 인증번호도 함께 초기화한다. */
 export function seedAccount(overrides: Partial<AccountState> = {}): void {
   account = { ...DEFAULT_ACCOUNT, ...overrides }
   takenNicknames = new Set()
   concurrentModOnce = false
+  issuedPhoneCode = null
 }
 
 /** 핸들러가 반영한 현재 내 정보. 테스트가 저장 결과를 단언할 때 읽는다. */
@@ -439,6 +455,35 @@ const accountHandlers = [
       profileImageUrl:
         body.profileImageKey == null ? null : `https://mock-cdn.local/${body.profileImageKey}`,
     }
+    return HttpResponse.json({ data: account })
+  }),
+  http.post(PHONE_VERIFICATIONS_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string }
+    issuedPhoneCode = { phoneNumber: body.phoneNumber }
+    return HttpResponse.json({
+      data: {
+        expiresInSeconds: PHONE_CODE_EXPIRES_IN_SECONDS,
+        resendCooldownSeconds: PHONE_RESEND_COOLDOWN_SECONDS,
+      },
+    })
+  }),
+  http.post(PHONE_VERIFICATIONS_CONFIRM_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string; code: string }
+    if (issuedPhoneCode == null) {
+      return HttpResponse.json(
+        { errorCode: 30009, message: '인증번호가 만료되었습니다. 재발송 시도해 주세요.' },
+        { status: 400 },
+      )
+    }
+    // 코드·번호 불일치는 서버가 의도적으로 구분하지 않는다(둘 다 30005).
+    if (body.code !== MSW_PHONE_CODE || body.phoneNumber !== issuedPhoneCode.phoneNumber) {
+      return HttpResponse.json(
+        { errorCode: 30005, message: '인증번호가 올바르지 않습니다.' },
+        { status: 400 },
+      )
+    }
+    issuedPhoneCode = null
+    account = { ...account, phoneNumber: maskPhoneWire(body.phoneNumber), isPhoneVerified: true }
     return HttpResponse.json({ data: account })
   }),
 ]
