@@ -64,8 +64,19 @@ function reviewsBody(url: URL, pageSize: number) {
   }
 }
 
-// pageSize를 크게 주면 한 페이지에 다 담기고(정렬/필터 검증), 작게 주면 나뉘어 더보기(페이지네이션)를 검증한다.
-async function stubReviews(page: Page, pageSize: number) {
+interface StubOptions {
+  // 페이지당 리뷰 수. 크게 주면 한 페이지에 다 담기고(정렬/필터 검증), 작게 주면 나뉘어 더보기(페이지네이션)를 검증한다.
+  pageSize?: number
+  // 첫 페이지(cursor 없음) 응답 status. 404 → 상품 미존재, 500 → 로딩 실패 등 에러 경로 검증.
+  firstStatus?: number
+  // 다음 페이지(cursor 있음)를 500으로 실패시켜 "더보기 실패 시 기존 목록 유지"를 검증.
+  failNextPage?: boolean
+}
+
+// 두 번째 인자는 숫자(pageSize) 또는 옵션 객체를 받는다 — 기존 호출(`stubReviews(page, 100)`)과 하위호환.
+async function stubReviews(page: Page, opts: number | StubOptions = 100) {
+  const { pageSize = 100, firstStatus = 200, failNextPage = false } =
+    typeof opts === 'number' ? { pageSize: opts } : opts
   await page.route(new RegExp(`/products/${REAL_ID}/reviews`), (route: Route) => {
     if (route.request().method() === 'OPTIONS') {
       return route.fulfill({
@@ -73,7 +84,15 @@ async function stubReviews(page: Page, pageSize: number) {
         headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
       })
     }
-    return route.fulfill({ status: 200, headers: CORS, json: reviewsBody(new URL(route.request().url()), pageSize) })
+    const url = new URL(route.request().url())
+    const isFirst = url.searchParams.get('cursor') == null
+    if (isFirst && firstStatus !== 200) {
+      return route.fulfill({ status: firstStatus, headers: CORS, json: { message: 'error' } })
+    }
+    if (!isFirst && failNextPage) {
+      return route.fulfill({ status: 500, headers: CORS, json: { message: 'error' } })
+    }
+    return route.fulfill({ status: 200, headers: CORS, json: reviewsBody(url, pageSize) })
   })
 }
 
@@ -99,18 +118,23 @@ test('[AC-REVIEW-E2E-002] 포토리뷰만 토글은 사진 없는 리뷰를 감�
   await expect(page.getByText('냥집사리뷰')).toBeVisible()
 })
 
-test('[AC-REVIEW-E2E-003] 별점높은순 정렬은 서버 요청(sort=rating_desc)에 반영된다', async ({ page }) => {
-  await stubReviews(page, 100)
+test('[AC-REVIEW-E2E-003] 별점높은순 정렬이 목록 순서에 실제로 반영된다', async ({ page }) => {
+  // pageSize를 2로 줄여 정렬에 따라 첫 페이지 구성이 달라지게 한다 — 정렬 요청뿐 아니라 재정렬 결과까지 검증.
+  await stubReviews(page, 2)
   await page.goto(`/reviews/product/${REAL_ID}`)
+  // 최신순 첫 페이지 = [505 냥집사리뷰, 504 하늘둥이] → 냥집사리뷰는 보이고, 뒤 페이지의 집사세븐(501)은 아직 안 보인다.
   await expect(page.getByText('냥집사리뷰')).toBeVisible()
+  await expect(page.getByText('집사세븐')).toBeHidden()
 
   const sorted = page.waitForResponse(
     r => r.url().includes('/reviews') && r.url().includes('rating_desc') && r.request().method() === 'GET',
   )
   await page.getByRole('button', { name: '별점높은순' }).click()
   await sorted
-  // 정렬 후에도 목록이 그대로 렌더된다(별점 5 리뷰가 상단으로 올라온 새 페이지).
-  await expect(page.getByText('하늘둥이')).toBeVisible()
+  // 별점높은순 전체 순서 = [504(5), 501(5), 502(4), 503(3), 505(2)] → 첫 페이지 = [504 하늘둥이, 501 집사세븐].
+  // 별점 낮은 505(냥집사리뷰)가 뒤 페이지로 밀려 첫 페이지에서 사라진다.
+  await expect(page.getByText('집사세븐')).toBeVisible()
+  await expect(page.getByText('냥집사리뷰')).toBeHidden()
 })
 
 test('[AC-REVIEW-E2E-004] 더보기를 누르면 다음 페이지 리뷰가 이어 붙는다', async ({ page }) => {
@@ -123,4 +147,28 @@ test('[AC-REVIEW-E2E-004] 더보기를 누르면 다음 페이지 리뷰가 이�
   await page.getByRole('button', { name: '더보기' }).click()
   await expect(page.getByText('코코대장')).toBeVisible() // 503이 이어 붙는다
   await expect(page.getByText('냥집사리뷰')).toBeVisible() // 첫 페이지도 그대로 유지
+})
+
+test('[AC-REVIEW-E2E-005] 첫 페이지 404면 상품을 찾을 수 없다고 안내한다', async ({ page }) => {
+  await stubReviews(page, { firstStatus: 404 })
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('상품을 찾을 수 없어요')).toBeVisible()
+})
+
+test('[AC-REVIEW-E2E-006] 첫 페이지 500이면 리뷰를 불러오지 못했다고 안내한다', async ({ page }) => {
+  await stubReviews(page, { firstStatus: 500 })
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('리뷰를 불러오지 못했어요')).toBeVisible()
+})
+
+test('[AC-REVIEW-E2E-007] 더보기가 실패해도 기존 목록은 유지된다', async ({ page }) => {
+  // 첫 페이지는 정상, 다음 페이지만 500으로 실패시킨다.
+  await stubReviews(page, { pageSize: 2, failNextPage: true })
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('냥집사리뷰')).toBeVisible() // 505(첫 페이지)
+
+  await page.getByRole('button', { name: '더보기' }).click()
+  // 다음 페이지 실패는 목록을 통째로 에러 화면으로 교체하지 않는다 — 첫 페이지는 그대로 남고 에러 안내도 뜨지 않는다.
+  await expect(page.getByText('냥집사리뷰')).toBeVisible()
+  await expect(page.getByText('리뷰를 불러오지 못했어요')).toHaveCount(0)
 })
