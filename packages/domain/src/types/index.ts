@@ -173,6 +173,35 @@ export interface BuyerOrder {
   refundedAt?: string
 }
 
+// 결제 성공 주문 스냅샷의 공통 필드 조립. 장바구니 결제(buildOrderFromCartGroups, shared/cart)와
+// 바로구매(buildOrderFromContext, shared/catalog)가 같은 규칙 — pointsUsed 역산, couponDiscount 0,
+// 적립 1% 반올림, status 'paid' — 을 공유해야 하는데 두 조립기는 서로 import할 수 없는 shared에
+// 흩어져 있어(eslint shared→shared 금지) cartLineKey와 같은 근거로 순수 함수를 도메인에 둔다.
+export function buildOrderSnapshot(input: {
+  orderNo: string
+  method: PaymentMethod
+  /** 실제 결제 금액(적립금 차감 후). itemsTotal+shippingTotal과의 차이로 사용 적립금을 역산한다. */
+  paidAmount: number
+  orderedAt: string
+  groups: BuyerOrderSellerGroup[]
+  itemsTotal: number
+  shippingTotal: number
+}): BuyerOrder {
+  return {
+    id: input.orderNo,
+    orderedAt: input.orderedAt,
+    status: 'paid',
+    method: input.method,
+    groups: input.groups,
+    itemsTotal: input.itemsTotal,
+    shippingTotal: input.shippingTotal,
+    couponDiscount: 0,
+    pointsUsed: Math.max(0, input.itemsTotal + input.shippingTotal - input.paidAmount),
+    paidAmount: input.paidAmount,
+    pointsEarned: Math.round(input.paidAmount * 0.01),
+  }
+}
+
 // ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──
 // 구매자가 작성한 리뷰. 상품 리뷰 목록(b4-st-3)·내 리뷰(b4-st-6)가 공유한다.
 export interface Review {

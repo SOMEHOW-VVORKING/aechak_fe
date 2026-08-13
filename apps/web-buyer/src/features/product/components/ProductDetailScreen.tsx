@@ -20,7 +20,7 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
-import { addToCart } from '@/shared/cart'
+import { cartErrorMessage, useAddCartItem } from '@/shared/cart'
 import { addWish, SUB_CATEGORIES, toggleWishlist, useIsWished } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useProductDetail, useProductOptions } from '../product.queries'
@@ -65,6 +65,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [addedSheetOpen, setAddedSheetOpen] = useState(false)
+  // 방금 담은 서버 라인 id — 담기 확인 시트가 옵션/수량 요약을 이 라인에서 읽는다.
+  const [addedCartItemId, setAddedCartItemId] = useState<number | null>(null)
+  const addCart = useAddCartItem()
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [toast, setToast] = useState<{ open: boolean; message: string; variant: ToastVariant }>({
     open: false,
@@ -299,14 +302,30 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
           choices={optionChoices}
           loading={optionsQuery.isLoading}
           error={optionsQuery.isError}
+          adding={addCart.isPending}
           onRetry={() => void optionsQuery.refetch()}
           onClose={() => setSheetOpen(false)}
-          onAddToCart={(option, qty, additionalPrice) => {
-            addToCart(productId, option, qty, additionalPrice)
-            setSheetOpen(false)
-            // 하단 중앙 토스트가 하단 액션바를 덮던 문제를 근본 해소 — 토스트 대신 확인 바텀시트를
-            // 올려 담긴 사실 + 추천 상품을 보여준다.
-            setAddedSheetOpen(true)
+          onAddToCart={(choice, qty) => {
+            // 장바구니는 서버 소유라 옵션 조합 id가 필수 — 목업 폴백 상품(실 옵션 없음)은 담을 수 없다.
+            if (choice.optionCombinationId == null) {
+              setSheetOpen(false)
+              showToast('지금은 이 상품을 장바구니에 담을 수 없어요.', 'error')
+              return
+            }
+            addCart.mutate(
+              { optionCombinationId: choice.optionCombinationId, quantity: qty },
+              {
+                onSuccess: res => {
+                  setSheetOpen(false)
+                  setAddedCartItemId(res.cartItemId)
+                  // 하단 중앙 토스트가 하단 액션바를 덮던 문제를 근본 해소 — 토스트 대신 확인
+                  // 바텀시트를 올려 담긴 사실 + 추천 상품을 보여준다.
+                  setAddedSheetOpen(true)
+                },
+                // 실패 시 시트를 열어둔다 — 수량/옵션을 바로 고쳐 다시 담을 수 있게(재고 부족 등).
+                onError: e => showToast(cartErrorMessage(e), 'error'),
+              },
+            )
           }}
           onBuyNow={(option, qty, additionalPrice) => {
             setSheetOpen(false)
@@ -318,6 +337,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       <AddedToCartSheet
         open={addedSheetOpen}
         productId={productId}
+        cartItemId={addedCartItemId}
         onClose={() => setAddedSheetOpen(false)}
         onViewCart={() => {
           setAddedSheetOpen(false)
@@ -497,6 +517,7 @@ function OptionSheet({
   choices,
   loading,
   error,
+  adding,
   onRetry,
   onClose,
   onAddToCart,
@@ -507,9 +528,12 @@ function OptionSheet({
   choices: OptionChoice[]
   loading: boolean
   error: boolean
+  /** 담기 API 진행 중 — 담기 버튼 로딩/중복 클릭 방지. */
+  adding: boolean
   onRetry: () => void
   onClose: () => void
-  onAddToCart: (option: string, qty: number, additionalPrice: number) => void
+  /** 담기는 옵션 조합 id가 필요해 선택 항목 전체를 넘긴다(서버 담기 계약). */
+  onAddToCart: (choice: OptionChoice, qty: number) => void
   onBuyNow: (option: string, qty: number, additionalPrice: number) => void
 }) {
   const [selectedKey, setSelectedKey] = useState('')
@@ -597,7 +621,8 @@ function OptionSheet({
             variant="secondary"
             size="lg"
             disabled={orderDisabled}
-            onClick={() => onAddToCart(choice.key, qty, choice.additionalPrice)}
+            loading={adding}
+            onClick={() => onAddToCart(choice, qty)}
             className="flex-1"
           >
             장바구니 담기

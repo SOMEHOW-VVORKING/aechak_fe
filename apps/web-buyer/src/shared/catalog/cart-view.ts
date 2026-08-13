@@ -13,7 +13,8 @@ import {
 // 교차 import를 금지한다. 그래서 상품 데이터가 있는 catalog 폴더 안에 두고, 원본 라인 스토어
 // (shared/cart)는 catalog에 의존하지 않는 순수 상태로 남긴다. 장바구니·주문서 두 feature가
 // 모두 @/shared/catalog에서 이 빌더를 가져다 쓴다(중복 구현 금지). 라인 키(cartLineKey)는
-// cart.store와 같은 규칙을 써야 해서 shared가 아닌 도메인에서 가져온다(shared→shared 회피).
+// 서버 카트 전환으로 cart.store가 삭제된 뒤에도 바로구매 경로(buildCartView)가 계속 쓰는 규칙이라
+// shared가 아닌 도메인에 그대로 둔다(shared→shared 회피).
 //
 // **선택(selected)의 두 의미를 분리한다**: 품절 상품도 체크해서 전체 선택/선택 삭제로 한 번에
 // 지울 수 있어야 하지만(캡틴 요청), 품절은 주문 대상이 아니므로 주문 금액·주문 가능 판정에는

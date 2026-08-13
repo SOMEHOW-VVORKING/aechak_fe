@@ -16,9 +16,9 @@ import {
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
-import { useCartItems } from '@/shared/cart'
+import { useCartView } from '@/shared/cart'
 import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
-import { buildCartView, type CartLineView } from '@/shared/catalog'
+import { buildCartView } from '@/shared/catalog'
 import { usePointBalance } from '@/shared/points'
 import { PAYMENT_METHODS, clampPoints, finalPayable, maxUsablePoints } from '../checkout.mock'
 
@@ -36,7 +36,10 @@ export interface CheckoutScreenProps {
 export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: CheckoutScreenProps) {
   const navigate = useNavigate()
 
-  const cartItems = useCartItems()
+  // 장바구니 경로는 서버 장바구니(선택 상태는 클라이언트)에서 읽는다. 바로 구매는 서버 카트를
+  // 거치지 않는 단일 상품 즉석 주문이라 기존 카탈로그 뷰(buildCartView)를 그대로 쓰고, 화면이
+  // 소비하지 않는 GET /carts는 발화하지 않게 게이트한다(useCartCount의 enabled 관례).
+  const serverCart = useCartView({ enabled: buyNow == null })
   // 배송지는 이제 서버에서 비동기로 온다 — 로딩 중엔 스켈레톤, 없으면 추가 CTA를 보여준다.
   const {
     address: defaultAddress,
@@ -45,18 +48,30 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
     refetch: refetchAddress,
   } = useDefaultDeliveryAddress()
 
-  // 바로 구매면 단일 상품으로 즉석 뷰를, 아니면 장바구니 라인으로 뷰를 만든다(같은 buildCartView 재사용).
-  const view = useMemo(() => {
-    const items: CartItem[] = buyNow
-      ? [{ productId: buyNow, option, quantity: Math.max(1, qty), selected: true, additionalPrice: addl }]
-      : [...cartItems]
+  // 바로 구매면 단일 상품으로 즉석 뷰를 만든다.
+  const buyNowView = useMemo(() => {
+    if (!buyNow) return null
+    const items: CartItem[] = [
+      { productId: buyNow, option, quantity: Math.max(1, qty), selected: true, additionalPrice: addl },
+    ]
     return buildCartView(items)
-  }, [buyNow, option, qty, addl, cartItems])
+  }, [buyNow, option, qty, addl])
 
-  // 주문 요약에는 선택된(=결제 대상) 라인만 노출한다.
-  const orderGroups = view.groups
-    .map(g => ({ storeName: g.storeName, lines: g.lines.filter(l => l.selected) }))
-    .filter(g => g.lines.length > 0)
+  // 주문 요약에는 선택된(=결제 대상) 라인만 노출한다. 서버 카트는 주문 불가(품절 등) 라인을 함께 거른다.
+  const orderGroups: { storeName: string; lines: OrderLineData[] }[] = buyNowView
+    ? buyNowView.groups
+        .map(g => ({ storeName: g.storeName, lines: g.lines.filter(l => l.selected) as OrderLineData[] }))
+        .filter(g => g.lines.length > 0)
+    : (serverCart.view?.groups ?? [])
+        .map(g => ({
+          storeName: g.storeName,
+          lines: g.lines.filter(l => l.selected && l.orderable) as OrderLineData[],
+        }))
+        .filter(g => g.lines.length > 0)
+
+  // 결제 요약 합계 — 두 뷰 모두 "선택된 주문 대상" 기준으로 계산돼 있다.
+  const itemsTotal = buyNowView ? buyNowView.itemsTotal : (serverCart.view?.itemsTotal ?? 0)
+  const shippingTotal = buyNowView ? buyNowView.shippingTotal : (serverCart.view?.shippingTotal ?? 0)
 
   // 적립금 잔액은 서버 소유다(shared/points). 로딩·조회 실패 시 사용 가능 포인트를 0으로 안전
   // 강하시켜(폴백 undefined → 0) 잘못된 잔액으로 과다 차감되지 않게 한다 — 화면 동작은 유지.
@@ -67,21 +82,24 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
   const [points, setPoints] = useState(0)
   const [agree, setAgree] = useState(false)
 
-  const payableBeforePoints = view.itemsTotal + view.shippingTotal
+  const payableBeforePoints = itemsTotal + shippingTotal
   const usablePoints = maxUsablePoints(payableBeforePoints, pointBalance)
-  const payable = finalPayable(view.itemsTotal, view.shippingTotal, points)
+  const payable = finalPayable(itemsTotal, shippingTotal, points)
 
   const goBack = useSafeBack({ to: '/cart' })
 
   const goAddresses = () => navigate({ to: '/addresses', search: { from: 'checkout' } })
 
   const hasOrder = orderGroups.length > 0
-  const canPay = hasOrder && defaultAddress != null && agree
+  // 재고 초과 라인은 isOrderable=true라 주문 요약 필터를 통과한다 — CartScreen 게이트와 동일
+  // 기준으로 주문서에서도 결제를 막는다(직접 진입·마운트 refetch로 재고가 줄어든 경우).
+  const exceedsStockBlocked = buyNowView == null && (serverCart.view?.hasSelectedExceedsStock ?? false)
+  const canPay = hasOrder && defaultAddress != null && agree && !exceedsStockBlocked
 
   // 바로구매인데 상품이 해석되지 않으면(예: 실 상품 URL로 하드 리프레시 → 인메모리 레지스트리가
   // 비어 findProduct 미스) 빈 주문서 대신 안내를 띄운다(codex 리뷰 #4). 정상 SPA 흐름은 레지스트리가
   // 채워져 있어 이 분기를 타지 않는다.
-  const unresolvedBuyNow = buyNow != null && view.isEmpty
+  const unresolvedBuyNow = buyNow != null && (buyNowView?.isEmpty ?? true)
 
   const handlePay = () => {
     if (!canPay) return
@@ -97,11 +115,14 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
       })
       return
     }
-    // 장바구니 결제 — 실제 주문된(뷰 기준 선택 가능+선택) 라인 키만 넘겨 성공 시 정확히 그 라인만 비운다.
-    const orderedKeys = view.groups.flatMap(g => g.lines).filter(l => l.selected).map(l => l.key)
+    // 장바구니 결제 — 실제 주문된(선택 + 주문 가능) 서버 라인 id만 넘겨 성공 시 정확히 그 라인만 비운다.
+    const orderedCartItemIds = (serverCart.view?.groups ?? [])
+      .flatMap(g => g.lines)
+      .filter(l => l.selected && l.orderable)
+      .map(l => l.cartItemId)
     navigate({
       to: '/payment/result',
-      search: { amount: payable, method, source: 'cart', orderedKeys },
+      search: { amount: payable, method, source: 'cart', orderedCartItemIds },
       replace: true,
     })
   }
@@ -130,7 +151,13 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
             onClick: handlePay,
             disabled: !canPay,
           }}
-        />
+        >
+          {exceedsStockBlocked && (
+            <p className="text-caption text-error-fg">
+              남은 재고보다 많이 담긴 상품이 있어요. 장바구니에서 수량을 줄여주세요
+            </p>
+          )}
+        </BottomFixedAction>
       }
     >
       <div className="flex flex-col gap-3 p-4">
@@ -202,17 +229,34 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
           </div>
         )}
 
-        {/* 주문 상품(셀러별) */}
-        {orderGroups.map(group => (
-          <div key={group.storeName} className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <p className="mb-2.5 text-caption font-semibold text-text-tertiary">주문 상품 / {group.storeName}</p>
-            <div className="flex flex-col gap-3">
-              {group.lines.map(line => (
-                <OrderLine key={line.key} line={line} />
-              ))}
-            </div>
+        {/* 주문 상품(셀러별) — 장바구니 경로는 서버 조회라 로딩 스켈레톤/에러 재시도 표면을 준다
+            (배송지·CartScreen과 같은 관례). 캐시 없이 진입해 조회가 실패하면 0건 주문서가 아니라
+            재시도 CTA가 보여야 한다. */}
+        {!buyNowView && serverCart.isLoading ? (
+          <div className="flex flex-col gap-3">
+            <Skeleton variant="rect" className="h-24 w-full" />
+            <Skeleton variant="rect" className="h-24 w-full" />
           </div>
-        ))}
+        ) : !buyNowView && serverCart.isError ? (
+          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <EmptyState
+              title="장바구니를 불러오지 못했어요"
+              description="네트워크 상태를 확인하고 다시 시도해 주세요."
+              action={{ label: '다시 시도', onClick: serverCart.refetch }}
+            />
+          </div>
+        ) : (
+          orderGroups.map(group => (
+            <div key={group.storeName} className="rounded-card border border-border-subtle bg-surface-raised p-4">
+              <p className="mb-2.5 text-caption font-semibold text-text-tertiary">주문 상품 / {group.storeName}</p>
+              <div className="flex flex-col gap-3">
+                {group.lines.map((line, i) => (
+                  <OrderLine key={`${line.option}-${i}`} line={line} />
+                ))}
+              </div>
+            </div>
+          ))
+        )}
 
         {/* 적립금 */}
         <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
@@ -273,11 +317,11 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
 
         {/* 결제 요약 */}
         <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
-          <SummaryRow label="상품금액" value={formatKRW(view.itemsTotal)} />
+          <SummaryRow label="상품금액" value={formatKRW(itemsTotal)} />
           <SummaryRow
             label="배송비"
-            value={view.shippingTotal === 0 ? '무료' : formatKRW(view.shippingTotal)}
-            valueClass={view.shippingTotal === 0 ? 'text-success-fg' : 'text-text-primary'}
+            value={shippingTotal === 0 ? '무료' : formatKRW(shippingTotal)}
+            valueClass={shippingTotal === 0 ? 'text-success-fg' : 'text-text-primary'}
           />
           {points > 0 && (
             <SummaryRow label="적립금 사용" value={`-${formatKRW(points)}`} valueClass="text-text-accent" />
@@ -300,7 +344,16 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
   )
 }
 
-function OrderLine({ line }: { line: CartLineView }) {
+// 주문 요약 행이 실제로 쓰는 필드만 요구하는 구조 타입 — 바로구매(카탈로그 뷰 라인)와 장바구니
+// (서버 카트 라인)가 모두 이 모양을 만족해 한 컴포넌트로 렌더한다.
+interface OrderLineData {
+  option: string
+  quantity: number
+  lineTotal: number
+  product: { name: string; thumbnailUrl?: string }
+}
+
+function OrderLine({ line }: { line: OrderLineData }) {
   const { product } = line
   return (
     <div className="flex items-start gap-3">

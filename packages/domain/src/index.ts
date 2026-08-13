@@ -55,4 +55,4 @@ export type {
   ProductReport,
 } from './types'
 
-export { cartLineKey } from './types'
+export { buildOrderSnapshot, cartLineKey } from './types'

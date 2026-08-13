@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { CartItem, PaymentMethod } from '@aechak/domain'
-import { cartLineKey } from '@aechak/domain'
 import { Button, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { formatKRW } from '@/shared/formatKRW'
-import { getCartItems, removeManyFromCart } from '@/shared/cart'
+import {
+  buildServerCartView,
+  buildOrderFromCartGroups,
+  useCartQuery,
+  useDeleteCartItems,
+} from '@/shared/cart'
 import { buildCartView, buildOrderFromContext } from '@/shared/catalog'
 import { addOrder } from '@/shared/order'
 import { useProcessPayment } from '../payment.queries'
@@ -26,8 +30,8 @@ export interface PaymentResultScreenProps {
   qty?: number
   /** 바로구매 옵션 조합 추가금(원) — 주문 스냅샷 단가에 반영한다. */
   addl?: number
-  /** 장바구니 결제(source==='cart')로 실제 주문된 라인 키 — 성공 시 정확히 이 라인만 제거한다. */
-  orderedKeys?: string[]
+  /** 장바구니 결제(source==='cart')로 실제 주문된 서버 라인 id — 성공 시 정확히 이 라인만 지운다. */
+  orderedCartItemIds?: number[]
 }
 
 // 결제 진행/완료/실패(b1-st-5). 진입 시 결제 mutation을 한 번 실행해 진행 스피너 → 성공/실패 프레임으로 전환한다.
@@ -39,58 +43,110 @@ export function PaymentResultScreen({
   option,
   qty,
   addl,
-  orderedKeys,
+  orderedCartItemIds,
 }: PaymentResultScreenProps) {
   const navigate = useNavigate()
   const mutation = useProcessPayment()
+  const deleteCartItems = useDeleteCartItems()
 
   // 이 결제 화면(=이 결제 세션)의 주문번호. lazy 초기화라 인스턴스당 정확히 한 번만 생성되고
   // StrictMode의 이펙트 이중 실행에서도 같은 값이 유지된다 — 같은 결제의 두 발화는 같은
   // 주문번호(→ 주문 스토어 upsert 1건), 서로 다른 결제(다른 인스턴스)는 다른 번호(→ 별개 주문).
   const [orderNo] = useState(generateOrderNo)
 
-  // 주문할 라인(바로구매=단일 상품, 장바구니=주문된 키). 하드 리프레시 시 레지스트리/장바구니가
-  // 비어 상품이 해석되지 않을 수 있어, 결제 실행 여부 판정과 주문 조립이 같은 값을 쓰도록 메모이즈한다.
-  const orderedItems = useMemo<CartItem[]>(
+  // 바로구매 주문 라인 — 카탈로그 레지스트리로 해석하는 기존 경로 그대로.
+  const buyNowItems = useMemo<CartItem[]>(
     () =>
-      source === 'buynow'
-        ? buyNow
-          ? [
-              {
-                productId: buyNow,
-                option: option ?? '기본',
-                quantity: Math.max(1, qty ?? 1),
-                selected: true,
-                additionalPrice: addl,
-              },
-            ]
-          : []
-        : getCartItems().filter(i => (orderedKeys ?? []).includes(cartLineKey(i.productId, i.option))),
-    [source, buyNow, option, qty, addl, orderedKeys],
+      source === 'buynow' && buyNow
+        ? [
+            {
+              productId: buyNow,
+              option: option ?? '기본',
+              quantity: Math.max(1, qty ?? 1),
+              selected: true,
+              additionalPrice: addl,
+            },
+          ]
+        : [],
+    [source, buyNow, option, qty, addl],
   )
 
-  // 주문 컨텍스트가 상품으로 해석되지 않으면(하드 리프레시로 인메모리 상태가 빔) 목업 결제를
-  // 실행해 "결제 성공했지만 주문 없음"을 만들지 않고 장바구니로 되돌린다(codex 리뷰 #4).
-  const orderResolvable = !buildCartView(orderedItems).isEmpty
+  // 장바구니 결제는 서버 장바구니에서 주문된 라인을 읽는다(선택 상태와 무관하게 id 목록이 정본
+  // — 해제 집합 없이 뷰를 만들어 전체 라인을 그룹 형태로 얻는다).
+  const cartQuery = useCartQuery({ enabled: source === 'cart' })
+  const cartData = cartQuery.data?.data
+  const cartGroups = useMemo(
+    () => (cartData ? buildServerCartView(cartData, new Set()).groups : null),
+    [cartData],
+  )
+  const orderedIds = useMemo(() => orderedCartItemIds ?? [], [orderedCartItemIds])
+  // 주문서 시점 금액(amount)은 orderedIds 전체를 포함한다 — 일부만 유효한 채 결제하면 결제금액·
+  // 주문 이력·장바구니 삭제가 서로 어긋나므로, 전부가 여전히 주문 가능일 때만 결제를 발화한다.
+  const hasOrderedLines = useMemo(() => {
+    if (!cartGroups || orderedIds.length === 0) return false
+    const orderableIds = new Set(
+      cartGroups.flatMap(g => g.lines).filter(l => l.orderable).map(l => l.cartItemId),
+    )
+    return orderedIds.every(id => orderableIds.has(id))
+  }, [cartGroups, orderedIds])
+
+  // 주문 컨텍스트 판정 — 해석 불가면 목업 결제를 실행해 "결제 성공했지만 주문 없음"을 만들지 않고
+  // 장바구니로 되돌린다(codex 리뷰 #4). 장바구니 경로는 서버 조회가 끝나야 판정할 수 있어 3상이다.
+  const contextState: 'loading' | 'ok' | 'invalid' =
+    source === 'buynow'
+      ? buildCartView(buyNowItems).isEmpty
+        ? 'invalid'
+        : 'ok'
+      : cartQuery.isLoading
+        ? 'loading'
+        : hasOrderedLines
+          ? 'ok'
+          : 'invalid'
 
   const run = () => {
+    // 실패 후 "다시 시도"도 이 함수를 부른다 — 그 사이 주문 라인이 무효해졌으면(품절·다른 탭
+    // 삭제 등으로 contextState 'invalid') 결제를 재발화하지 않고 장바구니로 되돌린다. 주문 없는
+    // 성공 화면·주문 안 된 라인 삭제를 막는 가드다.
+    if (contextState !== 'ok') {
+      if (contextState === 'invalid') navigate({ to: '/cart', replace: true })
+      return
+    }
     mutation.mutate(
       { amount, method, orderNo },
       {
         onSuccess: res => {
           if (!res.ok) return
           // 방금 결제한 주문을 이력에 추가한다(주문번호가 결정적이라 StrictMode 이중 실행에도 중복 안 됨).
-          const order = buildOrderFromContext({
-            orderNo: res.orderNo,
-            method: res.method,
-            paidAmount: res.amount,
-            orderedAt: ORDERED_AT,
-            items: orderedItems,
-          })
+          const order =
+            source === 'buynow'
+              ? buildOrderFromContext({
+                  orderNo: res.orderNo,
+                  method: res.method,
+                  paidAmount: res.amount,
+                  orderedAt: ORDERED_AT,
+                  items: buyNowItems,
+                })
+              : buildOrderFromCartGroups({
+                  orderNo: res.orderNo,
+                  method: res.method,
+                  paidAmount: res.amount,
+                  orderedAt: ORDERED_AT,
+                  groups: cartGroups ?? [],
+                  orderedCartItemIds: orderedIds,
+                })
           if (order) addOrder(order)
-          // 주문된 라인(뷰 기준 선택 가능+선택 = orderedKeys)만 제거한다. raw selected 플래그로
-          // 지우면 주문 대상이 아니던 품절 라인까지 사라지므로 정확한 키 목록으로만 제거.
-          if (source === 'cart') removeManyFromCart(orderedKeys ?? [])
+          // 주문 스냅샷에 실제로 들어간 라인만 지운다(DELETE /carts/items) — 주문에서 빠진(주문
+          // 불가로 바뀐) 라인까지 지우면 결제·주문 이력·장바구니가 어긋난다. 서버가 이미 지워진
+          // id를 무시하므로 StrictMode 이중 발화에도 안전하고, 삭제 실패는 주문 성공 화면을 막지
+          // 않는다(라인이 남으면 장바구니에서 다시 지울 수 있음).
+          if (source === 'cart') {
+            const idSet = new Set(orderedIds)
+            const snapshotIds = (cartGroups ?? [])
+              .flatMap(g => g.lines)
+              .filter(l => idSet.has(l.cartItemId) && l.orderable)
+              .map(l => l.cartItemId)
+            if (snapshotIds.length > 0) deleteCartItems.mutate(snapshotIds, { onError: () => {} })
+          }
         },
       },
     )
@@ -107,25 +163,30 @@ export function PaymentResultScreen({
     }
   }
 
-  // 마운트 시 결제를 실행한다. StrictMode(개발)에서 이펙트가 두 번 실행돼도 mutate는 멱등하고
-  // onSuccess의 removeManyFromCart(orderedKeys)도 멱등이라 안전하다 — ref 가드를 두면 StrictMode
-  // 리마운트 시 살아남는 인스턴스의 mutation이 발화하지 않아 진행 스피너에서 멈추므로 가드를 두지 않는다.
+  // 결제 시작 여부 — 결제 성공으로 장바구니 라인이 지워지면 컨텍스트가 'invalid'로 뒤집히는데,
+  // 그때 장바구니로 튕기면 성공 화면이 사라지므로 시작 후에는 invalid 이동을 막는다.
+  const startedRef = useRef(false)
+
+  // 컨텍스트가 준비되면 결제를 실행한다. StrictMode(개발)에서 이펙트가 두 번 실행돼도 mutate는
+  // 멱등하고(같은 orderNo) 삭제도 서버가 없는 id를 무시해 멱등이라 안전하다 — ref로 run() 자체를
+  // 막으면 StrictMode 리마운트 시 살아남는 인스턴스의 mutation이 발화하지 않아 스피너에서 멈춘다.
   useEffect(() => {
+    if (contextState === 'loading') return
     // 컨텍스트가 해석 불가면 결제를 발화하지 않고 장바구니로 되돌린다(가짜 결제 성공 방지).
-    if (!orderResolvable) {
-      navigate({ to: '/cart', replace: true })
+    if (contextState === 'invalid') {
+      if (!startedRef.current) navigate({ to: '/cart', replace: true })
       return
     }
+    startedRef.current = true
     run()
     // 재시도는 "다시 시도" 버튼이 run()을 다시 호출해 처리한다.
-  }, [])
+  }, [contextState])
 
   const result = mutation.data
-  const processing = !result
 
-  // 컨텍스트가 해석되지 않으면 결제 진행 스피너를 보여주지 않는다 — 느린 웹뷰에서 결제가 시작된 것처럼
-  // 보이지 않게 복구 안내만 렌더하고, 위 이펙트가 곧 장바구니로 이동시킨다(codex UI/UX #13).
-  if (!orderResolvable) {
+  // 컨텍스트가 해석되지 않으면(결제 시작 전) 진행 스피너를 보여주지 않는다 — 느린 웹뷰에서 결제가
+  // 시작된 것처럼 보이지 않게 복구 안내만 렌더하고, 위 이펙트가 곧 장바구니로 이동시킨다(codex UI/UX #13).
+  if (!result && contextState === 'invalid') {
     return (
       <MobileScreen>
         <div className="flex h-full flex-col items-center justify-center gap-3 px-10 text-center">
@@ -136,8 +197,8 @@ export function PaymentResultScreen({
     )
   }
 
-  // 진행 중 — 이탈 방지를 위해 뒤로가기 앱바를 두지 않는다.
-  if (processing) {
+  // 진행 중(서버 장바구니 조회 포함) — 이탈 방지를 위해 뒤로가기 앱바를 두지 않는다.
+  if (!result) {
     return (
       <MobileScreen>
         <div className="flex h-full flex-col items-center justify-center gap-4 px-10 text-center">

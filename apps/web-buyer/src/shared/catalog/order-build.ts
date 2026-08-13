@@ -1,4 +1,10 @@
-import type { BuyerOrder, BuyerOrderSellerGroup, CartItem, PaymentMethod } from '@aechak/domain'
+import {
+  buildOrderSnapshot,
+  type BuyerOrder,
+  type BuyerOrderSellerGroup,
+  type CartItem,
+  type PaymentMethod,
+} from '@aechak/domain'
 import { buildCartView } from './cart-view'
 
 // 결제 성공 시 주문 컨텍스트(주문된 라인 + 결제 메타)를 실제 주문(BuyerOrder)으로 조립한다.
@@ -41,21 +47,15 @@ export function buildOrderFromContext(input: OrderBuildInput): BuyerOrder | null
     })),
   }))
 
-  const itemsTotal = view.itemsTotal
-  const shippingTotal = view.shippingTotal
-  const pointsUsed = Math.max(0, itemsTotal + shippingTotal - input.paidAmount)
-
-  return {
-    id: input.orderNo,
-    orderedAt: input.orderedAt,
-    status: 'paid',
+  // 공통 스냅샷 규칙(pointsUsed 역산·couponDiscount 0·적립 1%·status 'paid')은 도메인 순수 함수가
+  // 단일 원본이다 — 장바구니 결제(buildOrderFromCartGroups)와 같은 규칙을 공유한다.
+  return buildOrderSnapshot({
+    orderNo: input.orderNo,
     method: input.method,
-    groups,
-    itemsTotal,
-    shippingTotal,
-    couponDiscount: 0,
-    pointsUsed,
     paidAmount: input.paidAmount,
-    pointsEarned: Math.round(input.paidAmount * 0.01),
-  }
+    orderedAt: input.orderedAt,
+    groups,
+    itemsTotal: view.itemsTotal,
+    shippingTotal: view.shippingTotal,
+  })
 }
