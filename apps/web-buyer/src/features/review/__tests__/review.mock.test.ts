@@ -3,6 +3,7 @@ import type { BuyerOrder, Review } from '@aechak/domain'
 import {
   buildPendingReviews,
   containsProhibitedWord,
+  filterPhotoReviews,
   sortReviews,
   validateReview,
 } from '../review.mock'
@@ -43,22 +44,23 @@ describe('review.mock 등록 검증', () => {
 })
 
 describe('review.mock 정렬/필터', () => {
+  // 날짜순과 별점순 결과가 서로 달라야 정렬 기준을 구분할 수 있다(최신=낮은 별점, 오래됨=높은 별점).
   const reviews: Review[] = [
-    review({ id: 'a', rating: 3, createdAt: '2026.06.05', images: [] }),
-    review({ id: 'b', rating: 5, createdAt: '2026.06.10', images: ['img1'] }),
-    review({ id: 'c', rating: 4, createdAt: '2026.06.08', images: [] }),
+    review({ id: 'a', rating: 3, createdAt: '2026.06.10', images: [] }), // 최신, 최저 별점
+    review({ id: 'b', rating: 5, createdAt: '2026.06.05', images: ['img1'] }), // 최고 별점, 가장 오래됨
+    review({ id: 'c', rating: 4, createdAt: '2026.06.08', images: [] }), // 중간
   ]
 
   it('[AC-REVIEW-004] 최신순은 작성일 내림차순', () => {
-    expect(sortReviews(reviews, 'latest').map(r => r.id)).toEqual(['b', 'c', 'a'])
+    expect(sortReviews(reviews, 'latest').map(r => r.id)).toEqual(['a', 'c', 'b'])
   })
 
   it('[AC-REVIEW-005] 별점높은순은 별점 내림차순', () => {
-    expect(sortReviews(reviews, 'rating').map(r => r.id)).toEqual(['b', 'c', 'a'])
+    expect(sortReviews(reviews, 'rating_desc').map(r => r.id)).toEqual(['b', 'c', 'a'])
   })
 
   it('[AC-REVIEW-006] 포토리뷰만은 이미지가 있는 리뷰만 남긴다', () => {
-    expect(sortReviews(reviews, 'photo').map(r => r.id)).toEqual(['b'])
+    expect(filterPhotoReviews(reviews).map(r => r.id)).toEqual(['b'])
   })
 })
 

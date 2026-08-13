@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { axiosInstance } from '@aechak/api'
-import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD } from '@/shared/catalog'
+import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
 // envelope 해석)까지 검증하려고 모듈 모킹 대신 네트워크 레벨에서 가로챈다.
@@ -15,6 +15,7 @@ export const CATEGORIES_URL = `${base}/categories`
 export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
+export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
 export const SEARCH_KEYWORDS_URL = `${base}/search/keywords`
 export const RECENT_KEYWORDS_URL = `${base}/search/recent-keywords`
@@ -173,6 +174,90 @@ export const REAL_PRODUCT_OPTIONS = {
     },
   ],
 }
+// 실 상품 리뷰 픽스처(REAL_PRODUCT_ID). id 내림차순=최신순. 사진 있는 리뷰 3건(501/503/505),
+// 없는 리뷰 2건(502/504)으로 photoOnly 필터를 검증한다.
+interface ReviewImageFixture {
+  imageUrl: string
+  sortOrder: number
+}
+interface ReviewItemFixture {
+  reviewId: number
+  rating: number
+  content: string
+  optionName: string
+  authorNickname: string
+  authorProfileImageUrl: string | null
+  createdAt: string
+  images: ReviewImageFixture[]
+}
+
+export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
+  {
+    reviewId: 505,
+    rating: 2,
+    content: '소음이 조금 있어요. 기능은 무난해요.',
+    optionName: '기본형',
+    authorNickname: '냥집사',
+    authorProfileImageUrl: null,
+    createdAt: '2026-08-10T09:00:00',
+    images: [{ imageUrl: placeholderImage(200), sortOrder: 0 }],
+  },
+  {
+    reviewId: 504,
+    rating: 5,
+    content: '두 번째 구매예요. 믿고 쓰는 제품이라 계속 살 것 같아요.',
+    optionName: '프리미엄형',
+    authorNickname: '하늘**',
+    authorProfileImageUrl: null,
+    createdAt: '2026-08-09T09:00:00',
+    images: [],
+  },
+  {
+    reviewId: 503,
+    rating: 3,
+    content: '가격 대비 무난해요. 조금 더 컸으면 하는 아쉬움은 있어요.',
+    optionName: '기본형',
+    authorNickname: '코코****',
+    authorProfileImageUrl: null,
+    createdAt: '2026-08-08T09:00:00',
+    images: [{ imageUrl: placeholderImage(120), sortOrder: 0 }],
+  },
+  {
+    reviewId: 502,
+    rating: 4,
+    content: '배송도 빠르고 포장도 튼튼했어요. 실물이 더 좋아요.',
+    optionName: '프리미엄형',
+    authorNickname: '멍토끼',
+    authorProfileImageUrl: null,
+    createdAt: '2026-08-07T09:00:00',
+    images: [],
+  },
+  {
+    reviewId: 501,
+    rating: 5,
+    content: '기대 이상이에요. 마감도 꼼꼼하고 우리 아이가 잘 써요. 재구매 의사 있어요.',
+    optionName: '프리미엄형',
+    authorNickname: '집사7**',
+    authorProfileImageUrl: null,
+    createdAt: '2026-08-06T09:00:00',
+    images: [
+      { imageUrl: placeholderImage(40), sortOrder: 0 },
+      { imageUrl: placeholderImage(70), sortOrder: 1 },
+    ],
+  },
+]
+
+// 평점 요약 — photoOnly와 무관하게 전체 가시 리뷰 기준(서버 계약과 동일). 없는 별점도 0을 담는다.
+function realReviewSummary() {
+  const all = REAL_PRODUCT_REVIEWS
+  const dist: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
+  for (const r of all) dist[String(r.rating)] = (dist[String(r.rating)] ?? 0) + 1
+  const averageRating = all.length
+    ? Math.round((all.reduce((s, r) => s + r.rating, 0) / all.length) * 100) / 100
+    : null
+  return { reviewCount: all.length, averageRating, ratingDistribution: dist }
+}
+
 export const PETS_URL = `${base}/users/me/pets`
 export const PRESIGNED_URL = `${base}/files/presigned-url`
 export const POINTS_URL = `${base}/users/me/points`
@@ -765,6 +850,37 @@ export const handlers = [
       ? HttpResponse.json({ data: REAL_PRODUCT_OPTIONS })
       : new HttpResponse(null, { status: 404 }),
   ),
+  // 상품 리뷰 목록 — 실 픽스처 id만 200(sort/photoOnly/cursor 반영), 나머지는 404 -> 목업 리뷰 폴백.
+  // summary/totalCount는 첫 페이지(cursor 없음)에만. summary는 photoOnly 무관 전체, totalCount는 반영.
+  http.get(PRODUCT_REVIEWS_URL, ({ params, request }) => {
+    if (params.productId !== REAL_PRODUCT_ID) return new HttpResponse(null, { status: 404 })
+    const url = new URL(request.url)
+    const sort = url.searchParams.get('sort') ?? 'latest'
+    const photoOnly = url.searchParams.get('photoOnly') === 'true'
+    const cursor = url.searchParams.get('cursor')
+    const size = Number(url.searchParams.get('size') ?? 20)
+
+    let list = [...REAL_PRODUCT_REVIEWS]
+    if (photoOnly) list = list.filter(r => r.images.length > 0)
+    list.sort((a, b) =>
+      sort === 'rating_desc' ? b.rating - a.rating || b.reviewId - a.reviewId : b.reviewId - a.reviewId,
+    )
+
+    const start = cursor ? Number(cursor) : 0
+    const page = list.slice(start, start + size)
+    const nextIndex = start + size
+    const hasNext = nextIndex < list.length
+    const firstPage = cursor == null
+    return HttpResponse.json({
+      data: {
+        summary: firstPage ? realReviewSummary() : null,
+        reviews: page,
+        totalCount: firstPage ? list.length : null,
+        nextCursor: hasNext ? String(nextIndex) : null,
+        hasNext,
+      },
+    })
+  }),
 ]
 
 export const server = setupServer(...handlers)

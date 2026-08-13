@@ -42,21 +42,26 @@ export function validateReview(rating: number, content: string): ReviewValidatio
 
 // ── 상품 리뷰 목록(b4-st-3) ──
 
-export type ReviewSort = 'latest' | 'rating' | 'photo'
+// 정렬은 서버 계약(ReviewSort)과 값을 맞춘다 — 최신순(latest)/별점높은순(rating_desc).
+// 포토리뷰만은 정렬이 아니라 별개의 photoOnly 필터라 여기서 분리한다(서버 photoOnly 파라미터와 대응).
+export type ReviewSort = 'latest' | 'rating_desc'
 
 export const REVIEW_SORTS: { value: ReviewSort; label: string }[] = [
   { value: 'latest', label: '최신순' },
-  { value: 'rating', label: '별점높은순' },
-  { value: 'photo', label: '포토리뷰만' },
+  { value: 'rating_desc', label: '별점높은순' },
 ]
 
-// 정렬/필터 규칙은 Phase 1 상품 상세의 정렬 칩과 동일하게 맞춘다(포토리뷰만=필터, 나머지=정렬).
+// 목업 폴백(미존재/목업 상품)에서만 쓰는 클라이언트 정렬 — 실 상품은 서버가 정렬한다.
 // 제네릭으로 둬서 Review에 태그를 얹은 뷰 모델(ProductReviewItem 등)도 정렬 후 태그를 잃지 않는다.
 export function sortReviews<T extends Review>(reviews: T[], sort: ReviewSort): T[] {
-  if (sort === 'photo') return reviews.filter(r => r.images.length > 0)
   const copy = [...reviews]
-  if (sort === 'rating') return copy.sort((a, b) => b.rating - a.rating)
+  if (sort === 'rating_desc') return copy.sort((a, b) => b.rating - a.rating)
   return copy.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+// 포토리뷰만 필터 — 이미지가 있는 리뷰만 남긴다(목업 폴백용, 실 상품은 서버 photoOnly가 처리).
+export function filterPhotoReviews<T extends Review>(reviews: T[]): T[] {
+  return reviews.filter(r => r.images.length > 0)
 }
 
 export interface ProductReviewData {
@@ -124,12 +129,6 @@ export function getProductReviewData(productId: string): ProductReviewData | nul
     distribution: total > 0 ? distributionFor(average) : [0, 0, 0, 0, 0],
     reviews,
   }
-}
-
-export function fetchProductReviewData(productId: string): Promise<ProductReviewData | null> {
-  return new Promise(resolve => {
-    setTimeout(() => resolve(getProductReviewData(productId)), 300)
-  })
 }
 
 // ── 내 리뷰 · 작성 대기(b4-st-6) ──

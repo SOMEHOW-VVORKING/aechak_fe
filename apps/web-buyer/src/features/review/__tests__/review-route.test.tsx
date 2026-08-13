@@ -1,9 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
+import { PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
 import { resetOrders } from '@/shared/order'
 import { resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
@@ -94,6 +96,118 @@ describe('리뷰 라우트', () => {
     await waitFor(() => expect(screen.queryByText('코코집사')).not.toBeInTheDocument())
     expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
     expect(screen.getByText('집사**')).toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-008] 실 상품은 리뷰 목록 API의 요약/리뷰를 렌더한다', async () => {
+    // REAL_PRODUCT_ID는 MSW가 실 리뷰(5건)를 내려준다 — 최신순(id 내림) 첫 리뷰는 505(냥집사).
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('냥집사')).toBeInTheDocument()
+    expect(screen.getByText('집사7**')).toBeInTheDocument()
+    // 요약 평균 (2+5+3+4+5)/5 = 3.8
+    expect(screen.getByText('3.8')).toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-009] 포토리뷰만 토글은 사진 없는 리뷰를 감춘다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    // 사진 없는 리뷰(멍토끼=502)가 처음엔 보인다.
+    expect(await screen.findByText('멍토끼')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '포토리뷰만' }))
+    // 서버가 photoOnly로 다시 걸러 사진 없는 리뷰는 사라지고, 사진 있는 리뷰(냥집사=505)는 남는다.
+    await waitFor(() => expect(screen.queryByText('멍토끼')).not.toBeInTheDocument())
+    expect(screen.getByText('냥집사')).toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-012] 포토리뷰만이면 헤더 개수도 필터된 개수(totalCount)를 따른다', async () => {
+    // 요약 카드는 전체(5건)를 유지하되, 헤더 "리뷰 N"은 목록과 어긋나지 않게 필터 개수를 따라간다.
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('리뷰 5')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '포토리뷰만' }))
+    // 사진 리뷰 3건 → 헤더도 3으로 갱신.
+    expect(await screen.findByText('리뷰 3')).toBeInTheDocument()
+    expect(screen.queryByText('리뷰 5')).not.toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-010] 별점높은순 정렬은 서버에 반영되어 순서가 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    // 최신순: 505(냥집사, ★2)가 504(하늘**, ★5)보다 위.
+    const nyang = await screen.findByText('냥집사')
+    const haneul = screen.getByText('하늘**')
+    expect(nyang.compareDocumentPosition(haneul) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: '별점높은순' }))
+    // 별점높은순: 504(★5)가 505(★2)보다 위로 올라온다.
+    await waitFor(() => {
+      const a = screen.getByText('하늘**')
+      const b = screen.getByText('냥집사')
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+  })
+
+  it('[AC-REVIEW-ROUTE-011] 더보기를 누르면 다음 페이지 리뷰가 이어 붙는다', async () => {
+    // 서버가 2페이지로 나눠 주도록 핸들러를 덮어쓴다(기본 픽스처는 5건이라 한 페이지에 다 들어감).
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, ({ params, request }) => {
+        if (params.productId !== REAL_PRODUCT_ID) return new HttpResponse(null, { status: 404 })
+        const first = new URL(request.url).searchParams.get('cursor') == null
+        return HttpResponse.json({
+          data: first
+            ? {
+                summary: {
+                  reviewCount: 2,
+                  averageRating: 4.5,
+                  ratingDistribution: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 1 },
+                },
+                reviews: [
+                  {
+                    reviewId: 901,
+                    rating: 5,
+                    content: '첫 페이지 리뷰예요.',
+                    optionName: '기본형',
+                    authorNickname: '첫페이지어',
+                    authorProfileImageUrl: null,
+                    createdAt: '2026-08-11T09:00:00',
+                    images: [],
+                  },
+                ],
+                totalCount: 2,
+                nextCursor: '1',
+                hasNext: true,
+              }
+            : {
+                summary: null,
+                reviews: [
+                  {
+                    reviewId: 902,
+                    rating: 4,
+                    content: '둘째 페이지 리뷰예요.',
+                    optionName: '기본형',
+                    authorNickname: '둘째페이지어',
+                    authorProfileImageUrl: null,
+                    createdAt: '2026-08-10T09:00:00',
+                    images: [],
+                  },
+                ],
+                totalCount: null,
+                nextCursor: null,
+                hasNext: false,
+              },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('첫페이지어')).toBeInTheDocument()
+    expect(screen.queryByText('둘째페이지어')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(await screen.findByText('둘째페이지어')).toBeInTheDocument()
+    // 첫 페이지 리뷰는 그대로 남고 이어 붙는다.
+    expect(screen.getByText('첫페이지어')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {

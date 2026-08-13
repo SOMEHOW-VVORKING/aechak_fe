@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { resetAuth } from '@/shared/auth'
+import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
 import { PRODUCT_OPTIONS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
@@ -114,6 +114,20 @@ describe('/products/$productId', () => {
     // 리뷰 '구매' 인증 pill 제거(소비측에서 verifiedPurchase 미전달) — '구매하기' 버튼은 별개라 유지
     expect(screen.queryByText('구매')).not.toBeInTheDocument()
     expect(screen.getByText('구매하기')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-014] 비회원이 전체보기를 누르면 강제 이동 대신 로그인 게이트가 뜬다', async () => {
+    // 리뷰 목록 API는 JWT 필수라, 비회원이 전체보기로 바로 진입하면 401 → 전역 로그인 리다이렉트로
+    // 상세를 잃는다. 로그인 게이트로 감싸 비회원에겐 로그인 시트를 먼저 띄우고 이동은 막는다.
+    logout()
+    const user = userEvent.setup()
+    const router = renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByText('전체보기'))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    // 리뷰 목록으로 이동하지 않고 상세에 머문다.
+    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
   })
 
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {

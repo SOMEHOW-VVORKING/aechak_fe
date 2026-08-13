@@ -199,13 +199,18 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 <span className="text-subheading font-semibold text-text-primary">
                   리뷰 {data.reviewSummary.total.toLocaleString('ko-KR')}
                 </span>
-                {/* 전체보기는 실제로 보여줄 리뷰 목록이 있을 때만 — 실 상품은 집계만 있고 목록 소스가
-                    없어 링크를 감춘다(codex 리뷰 #13). 목록 API가 생기면 되살린다. */}
-                {data.reviews.length > 0 && (
+                {/* 전체보기 진입은 리뷰가 하나라도 있으면 노출한다 — 목록은 리뷰 목록 API(SCRUM-181)를
+                    쓰는 ProductReviewsScreen이 담당한다. 상세는 permitAll이라 미리보기 목록은 채우지
+                    않고(비회원 상세 열람 유지) 진입점만 건수 기준으로 노출한다. 다만 리뷰 목록 API는
+                    JWT 필수라, 비회원이 바로 진입하면 401 → 전역 로그인 리다이렉트로 상세를 잃는다.
+                    그래서 로그인 게이트로 감싸 비회원에겐 로그인 시트를 먼저 띄운다(강제 이탈 방지). */}
+                {data.reviewSummary.total > 0 && (
                   <button
                     type="button"
                     onClick={() =>
-                      navigate({ to: '/reviews/product/$productId', params: { productId } })
+                      requireAuth('review', () =>
+                        navigate({ to: '/reviews/product/$productId', params: { productId } }),
+                      )
                     }
                     className="flex items-center gap-0.5 text-body-sm text-text-tertiary"
                   >

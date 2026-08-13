@@ -366,6 +366,57 @@ paths:
                 $ref: "#/components/schemas/ProductOptionsEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/reviews:
+    get:
+      summary: "상품 리뷰 목록 조회(커서 페이지네이션)"
+      description: >-
+        상품별 리뷰 목록 + 평점 요약. summary/totalCount는 첫 페이지(cursor 없음)에만 실린다.
+        인증 필요(비로그인 401). productId는 상품 공개 ULID. 미존재/비노출 상품은 404.
+      operationId: "getProductReviews"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sort
+          in: query
+          required: false
+          description: "정렬(기본 latest)"
+          schema:
+            $ref: "#/components/schemas/ReviewSort"
+        - name: photoOnly
+          in: query
+          required: false
+          description: "사진이 있는 리뷰만"
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewListEnvelope"
+        "404":
+          description: "존재하지 않는 상품"
   /files/presigned-url:
     post:
       summary: "업로드 presigned URL 발급"
@@ -1156,6 +1207,90 @@ components:
           type: number
           format: double
           nullable: true
+    ReviewSort:
+      type: string
+      enum: [latest, rating_desc]
+      default: latest
+    ReviewImageResponse:
+      type: object
+      required: [imageUrl, sortOrder]
+      properties:
+        imageUrl:
+          type: string
+        sortOrder:
+          type: integer
+    ReviewItemResponse:
+      type: object
+      required:
+        [reviewId, rating, content, optionName, authorNickname, authorProfileImageUrl, createdAt, images]
+      properties:
+        reviewId:
+          type: integer
+          format: int64
+        rating:
+          type: integer
+        content:
+          type: string
+        optionName:
+          type: string
+        authorNickname:
+          type: string
+        authorProfileImageUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          description: "ISO LocalDateTime(오프셋 없음, 예: 2026-08-12T10:00:00)"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewImageResponse"
+    ReviewRatingSummaryResponse:
+      type: object
+      required: [reviewCount, averageRating, ratingDistribution]
+      properties:
+        reviewCount:
+          type: integer
+          format: int64
+        averageRating:
+          type: number
+          format: double
+          nullable: true
+        ratingDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: "별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5')."
+    ReviewListData:
+      type: object
+      required: [summary, reviews, totalCount, nextCursor, hasNext]
+      properties:
+        summary:
+          allOf:
+            - $ref: "#/components/schemas/ReviewRatingSummaryResponse"
+          nullable: true
+          description: "평점 요약 — 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null."
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewItemResponse"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "photoOnly 필터를 반영한 총 리뷰 수 — 첫 페이지에만, 이후 null."
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    ReviewListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReviewListData"
     ProductCategory:
       type: object
       required: [categoryId, name, depth]
