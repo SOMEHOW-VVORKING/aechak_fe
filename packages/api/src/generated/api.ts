@@ -644,6 +644,18 @@ export type SearchProductsParams = {
   size?: number
 }
 
+export type GetLikedProductsParams = {
+  /**
+   * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
 export type CheckNicknameParams = {
   nickname: string
 }
@@ -2832,6 +2844,142 @@ export function useGetProductOptionsSuspense<
 }
 
 /**
+ * 상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000.
+ * @summary 상품 찜하기
+ */
+export const likeProduct = (productId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/products/${productId}/like`, method: 'POST', signal })
+}
+
+export const getLikeProductMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof likeProduct>>,
+    TError,
+    { productId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof likeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationKey = ['likeProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof likeProduct>>,
+    { productId: string }
+  > = props => {
+    const { productId } = props ?? {}
+
+    return likeProduct(productId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type LikeProductMutationResult = NonNullable<Awaited<ReturnType<typeof likeProduct>>>
+
+export type LikeProductMutationError = void
+
+/**
+ * @summary 상품 찜하기
+ */
+export const useLikeProduct = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof likeProduct>>,
+      TError,
+      { productId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof likeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationOptions = getLikeProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 상품을 찜 목록에서 제거한다(멱등 — 찜하지 않은 상품도 204).
+ * @summary 상품 찜 해제
+ */
+export const unlikeProduct = (productId: string) => {
+  return customInstance<void>({ url: `/products/${productId}/like`, method: 'DELETE' })
+}
+
+export const getUnlikeProductMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlikeProduct>>,
+    TError,
+    { productId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlikeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationKey = ['unlikeProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlikeProduct>>,
+    { productId: string }
+  > = props => {
+    const { productId } = props ?? {}
+
+    return unlikeProduct(productId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnlikeProductMutationResult = NonNullable<Awaited<ReturnType<typeof unlikeProduct>>>
+
+export type UnlikeProductMutationError = unknown
+
+/**
+ * @summary 상품 찜 해제
+ */
+export const useUnlikeProduct = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlikeProduct>>,
+      TError,
+      { productId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlikeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationOptions = getUnlikeProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 발급받은 url에 파일을 PUT하고, 돌려받은 key를 도메인 API(펫 등록·수정 등)에 실어 보낸다. 키는 tmp 영역이고 도메인 API가 정식 위치로 옮긴다. 지원 형식은 purpose별로 다르다.
  * @summary 업로드 presigned URL 발급
  */
@@ -3049,6 +3197,214 @@ export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TErr
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetMeSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 로그인 사용자의 찜한 상품 목록. 품절도 saleStatus로 노출하며 자동 삭제하지 않는다. 상품 목록과 동일한 ProductListResponse.
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+export const getLikedProducts = (params?: GetLikedProductsParams, signal?: AbortSignal) => {
+  return customInstance<ProductListResponse>({
+    url: `/users/me/liked-products`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetLikedProductsQueryKey = (params?: GetLikedProductsParams) => {
+  return [`/users/me/liked-products`, ...(params ? [params] : [])] as const
+}
+
+export const getGetLikedProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetLikedProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLikedProducts>>> = ({ signal }) =>
+    getLikedProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getLikedProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLikedProductsQueryResult = NonNullable<Awaited<ReturnType<typeof getLikedProducts>>>
+export type GetLikedProductsQueryError = void
+
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params: undefined | GetLikedProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLikedProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getLikedProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLikedProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getLikedProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetLikedProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetLikedProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetLikedProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLikedProducts>>> = ({ signal }) =>
+    getLikedProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getLikedProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLikedProductsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getLikedProducts>>
+>
+export type GetLikedProductsSuspenseQueryError = void
+
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params: undefined | GetLikedProductsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetLikedProductsSuspenseQueryOptions(params, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,

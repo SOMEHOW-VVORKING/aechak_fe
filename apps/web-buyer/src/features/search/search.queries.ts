@@ -9,7 +9,7 @@ import {
   type SearchKeywordsEnvelope,
 } from '@aechak/api'
 import type { CatalogProduct } from '@/shared/catalog'
-import { toCatalogProduct } from '@/features/catalog/catalog.mapper'
+import { toCatalogProduct } from '@/shared/catalog'
 import { PRICE_MAX, type ResultSort, type SearchFilters } from './search.mock'
 
 export interface RecentKeyword {

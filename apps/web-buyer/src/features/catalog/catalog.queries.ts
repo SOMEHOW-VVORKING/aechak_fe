@@ -1,7 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getCategories, getProducts } from '@aechak/api'
-import type { CatalogProduct, CatalogSort } from '@/shared/catalog'
-import { toCatalogProduct } from './catalog.mapper'
+import { toCatalogProduct, type CatalogProduct, type CatalogSort } from '@/shared/catalog'
 
 // 카테고리 트리(대>중>소). 세션 내 불변이라 staleTime Infinity. enabled로 비회원 트랩을 막는다 —
 // /categories는 서버에서 인증 필요라, 로그아웃 상태면 요청 자체를 걸어 401 -> 전역 로그인

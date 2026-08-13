@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
+import { onWishlistLogout } from '@/shared/catalog'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -20,6 +21,15 @@ declare module '@tanstack/react-router' {
   }
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60,
+      retry: 1,
+    },
+  },
+})
+
 // 실 세션 만료(401 → refresh 실패)를 전역 한 곳에서 처리한다: 클라이언트 로그인 플래그를
 // 내리고 로그인 화면으로 보낸다. 각 화면이 401을 인라인 에러로 떠안는 대신 여기서 튕긴다.
 // 이미 로그인/온보딩 경로거나 이동 중이면 중복 이동하지 않는다(리다이렉트 루프 방지).
@@ -29,6 +39,7 @@ setOnAuthExpired(() => {
   if (redirectingToLogin || path.startsWith('/onboarding') || path.startsWith('/login')) return
   redirectingToLogin = true
   logout()
+  onWishlistLogout(queryClient) // 세션 만료 시 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리
   void router.navigate({ to: '/onboarding/login' }).finally(() => {
     redirectingToLogin = false
   })
@@ -41,15 +52,6 @@ setOnOnboardingRequired(() => {
   const path = router.state.location.pathname
   if (path.startsWith('/onboarding')) return
   void router.navigate({ to: '/onboarding/terms' })
-})
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60,
-      retry: 1,
-    },
-  },
 })
 
 const rootEl = document.getElementById('root')
