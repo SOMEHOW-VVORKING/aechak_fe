@@ -1875,6 +1875,81 @@ BE가 배송지 클래스를 전부 `DeliveryAddress` 접두로 확정하면서(
   필드 의미를 넓혔다. 배송지에 새 식별자를 만들 때 소문자 `address` 단독 접두를 되살리지 말 것 —
   단, 와이어 필드명(`addressId` 등)을 `deliveryAddressId`류로 "정리"하지도 말 것(BE 계약).
 
+### web-buyer 상품 리뷰 목록 — reviews API 실연동 (SCRUM-181, 커서 페이지네이션 + 서버 정렬/필터)
+
+상품 리뷰 목록(`features/review`)이 하드코딩 mock에서 백엔드
+`GET /api/v1/products/{productId}/reviews`(응답 `ApiResponse<ReviewListData>`, JWT 필수 — 비로그인
+401)로 전환됐다. breeds/search가 깔아둔 fetcher 소비 + `useInfiniteQuery` 관례를 그대로 따랐으니
+다음 목록형 실 API 연동도 아래 결정을 참고할 것.
+
+- **OpenAPI 스펙은 손으로 유지(`packages/api/openapi/schema.yaml`), 경로는 `/api/v1` 접두 없이
+  쓴다.** 리뷰는 `ReviewSort`(`latest`/`rating_desc`) + `ReviewItemResponse`/`ReviewImageResponse`/
+  `ReviewRatingSummaryResponse` + `ReviewListData`/`ReviewListEnvelope`(`{ data }` 봉투, `ProductListData`/
+  `SearchKeywordsEnvelope`와 동일 패턴)를 추가했다. `ratingDistribution`은 `Map<Int,Long>`이라
+  `additionalProperties: { type: integer }`(→ TS `{ [key: string]: number }`, 키는 문자열 `'1'`~`'5'`),
+  nullable 객체 필드(`summary`)는 3.0이라 `allOf: [$ref] + nullable: true`로 써야 orval이
+  `T | null`을 만든다(확인함). 스펙 추가 후 `pnpm --filter @aechak/api openapi:generate` → 생성물 커밋
+  (게이트 `openapi:generate:check`는 재생성물 커밋 전엔 항상 실패).
+- **생성 훅이 아니라 fetcher(`getProductReviews(productId, params, signal)`)만 소비**하고 feature 쪽
+  `review.queries.ts`가 자체 `useInfiniteQuery`로 감싼다(breeds 절과 같은 이유 — 패키지 간 react-query
+  버전 표류 회피). `queryKey: ['reviews','product',productId,sort,photoOnly]`, `getNextPageParam`은
+  `hasNext ? nextCursor : undefined`, `size` 20 고정. `summary`/`totalCount`는 서버가 첫 페이지
+  (cursor 없음)에만 실어 주므로 `pages[0].summary`에서만 읽는다.
+- **정렬(`sort`, 2종)과 포토리뷰만(`photoOnly`, 불리언)은 서버가 직교 파라미터로 두므로 UI 상태도
+  나눴다** — 예전엔 `ReviewSort`에 `'photo'`를 3번째 정렬값으로 두었는데, `ProductReviewsScreen`을
+  정렬 칩 2개(배타) + 포토리뷰만 토글 1개(독립, `aria-pressed`)로 분리하고 둘 다 서버 파라미터로
+  넘긴다. `sortReviews`는 이제 `latest`/`rating_desc`만 다루고 포토 필터는 `filterPhotoReviews`로
+  분리(둘 다 목업 폴백 전용 — 실 상품은 서버가 정렬/필터한다).
+- **목업 카탈로그 상품은 네트워크 호출 전에 `findMockProduct(productId)`로 걸러 바로 목업 리뷰를
+  보여준다.** `fetchReviewPage`가 `getProductReviews`를 부르기 **전에** `findMockProduct`(레지스트리
+  제외, `p-*` 카탈로그 id만)로 목업 상품이면 `mockPage`를 즉시 반환한다. `findProduct`가 아니라
+  `findMockProduct`인 이유: 예전에 조회돼 레지스트리에 등록된 실 ULID를 목업으로 되살려 백엔드가
+  미존재/비노출로 판정한 상품을 가짜 템플릿 리뷰로 보여주는 회귀를 막기 위함(codex 리뷰 — 상품
+  상세 `useProductOptions`의 `findMockProduct` 관례와 동일). 실 상품의 첫 페이지 404는 목업 폴백이
+  아니라 `notFound`로 처리해 "상품을 찾을 수 없어요"를 낸다(가짜 리뷰 위장 금지). 홈/검색/찜의
+  목업 진입점과 기존 라우트 테스트(`p-feeder-5l`)는 이 분기 덕에 네트워크 없이 그대로 산다.
+- **서버는 `isMine`을 주지 않는다.** 내가 쓴 리뷰(로컬 스토어의 mock 작성분)는 이 상품 것만 골라
+  `isMine:true`로 얹되, `sortReviews([...mine, ...others], sort)`로 서버 리뷰와 **활성 정렬로 함께
+  정렬**한다(내 리뷰가 정렬과 무관하게 상단 고정되지 않도록). 서버 리뷰는 타인 리뷰(`isMine:false`,
+  `ReviewCard`), 내 리뷰는 `MyReviewCard`로 렌더한다. 서버 DB엔 mock 작성 리뷰가 없어 중복되지
+  않는다 — 다만 **SCRUM-181은 목록 GET만이라 작성/수정/삭제는 여전히 mock 스토어**다(방금 쓴
+  리뷰가 서버 목록엔 안 뜨는 괴리는 알고 있을 것, 쓰기 API가 생기면 해소된다). 참고로 이중 리뷰에서
+  codex는 "mine을 커서 페이지네이션 목록에 인터리브하면 더보기마다 위치가 이동한다"고 major로
+  지적했으나, Claude verify가 0~1건 로컬 항목이라 체감 불가로 반박해 인터리브를 유지했다(정렬 자체는
+  0을 반환하는 안정 정렬이라 서버 순서는 보존됨). 서버 항목 → 도메인 `Review` 형태 매핑은 필드명이
+  달라 `review.queries.ts`의
+  `toReviewItem`이 흡수한다(`authorNickname`→`author`, `createdAt` ISO LocalDateTime→`'YYYY.MM.DD'`,
+  `images[].imageUrl`→`string[]`, `id`=`srv-<reviewId>`). 별점 분포 막대는 `ratingDistribution` 개수를
+  `reviewCount`로 나눠 5★→1★ 퍼센트로 환산(`toDistribution`).
+- **리뷰 목록 API는 JWT 필수(비로그인 401)라 "전체보기" 진입점을 로그인 게이트로 감쌌다.** 상품
+  상세(`ProductDetailScreen`)는 permitAll이라 게스트 열람을 유지하려고 리뷰 API를 붙이지 않고,
+  진입점만 상세 응답의 리뷰 건수(`reviewSummary.total > 0`, 예전 `data.reviews.length > 0`에서 변경)로
+  노출한다. 다만 그 진입을 게이트 없이 두면 비회원이 눌렀을 때 401 → refresh 실패 → 전역
+  `setOnAuthExpired`가 로그아웃+`/onboarding/login`으로 보내 보던 상세를 잃는다 — 그래서
+  `useLoginGate().requireAuth('review', () => navigate(...))`로 감싸 비회원에겐 로그인 BottomSheet를
+  먼저 띄운다(`LoginGate`에 `'review'` `GateFeature` 추가). 이 결정은 codex + Claude 이중 적대 리뷰가
+  독립적으로 같은 회귀(게스트 강제 이탈)를 지목해 수렴한 것이라 반영했다 — 회원 전용 열람 액션을
+  새로 만들 때 이 `requireAuth` 게이트 패턴을 기본으로 볼 것.
+- **헤더 개수는 목록과 어긋나지 않게 맞춘다.** `ProductReviewsScreen` 헤더 "리뷰 N"은 요약 카드의
+  서버 평점 모수(`total`=서버 `reviewCount`)가 아니라 `filteredTotal`을 쓴다 — `(서버 totalCount ??
+  summary.total) + mine.length`(photoOnly 필터 반영 + 내 리뷰 수 합산). 목업 폴백은 카탈로그 집계
+  (`mock.total`, 예: 1204)가 아니라 실제 렌더되는 목업 리뷰 수(`items.length`)를 `totalCount`로 써서
+  "리뷰 1204"가 6장 위에 뜨는 불일치를 없앤다(codex+Claude 수렴 finding). 요약 카드(평균/분포)는
+  서버 집계 그대로(내 mock 리뷰는 서버 평점 모수가 아니므로 제외) — 헤더=목록, 요약=서버 평점으로
+  역할을 나눈다.
+- **"더보기"(다음 페이지) 실패는 목록 전체를 에러 화면으로 교체하지 않는다.** `useInfiniteQuery`는
+  fetchNextPage가 실패해도 `query.isError`를 켜므로, 화면은 `isError && !data`(=최초 로딩 실패, 불러온
+  데이터 없음)일 때만 에러 화면으로 전환하고, 이미 목록이 있으면 유지한다(다음 페이지는 더보기
+  버튼으로 재시도). `placeholderData`는 `keepPreviousData`를 그냥 쓰지 않고 `(prev, prevQuery) =>
+  prevQuery?.queryKey[2] === productId ? prev : undefined`로 **같은 상품일 때만** 이전 데이터를 유지한다
+  (정렬/포토 토글은 제자리 갱신, productId 전환 시엔 새 로딩) — 둘 다 codex 리뷰 반영.
+- **MSW 핸들러**(`testing/msw/server.ts`)는 `REAL_PRODUCT_ID`만 200(sort/photoOnly/cursor 반영),
+  나머지는 404(목업 id는 애초에 네트워크를 안 타므로 위 `findMockProduct` 분기로 처리). 픽스처는 사진
+  3건/무사진 2건으로 photoOnly를 검증한다. 회귀는 `review-route.test`의 `[AC-REVIEW-ROUTE-008~012]`
+  (요약/리뷰 렌더·포토 토글·서버 정렬·더보기 페이지네이션·헤더 필터 개수), `product-route.test`의
+  `[AC-PRODUCT-014]`(비회원 전체보기 로그인 게이트), `review.mock.test`의 `[AC-REVIEW-005/006]`
+  (정렬/필터 분리), 그리고 `e2e/reviews.spec.ts`(`[AC-REVIEW-E2E-001~004]`)가 잡는다.
+
 ---
 
 ## 리포 구조
