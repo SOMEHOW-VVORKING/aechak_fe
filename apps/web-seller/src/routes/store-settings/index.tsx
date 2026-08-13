@@ -1,38 +1,86 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { AlertCircle, Check, CheckCircle2, ChevronRight, Clock, Upload } from 'lucide-react'
+import {
+  AlertCircle,
+  Ban,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  FileEdit,
+  Upload,
+} from 'lucide-react'
 import type { SellerApplication, SellerApplicationStatus } from '@aechak/domain'
+import type { SellerDocumentType } from '@aechak/api'
 import { Alert, Button, EmptyState, PageHeader, StatusPill, Toast } from '@aechak/design-system/web'
 import type { StatusPillVariant } from '@aechak/design-system/web'
-import { DocumentSection, StoreSettingsForm, useResubmitApplication, useSellerApplication } from '@/features/store-settings'
+import {
+  DOCUMENT_LABEL,
+  DocumentSection,
+  REQUIRED_DOCUMENTS,
+  StoreSettingsForm,
+  emptyFormValue,
+  formValueFrom,
+  isSupportedDocument,
+  isValidBusinessRegNo,
+  isWithinDocumentSizeLimit,
+  missingRequirements,
+  OVERSIZED_DOCUMENT_MESSAGE,
+  sellerApplicationErrorMessage,
+  UNSUPPORTED_DOCUMENT_MESSAGE,
+  uploadSellerDocument,
+  useSaveDraft,
+  useSellerApplication,
+  useSubmitApplication,
+  type DocumentRowModel,
+  type SellerApplicationFormValue,
+} from '@/features/store-settings'
 
 export const Route = createFileRoute('/store-settings/')({
   component: StoreSettingsRoute,
 })
 
 function formatAppliedAt(appliedAt: string) {
-  const [, month, day] = appliedAt.split('-')
-  return `${month}.${day}`
+  // BE LocalDateTime('2026-08-13T14:32:10') / 날짜 문자열 모두에서 MM.DD만 뽑는다.
+  const [datePart] = appliedAt.split('T')
+  const [, month, day] = (datePart ?? '').split('-')
+  return month && day ? `${month}.${day}` : appliedAt
 }
 
+// 작성 → 제출 → 심사 → 승인. 반려는 심사 단계의 부정 결과로 표기한다(BE 상태머신 1:1 —
+// 재제출은 별도 단계가 아니라 REJECTED → 저장(자동 DRAFT 재개) → 재제출 전이).
 const PIPELINE_STEPS = [
-  { key: 'applied', label: '신청 접수', icon: Check },
-  { key: 'rejected', label: '서류 반려', icon: AlertCircle },
-  { key: 'resubmit', label: '재제출', icon: Upload },
-  { key: 'approved', label: '최종 승인', icon: Clock },
+  { key: 'write', label: '신청 작성', icon: FileEdit },
+  { key: 'submit', label: '제출', icon: Upload },
+  { key: 'review', label: '심사', icon: Clock },
+  { key: 'approve', label: '최종 승인', icon: Check },
 ] as const
 
-function pipelineVariant(key: (typeof PIPELINE_STEPS)[number]['key'], pastResubmission: boolean): StatusPillVariant {
-  if (key === 'applied') return 'success'
-  if (key === 'rejected') return 'error'
-  if (key === 'resubmit') return pastResubmission ? 'success' : 'info'
-  return pastResubmission ? 'info' : 'neutral'
+type PipelineStepKey = (typeof PIPELINE_STEPS)[number]['key']
+type ScreenStatus = SellerApplicationStatus | 'none'
+
+function pipelineVariant(key: PipelineStepKey, status: ScreenStatus): StatusPillVariant {
+  const reached: Record<PipelineStepKey, ScreenStatus[]> = {
+    write: [],
+    submit: ['none', 'draft', 'rejected'],
+    review: ['submitted'],
+    approve: ['reviewing'],
+  }
+  void reached
+  switch (key) {
+    case 'write':
+      return status === 'none' || status === 'draft' || status === 'rejected' ? 'info' : 'success'
+    case 'submit':
+      return status === 'none' || status === 'draft' || status === 'rejected' ? 'neutral' : 'success'
+    case 'review':
+      if (status === 'rejected') return 'error'
+      if (status === 'submitted' || status === 'reviewing') return 'info'
+      return status === 'approved' ? 'success' : 'neutral'
+    case 'approve':
+      return status === 'approved' ? 'success' : 'neutral'
+  }
 }
 
-// rejected/revision-requested는 동일한 "서류 보완 폼" 화면을 그대로 공유한다(캡틴 지시 —
-// 이미 구현된 화면은 손대지 않음). pending/reviewing/resubmitted는 전부 "셀러가 할 일이
-// 없고 기다리는 중"인 홀딩 뷰 하나로 묶이고, approved는 짧은 안내만 보여주는 최소 처리다
-// (2-B 스토어 정보 편집 화면은 여전히 범위 밖).
 interface HeaderMeta {
   title: string
   description?: string
@@ -41,17 +89,22 @@ interface HeaderMeta {
   pillIcon: typeof AlertCircle
 }
 
-// rejected/revision-requested는 완전히 같은 화면을 공유하므로 헤더 메타도 같은 객체를 참조한다.
-const FORM_HEADER_META: HeaderMeta = {
-  title: '스토어 개설 · 서류 보완',
-  description: '일부 서류가 반려됐어요. 아래에서 사유를 확인한 뒤 다시 올려 주세요.',
-  pillVariant: 'error',
-  pillLabel: '서류 반려',
-  pillIcon: AlertCircle,
-}
-
-const HEADER_META: Record<SellerApplicationStatus, HeaderMeta> = {
-  pending: {
+const HEADER_META: Record<ScreenStatus, HeaderMeta> = {
+  none: {
+    title: '스토어 개설 신청',
+    description: '입점 정보를 입력하고 서류를 제출해 주세요. 임시저장 후 이어서 작성할 수 있어요.',
+    pillVariant: 'neutral',
+    pillLabel: '작성 전',
+    pillIcon: FileEdit,
+  },
+  draft: {
+    title: '스토어 개설 신청',
+    description: '작성 중인 신청서예요. 제출까지 완료해야 심사가 시작돼요.',
+    pillVariant: 'neutral',
+    pillLabel: '작성 중',
+    pillIcon: FileEdit,
+  },
+  submitted: {
     title: '스토어 개설 심사',
     description: '입점 신청이 접수됐어요. 심사가 시작되면 알려드릴게요.',
     pillVariant: 'neutral',
@@ -65,99 +118,211 @@ const HEADER_META: Record<SellerApplicationStatus, HeaderMeta> = {
     pillLabel: '심사 중',
     pillIcon: Clock,
   },
-  resubmitted: {
-    title: '스토어 개설 심사',
-    description: '재제출한 서류를 다시 확인하고 있어요.',
-    pillVariant: 'info',
-    pillLabel: '재제출 완료',
-    pillIcon: Upload,
+  rejected: {
+    title: '스토어 개설 · 서류 보완',
+    description: '신청이 반려됐어요. 아래에서 사유를 확인하고 수정한 뒤 다시 제출해 주세요.',
+    pillVariant: 'error',
+    pillLabel: '반려',
+    pillIcon: AlertCircle,
   },
-  rejected: FORM_HEADER_META,
-  'revision-requested': FORM_HEADER_META,
   approved: {
     title: '스토어 설정',
     pillVariant: 'success',
     pillLabel: '승인 완료',
     pillIcon: CheckCircle2,
   },
-}
-
-function holdingCopy(status: SellerApplicationStatus): { title: string; description: string } {
-  switch (status) {
-    case 'pending':
-      return {
-        title: '심사 대기 중이에요',
-        description: '제출해주신 서류를 곧 확인할 예정이에요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
-      }
-    case 'reviewing':
-      return {
-        title: '심사 중이에요',
-        description: '제출해주신 서류를 꼼꼼히 확인하고 있어요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
-      }
-    default:
-      return {
-        title: '재제출한 서류를 심사하고 있어요',
-        description: '다시 제출해주신 서류를 확인하고 있어요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
-      }
-  }
+  cancelled: {
+    title: '스토어 개설 신청',
+    description: '취소된 신청이에요.',
+    pillVariant: 'muted',
+    pillLabel: '신청 취소',
+    pillIcon: Ban,
+  },
 }
 
 function StoreSettingsRoute() {
-  const { data, isLoading } = useSellerApplication()
-  const [form, setForm] = useState<SellerApplication | null>(null)
+  const { application, isLoading, isError, refetch } = useSellerApplication()
+  const saveDraft = useSaveDraft()
+  const submitApplication = useSubmitApplication()
+
+  const [form, setForm] = useState<SellerApplicationFormValue | null>(null)
+  const [pendingDocs, setPendingDocs] = useState<Partial<Record<SellerDocumentType, File>>>({})
+  const [documentError, setDocumentError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
-  const resubmitApplication = useResubmitApplication()
+  const seededRef = useRef(false)
 
+  // 서버 값(또는 '신청 없음' = 빈 폼)으로 한 번만 시드 — 저장 성공으로 캐시가 갱신돼도
+  // 재시딩하지 않아 입력을 보존한다(shipping-policy 폼 관례의 !form 가드와 동일 목적).
   useEffect(() => {
-    if (data && !form) setForm(data)
-  }, [data, form])
+    if (application !== undefined && !seededRef.current) {
+      seededRef.current = true
+      setForm(application ? formValueFrom(application) : emptyFormValue())
+    }
+  }, [application])
 
-  function handleChange(patch: Partial<SellerApplication>) {
+  const status: ScreenStatus = application === null || application === undefined ? 'none' : application.status
+  const isFormStage = status === 'none' || status === 'draft' || status === 'rejected'
+
+  function handleChange(patch: Partial<SellerApplicationFormValue>) {
     setForm(prev => (prev ? { ...prev, ...patch } : prev))
+    setActionError(null)
   }
 
-  function handleDocumentUpload(key: string) {
-    setForm(prev =>
-      prev
-        ? {
-            ...prev,
-            documents: prev.documents.map(doc => (doc.key === key ? { ...doc, status: 'submitted' } : doc)),
-          }
-        : prev,
+  function handleDocumentSelect(type: string, file: File) {
+    if (!isSupportedDocument(file)) {
+      setDocumentError(UNSUPPORTED_DOCUMENT_MESSAGE)
+      return
+    }
+    if (!isWithinDocumentSizeLimit(file)) {
+      setDocumentError(OVERSIZED_DOCUMENT_MESSAGE)
+      return
+    }
+    setDocumentError(null)
+    setPendingDocs(prev => ({ ...prev, [type as SellerDocumentType]: file }))
+  }
+
+  // 저장 전 로컬 가드. 계좌번호는 응답이 마스킹뿐 + 저장이 전체 덮어쓰기라, 서버에 저장된
+  // 계좌가 있는데 폼이 비어 있으면 조용히 소거된다 — 재입력을 요구해 사고를 막는다.
+  function validateBeforeSave(current: SellerApplicationFormValue): string | null {
+    if (application?.accountNumberMasked && current.accountNumber.trim() === '') {
+      return '보안을 위해 계좌번호는 저장할 때마다 다시 입력해야 해요.'
+    }
+    if (current.businessRegNo.trim() !== '' && !isValidBusinessRegNo(current.businessRegNo)) {
+      return '사업자등록번호 형식이 올바르지 않아요.'
+    }
+    return null
+  }
+
+  // 선택된 서류를 presigned로 올리고 임시저장 documents 페이로드를 만든다(저장 직전 업로드 —
+  // presigned URL 유효시간 10분 안에서 항상 신선한 키를 쓴다).
+  async function uploadPendingDocuments() {
+    const entries = Object.entries(pendingDocs) as [SellerDocumentType, File][]
+    const uploaded: { documentType: SellerDocumentType; tmpKey: string }[] = []
+    for (const [documentType, file] of entries) {
+      uploaded.push({ documentType, tmpKey: await uploadSellerDocument(file) })
+    }
+    return uploaded
+  }
+
+  async function performSave(onSaved?: () => void) {
+    if (!form) return
+    const guardMessage = validateBeforeSave(form)
+    if (guardMessage) {
+      setActionError(guardMessage)
+      return
+    }
+    setActionError(null)
+    let documents: { documentType: SellerDocumentType; tmpKey: string }[]
+    setIsUploading(true)
+    try {
+      documents = await uploadPendingDocuments()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '서류 업로드에 실패했어요.')
+      return
+    } finally {
+      setIsUploading(false)
+    }
+    saveDraft.mutate(
+      { form, documents },
+      {
+        onSuccess: () => {
+          setPendingDocs({})
+          if (onSaved) onSaved()
+          else setToastMessage('저장했어요.')
+        },
+        onError: error => setActionError(sellerApplicationErrorMessage(error)),
+      },
     )
   }
 
-  function handleResubmit() {
-    if (!form) return
-    resubmitApplication.mutate(form, {
-      onSuccess: updated => {
-        setForm(updated)
-        setToastMessage('재제출했어요.')
-      },
+  // 제출 = 최신 폼 저장(반려 상태면 서버가 자동으로 DRAFT 재개) → submit. 저장 없이 바로
+  // 제출하면 반려 상태에서 10101이 나는 BE 전이 규칙을 그대로 따른 체인이다.
+  function handleSubmit() {
+    void performSave(() => {
+      submitApplication.mutate({
+        onSuccess: () => setToastMessage('제출했어요. 심사 결과를 알림으로 알려드릴게요.'),
+        onError: error => setActionError(sellerApplicationErrorMessage(error)),
+      })
     })
   }
 
-  if (isLoading || !form) {
-    return <div className="p-6" />
+  if (isLoading || (!isError && application === undefined)) {
+    return (
+      <div className="flex flex-col gap-4 p-6">
+        <div className="h-10 w-64 animate-pulse rounded-card bg-surface-sunken" />
+        <div className="h-40 animate-pulse rounded-card bg-surface-sunken" />
+      </div>
+    )
   }
 
-  const isApproved = form.status === 'approved'
-  const isHolding = form.status === 'pending' || form.status === 'reviewing' || form.status === 'resubmitted'
-  const pastResubmission = form.status !== 'rejected' && form.status !== 'revision-requested'
-  const hasPendingRequiredDocument = form.documents.some(
-    doc => doc.required && doc.status === 'resubmission-required',
-  )
-  const notice = isHolding
-    ? { icon: <Clock className="size-6" />, ...holdingCopy(form.status) }
-    : isApproved
-      ? {
-          icon: <CheckCircle2 className="size-6" />,
-          title: '입점 신청이 승인됐어요',
-          description: '스토어 정보를 설정하는 화면은 곧 제공될 예정이에요.',
-        }
-      : null
-  const headerMeta = HEADER_META[form.status]
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyState
+          title="신청 정보를 불러오지 못했어요"
+          description="잠시 후 다시 시도해 주세요."
+          action={{ label: '다시 시도', onClick: () => void refetch() }}
+        />
+      </div>
+    )
+  }
+
+  if (!form) return <div className="p-6" />
+
+  const headerMeta = HEADER_META[status]
   const HeaderIcon = headerMeta.pillIcon
+  const isBusy = isUploading || saveDraft.isPending || submitApplication.isPending
+
+  // 서류 행 = 현재 셀러 유형의 필수 세트(+이미 서버에 있는 비필수 서류). 유형이 바뀌어도
+  // 올린 서류는 서버에 유지되고 제출 시점 유형 기준으로 재평가된다(BE 계약).
+  const uploadedByType = new Map((application?.documents ?? []).map(doc => [doc.key, doc]))
+  const requiredTypes = REQUIRED_DOCUMENTS[form.legalType]
+  const extraUploaded = [...uploadedByType.keys()].filter(
+    type => !(requiredTypes as string[]).includes(type),
+  )
+  const documentRows: DocumentRowModel[] = [
+    ...requiredTypes.map(type => ({
+      type,
+      label: DOCUMENT_LABEL[type],
+      required: true,
+      uploadedAt: uploadedByType.get(type)?.uploadedAt,
+      pendingFileName: pendingDocs[type]?.name,
+    })),
+    ...extraUploaded.map(type => ({
+      type,
+      label: uploadedByType.get(type)?.label ?? type,
+      required: false,
+      uploadedAt: uploadedByType.get(type)?.uploadedAt,
+      pendingFileName: pendingDocs[type as SellerDocumentType]?.name,
+    })),
+  ]
+
+  const providedTypes = new Set<string>([...uploadedByType.keys(), ...Object.keys(pendingDocs)])
+  const missing = missingRequirements(form, providedTypes)
+
+  const holdingNotice =
+    status === 'submitted' || status === 'reviewing'
+      ? {
+          icon: <Clock className="size-6" />,
+          title: status === 'submitted' ? '심사 대기 중이에요' : '심사 중이에요',
+          description:
+            '제출해주신 서류를 확인하고 있어요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
+        }
+      : status === 'approved'
+        ? {
+            icon: <CheckCircle2 className="size-6" />,
+            title: '입점 신청이 승인됐어요',
+            description: '스토어 정보를 설정하는 화면은 곧 제공될 예정이에요.',
+          }
+        : status === 'cancelled'
+          ? {
+              icon: <Ban className="size-6" />,
+              title: '취소된 신청이에요',
+              description: '새로 입점을 원하시면 고객센터로 문의해 주세요.',
+            }
+          : null
 
   return (
     <div className="p-6">
@@ -174,57 +339,96 @@ function StoreSettingsRoute() {
         <p className="-mt-4 mb-4 text-body-sm text-text-tertiary">{headerMeta.description}</p>
       )}
 
-      {!isApproved && (
+      {status !== 'approved' && status !== 'cancelled' && (
         <div className="mb-4 flex items-center justify-between gap-4 rounded-card border border-border-subtle bg-surface-sunken px-4 py-3.5">
           <div className="flex items-center gap-2">
             {PIPELINE_STEPS.map((step, index) => {
               const Icon = step.icon
               return (
                 <div key={step.key} className="flex items-center gap-2">
-                  <StatusPill variant={pipelineVariant(step.key, pastResubmission)}>
+                  <StatusPill variant={pipelineVariant(step.key, status)}>
                     <Icon className="size-3" />
-                    {step.label}
+                    {step.key === 'review' && status === 'rejected' ? '심사 반려' : step.label}
                   </StatusPill>
-                  {index < PIPELINE_STEPS.length - 1 && <ChevronRight className="size-3.5 text-icon-muted" />}
+                  {index < PIPELINE_STEPS.length - 1 && (
+                    <ChevronRight className="size-3.5 text-icon-muted" />
+                  )}
                 </div>
               )
             })}
           </div>
           <span className="flex-none text-caption text-text-tertiary">
-            신청일 {formatAppliedAt(form.appliedAt)} · 평균 심사 1~2영업일
+            {application ? `신청일 ${formatAppliedAt(application.appliedAt)} · ` : ''}평균 심사 1~2영업일
           </span>
         </div>
       )}
 
-      {notice && <EmptyState icon={notice.icon} title={notice.title} description={notice.description} />}
+      {holdingNotice && (
+        <EmptyState
+          icon={holdingNotice.icon}
+          title={holdingNotice.title}
+          description={holdingNotice.description}
+        />
+      )}
 
-      {!isHolding && !isApproved && (
+      {isFormStage && (
         <>
-          {form.rejectionReason && (
-            <Alert variant="error" title={`반려 사유 · ${form.rejectionReason}`} className="mb-4">
-              {form.revisionNote}
+          {status === 'rejected' && application?.rejectionReason && (
+            <Alert variant="error" title="반려 사유" className="mb-4">
+              {application.rejectionReason}
             </Alert>
           )}
 
-          <StoreSettingsForm value={form} onChange={handleChange} />
+          {actionError && (
+            <Alert variant="error" className="mb-4" onDismiss={() => setActionError(null)}>
+              {actionError}
+            </Alert>
+          )}
+
+          <StoreSettingsForm
+            value={form}
+            onChange={handleChange}
+            accountNumberMasked={application?.accountNumberMasked}
+          />
 
           <div className="mt-5">
-            <DocumentSection documents={form.documents} onUpload={handleDocumentUpload} />
+            <DocumentSection
+              documents={documentRows}
+              onSelect={handleDocumentSelect}
+              step={form.legalType === 'individual' ? 3 : 4}
+              errorMessage={documentError}
+            />
           </div>
 
           <div className="mt-5 flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5 text-body-sm text-text-tertiary">
-              <Clock className="size-3.5" />
-              재제출하면 1~2영업일 안에 심사 결과를 알림으로 보내드려요.
+              {missing.length > 0 ? (
+                <>
+                  <AlertCircle className="size-3.5" />
+                  제출 전 필요: {missing.join(', ')}
+                </>
+              ) : (
+                <>
+                  <Clock className="size-3.5" />
+                  제출하면 1~2영업일 안에 심사 결과를 알림으로 보내드려요.
+                </>
+              )}
             </span>
-            <Button onClick={handleResubmit} loading={resubmitApplication.isPending} disabled={hasPendingRequiredDocument}>
-              재제출하기
-            </Button>
+            <div className="flex flex-none items-center gap-2">
+              <Button variant="secondary" onClick={() => void performSave()} loading={isBusy}>
+                임시저장
+              </Button>
+              <Button onClick={handleSubmit} loading={isBusy} disabled={missing.length > 0}>
+                {status === 'rejected' ? '재제출하기' : '제출하기'}
+              </Button>
+            </div>
           </div>
         </>
       )}
 
-      {toastMessage && <Toast open onClose={() => setToastMessage(null)} message={toastMessage} variant="success" />}
+      {toastMessage && (
+        <Toast open onClose={() => setToastMessage(null)} message={toastMessage} variant="success" />
+      )}
     </div>
   )
 }
