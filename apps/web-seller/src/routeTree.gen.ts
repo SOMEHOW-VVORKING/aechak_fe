@@ -17,6 +17,7 @@ import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as ClaimsIndexRouteImport } from './routes/claims/index'
+import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,9 +59,15 @@ const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
   path: '/claims/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginCompleteRoute = LoginCompleteRouteImport.update({
+  id: '/login/complete',
+  path: '/login/complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/claims/': typeof ClaimsIndexRoute
   '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/claims': typeof ClaimsIndexRoute
   '/login': typeof LoginIndexRoute
   '/orders': typeof OrdersIndexRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/claims/': typeof ClaimsIndexRoute
   '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login/complete'
     | '/claims/'
     | '/login/'
     | '/orders/'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login/complete'
     | '/claims'
     | '/login'
     | '/orders'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/login/complete'
     | '/claims/'
     | '/login/'
     | '/orders/'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginCompleteRoute: typeof LoginCompleteRoute
   ClaimsIndexRoute: typeof ClaimsIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
@@ -192,11 +205,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClaimsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/complete': {
+      id: '/login/complete'
+      path: '/login/complete'
+      fullPath: '/login/complete'
+      preLoaderRoute: typeof LoginCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginCompleteRoute: LoginCompleteRoute,
   ClaimsIndexRoute: ClaimsIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
   OrdersIndexRoute: OrdersIndexRoute,

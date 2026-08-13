@@ -69,9 +69,11 @@ export function AppShell() {
     if (isNarrow) setCollapsed(true)
   }, [isNarrow])
 
-  // /login은 12개 nav 항목에 속하지 않는 별도 라우트라 SideNav 없이 단독 렌더링한다
-  // (mockup b5-st-13은 SideNav 없는 중앙 카드 레이아웃).
-  if (pathname === '/login' || pathname === '/login/') {
+  // /login 계열(로그인 화면 + /login/complete 서버 콜백 복귀)은 nav에 속하지 않는 별도
+  // 라우트라 SideNav 없이 단독 렌더링한다(mockup b5-st-13은 SideNav 없는 중앙 카드 레이아웃).
+  // 로그인 플로우 밖에서 SideNav-less 라우트가 또 생기면 조건을 더하지 말고 pathless layout으로
+  // 전환할 것(AGENTS.md 지시 — 지금은 둘 다 같은 로그인 플로우라 접두 판정 하나로 묶는다).
+  if (pathname === '/login' || pathname === '/login/' || pathname.startsWith('/login/')) {
     return <Outlet />
   }
 
