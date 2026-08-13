@@ -500,6 +500,29 @@ export interface NicknameRequest {
   nickname: string
 }
 
+export interface SendPhoneCodeRequest {
+  /** ^01[016789]-?\d{3,4}-?\d{4}$ — 하이픈 유무 모두 허용. 위반 400 errorCode 90001 */
+  phoneNumber: string
+}
+
+export interface ConfirmPhoneCodeRequest {
+  /** 발송 때 보낸 번호와 같아야 한다 — 불일치는 코드 오류와 함께 30005로 통합 */
+  phoneNumber: string
+  /** 6자리 숫자(^\d{6}$). 형식 위반 400 errorCode 90001 */
+  code: string
+}
+
+export interface PhoneCodeSent {
+  /** 인증번호 유효시간(초, 현재 180). FE 만료 타이머의 원천 — 하드코딩 금지 */
+  expiresInSeconds: number
+  /** 재발송 쿨다운(초, 현재 60). FE 재발송 타이머의 원천 — 하드코딩 금지 */
+  resendCooldownSeconds: number
+}
+
+export interface PhoneCodeSentResponse {
+  data: PhoneCodeSent
+}
+
 export interface UserMe {
   /** 계정 상태 — PENDING_ONBOARDING | ACTIVE | SUSPENDED | WITHDRAWN. 닉네임 설정 완료 후 ACTIVE */
   status: string
@@ -523,7 +546,7 @@ export interface UserMe {
    */
   email: string | null
   /**
-   * 현재 항상 null(전화 인증 연동 전)
+   * 인증 전 null, 인증 후 서버 마스킹 표시용(예: 010-****-5678)
    * @nullable
    */
   phoneNumber: string | null
@@ -3671,6 +3694,159 @@ export const useSetNickname = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getSetNicknameMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 휴대폰 점유 인증 시작 — 재발송은 같은 EP 재호출. ACTIVE 전용(PENDING 접근은 403 errorCode 20006). 응답의 expiresInSeconds/resendCooldownSeconds가 FE 타이머의 원천이다(수치 하드코딩 금지 — 서버 계약). 번호 형식 위반은 400 errorCode 90001, 재발송 쿨다운은 429 errorCode 30006, 일 발송 상한 초과는 429 errorCode 30008, SMS 벤더 발송 실패는 502 errorCode 30007.
+ * @summary 휴대폰 인증번호 발송
+ */
+export const sendPhoneCode = (sendPhoneCodeRequest: SendPhoneCodeRequest, signal?: AbortSignal) => {
+  return customInstance<PhoneCodeSentResponse>({
+    url: `/users/me/phone/verifications`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sendPhoneCodeRequest,
+    signal,
+  })
+}
+
+export const getSendPhoneCodeMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendPhoneCode>>,
+    TError,
+    { data: SendPhoneCodeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendPhoneCode>>,
+  TError,
+  { data: SendPhoneCodeRequest },
+  TContext
+> => {
+  const mutationKey = ['sendPhoneCode']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendPhoneCode>>,
+    { data: SendPhoneCodeRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return sendPhoneCode(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SendPhoneCodeMutationResult = NonNullable<Awaited<ReturnType<typeof sendPhoneCode>>>
+export type SendPhoneCodeMutationBody = SendPhoneCodeRequest
+export type SendPhoneCodeMutationError = unknown
+
+/**
+ * @summary 휴대폰 인증번호 발송
+ */
+export const useSendPhoneCode = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sendPhoneCode>>,
+      TError,
+      { data: SendPhoneCodeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sendPhoneCode>>,
+  TError,
+  { data: SendPhoneCodeRequest },
+  TContext
+> => {
+  const mutationOptions = getSendPhoneCodeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 발송된 인증번호를 대조해 점유 인증을 완료하고, 변경 후 내 정보를 반환한다 (phoneNumber는 서버 마스킹 표시용, isPhoneVerified=true). 다른 계정이 점유 중이던 번호는 서버가 점유를 이전하므로 별도의 중복 에러는 없다. 코드·번호 불일치는 400 errorCode 30005(의도적 미구분), 만료(저장 코드 없음)는 400 errorCode 30009, 입력 횟수 초과는 429 errorCode 30010 — 30009/30010 모두 재발송으로만 복구된다(30010은 코드 소각).
+ * @summary 휴대폰 인증번호 확인
+ */
+export const confirmPhoneCode = (
+  confirmPhoneCodeRequest: ConfirmPhoneCodeRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<UserMeResponse>({
+    url: `/users/me/phone/verifications/confirm`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: confirmPhoneCodeRequest,
+    signal,
+  })
+}
+
+export const getConfirmPhoneCodeMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPhoneCode>>,
+    TError,
+    { data: ConfirmPhoneCodeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmPhoneCode>>,
+  TError,
+  { data: ConfirmPhoneCodeRequest },
+  TContext
+> => {
+  const mutationKey = ['confirmPhoneCode']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmPhoneCode>>,
+    { data: ConfirmPhoneCodeRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return confirmPhoneCode(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ConfirmPhoneCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmPhoneCode>>
+>
+export type ConfirmPhoneCodeMutationBody = ConfirmPhoneCodeRequest
+export type ConfirmPhoneCodeMutationError = unknown
+
+/**
+ * @summary 휴대폰 인증번호 확인
+ */
+export const useConfirmPhoneCode = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof confirmPhoneCode>>,
+      TError,
+      { data: ConfirmPhoneCodeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof confirmPhoneCode>>,
+  TError,
+  { data: ConfirmPhoneCodeRequest },
+  TContext
+> => {
+  const mutationOptions = getConfirmPhoneCodeMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
