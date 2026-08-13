@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { resetCart } from '@/shared/cart'
+import { resetCartSelection } from '@/shared/cart'
+import { currentCart, makeCartRow, seedCart } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 // 배송지는 MSW 기본 핸들러(빈 목록)가 응답한다 — 이 테스트 단언은 주문 라인만 본다.
@@ -23,7 +24,9 @@ function renderAt(path: string) {
 
 describe('/payment/result', () => {
   beforeEach(() => {
-    resetCart()
+    // 서버 장바구니 시드(급식기 1건) — /cart 리다이렉트 단언이 라인 유지 여부를 본다.
+    seedCart([makeCartRow({ cartItemId: 1 })])
+    resetCartSelection()
   })
 
   it('[AC-PAYMENT-004] 바로구매 결제 실패 후 결제수단 변경은 그 바로구매 주문으로 돌아간다(장바구니 합계 청구 안 함)', async () => {
@@ -48,6 +51,33 @@ describe('/payment/result', () => {
     expect(await screen.findByText('결제예정금액')).toBeInTheDocument() // 장바구니 화면
     expect(screen.queryByText('결제가 완료되었어요')).not.toBeInTheDocument() // 가짜 결제 미표시
     expect(screen.getByText(/급식기/)).toBeInTheDocument() // 시드 장바구니 라인 유지
+  })
+
+  it('[AC-PAYMENT-012] 장바구니 결제 성공 시 주문된 라인만 삭제되고(품절 라인 유지) 성공 화면이 유지된다', async () => {
+    // 주문 대상(1번, 선택)과 품절 라인(2번) — 주문된 id는 1번뿐이다.
+    seedCart([
+      makeCartRow({ cartItemId: 1 }),
+      makeCartRow({
+        cartItemId: 2,
+        optionCombinationId: 90,
+        productId: 'p-scratcher-x',
+        productName: '스크래쳐 하우스 2종 세트',
+        selectedOptions: '기본',
+        price: 29000,
+        itemStatus: 'OUT_OF_STOCK',
+        remainingStock: 0,
+      }),
+    ])
+    renderAt('/payment/result?source=cart&method=kakaopay&amount=64000&orderedCartItemIds=[1]')
+
+    expect(await screen.findByText('결제가 완료되었어요', {}, { timeout: 3000 })).toBeInTheDocument()
+
+    // DELETE /carts/items가 orderedCartItemIds로만 발화 — 서버 카트에 품절 라인(2번)만 남는다.
+    await waitFor(() => expect(currentCart().map(r => r.cartItemId)).toEqual([2]))
+
+    // 삭제로 주문 컨텍스트가 invalid로 뒤집혀도(startedRef 가드) 성공 화면이 유지된다.
+    expect(screen.getByText('결제가 완료되었어요')).toBeInTheDocument()
+    expect(screen.queryByText('결제예정금액')).not.toBeInTheDocument()
   })
 
   it('[AC-PAYMENT-010] 결제 완료 화면엔 뒤로가기(←)가 없고, 실패 화면엔 남는다', async () => {

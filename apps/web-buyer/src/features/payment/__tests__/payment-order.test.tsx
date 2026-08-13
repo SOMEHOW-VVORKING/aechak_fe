@@ -6,7 +6,8 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import { getOrders, resetOrders } from '@/shared/order'
-import { resetCart } from '@/shared/cart'
+import { resetCartSelection } from '@/shared/cart'
+import { makeCartRow, seedCart } from '../../../testing/msw/server'
 import { generateOrderNo } from '../payment.mock'
 
 function renderAt(path: string, { strict = false }: { strict?: boolean } = {}) {
@@ -32,7 +33,9 @@ const BUY_JOINT_X2 =
 describe('결제 → 주문 생성: 주문번호 유일성', () => {
   beforeEach(() => {
     resetOrders()
-    resetCart()
+    // 서버 장바구니 시드 — 뒤로가기 단언(AC-PAYMENT-009)이 장바구니 화면(결제예정금액)을 본다.
+    seedCart([makeCartRow({ cartItemId: 1 })])
+    resetCartSelection()
   })
 
   it('[AC-PAYMENT-006] generateOrderNo는 호출마다 유일한 주문번호를 만든다', () => {

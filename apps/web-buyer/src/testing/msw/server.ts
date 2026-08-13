@@ -675,12 +675,210 @@ const onboardingHandlers = [
   }),
 ]
 
+export const CART_URL = `${base}/carts`
+export const CART_ITEMS_URL = `${base}/carts/items`
+export const CART_ITEM_COUNT_URL = `${base}/carts/items/count`
+
+// 장바구니도 상태가 있는 리소스다(담기→조회 반영, 수량 변경, 삭제). 배송지와 같은 이유로 응답
+// 계약만 재현하고 서버 불변식(품목 종류 100 제한 등)은 흉내 내지 않는다. 재현하는 서버 규칙은
+// 화면 분기가 실제로 의존하는 것만: 같은 조합 재담기 수량 합산, 재고 초과 50201, 미존재 조합
+// 50207, 삭제 시 없는 id 무시, 최신 담김순 정렬.
+export interface CartLineRow {
+  cartItemId: number
+  optionCombinationId: number
+  productId: string
+  productName: string
+  selectedOptions: string
+  quantity: number
+  /** 할인 전 단가(정가+옵션 추가금). 서버가 역산 대신 직접 내려준다. */
+  originalPrice: number
+  /** 판매가+옵션 추가금 합산 단가(서버 계약). */
+  price: number
+  remainingStock: number
+  itemStatus: 'ACTIVE' | 'SELLER_UNAVAILABLE' | 'SALE_ENDED' | 'SALE_SUSPENDED' | 'OPTION_UNAVAILABLE' | 'OUT_OF_STOCK'
+  thumbnail?: string | null
+  discountRate?: number | null
+  sellerId: number
+  storeName: string
+  baseShippingFee: number
+  freeShippingThreshold: number | null
+}
+
+let cartRows: CartLineRow[] = []
+let cartSeq = 0
+
+/** 테스트마다 장바구니 상태를 세운다. 인자 없이 부르면 빈 장바구니. */
+export function seedCart(rows: CartLineRow[] = []): void {
+  cartRows = rows.map(row => ({ ...row }))
+  cartSeq = rows.reduce((max, row) => Math.max(max, row.cartItemId), 0)
+}
+
+/** 핸들러가 쌓아둔 현재 상태. 테스트가 담기/삭제 결과를 단언할 때 읽는다. */
+export function currentCart(): CartLineRow[] {
+  return cartRows.map(row => ({ ...row }))
+}
+
+/** REAL_PRODUCT 기준 장바구니 라인 픽스처 헬퍼 — 단가는 할인가(64,000)+옵션 추가금. */
+export function makeCartRow(overrides: Partial<CartLineRow> & { cartItemId: number }): CartLineRow {
+  return {
+    optionCombinationId: 1,
+    productId: REAL_PRODUCT_ID,
+    productName: REAL_PRODUCT_DETAIL.name,
+    selectedOptions: '기본형',
+    quantity: 1,
+    originalPrice: 89000,
+    price: 64000,
+    remainingStock: 10,
+    itemStatus: 'ACTIVE',
+    thumbnail: null,
+    discountRate: 28,
+    sellerId: 1,
+    storeName: REAL_PRODUCT_DETAIL.seller.storeName,
+    baseShippingFee: REAL_PRODUCT_DETAIL.shipping.baseShippingFee,
+    freeShippingThreshold: REAL_PRODUCT_DETAIL.shipping.freeShippingThreshold,
+    ...overrides,
+  }
+}
+
+function cartResponseBody() {
+  const order: number[] = []
+  const bySeller = new Map<number, CartLineRow[]>()
+  for (const row of cartRows) {
+    if (!bySeller.has(row.sellerId)) {
+      bySeller.set(row.sellerId, [])
+      order.push(row.sellerId)
+    }
+    bySeller.get(row.sellerId)!.push(row)
+  }
+  return {
+    data: {
+      sellerGroups: order.map(sellerId => {
+        const rows = bySeller.get(sellerId)!
+        const first = rows[0]!
+        return {
+          sellerId,
+          storeName: first.storeName,
+          baseShippingFee: first.baseShippingFee,
+          freeShippingThreshold: first.freeShippingThreshold,
+          items: rows.map(r => ({
+            cartItemId: r.cartItemId,
+            productId: r.productId,
+            optionCombinationId: r.optionCombinationId,
+            productName: r.productName,
+            thumbnail: r.thumbnail ?? null,
+            selectedOptions: r.selectedOptions,
+            quantity: r.quantity,
+            originalPrice: r.originalPrice,
+            price: r.price,
+            discountRate: r.discountRate ?? null,
+            remainingStock: r.remainingStock,
+            itemStatus: r.itemStatus,
+            isOrderable: r.itemStatus === 'ACTIVE',
+          })),
+        }
+      }),
+    },
+  }
+}
+
+const cartHandlers = [
+  http.get(CART_URL, () => HttpResponse.json(cartResponseBody())),
+  http.post(CART_ITEMS_URL, async ({ request }) => {
+    const body = (await request.json()) as { optionCombinationId: number; quantity: number }
+    const combo = REAL_PRODUCT_OPTIONS.optionCombinations.find(
+      c => c.optionCombinationId === body.optionCombinationId,
+    )
+    if (!combo) {
+      return HttpResponse.json({ errorCode: 50207, message: '상품을 찾을 수 없습니다.' }, { status: 404 })
+    }
+    const existing = cartRows.find(r => r.optionCombinationId === body.optionCombinationId)
+    const nextQuantity = (existing?.quantity ?? 0) + body.quantity
+    if (combo.remainingStock != null && nextQuantity > combo.remainingStock) {
+      return HttpResponse.json({ errorCode: 50201, message: '재고가 부족합니다.' }, { status: 409 })
+    }
+    let row: CartLineRow
+    if (existing) {
+      row = { ...existing, quantity: nextQuantity }
+      cartRows = cartRows.map(r => (r.cartItemId === existing.cartItemId ? row : r))
+    } else {
+      cartSeq += 1
+      row = makeCartRow({
+        cartItemId: cartSeq,
+        optionCombinationId: combo.optionCombinationId,
+        selectedOptions: combo.name,
+        quantity: body.quantity,
+        originalPrice: 89000 + combo.additionalPrice,
+        price: 64000 + combo.additionalPrice,
+        remainingStock: combo.remainingStock ?? 99,
+      })
+      // 최신 담김이 맨 앞(BE 정렬: created_at DESC).
+      cartRows = [row, ...cartRows]
+    }
+    return HttpResponse.json(
+      {
+        data: {
+          cartItemId: row.cartItemId,
+          productId: row.productId,
+          optionCombinationId: row.optionCombinationId,
+          quantity: row.quantity,
+          itemStatus: row.itemStatus,
+        },
+      },
+      { status: 201 },
+    )
+  }),
+  http.patch(`${CART_ITEMS_URL}/:cartItemId`, async ({ params, request }) => {
+    const id = Number(params['cartItemId'])
+    const body = (await request.json()) as { quantity?: number | null }
+    const row = cartRows.find(r => r.cartItemId === id)
+    if (!row) {
+      return HttpResponse.json(
+        { errorCode: 50205, message: '장바구니 항목을 찾을 수 없습니다.' },
+        { status: 404 },
+      )
+    }
+    const quantity = body.quantity ?? row.quantity
+    // BE CartService 계약: 수량을 늘릴 때만 재고를 검증하고, 깎거나 유지하면 재고를 안 본다.
+    if (quantity > row.quantity && quantity > row.remainingStock) {
+      return HttpResponse.json({ errorCode: 50201, message: '재고가 부족합니다.' }, { status: 409 })
+    }
+    cartRows = cartRows.map(r => (r.cartItemId === id ? { ...r, quantity } : r))
+    return HttpResponse.json({
+      data: {
+        cartItemId: id,
+        quantity,
+        optionCombinationId: row.optionCombinationId,
+        merged: false,
+      },
+    })
+  }),
+  http.delete(CART_ITEMS_URL, async ({ request }) => {
+    const body = (await request.json()) as { cartItemIds: number[] }
+    const idSet = new Set(body.cartItemIds)
+    const before = cartRows.length
+    // 서버 규칙: 내 장바구니에 없는 id는 무시(멱등 삭제).
+    cartRows = cartRows.filter(r => !idSet.has(r.cartItemId))
+    return HttpResponse.json({
+      data: {
+        deletedCount: before - cartRows.length,
+      },
+    })
+  }),
+  // 배지 전용 경량 집계. 수량 합계가 아니라 라인 수(품목 종류 수)를 준다.
+  // 서버는 목록과 같은 제외 규칙(카탈로그 행 없음, 검수 미승인)을 걸지만 픽스처가 그 상태를
+  // 모델링하지 않으므로 여기선 행 수를 그대로 센다 — 제외 분기를 재현할 일이 생기면 그때 넣는다.
+  http.get(CART_ITEM_COUNT_URL, () =>
+    HttpResponse.json({ data: { cartItemCount: cartRows.length } }),
+  ),
+]
+
 export const handlers = [
   ...deliveryAddressHandlers,
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
   ...likedProductHandlers,
+  ...cartHandlers,
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {

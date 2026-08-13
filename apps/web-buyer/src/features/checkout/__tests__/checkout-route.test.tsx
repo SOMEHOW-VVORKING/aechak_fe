@@ -1,13 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { addToCart, resetCart } from '@/shared/cart'
+import { resetCartSelection, setCartItemSelected } from '@/shared/cart'
 import {
+  CART_URL,
   DELIVERY_ADDRESSES_URL,
   POINTS_URL,
+  makeCartRow,
+  seedCart,
   seedDeliveryAddresses,
   seedPointBalance,
   server,
@@ -23,16 +26,47 @@ function renderAt(path: string) {
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return router
+}
+
+// 선택 해제·주문 불가(품절) 라인이 섞인 서버 장바구니 — 주문서 필터·결제 라인 산출 검증용.
+function seedMixedCart() {
+  seedCart([
+    makeCartRow({ cartItemId: 1, productName: '참치 츄르 40개입', selectedOptions: '기본', price: 13900 }),
+    makeCartRow({
+      cartItemId: 2,
+      optionCombinationId: 2,
+      productName: '연어 츄르 20개입',
+      selectedOptions: '연어',
+      price: 5000,
+    }),
+    makeCartRow({
+      cartItemId: 3,
+      sellerId: 2,
+      storeName: '멍멍마트',
+      optionCombinationId: 90,
+      productId: 'p-scratcher-x',
+      productName: '스크래쳐 하우스 2종 세트',
+      selectedOptions: '기본',
+      price: 29000,
+      itemStatus: 'OUT_OF_STOCK',
+      remainingStock: 0,
+    }),
+  ])
+  resetCartSelection()
+  // 2번(주문 가능)은 선택 해제 — 주문 대상은 1번뿐이다(3번은 선택돼 있지만 품절).
+  setCartItemSelected(2, false)
 }
 
 describe('/checkout 배송지 없음 상태', () => {
   beforeEach(() => {
-    resetCart()
+    seedCart()
+    resetCartSelection()
     seedDeliveryAddresses([])
   })
 
@@ -67,13 +101,79 @@ describe('/checkout 배송지 없음 상태', () => {
   })
 })
 
+describe('/checkout 서버 장바구니 주문(선택+주문가능 필터)', () => {
+  beforeEach(() => {
+    seedMixedCart()
+    seedPointBalance(0)
+    seedDeliveryAddresses([
+      {
+        addressId: 1,
+        receiverName: '김애착',
+        contactNumber: '01012345678',
+        zipCode: '06236',
+        baseAddress: '서울시 강남구 테헤란로 1',
+        detailAddress: '101호',
+        isDefault: true,
+      },
+    ])
+  })
+
+  it('[AC-CHECKOUT-008] 주문 상품 목록·상품금액에는 선택된 주문 가능 라인만 들어간다', async () => {
+    renderAt('/checkout')
+
+    // 선택 + 주문 가능(1번)만 주문 상품으로 보인다.
+    expect(await screen.findByText('참치 츄르 40개입')).toBeInTheDocument()
+    // 선택 해제(2번)·품절(3번) 라인은 목록에서 빠진다.
+    expect(screen.queryByText('연어 츄르 20개입')).not.toBeInTheDocument()
+    expect(screen.queryByText('스크래쳐 하우스 2종 세트')).not.toBeInTheDocument()
+    // 상품금액 합계도 1번(13,900)만 — 제외 라인 금액(5,000/29,000)은 어디에도 없다.
+    expect(screen.getAllByText('13,900원').length).toBeGreaterThan(0)
+    expect(screen.queryByText('5,000원')).not.toBeInTheDocument()
+    expect(screen.queryByText('29,000원')).not.toBeInTheDocument()
+  })
+
+  it('[AC-CHECKOUT-009] 결제하기는 선택+주문가능 라인 id만 orderedCartItemIds로 넘긴다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/checkout')
+    await screen.findByText('참치 츄르 40개입')
+
+    await user.click(screen.getByRole('checkbox', { name: '주문 내용을 확인했으며 결제에 동의해요' }))
+    await user.click(screen.getByRole('button', { name: /결제하기/ }))
+
+    // 결제 결과로 넘어가며, 삭제 대상이 되는 orderedCartItemIds는 선택+주문가능(1번)뿐이어야 한다
+    // — 해제(2번)·품절(3번)이 섞이면 결제 성공 시 주문 안 된 라인까지 지워진다.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/payment/result')
+    })
+    expect(router.state.location.search).toMatchObject({
+      source: 'cart',
+      orderedCartItemIds: [1],
+    })
+  })
+
+  it('[AC-CHECKOUT-010] 장바구니 조회(GET /carts) 실패 시 0건 주문서 대신 다시 시도 표면을 보여준다', async () => {
+    server.use(
+      http.get(CART_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/checkout')
+
+    expect(await screen.findByText('장바구니를 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /결제하기/ })).toBeDisabled()
+  })
+})
+
 describe('/checkout 적립금 사용 한도(서버 잔액)', () => {
   beforeEach(() => {
-    resetCart()
+    // 서버 장바구니에 13,900원 라인을 시드해 결제금액을 만든다(주문 자체는 아직 목업).
+    seedCart([
+      makeCartRow({ cartItemId: 1, productName: '참치 츄르 40개입', selectedOptions: '기본', price: 13900 }),
+    ])
+    resetCartSelection()
     seedDeliveryAddresses([])
     seedPointBalance(0)
-    // 목업 카탈로그 상품을 담아 결제금액을 만든다(주문 자체는 아직 목업). p-churu = 13,900원.
-    addToCart('p-churu', '기본', 1)
   })
 
   it('[AC-POINT-CHECKOUT-004] 사용 한도는 서버 잔액이다(잔액 < 주문금액이면 최대 = 잔액)', async () => {
