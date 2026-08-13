@@ -10,7 +10,7 @@ import {
   FileEdit,
   Upload,
 } from 'lucide-react'
-import type { SellerApplication, SellerApplicationStatus } from '@aechak/domain'
+import type { SellerApplicationStatus } from '@aechak/domain'
 import type { SellerDocumentType } from '@aechak/api'
 import { Alert, Button, EmptyState, PageHeader, StatusPill, Toast } from '@aechak/design-system/web'
 import type { StatusPillVariant } from '@aechak/design-system/web'
