@@ -478,6 +478,124 @@ export interface ProductOptionsEnvelope {
   data: ProductOptionsResponse
 }
 
+/**
+ * 장바구니 항목의 카탈로그 상태. ACTIVE만 주문 가능(isOrderable).
+ */
+export type CartItemStatus = (typeof CartItemStatus)[keyof typeof CartItemStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CartItemStatus = {
+  ACTIVE: 'ACTIVE',
+  SELLER_UNAVAILABLE: 'SELLER_UNAVAILABLE',
+  SALE_ENDED: 'SALE_ENDED',
+  SALE_SUSPENDED: 'SALE_SUSPENDED',
+  OPTION_UNAVAILABLE: 'OPTION_UNAVAILABLE',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+} as const
+
+export interface CartItemResponse {
+  cartItemId: number
+  /** products.public_id (ULID) */
+  productId: string
+  optionCombinationId: number
+  productName: string
+  /** @nullable */
+  thumbnail: string | null
+  selectedOptions: string
+  quantity: number
+  /** 할인 전 단가(정가 + 옵션 추가금). price와 discountRate만으로 역산하면 옵션 추가금에도 할인이 걸린 값이 나와 서버가 직접 내려준다. 원가 취소선 표시에 쓴다. */
+  originalPrice: number
+  /** 판매가(할인 반영) + 옵션 추가금이 합산된 단가 */
+  price: number
+  /**
+   * 상품 정가 기준 할인율(%). 할인 기간이 아니면 null
+   * @nullable
+   */
+  discountRate: number | null
+  /** 마스킹하지 않은 잔여 재고 — 담아둔 수량 초과 여부는 클라이언트가 판정 */
+  remainingStock: number
+  itemStatus: CartItemStatus
+  isOrderable: boolean
+}
+
+export interface CartSellerGroupResponse {
+  sellerId: number
+  storeName: string
+  baseShippingFee: number
+  /** @nullable */
+  freeShippingThreshold: number | null
+  items: CartItemResponse[]
+}
+
+export interface CartResponse {
+  sellerGroups: CartSellerGroupResponse[]
+}
+
+export interface CartEnvelope {
+  data: CartResponse
+}
+
+export interface AddCartItemRequest {
+  optionCombinationId: number
+  /**
+   * @minimum 1
+   * @maximum 99
+   */
+  quantity: number
+}
+
+export interface AddCartItemResponse {
+  cartItemId: number
+  productId: string
+  optionCombinationId: number
+  /** 합산 이후의 라인 수량 */
+  quantity: number
+  itemStatus: CartItemStatus
+}
+
+export interface AddCartItemEnvelope {
+  data: AddCartItemResponse
+}
+
+export interface UpdateCartItemRequest {
+  /** @nullable */
+  quantity?: number | null
+  /** @nullable */
+  optionCombinationId?: number | null
+}
+
+export interface UpdateCartItemResponse {
+  cartItemId: number
+  quantity: number
+  optionCombinationId: number
+  merged: boolean
+}
+
+export interface UpdateCartItemEnvelope {
+  data: UpdateCartItemResponse
+}
+
+export interface DeleteCartItemsRequest {
+  cartItemIds: number[]
+}
+
+export interface DeleteCartItemsResponse {
+  deletedCount: number
+}
+
+export interface DeleteCartItemsEnvelope {
+  data: DeleteCartItemsResponse
+}
+
+export interface CartItemCountResponse {
+  /** 장바구니에 담긴 품목 종류 수(cart_items 행 수). 담긴 수량의 합계가 아니다 — 사료 2개와 장난감 3개가 담겼으면 2다. 최댓값은 품목 종류 상한과 같은 100이다. */
+  cartItemCount: number
+}
+
+export interface CartItemCountEnvelope {
+  data: CartItemCountResponse
+}
+
 export type TermType = (typeof TermType)[keyof typeof TermType]
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -2975,6 +3093,571 @@ export const useUnlikeProduct = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getUnlikeProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 본인 장바구니를 셀러별 그룹으로 조회. 정렬은 최신 담김순(재담기로 수량만 늘어난 항목은 자리 유지). 카탈로그에서 내려간 항목은 응답에서 제외된다.
+ * @summary 장바구니 조회
+ */
+export const getCart = (signal?: AbortSignal) => {
+  return customInstance<CartEnvelope>({ url: `/carts`, method: 'GET', signal })
+}
+
+export const getGetCartQueryKey = () => {
+  return [`/carts`] as const
+}
+
+export const getGetCartQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCart>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCartQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCart>>> = ({ signal }) =>
+    getCart(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCart>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCartQueryResult = NonNullable<Awaited<ReturnType<typeof getCart>>>
+export type GetCartQueryError = unknown
+
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCart>>,
+          TError,
+          Awaited<ReturnType<typeof getCart>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCart>>,
+          TError,
+          Awaited<ReturnType<typeof getCart>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 조회
+ */
+
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCartQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetCartSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCart>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCartQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCart>>> = ({ signal }) =>
+    getCart(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getCart>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCartSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getCart>>>
+export type GetCartSuspenseQueryError = unknown
+
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 조회
+ */
+
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCartSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 같은 옵션 조합이 이미 있으면 수량을 합산한다. 수량 하한·상한(1~99) 위반과 누적 합산 초과는 모두 400 errorCode 90001이다(50200은 선언만 있고 서버가 던지지 않는다). 재고 부족 409 50201, 구매 불가 상태 409 50202, 품목 종류(100) 초과 422 50203, 옵션 조합 미존재 404 50207. 라인당 99 초과와 재고 부족이 동시면 90001이 먼저, 판매 중지와 재고 부족이 동시면 50202가 먼저다.
+ * @summary 장바구니 담기
+ */
+export const addCartItem = (addCartItemRequest: AddCartItemRequest, signal?: AbortSignal) => {
+  return customInstance<AddCartItemEnvelope>({
+    url: `/carts/items`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: addCartItemRequest,
+    signal,
+  })
+}
+
+export const getAddCartItemMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCartItem>>,
+    TError,
+    { data: AddCartItemRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addCartItem>>,
+  TError,
+  { data: AddCartItemRequest },
+  TContext
+> => {
+  const mutationKey = ['addCartItem']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addCartItem>>,
+    { data: AddCartItemRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return addCartItem(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AddCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof addCartItem>>>
+export type AddCartItemMutationBody = AddCartItemRequest
+export type AddCartItemMutationError = unknown
+
+/**
+ * @summary 장바구니 담기
+ */
+export const useAddCartItem = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof addCartItem>>,
+      TError,
+      { data: AddCartItemRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof addCartItem>>,
+  TError,
+  { data: AddCartItemRequest },
+  TContext
+> => {
+  const mutationOptions = getAddCartItemMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 개별/선택/전체 삭제를 cartItemIds 목록 하나로 받는다. 빈 배열은 삭제 0건 성공이고 내 장바구니에 없는 id는 무시하지만, 남의 항목 id가 하나라도 섞이면 부분 삭제 없이 전부 실패한다(403 50206).
+ * @summary 장바구니 항목 삭제(목록)
+ */
+export const deleteCartItems = (deleteCartItemsRequest: DeleteCartItemsRequest) => {
+  return customInstance<DeleteCartItemsEnvelope>({
+    url: `/carts/items`,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    data: deleteCartItemsRequest,
+  })
+}
+
+export const getDeleteCartItemsMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCartItems>>,
+    TError,
+    { data: DeleteCartItemsRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCartItems>>,
+  TError,
+  { data: DeleteCartItemsRequest },
+  TContext
+> => {
+  const mutationKey = ['deleteCartItems']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCartItems>>,
+    { data: DeleteCartItemsRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return deleteCartItems(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteCartItemsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCartItems>>>
+export type DeleteCartItemsMutationBody = DeleteCartItemsRequest
+export type DeleteCartItemsMutationError = unknown
+
+/**
+ * @summary 장바구니 항목 삭제(목록)
+ */
+export const useDeleteCartItems = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteCartItems>>,
+      TError,
+      { data: DeleteCartItemsRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCartItems>>,
+  TError,
+  { data: DeleteCartItemsRequest },
+  TContext
+> => {
+  const mutationOptions = getDeleteCartItemsMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * GNB 배지용 품목 종류 수만 내려주는 경량 조회. cart_items 행 수이고 담긴 수량의 합계가 아니다(사료 2개+장난감 3개=2). 목록과 같은 제외 규칙이 걸려 배지와 화면이 어긋나지 않는다 — 카탈로그 행이 없거나 검수 미승인인 항목은 양쪽에서 함께 빠진다. 목록처럼 옵션 조합·상품·셀러를 조인하지만 행을 내리지 않는 집계 한 방이라 훨씬 싸므로, 배지만 필요한 화면은 장바구니 전체를 받지 말고 이 경로를 쓴다. 장바구니가 없으면 0이고 행을 만들지 않는다.
+ * @summary 장바구니 항목 개수 조회
+ */
+export const countCartItems = (signal?: AbortSignal) => {
+  return customInstance<CartItemCountEnvelope>({ url: `/carts/items/count`, method: 'GET', signal })
+}
+
+export const getCountCartItemsQueryKey = () => {
+  return [`/carts/items/count`] as const
+}
+
+export const getCountCartItemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCountCartItemsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof countCartItems>>> = ({ signal }) =>
+    countCartItems(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof countCartItems>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CountCartItemsQueryResult = NonNullable<Awaited<ReturnType<typeof countCartItems>>>
+export type CountCartItemsQueryError = unknown
+
+export function useCountCartItems<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof countCartItems>>,
+          TError,
+          Awaited<ReturnType<typeof countCartItems>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCountCartItems<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof countCartItems>>,
+          TError,
+          Awaited<ReturnType<typeof countCartItems>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCountCartItems<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 항목 개수 조회
+ */
+
+export function useCountCartItems<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCountCartItemsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getCountCartItemsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCountCartItemsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof countCartItems>>> = ({ signal }) =>
+    countCartItems(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof countCartItems>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CountCartItemsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof countCartItems>>
+>
+export type CountCartItemsSuspenseQueryError = unknown
+
+export function useCountCartItemsSuspense<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCountCartItemsSuspense<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCountCartItemsSuspense<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 항목 개수 조회
+ */
+
+export function useCountCartItemsSuspense<
+  TData = Awaited<ReturnType<typeof countCartItems>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof countCartItems>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCountCartItemsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 수량/옵션 조합 변경(둘 중 하나 이상 필수 — 둘 다 없으면 400 90001). 옵션 변경으로 같은 조합 라인과 합쳐지면 merged=true이고 cartItemId는 흡수한 라인 id다. 항목 미존재 404 50205, 남의 항목 403 50206, 대상 옵션 조합 미존재 404 50207.
+ * @summary 장바구니 항목 수정
+ */
+export const updateCartItem = (
+  cartItemId: number,
+  updateCartItemRequest: UpdateCartItemRequest,
+) => {
+  return customInstance<UpdateCartItemEnvelope>({
+    url: `/carts/items/${cartItemId}`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: updateCartItemRequest,
+  })
+}
+
+export const getUpdateCartItemMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCartItem>>,
+    TError,
+    { cartItemId: number; data: UpdateCartItemRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCartItem>>,
+  TError,
+  { cartItemId: number; data: UpdateCartItemRequest },
+  TContext
+> => {
+  const mutationKey = ['updateCartItem']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCartItem>>,
+    { cartItemId: number; data: UpdateCartItemRequest }
+  > = props => {
+    const { cartItemId, data } = props ?? {}
+
+    return updateCartItem(cartItemId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateCartItem>>>
+export type UpdateCartItemMutationBody = UpdateCartItemRequest
+export type UpdateCartItemMutationError = unknown
+
+/**
+ * @summary 장바구니 항목 수정
+ */
+export const useUpdateCartItem = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateCartItem>>,
+      TError,
+      { cartItemId: number; data: UpdateCartItemRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateCartItem>>,
+  TError,
+  { cartItemId: number; data: UpdateCartItemRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateCartItemMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
