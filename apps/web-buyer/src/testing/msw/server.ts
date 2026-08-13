@@ -9,6 +9,7 @@ import { axiosInstance } from '@aechak/api'
 const base = axiosInstance.defaults.baseURL ?? ''
 export const BREEDS_URL = `${base}/breeds`
 export const WEB_REFRESH_URL = `${base}/auth/web/refresh`
+export const WEB_LOGOUT_URL = `${base}/auth/web/logout`
 export const DELIVERY_ADDRESSES_URL = `${base}/delivery-addresses`
 export const CATEGORIES_URL = `${base}/categories`
 export const PRODUCTS_URL = `${base}/products`
@@ -590,6 +591,8 @@ export const handlers = [
   http.post(WEB_REFRESH_URL, () =>
     HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
   ),
+  // 웹 로그아웃 — 서버 계약이 완전 멱등(쿠키가 없어도 204 No Content, 본문 없음).
+  http.post(WEB_LOGOUT_URL, () => new HttpResponse(null, { status: 204 })),
   // 적립금 잔액 — seedPointBalance로 세운 값을 봉투에 담아 내려준다(미시드면 0).
   http.get(POINTS_URL, () => HttpResponse.json({ data: { balance: pointBalance } })),
   // 카테고리 트리(마켓 대분류/중분류).
