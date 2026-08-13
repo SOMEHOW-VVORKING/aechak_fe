@@ -70,7 +70,7 @@ export function PaymentResultScreen({
   )
 
   // 주문 컨텍스트가 상품으로 해석되지 않으면(하드 리프레시로 인메모리 상태가 빔) 목업 결제를
-  // 실행해 "결제 성공했지만 주문 없음"을 만들지 않고 장바구니로 되돌린다(codex 리뷰 #4).
+  // 실행해 "결제 성공했지만 주문 없음"을 만들지 않고 장바구니로 되돌린다.
   const orderResolvable = !buildCartView(orderedItems).isEmpty
 
   const run = () => {
@@ -124,7 +124,7 @@ export function PaymentResultScreen({
   const processing = !result
 
   // 컨텍스트가 해석되지 않으면 결제 진행 스피너를 보여주지 않는다 — 느린 웹뷰에서 결제가 시작된 것처럼
-  // 보이지 않게 복구 안내만 렌더하고, 위 이펙트가 곧 장바구니로 이동시킨다(codex UI/UX #13).
+  // 보이지 않게 복구 안내만 렌더하고, 위 이펙트가 곧 장바구니로 이동시킨다.
   if (!orderResolvable) {
     return (
       <MobileScreen>

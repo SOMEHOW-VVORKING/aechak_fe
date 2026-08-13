@@ -161,7 +161,7 @@ function ReviewsBody({
         </button>
       </div>
 
-      {/* 정렬 칩 아래 두꺼운 sunken 구분 바(item 6)는 제거했다 — 정렬 칩과 목록 사이 여백만 유지. */}
+      {/* 정렬 칩 아래 두꺼운 sunken 구분 바는 제거했다 — 정렬 칩과 목록 사이 여백만 유지. */}
 
       {/* 리뷰 목록 */}
       {visible.length === 0 ? (

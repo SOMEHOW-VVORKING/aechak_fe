@@ -54,7 +54,7 @@ describe('/products/$productId', () => {
   })
 
   it('[AC-PRODUCT-013] 실 옵션 조회가 오류면 옵션 시트가 담기/구매를 막고 재시도를 보여준다', async () => {
-    // 실 상품의 /options를 500으로 강제 — 실 옵션 실패를 "기본 구성" 기본가로 위장하면 안 된다(codex 리뷰 #8).
+    // 실 상품의 /options를 500으로 강제 — 실 옵션 실패를 "기본 구성" 기본가로 위장하면 안 된다.
     server.use(
       http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
         params.productId === REAL_PRODUCT_ID
@@ -96,16 +96,16 @@ describe('/products/$productId', () => {
     renderAt('/products/p-feeder-5l')
     await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
 
-    // item 1: 판매중/SALE 상태 pill 줄 제거(할인% 표기는 가격 블록에 유지)
+    // 판매중/SALE 상태 pill 줄 제거(할인% 표기는 가격 블록에 유지)
     expect(screen.queryByText('판매중')).not.toBeInTheDocument()
     expect(screen.queryByText(/SALE/)).not.toBeInTheDocument()
     expect(screen.getByText('28%')).toBeInTheDocument()
     expect(screen.getByText('89,000원')).toBeInTheDocument()
 
-    // item 3: 가격 바로 아래 "총별점 / 5 · 리뷰 N건" 요약 링크 제거
+    // 가격 바로 아래 "총별점 / 5 · 리뷰 N건" 요약 링크 제거
     expect(screen.queryByText('/ 5')).not.toBeInTheDocument()
 
-    // item 5: 리뷰 섹션 정렬 칩 제거 + 전체보기는 유지
+    // 리뷰 섹션 정렬 칩 제거 + 전체보기는 유지
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('별점높은순')).not.toBeInTheDocument()
     expect(screen.queryByText('포토리뷰만')).not.toBeInTheDocument()

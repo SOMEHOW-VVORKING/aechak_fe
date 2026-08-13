@@ -119,7 +119,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       {isLoading ? (
         <DetailSkeleton />
       ) : isError ? (
-        // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다(codex 리뷰 #7).
+        // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다.
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
             title="상품 정보를 불러오지 못했어요"
@@ -261,9 +261,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 </p>
               )}
               {/* 회색 "상품 상세 이미지" 박스는 실 상세 이미지가 없는 장식/깨진 이미지처럼 보이는 죽은
-                  UI라 제거했다 — 실제 이미지는 상단 캐러셀에 있고, 실 상세 미디어 API가 생기면 그때 렌더한다(codex UI/UX #12). */}
+                  UI라 제거했다 — 실제 이미지는 상단 캐러셀에 있고, 실 상세 미디어 API가 생기면 그때 렌더한다. */}
               {/* 사양표는 실 API 소스가 없어 실 상품에선 비어 온다 — 목업 사양을 실데이터로 위장하지
-                  않으려고 값이 있을 때만 렌더한다(codex 리뷰 #13). */}
+                  않으려고 값이 있을 때만 렌더한다. */}
               {data.specs.length > 0 && (
                 <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
                   {data.specs.map(spec => (
@@ -363,7 +363,7 @@ function getDiscount(product: ProductDetail): number | null {
 
 function ReviewSummaryCard({ summary }: { summary: ProductDetail['reviewSummary'] }) {
   // 분포 소스가 없는 실 상품(집계 전용)은 큰 빈 오른쪽 여백 대신 평균/별점/건수를 한 줄로 콤팩트하게
-  // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지, codex UI/UX #11).
+  // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지).
   if (!summary.distribution) {
     return (
       <div className="flex items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
@@ -423,7 +423,7 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
           </div>
         ))}
       </div>
-      {/* 품절 표시 — 상태 pill 줄을 제거했으므로(item 1) dim만으로는 불명확해 캐러셀 중앙에
+      {/* 품절 표시 — 상태 pill 줄을 제거했으므로 dim만으로는 불명확해 캐러셀 중앙에
           "품절" 오버레이를 남긴다(DS ProductCard의 품절 표현과 동일 패턴). */}
       {sold && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -475,7 +475,7 @@ function ActionBar({
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
       </button>
-      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다(codex UI/UX #9). 찜은 유지. */}
+      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다. 찜은 유지. */}
       <Button variant="secondary" size="lg" onClick={onCart} className="flex-1" disabled={soldOut}>
         장바구니
       </Button>
@@ -512,7 +512,7 @@ function OptionSheet({
   const [selectedKey, setSelectedKey] = useState('')
   const [qty, setQty] = useState(1)
   // 기본 선택은 주문 가능한(품절 아닌) 첫 조합 — 첫 조합이 품절인데 뒤에 판매 조합이 있으면 첫인상이
-  // "구매 불가"가 되지 않게 한다(codex UI/UX #8).
+  // "구매 불가"가 되지 않게 한다.
   const choice = choices.find(c => c.key === selectedKey) ?? choices.find(c => !c.soldOut) ?? choices[0]
   const allSoldOut = choices.length > 0 && choices.every(c => c.soldOut)
 
@@ -522,7 +522,7 @@ function OptionSheet({
   }, [choice?.key])
 
   // 옵션 조회가 (404 아닌) 오류면 담기/구매를 막는다 — 조용히 "기본 구성" 기본가로 주문하게 두면
-  // 실제 옵션/재고를 무시한 잘못된 주문이 된다(codex 리뷰 #8).
+  // 실제 옵션/재고를 무시한 잘못된 주문이 된다.
   if (error) {
     return (
       <BottomSheet open={open} onClose={onClose} title="옵션 선택">
@@ -546,7 +546,7 @@ function OptionSheet({
     )
   }
 
-  // 모든 조합이 품절이면 선택/담기 UI 대신 명확한 전량 품절 안내를 보여준다(codex UI/UX #8).
+  // 모든 조합이 품절이면 선택/담기 UI 대신 명확한 전량 품절 안내를 보여준다.
   if (allSoldOut) {
     return (
       <BottomSheet open={open} onClose={onClose} title="옵션 선택">

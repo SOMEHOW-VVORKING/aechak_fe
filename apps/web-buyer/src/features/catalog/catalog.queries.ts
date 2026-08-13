@@ -24,7 +24,7 @@ interface ProductPage {
 }
 
 // 페이지를 fetch당 한 번만 CatalogProduct로 매핑한다. select에서 다시 매핑하지 않도록 완성
-// 형태로 반환한다(codex 리뷰 #5 — select 재매핑/참조 불안정 제거). 레지스트리에는 ProductGrid에서
+// 형태로 반환한다(select 재매핑/참조 불안정 제거). 레지스트리에는 ProductGrid에서
 // 상세 진입/찜처럼 후속 화면이 상품 스냅샷을 실제 소비할 때만 등록해 장기 세션 누적을 제한한다.
 async function fetchProductPage(
   params: { category?: number; sort: CatalogSort },

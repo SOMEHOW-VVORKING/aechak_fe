@@ -27,7 +27,7 @@ export function MyPageHubScreen() {
   const verified = account?.verification === 'verified'
 
   // GET /users/me는 PENDING도 200(화이트리스트)이라 허브가 온보딩 미완료 유저를 여기서 잡는다.
-  // 빈 닉네임·빈 이메일의 퇴화된 프로필 카드를 보여주지 않고 온보딩 약관 화면으로 보낸다(design 결정 #10).
+  // 빈 닉네임·빈 이메일의 퇴화된 프로필 카드를 보여주지 않고 온보딩 약관 화면으로 보낸다.
   const isPendingOnboarding = account?.isPendingOnboarding ?? false
   useEffect(() => {
     if (isPendingOnboarding) navigate({ to: '/onboarding/terms', replace: true })

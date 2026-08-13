@@ -33,7 +33,7 @@ export function useProductDetail(id: string) {
 // 상품 옵션 — 옵션 시트를 열 때만(enabled) 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
 // 목업 id의 404만 null을 반환해 화면이 목업 옵션으로 폴백한다. 실 id의 404/기타 오류는 그대로 던져
 // (isError) 옵션 시트가 담기/구매를 차단하게 한다 — 실 옵션 실패를 "기본 구성" 기본가로 위장하지
-// 않기 위함(codex 리뷰 #8).
+// 않기 위함.
 export function useProductOptions(id: string, options: { enabled: boolean }) {
   return useQuery<ProductOptionsView | null>({
     queryKey: ['product', 'options', id],

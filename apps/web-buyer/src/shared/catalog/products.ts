@@ -95,8 +95,8 @@ export function findProduct(id: string): CatalogProduct | undefined {
 }
 
 // 목업 카탈로그만 조회(레지스트리 제외). 실 상세 404 폴백에 쓴다 — findProduct를 쓰면 목록에서
-// 이미 등록된 실 ULID를 되살려 백엔드가 미존재로 판정한 상품을 가짜 상세로 보여주는 회귀가 난다
-// (codex 리뷰 #9). 목업 id만 폴백 대상이므로 레지스트리를 건너뛴다.
+// 이미 등록된 실 ULID를 되살려 백엔드가 미존재로 판정한 상품을 가짜 상세로 보여주는 회귀가 난다.
+// 목업 id만 폴백 대상이므로 레지스트리를 건너뛴다.
 export function findMockProduct(id: string): CatalogProduct | undefined {
   return CATALOG_PRODUCTS.find(p => p.id === id)
 }

@@ -63,7 +63,7 @@ export function mapProductDetail(res: ProductDetailResponse): ProductDetail {
     options: [],
     stockCount: base.isSoldOut ? 0 : 1,
     // 사양표/리뷰 분포/리뷰 목록은 실 API 소스가 없다 — 목업을 실데이터로 위장하지 않으려고
-    // 비우고(분포는 undefined로 막대 숨김), 신뢰 가능한 집계 요약(건수/평균)만 노출한다(codex 리뷰 #13).
+    // 비우고(분포는 undefined로 막대 숨김), 신뢰 가능한 집계 요약(건수/평균)만 노출한다.
     specs: [],
     reviewSummary: {
       average: res.review.averageRating ?? 0,

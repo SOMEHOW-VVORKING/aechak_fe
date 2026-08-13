@@ -61,7 +61,7 @@ export interface CartItem {
   //
   // TODO(후속, 실 cart/order/payment API 착수 전 필수): 가격/재고는 URL의 addl·option 문자열을
   // 신뢰하지 말고 서버에서 재검증하고, 라인 정체성을 조합명(option)이 아니라 optionCombinationId로
-  // 삼을 것 — 조합명 중복 시 라인 충돌, 클라이언트 addl 변조로 결제 금액 조작이 가능하다(codex 리뷰 #11).
+  // 삼을 것 — 조합명 중복 시 라인 충돌, 클라이언트 addl 변조로 결제 금액 조작이 가능하다.
   optionCombinationId?: number
 }
 

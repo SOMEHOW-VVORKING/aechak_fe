@@ -40,8 +40,8 @@ const SUBCAT_ICONS: Record<string, LucideIcon> = {
   '훈련/행동': GraduationCap,
 }
 
-// 트리에서 이름이 같은 노드의 경로(대>중>소 id)를 depth 무관 재귀로 찾는다(codex 리뷰 #3 —
-// 기존엔 depth 2까지만 봐 depth-3 라벨을 놓쳤다). 첫 DFS 매치를 반환한다(라벨 중복은 categoryId를
+// 트리에서 이름이 같은 노드의 경로(대>중>소 id)를 depth 무관 재귀로 찾는다(기존엔 depth 2까지만 봐
+// depth-3 라벨을 놓쳤다). 첫 DFS 매치를 반환한다(라벨 중복은 categoryId를
 // URL에 싣는 후속 작업에서 해소 — 이번 배치 범위 밖).
 function findCategoryPath(nodes: CategoryResponse[], label: string): number[] | null {
   for (const node of nodes) {
@@ -53,7 +53,7 @@ function findCategoryPath(nodes: CategoryResponse[], label: string): number[] | 
 }
 
 // id로 카테고리명을 depth 무관 재귀로 찾는다 — 선택이 depth-3 리프라 중분류 타일과 매칭되지 않아도
-// 활성 필터 이름을 pill로 보여주기 위함(codex UI/UX #3).
+// 활성 필터 이름을 pill로 보여주기 위함.
 function findCategoryName(nodes: CategoryResponse[], id: number): string | null {
   for (const node of nodes) {
     if (node.categoryId === id) return node.name
@@ -92,10 +92,10 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
 
   // ?category=<라벨> 반영. 트리 로드 후 이름이 같은 노드를 depth 무관 재귀로 찾아 대분류+중분류를
   // 선택한다. 마지막 적용 라벨을 ref로 기억해, 같은 마운트에서 URL category가 바뀌면 다시 반영하고
-  // (codex 리뷰 #3) 사용자가 수동 선택한 뒤 같은 라벨로는 덮지 않는다.
+  // 사용자가 수동 선택한 뒤 같은 라벨로는 덮지 않는다.
   const lastAppliedLabel = useRef<string | undefined>(undefined)
   useEffect(() => {
-    // URL category가 비면 마지막 적용 라벨을 리셋해 A -> 없음 -> A 재진입 시 다시 반영되게 한다(codex 리뷰 #3).
+    // URL category가 비면 마지막 적용 라벨을 리셋해 A -> 없음 -> A 재진입 시 다시 반영되게 한다.
     if (!initialSubCategory) {
       lastAppliedLabel.current = undefined
       return
@@ -107,7 +107,7 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
     lastAppliedLabel.current = initialSubCategory
     if (!path) return
     // path[0]=대분류, 마지막=매치 노드. 매치 노드 id로 필터해 정확히 그 카테고리(+하위)만 거른다 —
-    // depth-3 리프 딥링크가 depth-2 형제 상품까지 끌어오지 않게 한다(codex 리뷰 #3).
+    // depth-3 리프 딥링크가 depth-2 형제 상품까지 끌어오지 않게 한다.
     setSelectedMainId(path[0] ?? null)
     setSelectedSubId(path.length >= 2 ? (path[path.length - 1] ?? null) : null)
     setCategoryOpen(true)
@@ -138,8 +138,8 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
         />
       </div>
 
-      {/* 대분류 칩 — [전체] + 트리 depth-1. 트리 로딩 중엔 칩 스켈레톤을 보여 "카테고리 없음"과 구분한다
-          (codex UI/UX #1). 트리 실패 시엔 전체만 남고 상품 목록은 독립적으로 그대로 뜬다. */}
+      {/* 대분류 칩 — [전체] + 트리 depth-1. 트리 로딩 중엔 칩 스켈레톤을 보여 "카테고리 없음"과 구분한다.
+          트리 실패 시엔 전체만 남고 상품 목록은 독립적으로 그대로 뜬다. */}
       <div className="flex gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <MainChip label="전체" selected={selectedMainId === null} onClick={() => selectMain(null)} />
         {tree.isLoading
@@ -205,7 +205,7 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
       </div>
 
       {/* 결과 헤더 — 로드된 데이터가 있을 때만 카운트 표시(첫 로딩/첫 페이지 에러 중 "0개" 모순 방지).
-          다음 페이지 실패로 list.isError가 참이 돼도 이미 로드된 그리드가 있으면 카운트를 유지한다(codex UI/UX #5). */}
+          다음 페이지 실패로 list.isError가 참이 돼도 이미 로드된 그리드가 있으면 카운트를 유지한다. */}
       {list.data != null && (
         <div className="px-4 pb-3 pt-3.5">
           <p className="text-caption text-text-tertiary">
@@ -227,7 +227,7 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
           </div>
         ) : list.isError && products.length === 0 ? (
           // 첫 페이지 실패만 전체 에러로 — 이미 로드된 상품이 있으면(다음 페이지 실패) 그리드를 지우지
-          // 않는다(codex 리뷰 #7 + UI/UX #2). 서버/네트워크 오류를 "상품 없음"과 구분한다.
+          // 않는다. 서버/네트워크 오류를 "상품 없음"과 구분한다.
           <EmptyState
             title="상품을 불러오지 못했어요"
             description="네트워크 상태를 확인하고 다시 시도해 주세요."
