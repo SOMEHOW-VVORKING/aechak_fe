@@ -2045,6 +2045,10 @@ feature 추가 후: `pnpm typecheck && pnpm lint` 반드시 통과 확인.
 
 ## 커밋 메시지 규칙
 
+> 커밋을 어디서 나누는지(특히 API 연동의 `chore` → `feat` → `test` 3분할), 본문에 무엇을 남기는지,
+> 브랜치·머지 커밋 규칙은 [@docs/commit-convention.md](docs/commit-convention.md)에 있다.
+> 이 절은 형식 요약이다.
+
 ### 형식
 
 ```
