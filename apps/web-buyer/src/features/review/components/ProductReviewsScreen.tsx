@@ -24,7 +24,7 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
   const [sort, setSort] = useState<ReviewSort>('latest')
   const [photoOnly, setPhotoOnly] = useState(false)
-  const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage } =
+  const { data, isLoading, isError, isPlaceholderData, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useProductReviews(productId, sort, photoOnly)
 
   const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
@@ -37,11 +37,15 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
     <MobileScreen header={<BackAppBar onBack={goBack} title={title} />}>
       {isLoading ? (
         <ReviewsSkeleton />
-      ) : isError && !data ? (
-        // 최초 로딩 실패만 에러 화면으로 전환한다 — 이미 불러온 목록이 있는데 "더보기"(다음 페이지)가
-        // 실패하면 query.isError가 켜져도 목록을 통째로 에러 화면으로 교체하지 않고 그대로 유지한다
-        // (다음 페이지는 더보기 버튼으로 재시도된다). 인증 실패는 인터셉터가 전역에서 로그인으로
-        // 보내고, 비인증 실패(네트워크/500)는 화면마다 재시도 버튼을 떠안지 않고 안내만 한다(breeds 컨벤션).
+      ) : isError && (!data || isPlaceholderData) ? (
+        // 최초 로딩 실패(!data)와 정렬/포토 토글 실패(isPlaceholderData)만 에러 화면으로 전환한다.
+        // 토글 실패 시 placeholderData가 이전 필터의 목록을 그대로 들고 있어(data가 truthy) 그냥 두면
+        // "칩은 새 필터로 활성인데 목록은 이전 필터 그대로"인 조용한 오동작이 된다 — 이때는 stale 목록을
+        // 보여주지 않고 에러로 안내한다(사용자가 칩을 되돌리면 캐시된 이전 목록이 즉시 다시 뜬다).
+        // 반면 이미 불러온 목록이 있는데 "더보기"(다음 페이지)가 실패하면 isPlaceholderData가 아니라
+        // 실제 data라 목록을 통째로 에러 화면으로 교체하지 않고 그대로 유지한다(더보기 버튼으로 재시도).
+        // 인증 실패는 인터셉터가 전역에서 로그인으로 보내고, 비인증 실패(네트워크/500)는 화면마다
+        // 재시도 버튼을 떠안지 않고 안내만 한다(breeds 컨벤션).
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
             title="리뷰를 불러오지 못했어요"

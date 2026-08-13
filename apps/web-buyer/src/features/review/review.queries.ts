@@ -153,6 +153,8 @@ export function useProductReviews(
   data: ProductReviewsView | null | undefined
   isLoading: boolean
   isError: boolean
+  /** 지금 보이는 data가 이전 쿼리의 placeholder인지(정렬/포토 토글 로딩 중 깜빡임 방지용). */
+  isPlaceholderData: boolean
   refetch: () => void
   hasNextPage: boolean
   fetchNextPage: () => void
@@ -200,6 +202,7 @@ export function useProductReviews(
     data,
     isLoading: query.isLoading,
     isError: query.isError,
+    isPlaceholderData: query.isPlaceholderData,
     refetch: () => void query.refetch(),
     hasNextPage: query.hasNextPage,
     fetchNextPage: () => void query.fetchNextPage(),
