@@ -4,11 +4,13 @@ import { http, HttpResponse } from 'msw'
 import { describe, it, expect, beforeEach } from 'vitest'
 import type { ProductSummaryResponse } from '@aechak/api'
 import { PRODUCT_LIKE_URL, server } from '@/testing/msw/server'
-import { addWish, isWished, resetWishlist } from '../wishlist.store'
+import { addWish, isWished, removeWish, resetWishlist } from '../wishlist.store'
 import {
   currentSessionEpoch,
+  hydrateLikedFromDetail,
   hydrateLikedFromSummaries,
   onWishlistLogout,
+  resetWishlistState,
   toggleWishlist,
 } from '../wishlist.queries'
 
@@ -129,5 +131,42 @@ describe('hydrateLikedFromSummaries', () => {
     onWishlistLogout(new QueryClient()) // 세션 종료 → epoch 증가, 미러 clear
     hydrateLikedFromSummaries([summary('p-real-8', true)], epoch)
     expect(isWished('p-real-8')).toBe(false)
+  })
+})
+
+describe('hydrateLikedFromDetail', () => {
+  beforeEach(() => {
+    resetWishlistState()
+  })
+
+  it('[AC-WISH-017] 상세 isLiked=true를 미러에 시드하되 세션당 1회만 한다', () => {
+    hydrateLikedFromDetail('p-real-3', true)
+    expect(isWished('p-real-3')).toBe(true)
+
+    // 사용자가 해제한 뒤 상세를 다시 열면 같은 isLiked=true 응답이 캐시에서 오는데, 그게 방금 해제한
+    // 하트를 되살리면 안 된다. (해제는 서버 호출 없는 removeWish로 — 시드 기록만 격리해서 본다.)
+    removeWish('p-real-3')
+    hydrateLikedFromDetail('p-real-3', true)
+    expect(isWished('p-real-3')).toBe(false)
+  })
+
+  it('[AC-WISH-018] isLiked가 false거나 아직 없으면(undefined) 시드하지 않는다', () => {
+    hydrateLikedFromDetail('p-real-4', false)
+    hydrateLikedFromDetail('p-real-5', undefined)
+    expect(isWished('p-real-4')).toBe(false)
+    expect(isWished('p-real-5')).toBe(false)
+  })
+
+  it('[AC-WISH-019] 세션이 끝나면(resetWishlistState) 시드 기록도 비워져 다시 시드된다', () => {
+    // 시드 기록이 세션을 넘어 남으면, 로그아웃 후 다른 계정이 같은 상품 상세를 열었을 때 서버가
+    // isLiked=true를 줘도 하트가 빈 채로 뜬다. 기록을 리셋에 포함시켜 그 누수를 막는다.
+    hydrateLikedFromDetail('p-real-6', true)
+    removeWish('p-real-6')
+    hydrateLikedFromDetail('p-real-6', true)
+    expect(isWished('p-real-6')).toBe(false) // 같은 세션이라 재-시드 안 함
+
+    resetWishlistState()
+    hydrateLikedFromDetail('p-real-6', true)
+    expect(isWished('p-real-6')).toBe(true) // 새 세션이라 다시 시드
   })
 })

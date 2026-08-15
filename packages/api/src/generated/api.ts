@@ -583,6 +583,45 @@ export interface UpdateProfileRequest {
   profileImageKey: string | null
 }
 
+/**
+ * 문의 유형
+ */
+export type SubmitInquiryRequestInquiryType =
+  (typeof SubmitInquiryRequestInquiryType)[keyof typeof SubmitInquiryRequestInquiryType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SubmitInquiryRequestInquiryType = {
+  ACCOUNT: 'ACCOUNT',
+  ORDER_PAYMENT: 'ORDER_PAYMENT',
+  DELIVERY_CLAIM: 'DELIVERY_CLAIM',
+  SELLER_PRODUCT: 'SELLER_PRODUCT',
+  SERVICE_ETC: 'SERVICE_ETC',
+} as const
+
+export interface SubmitInquiryRequest {
+  /** 문의 유형 */
+  inquiryType: SubmitInquiryRequestInquiryType
+  /** 답변받을 이메일. 형식 위반 400 INVALID_REQUEST */
+  replyEmail: string
+  /**
+   * 문의 내용. 1~2000자
+   * @minLength 1
+   * @maxLength 2000
+   */
+  content: string
+}
+
+export type SubmitInquiryResponseData = {
+  /** 접수 상태. RECEIVED */
+  status: string
+  /** 접수 시각 ISO-8601 */
+  createdAt: string
+}
+
+export interface SubmitInquiryResponse {
+  data: SubmitInquiryResponseData
+}
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -4631,6 +4670,80 @@ export const useSetNickname = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getSetNicknameMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 로그인 사용자의 앱 서비스 문의를 접수한다(RECEIVED). 형식/필수 위반 400 INVALID_REQUEST, 미인증 401.
+ * @summary 앱 서비스 문의 접수
+ */
+export const submitInquiry = (submitInquiryRequest: SubmitInquiryRequest, signal?: AbortSignal) => {
+  return customInstance<SubmitInquiryResponse>({
+    url: `/inquiries`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: submitInquiryRequest,
+    signal,
+  })
+}
+
+export const getSubmitInquiryMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitInquiry>>,
+    TError,
+    { data: SubmitInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitInquiry>>,
+  TError,
+  { data: SubmitInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['submitInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitInquiry>>,
+    { data: SubmitInquiryRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return submitInquiry(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SubmitInquiryMutationResult = NonNullable<Awaited<ReturnType<typeof submitInquiry>>>
+export type SubmitInquiryMutationBody = SubmitInquiryRequest
+export type SubmitInquiryMutationError = unknown
+
+/**
+ * @summary 앱 서비스 문의 접수
+ */
+export const useSubmitInquiry = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof submitInquiry>>,
+      TError,
+      { data: SubmitInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof submitInquiry>>,
+  TError,
+  { data: SubmitInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getSubmitInquiryMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

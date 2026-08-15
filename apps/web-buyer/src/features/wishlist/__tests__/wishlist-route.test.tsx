@@ -58,6 +58,9 @@ describe('/wishlist', () => {
 
     const hearts = await screen.findAllByRole('button', { name: '찜 해제' })
     const initialCount = hearts.length
+    // 시드한 3건이 그대로 떠야 한다 — 상대 카운트만 보면 앞 테스트가 남긴 해제 툼스톤 때문에
+    // 2건만 뜬 상태에서도 통과해버려 시나리오가 조용히 축소된다.
+    expect(initialCount).toBe(3)
     await user.click(hearts[0]!)
     expect(screen.getAllByRole('button', { name: '찜 해제' })).toHaveLength(initialCount - 1)
 
@@ -75,7 +78,7 @@ describe('/wishlist', () => {
 
     const hearts = await screen.findAllByRole('button', { name: '찜 해제' })
     const initialCount = hearts.length
-    expect(initialCount).toBeGreaterThan(0)
+    expect(initialCount).toBe(2)
 
     await user.click(hearts[0]!)
 
