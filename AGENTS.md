@@ -1877,6 +1877,121 @@ BE가 배송지 클래스를 전부 `DeliveryAddress` 접두로 확정하면서(
 
 ---
 
+### web-buyer 찜(Wishlist) API 연동 (SCRUM-113, 2026-08-08)
+
+찜을 순수 클라이언트 스토어에서 실 API로 전환했다(BE SCRUM-109). 엔드포인트 3종:
+`POST /products/{id}/like`(201·멱등), `DELETE /products/{id}/like`(204·멱등),
+`GET /users/me/liked-products?cursor=&size`(커서 페이지네이션). **찜 목록 응답은 상품 목록과
+동일한 `ProductListResponse`를 재사용**한다(`schema.yaml`에 이미 있어 경로 3개만 추가). 카드
+(`ProductSummaryResponse`)에는 `isLiked`가 없고 품절은 `saleStatus`로 파생한다 — 이 "카드에
+isLiked 없음"이 아래 설계 전반의 근본 제약이다.
+
+- **찜 서버 쿼리/뮤테이션은 `shared/catalog`에 둔다**(`wishlist.queries.ts`). shared 도메인이
+  `@aechak/api`를 import해 자기 `*.queries.ts`를 두는 기존 패턴(pet/delivery-address/points/account)과
+  동일 — 찜은 cross-screen 공유라 `ProductGrid`(같은 element)가 직접 써야 하기 때문. `catalog.mapper.ts`의
+  "shared는 서버 계약을 안 나른다" 주석은 그 파일만의 로컬 판단이었고, 이 배치에서 `toCatalogProduct`를
+  `shared/catalog/product-summary.mapper.ts`로 승격해 catalog/search/wishlist가 공유하게 했다(feature→feature
+  import 제거). 신규 shared 모듈은 배럴 자기참조 사이클을 피해 `CatalogProduct`/`mediaUrl`을 상대경로로 import.
+- **`wishlist.store.ts`는 순수 클라이언트 미러(하트용 id 집합)로 남는다** — 서버 상품 데이터는
+  TanStack Query가 소유하고 스토어는 id만 담는다(카드에 isLiked가 없어 화면 전반 하트 상태엔 이 미러가
+  필요). `SEED_IDS` 제거(빈 초기), `hydrateWished`(union 머지)·`clearWished`(로그아웃) 추가.
+- **토글은 `findMockProduct(id)`로 mock/real을 게이트한다(핵심 재사용 포인트).** `toggleWishlist(id)`는
+  현재 상태를 뒤집어 낙관적으로 미러에 반영한 뒤, **real id만** `like`/`unlike`를 발사한다. mock id(홈은
+  아직 `home.mock`의 `p-*`, SCRUM-156 미완)는 서버 기록이 없어 클라이언트 토글만 한다 — 안 그러면
+  `POST /products/p-feeder-5l/like`가 404. `product.queries`가 404 폴백에 쓰는 `findMockProduct`를 그대로
+  재사용해 한 곳에서 분기하므로, 홈이 실 API로 옮겨가면 게이트가 자동으로 서버 경로를 탄다(호출부 무변경).
+  더블탭 레이스는 상품별 desired-state 맵 + 진행 플래그로 최신 의도에 수렴시키고(`reconcile`), **401은
+  롤백하지 않으며**(전역 `setOnAuthExpired`가 처리) 비401 실패만 낙관적 반영을 되돌린다.
+- **찜 목록 제거/실행취소는 필터 기반**(리페치·캐시수술 없음): 화면은 서버 무한쿼리 pool을 현재 id-set으로
+  필터(`pool.filter(p => wished.has(p.id))`)해 표시한다. 해제 → id-set 제거 → 즉시 사라짐, 실행취소 →
+  서버 재-like + id-set 복귀 → pool에 아직 있어 즉시 재등장. **토글 시 목록을 invalidate하지 않는다**(하면
+  다중 페이지 리페치로 깜빡임·스크롤 리셋·undo 미복귀). **페이지 id 하이드레이션은 `fetchLikedPage` 안에서
+  그 페이지 id만** `hydrateWished`로 머지한다(전체 pool 재머지 금지) — 이래야 다른 페이지를 로드해도 방금
+  해제한 id가 되살아나지 않는다.
+- **상세 화면의 `isLiked` 단방향 시드(`if (data.isLiked) addWish`)는 그대로 유지**(two-way reconcile 금지).
+  상세는 404 시 목업으로 폴백하는데 목업엔 서버 isLiked가 없어, 양방향으로 바꾸면 카탈로그에서 찜한 하트를
+  잘못 지운다. ActionBar 토글만 `toggleWishlist`로 배선(게이트가 real/mock 처리).
+- **로그아웃 시 `clearWished()`를 두 곳 모두 호출**: `main.tsx`(401 만료)와
+  `SettingsHomeScreen`(수동 로그아웃). shared/auth↔shared/catalog는 서로 import 못 하므로 각 호출부에서 부른다.
+- **앱 전역 부팅 하이드레이션은 이번 범위에서 보류**: `_tabs`에 넣으면 로그인 기본값 탓에 거의 모든 라우트
+  테스트가 `onUnhandledRequest:'error'`로 깨지고 이중 캐시·검색 딥링크 문제가 생긴다. 대신 찜 목록 무한쿼리
+  머지 + 상세 단방향 시드로 하이드레이트한다. **알려진 한계**: 마켓/검색의 "이전 세션에 찜한" 항목 하트는
+  찜 목록/해당 상세를 방문한 뒤 채워진다(세션 내 토글은 항상 낙관적으로 일치).
+- **재입고 알림은 범위 제외**(품절 상태만 노출). SCRUM-113 AC엔 "재입고 알림 노출"이 있으나 BE(SCRUM-110)
+  미착수 + FE Phase 8에서 이미 버튼을 제거했다 — AC 문구와의 차이는 의도적이다.
+- **테스트**: MSW 기본 `handlers`에 liked-products GET + like POST/DELETE를 넣어야 한다(ProductGrid 토글이
+  마켓/검색/찜 테스트에서 발사되므로 — 안 넣으면 `onUnhandledRequest:'error'`로 깨짐). `test-setup` afterEach에
+  `resetLikedProducts()` 추가. 찜 목록 픽스처는 `PRODUCT_FIXTURES`를 재사용하고 OUT_OF_STOCK 1건(`p-real-5`)을
+  포함한다. 회귀: `wishlist.store.test`(hydrate/union 비-부활/clear), `wishlist.queries.test`(mock/real 게이트·
+  낙관적 롤백), `wishlist-route.test`(목록/해제+undo/게이트/빈/품절), `product-summary.mapper.test`.
+- **BE 미머지**: `feature/SCRUM-109-product-wishlist`가 develop에 아직 안 들어가 실 검증은 그 브랜치를 직접
+  띄워야 한다. PR 게이트(typecheck/lint/test)는 MSW로 통과하며, `openapi:generate:check`는 재생성 결과를
+  커밋해야 통과한다(생성물 커밋 전엔 항상 실패 — breeds 배치와 동일).
+
+### 찜 코드리뷰 라운드(codex 협업) 반영 — reconcile 하드닝 + 정리
+
+codex(gpt-5.6)와 병렬 코드리뷰 후 이견을 수렴해 반영했다.
+
+- **`toggleWishlist` reconcile를 generation 카운터 + session epoch로 재작성**(`wishlist.queries.ts`).
+  기존엔 요청 실패 중 추가 탭이 들어오면 최신 의도가 `desiredState`에 고립돼 유실+누수됐다(값이
+  우연히 같아도 구분 못 함). 이제 세대 비교로 "그 사이 새 탭"을 정확히 판별해 최신 의도를 계속
+  조정하고, 실패는 최신 의도일 때만 서버 실제 상태로 롤백한다. `sessionEpoch`는 로그아웃 시 증가시켜
+  이전 세션의 늦은 롤백이 새 세션 미러를 오염시키지 않게 막는다.
+- **로그아웃 정리를 `onWishlistLogout(queryClient)` 단일 진입점으로 통합**(main.tsx 세션 만료 +
+  SettingsHomeScreen 수동). 미러 clear + 진행중 의도 폐기(epoch) + **찜 목록 쿼리 캐시 제거**를
+  원자적으로 한다 — 캐시가 남으면 재진입 시 옛 pool ∩ 빈 미러가 잘못된 빈 목록으로 뜬다.
+- **상세 `isLiked` 시드를 id별 세션당 1회로 제한**(`seededLikedIds`) — 재마운트 시 캐시된
+  isLiked=true가 방금 해제한 하트를 되살리는 버그 차단.
+- **홈 하트를 `toggleWishlist`로 통일**(구 `toggleWish` 제거). mock 상품은 게이트로 클라이언트
+  토글, 실 상품 전환 시 자동 서버 동기화. `toggleWish`/`wishErrorMessage`/`currentLikedProducts`
+  죽은 코드 제거.
+- **`WishlistScreen`**: 파생 목록 `useMemo`, 빈 상태를 `!hasNextPage`일 때만(한 페이지 전량 해제 시
+  다음 페이지 도달 불가 방지).
+- **수렴된 미결(이견 → BE 후속)**: 카드 응답(`ProductSummaryResponse`)에 `isLiked`가 없어, 이전
+  세션에 찜한 상품이 마켓/검색에서 하이드레이션 전까지 빈 하트로 보이고 첫 클릭이 (DELETE가 아니라)
+  멱등 POST가 된다. codex는 blocking으로 봤고 FE 단독 해결(첫 페이지만 hydrate=21번째부터 틀림, 전
+  페이지 drain=낭비)은 부분적이라, **정식 해결은 BE가 `ProductSummaryResponse`에 `isLiked`를 내려주는
+  것**으로 합의했다(또는 전용 liked-ids endpoint). 이 배치는 부분 해킹을 넣지 않고 한계로 남긴다 —
+  찜 목록 화면(SCRUM-113 본체)과 상세는 정확하다. union-only hydrate의 cross-device/늦은 GET 재부활도
+  같은 BE 스냅샷 도입 때 함께 해결한다.
+- MSW 커서(offset)·POST 픽스처 게이팅은 mock 전용 정합성 이슈로 현재 테스트가 건드리지 않아 후속으로
+  남겼다(production은 keyset 커서).
+
+### 상품 카드 isLiked 소비 (SCRUM-190) — 하트 미러 시드 + 해제 툼스톤/epoch 가드 (2026-08-12)
+
+BE(SCRUM-190, PR #62)가 `ProductSummaryResponse`에 필수·비-nullable `isLiked`를 추가하면서(목록/검색은
+로그인 시 카드별, 찜목록은 전부 true, 비로그인은 전부 false), 위 "찜 API 연동" 절의 알려진 한계(마켓/검색에서
+이전 세션 찜이 빈 하트로 보이던 문제)를 FE가 소비해 해소했다. **핵심 결정: 카드에 isLiked를 얹지 않고
+(도메인 `CatalogProduct`/`Product` 무변경, seller/admin typecheck 무영향) 미러(`wishlist.store.ts`)를 여전히
+하트의 단일 원본으로 두되, fetch 시점에 raw `ProductSummaryResponse[]`에서 미러를 시드**한다. `ProductGrid`는
+그대로 `wished.has(id)`만 읽으므로 컴포넌트 무변경. 스키마는 `packages/api/openapi/schema.yaml`에 `isLiked`를
+`required`+`properties`로 넣고 `pnpm --filter @aechak/api openapi:generate`로 생성물을 재생성해 커밋했다.
+
+- **시드 헬퍼 `hydrateLikedFromSummaries(summaries, epoch?)`(`shared/catalog/wishlist.queries.ts`)** — `isLiked=true`
+  이고 툼스톤에 없는 id만 union 머지, `isLiked=false`는 툼스톤 해제. 마켓/검색/찜목록 세 fetcher가 공유 호출.
+  빈 id면 `hydrateWished`를 아예 호출하지 않아 불필요한 `new Set` 복사도 없앴다.
+- **해제 툼스톤 `locallyUnliked: Set<string>`(핵심 버그 픽스, 코드리뷰 교차 확인)** — 최초 구현은 `desiredState.get(id)
+  !== false`로 "진행 중 해제 의도"만 걸렀는데, `reconcile`이 DELETE 성공 즉시 `desiredState[id]`를 지우므로 **요청이
+  끝난 뒤** 늦게 도착한 stale `isLiked=true` 페이지 응답이 방금 해제한 하트를 되살리고 union-only 미러가 그걸
+  세션 내내 유지하는 major 버그가 있었다(codex + 내부 워크플로가 독립적으로 동일 지적). 툼스톤은 `toggleWishlist`
+  해제 시 add, 재-찜 시 delete, `reconcile`은 건드리지 않고, 서버가 `isLiked=false`로 확정하는 hydrate에서만 풀린다
+  → 요청 완료 후 창까지 덮는다. 찜목록 화면의 해제 후 리페치 재부활도 같은 원리로 함께 막힌다.
+- **`sessionEpoch` 가드** — hydrate 경로엔 `reconcile`과 달리 epoch 가드가 없어, 로그아웃을 가로질러 resolve된
+  목록/검색 fetch가 방금 비운 미러에 이전 세션 찜을 재-시드하는 누수가 있었다. 각 fetcher가 요청 시작 전
+  `currentSessionEpoch()`를 캡처해 넘기고, hydrate는 `epoch !== sessionEpoch`면 early-return한다. `onWishlistLogout`은
+  툼스톤도 함께 clear한다.
+- **의도적으로 이번 배치에서 안 한 것(코드리뷰 수렴 결과 후속 PR로 분리)**: (a) `ProductGrid`가 미러 전체 Set을
+  구독해 하트 시드 emit 시 이미 로드된 카드가 전부 리렌더되는 pre-existing 비용 — 셀렉터를 per-card boolean 스냅샷
+  (`useIsWished`)으로 바꾸고 카드를 자식 컴포넌트로 쪼개는 공용 컴포넌트 리팩터라 isLiked 기능 PR과 분리(머지 리스크
+  최소화). (b) catalog/search 쿼리 키의 auth-세션 스코프화 — 로그인 직후 리페치 전까지 하트가 잠깐 비어 보이는 UX
+  갭은 위 union-only hydrate 한계와 동류라 문서화만 하고 캐시 키 재설계는 후속 auth-세션 작업으로 미룸(누수 자체는
+  epoch 가드로 이미 차단). **다음에 이 두 가지를 실제로 손댈 때는 여기 결정을 참고할 것.**
+- **테스트**: `wishlist.queries.test`에 툼스톤(진행 중/요청 완료 후 stale true 모두 차단, false로 해제 후 재-찜 반영)과
+  epoch 가드 회귀를 추가(`AC-WISH-013~016`). 마켓/검색 첫 렌더 하트는 `catalog-route`/`search-route`
+  (`AC-CATALOG-013`/`AC-SEARCH-018`), MSW 세 리스트 핸들러는 `likedProductRows`에서 `isLiked`를 주입한다.
+
+---
+
 ## 리포 구조
 
 ```

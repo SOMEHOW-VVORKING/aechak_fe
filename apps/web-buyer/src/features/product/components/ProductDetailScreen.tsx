@@ -21,7 +21,7 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
 import { addToCart } from '@/shared/cart'
-import { addWish, SUB_CATEGORIES, toggleWish, useIsWished } from '@/shared/catalog'
+import { addWish, SUB_CATEGORIES, toggleWishlist, useIsWished } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useProductDetail, useProductOptions } from '../product.queries'
 import type { ProductDetail } from '../product.mock'
@@ -50,6 +50,11 @@ function buildOptionChoices(
   ]
 }
 
+// 서버 상세의 isLiked를 미러에 시드하되 id별로 세션당 한 번만 한다 — 재마운트 시 캐시된
+// isLiked=true가 다시 addWish해서 사용자가 그 사이 해제한 하트를 되살리는 버그를 막는다.
+// 이후 상태는 toggleWishlist(서버 동기화)가 소유한다.
+const seededLikedIds = new Set<string>()
+
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
 // 실 API(GET /products/{id}, /options)로 구동하되, mock id는 상세 쿼리가 목업으로 폴백한다.
 export function ProductDetailScreen({ productId }: { productId: string }) {
@@ -71,10 +76,13 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
 
-  // 서버 상세의 isLiked를 찜 스토어에 단방향 시드한다(like API가 없어 세션 토글이 우선 — false여도
-  // 강제 해제하지 않는다). addWish는 멱등이라 재호출/StrictMode 이중 실행에 안전하다.
+  // 서버 상세의 isLiked를 미러에 단방향 시드한다. id별 세션당 1회만(seededLikedIds) — 재마운트
+  // 시 캐시된 isLiked=true가 방금 해제한 하트를 되살리지 않게 한다. 이후 토글은 toggleWishlist가 소유.
   useEffect(() => {
-    if (data?.isLiked) addWish(productId)
+    if (data?.isLiked && !seededLikedIds.has(productId)) {
+      seededLikedIds.add(productId)
+      addWish(productId)
+    }
   }, [productId, data?.isLiked])
 
   const goBack = useSafeBack({ to: '/' })
@@ -106,7 +114,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             soldOut={data.isSoldOut}
             onToggleWish={() =>
               requireAuth('wish', () => {
-                toggleWish(productId)
+                toggleWishlist(productId)
                 showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
               })
             }

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { resetSearchFixtures, server } from './testing/msw/server'
+import { resetLikedProducts, resetSearchFixtures, server } from './testing/msw/server'
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해하지만 노이즈이고, 예외가 전환 중 리렌더를 유발해 테스트 노드를 detach시키므로
@@ -13,5 +13,6 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   resetSearchFixtures()
+  resetLikedProducts()
 })
 afterAll(() => server.close())

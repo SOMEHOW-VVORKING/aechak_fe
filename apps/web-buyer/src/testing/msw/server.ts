@@ -15,6 +15,8 @@ export const CATEGORIES_URL = `${base}/categories`
 export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
+export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
+export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
 export const SEARCH_KEYWORDS_URL = `${base}/search/keywords`
 export const RECENT_KEYWORDS_URL = `${base}/search/recent-keywords`
@@ -173,6 +175,64 @@ export const REAL_PRODUCT_OPTIONS = {
     },
   ],
 }
+
+// 내 찜 목록 상태(서버 소유 목록의 축소). seedLikedProducts로 세우고 like/unlike로 갱신한다.
+// 카드 형태는 상품 목록과 동일한 ProductSummaryResponse(= ProductFixture['product']).
+let likedProductRows: ProductFixture['product'][] = []
+
+/** 테스트마다 찜 목록을 세운다. 인자 없이 부르면 빈 목록. */
+export function seedLikedProducts(rows: ProductFixture['product'][] = []): void {
+  likedProductRows = rows.map(row => ({ ...row }))
+}
+
+/** 상태 누수 방지 — test-setup afterEach에서 호출. */
+export function resetLikedProducts(): void {
+  likedProductRows = []
+}
+
+// 카드 응답의 isLiked 판정 — BE는 로그인 사용자면 목록/검색/찜목록 카드마다 찜 여부를 채운다.
+// 여기선 seedLikedProducts/like-POST로 쌓인 likedProductRows를 진실 소스로 삼는다(미시드면 전부 false).
+function isLikedFixture(productId: string): boolean {
+  return likedProductRows.some(row => row.productId === productId)
+}
+
+const likedProductHandlers = [
+  // 내 찜 목록 — 커서(인덱스) 페이지네이션. 상품 목록과 동일한 ProductListResponse 봉투.
+  http.get(LIKED_PRODUCTS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    const cursor = url.searchParams.get('cursor')
+    const size = Number(url.searchParams.get('size') ?? 20)
+    const start = cursor ? Number(cursor) : 0
+    const page = likedProductRows.slice(start, start + size)
+    const nextIndex = start + size
+    const hasNext = nextIndex < likedProductRows.length
+    return HttpResponse.json({
+      data: {
+        // 찜 목록 카드는 정의상 전부 찜 상태다.
+        products: page.map(product => ({ ...product, isLiked: true })),
+        totalCount: start === 0 ? likedProductRows.length : null,
+        nextCursor: hasNext ? String(nextIndex) : null,
+        hasNext,
+      },
+    })
+  }),
+  // 찜하기 — 멱등(이미 찜한 상품도 201). 픽스처에 있으면 목록 앞에 추가한다(undo 재-like 대비).
+  http.post(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    if (!likedProductRows.some(p => p.productId === id)) {
+      const fixture = PRODUCT_FIXTURES.find(f => f.product.productId === id)?.product
+      if (fixture) likedProductRows = [fixture, ...likedProductRows]
+    }
+    return new HttpResponse(null, { status: 201 })
+  }),
+  // 찜 해제 — 멱등(찜하지 않은 상품도 204).
+  http.delete(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    likedProductRows = likedProductRows.filter(p => p.productId !== id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const PETS_URL = `${base}/users/me/pets`
 export const PRESIGNED_URL = `${base}/files/presigned-url`
 export const POINTS_URL = `${base}/users/me/points`
@@ -628,6 +688,7 @@ export const handlers = [
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
+  ...likedProductHandlers,
   // POST /inquiries — 접수 성공(RECEIVED). 실제 저장/통지는 BE 소관이라 계약(201 + data)만 재현한다.
   http.post(INQUIRIES_URL, () =>
     HttpResponse.json(
@@ -678,7 +739,7 @@ export const handlers = [
     const hasNext = nextIndex < products.length
     return HttpResponse.json({
       data: {
-        products: page,
+        products: page.map(product => ({ ...product, isLiked: isLikedFixture(product.productId) })),
         totalCount: products.length,
         nextCursor: hasNext ? String(nextIndex) : null,
         hasNext,
@@ -754,6 +815,7 @@ export const handlers = [
           saleStatus: product.isSoldOut ? 'OUT_OF_STOCK' : 'ON_SALE',
           averageRating: product.rating ?? null,
           reviewCount: product.reviewCount ?? 0,
+          isLiked: isLikedFixture(product.id),
         })),
         totalCount: cursor === 0 ? products.length : null,
         nextCursor: hasNext ? String(next) : null,

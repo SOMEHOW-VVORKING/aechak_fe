@@ -9,7 +9,7 @@ import {
   type SearchKeywordsEnvelope,
 } from '@aechak/api'
 import type { CatalogProduct } from '@/shared/catalog'
-import { toCatalogProduct } from '@/features/catalog/catalog.mapper'
+import { currentSessionEpoch, hydrateLikedFromSummaries, toCatalogProduct } from '@/shared/catalog'
 import { PRICE_MAX, type ResultSort, type SearchFilters } from './search.mock'
 
 export interface RecentKeyword {
@@ -119,6 +119,8 @@ async function fetchSearchPage(
   cursor: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<SearchPage> {
+  // 요청 시작 전 세션 epoch 캡처(catalog와 동일) — 로그아웃을 가로지른 응답의 미러 오염 방지.
+  const epoch = currentSessionEpoch()
   const response = await searchProducts(
     {
       keyword: query.trim(),
@@ -134,6 +136,9 @@ async function fetchSearchPage(
     },
     signal,
   )
+  // 로그인 검색이면 카드별 isLiked가 실려 온다 — 카탈로그와 동일하게 미러를 시드해 검색 결과
+  // 하트가 첫 렌더부터 정확하다(비로그인 검색은 전부 false라 no-op).
+  hydrateLikedFromSummaries(response.data.products, epoch)
   const products = response.data.products.map(toCatalogProduct)
   return { ...response.data, products }
 }

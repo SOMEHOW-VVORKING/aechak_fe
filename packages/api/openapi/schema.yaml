@@ -366,6 +366,39 @@ paths:
                 $ref: "#/components/schemas/ProductOptionsEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/like:
+    post:
+      summary: "상품 찜하기"
+      description: "상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000."
+      operationId: "likeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: "Created(본문 없음)"
+        "404":
+          description: "존재하지 않는 상품(errorCode 40000)"
+    delete:
+      summary: "상품 찜 해제"
+      description: "상품을 찜 목록에서 제거한다(멱등 — 찜하지 않은 상품도 204)."
+      operationId: "unlikeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
   /files/presigned-url:
     post:
       summary: "업로드 presigned URL 발급"
@@ -404,6 +437,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/liked-products:
+    get:
+      summary: "내 찜 목록 조회(커서 페이지네이션)"
+      description: "로그인 사용자의 찜한 상품 목록. 품절도 saleStatus로 노출하며 자동 삭제하지 않는다. 상품 목록과 동일한 ProductListResponse."
+      operationId: "getLikedProducts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          description: "유효하지 않은 커서(errorCode 90002)"
   /users/me/profile:
     put:
       summary: "프로필 수정"
@@ -1045,7 +1109,7 @@ components:
       enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
     ProductSummaryResponse:
       type: object
-      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount]
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked]
       properties:
         productId:
           type: string
@@ -1074,6 +1138,8 @@ components:
           nullable: true
         reviewCount:
           type: integer
+        isLiked:
+          type: boolean
     ProductListData:
       type: object
       required: [products, totalCount, nextCursor, hasNext]

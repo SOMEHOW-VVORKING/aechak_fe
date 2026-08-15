@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ProductSummaryResponse } from '@aechak/api'
-import { toCatalogProduct } from '../catalog.mapper'
+import { toCatalogProduct } from '../product-summary.mapper'
 
 function summary(overrides: Partial<ProductSummaryResponse> = {}): ProductSummaryResponse {
   return {
@@ -14,6 +14,7 @@ function summary(overrides: Partial<ProductSummaryResponse> = {}): ProductSummar
     saleStatus: 'ON_SALE',
     averageRating: 4.5,
     reviewCount: 10,
+    isLiked: false,
     ...overrides,
   }
 }
