@@ -26,6 +26,12 @@ const running = new Set<string>()
 // 확정하거나(hydrate에서 해제) 사용자가 다시 찜하면(toggle) 풀린다.
 const locallyUnliked = new Set<string>()
 
+// 상세 응답의 isLiked를 이미 미러에 시드한 상품 id. 목록 카드(hydrateLikedFromSummaries)와 달리
+// 상세는 단건이라 "id별 세션당 1회"를 이 기록으로 보장한다 — 재마운트 시 캐시된 isLiked=true가
+// 사용자가 그 사이 해제한 하트를 되살리는 걸 막는다. 예전엔 ProductDetailScreen의 모듈 전역이라
+// 로그아웃·테스트에서 되돌릴 방법이 없었어서, 나머지 동기화 상태와 같은 모듈로 옮겨 리셋에 포함시켰다.
+const seededDetailIds = new Set<string>()
+
 // 세션 epoch — 로그아웃 시 증가시켜, 이전 세션에서 진행 중이던 요청의 늦은 롤백이 새 세션의
 // 미러를 오염시키지 않게 한다.
 let sessionEpoch = 0
@@ -52,6 +58,7 @@ export function resetWishlistState(): void {
   generation.clear()
   running.clear()
   locallyUnliked.clear()
+  seededDetailIds.clear()
   clearWished()
 }
 
@@ -145,4 +152,19 @@ export function hydrateLikedFromSummaries(
     }
   }
   if (ids.length > 0) hydrateWished(ids)
+}
+
+/**
+ * 상품 상세 응답의 `isLiked`를 미러에 시드한다(id별 세션당 1회, `seededDetailIds`). 상세 화면이
+ * 재마운트될 때 캐시된 `isLiked=true`가 사용자가 그 사이 해제한 하트를 되살리는 걸 막는다 —
+ * 이후 상태는 `toggleWishlist`(서버 동기화)가 소유한다.
+ *
+ * 위 `hydrateLikedFromSummaries`(목록 카드)와 정책이 다르다: 그쪽은 해제 툼스톤으로 거르고 서버가
+ * `isLiked=false`로 확정하면 툼스톤이 풀려 이후의 정당한 재-찜을 반영하는데, 상세는 세션 내내 1회로
+ * 못박는다. 두 정책을 하나로 합치는 건 동작 변경이라 별도 판단이 필요하다.
+ */
+export function hydrateLikedFromDetail(productId: string, isLiked: boolean | undefined): void {
+  if (!isLiked || seededDetailIds.has(productId)) return
+  seededDetailIds.add(productId)
+  addWish(productId)
 }

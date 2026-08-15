@@ -2015,11 +2015,18 @@ BE(SCRUM-190, PR #62)가 `ProductSummaryResponse`에 필수·비-nullable `isLik
 - **회귀 가드**: `[AC-WISH-UNDO-001]`/`[AC-GATE-001]`의 카운트 단언을 상대값에서 절대값(`toBe(3)`/`toBe(2)`)
   으로 바꿨다. 시드한 수만큼 실제로 렌더되는지 보므로 같은 종류의 누수가 다시 생기면 바로 잡힌다
   (`--sequence.shuffle.tests` 8개 시드로 순서 무관 확인).
+- **같은 뿌리였던 `ProductDetailScreen`의 모듈 전역 `seededLikedIds`도 함께 정리했다.** 상세 응답의
+  `isLiked`를 "id별 세션당 1회"만 미러에 시드하는 기록인데, feature 파일의 모듈 전역이라 export도
+  리셋 경로도 없어 로그아웃에도 테스트에도 되돌릴 방법이 없었다. 시드 기록과 그 1회성 정책을
+  `wishlist.queries.ts`로 옮기고(`seededDetailIds` + `hydrateLikedFromDetail(productId, isLiked)`)
+  `resetWishlistState`가 함께 비우게 했다 — 화면은 이제 effect에서 이 함수만 부른다(동작 무변경).
+  **`hydrateLikedFromSummaries`와 정책이 다른 건 의도적이다**: 목록 카드는 해제 툼스톤으로 거르고
+  서버가 `isLiked=false`로 확정하면 툼스톤이 풀려 이후의 정당한 재-찜을 반영하는데, 상세는 세션 내내
+  1회로 못박는다. 두 정책을 하나로 합치는 건 동작 변경이라 별도 판단이 필요하니 무심코 통일하지 말 것.
+  회귀는 `AC-WISH-017~019`(1회성·false/undefined 무시·세션 리셋 후 재시드).
 - **새 전역 클라이언트 상태를 추가할 때 이 짝 맞추기를 점검할 것.** 모듈 레벨 상태를 두면 그걸 되돌리는
-  경로를 함께 만들고 `test-setup.ts`에 배선해야 한다. 같은 종류의 미처리 상태가 하나 더 있다 —
-  `ProductDetailScreen.tsx`의 모듈 전역 `seededLikedIds`는 export도 리셋 경로도 없다. 지금은
-  `REAL_PRODUCT_DETAIL.isLiked`가 `false`라 채워지는 경로가 안 돌아서 무증상이지만, 상세 픽스처를
-  `isLiked: true`로 바꾸는 순간 같은 순서 의존이 생긴다.
+  경로를 함께 만들고 `test-setup.ts`에 배선해야 한다. feature 파일에 두면 shared의 리셋이 손을 못 대니
+  (위 `seededLikedIds` 사례) 세션 수명을 갖는 상태는 처음부터 `shared/catalog` 쪽에 둘 것.
 
 ---
 
