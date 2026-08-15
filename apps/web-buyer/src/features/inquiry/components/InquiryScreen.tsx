@@ -150,7 +150,9 @@ export function InquiryScreen() {
           />
         </div>
 
-        {/* 문의 내용 */}
+        {/* 문의 내용. placeholder 목업 원문은 "상품 구매 전후 문의는 상품 상세의 1:1 채팅을 이용하세요"였지만,
+            상품 상세의 문의(채팅) 버튼이 OFF이고 /chat 탭도 ComingSoon이라 갈 곳이 없는 안내였다(죽은 안내
+            금지). 채팅이 실제로 붙으면 그때 되살릴 것 — 무엇을 쓰는 자리인지는 helperText가 이미 안내한다. */}
         <div className="flex flex-col gap-2">
           <label htmlFor="inquiry-content" className="text-label font-medium text-text-primary">
             문의 내용
@@ -164,7 +166,7 @@ export function InquiryScreen() {
             }}
             rows={6}
             maxLength={MAX_INQUIRY_CONTENT_LENGTH}
-            placeholder="상품 구매 전후 문의는 상품 상세의 1:1 채팅을 이용하면 더 빠르게 답변받을 수 있어요."
+            placeholder="어떤 상황에서 문제가 생겼는지 최대한 자세히 적어주세요."
             helperText="서비스 오류/계정/결제 등 서비스 자체 문의를 남겨주세요."
           />
         </div>

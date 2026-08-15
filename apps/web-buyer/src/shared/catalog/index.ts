@@ -35,6 +35,7 @@ export type { ProductGridProps } from './ProductGrid'
 export {
   toggleWishlist,
   onWishlistLogout,
+  resetWishlistState,
   hydrateLikedFromSummaries,
   currentSessionEpoch,
   LIKED_PRODUCTS_QUERY_KEY,

@@ -36,17 +36,32 @@ export function currentSessionEpoch(): number {
 }
 
 /**
- * 로그아웃 정리(단일 진입점). 진행 중 찜 동기화 의도를 폐기하고(epoch 증가), 미러를 비우고,
- * 찜 목록 쿼리 캐시를 제거한다 — 캐시가 남으면 재로그인/재진입 시 옛 pool과 빈 미러의 교집합이
- * 빈 목록으로 잘못 뜬다. main.tsx(세션 만료)와 설정 로그아웃 두 곳에서 호출한다.
+ * 미러 + 이 모듈의 동기화 상태(진행 중 의도·세대·해제 툼스톤·epoch)를 한 번에 되돌린다.
+ * `onWishlistLogout`의 쿼리 캐시 비의존 부분이며, QueryClient가 없는 자리(테스트 격리)에서 쓴다.
+ *
+ * 스토어의 `resetWishlist()`는 미러(`wished`)만 비우고 다른 모듈인 이 파일의 `locallyUnliked`
+ * 툼스톤은 못 지운다 — 그 비대칭 때문에 앞 테스트에서 해제한 id가 다음 테스트의 `hydrateLikedFromSummaries`
+ * 에서 계속 걸러져 시드보다 적은 카드가 렌더됐다(상대 카운트만 단언하던 테스트들이 조용히 축소 검증).
+ * 그래서 test-setup의 전역 afterEach가 서버측 `resetLikedProducts()`와 나란히 이걸 부른다.
+ *
+ * 로그아웃에는 이걸 직접 쓰지 말고 `onWishlistLogout`을 쓸 것 — 쿼리 캐시를 지우지 않는다.
  */
-export function onWishlistLogout(queryClient: QueryClient): void {
+export function resetWishlistState(): void {
   sessionEpoch += 1
   desiredState.clear()
   generation.clear()
   running.clear()
   locallyUnliked.clear()
   clearWished()
+}
+
+/**
+ * 로그아웃 정리(단일 진입점). 진행 중 찜 동기화 의도를 폐기하고(epoch 증가), 미러를 비우고,
+ * 찜 목록 쿼리 캐시를 제거한다 — 캐시가 남으면 재로그인/재진입 시 옛 pool과 빈 미러의 교집합이
+ * 빈 목록으로 잘못 뜬다. main.tsx(세션 만료)와 설정 로그아웃 두 곳에서 호출한다.
+ */
+export function onWishlistLogout(queryClient: QueryClient): void {
+  resetWishlistState()
   queryClient.removeQueries({ queryKey: LIKED_PRODUCTS_QUERY_KEY })
 }
 

@@ -82,8 +82,9 @@ test('[AC-INQUIRY-E2E-001] 작성 폼 → 유형 시트 → 이메일 검증 →
 
   // 유효 이메일 + 내용 채우고 제출
   await email.fill('kongi.mom@aechak.co.kr')
+  // placeholder 문구가 아니라 라벨로 잡는다 — 카피가 바뀌어도 셀렉터가 따라 깨지지 않게.
   await page
-    .getByPlaceholder(/상품 구매 전후 문의는/)
+    .getByLabel('문의 내용')
     .fill('결제는 완료됐는데 주문 내역에 안 보여요. 확인 부탁드립니다.')
   const submit = page.getByRole('button', { name: '문의 제출' })
   await expect(submit).toBeEnabled()
@@ -122,7 +123,7 @@ test('[AC-INQUIRY-E2E-002] 세션 없이 제출하면(401 → refresh 실패) �
   await page
     .getByPlaceholder('답변 받을 이메일 주소를 입력해주세요')
     .fill('kongi.mom@aechak.co.kr')
-  await page.getByPlaceholder(/상품 구매 전후 문의는/).fill('결제 확인 부탁드립니다. 내역에 안 보여요.')
+  await page.getByLabel('문의 내용').fill('결제 확인 부탁드립니다. 내역에 안 보여요.')
   await page.getByRole('button', { name: '문의 제출' }).click()
 
   // 전역 onAuthExpired(main.tsx)가 로그인으로 보낸다 — 인라인 에러가 아니라 화면 자체가 바뀐다.

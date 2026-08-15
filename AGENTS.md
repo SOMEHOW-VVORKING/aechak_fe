@@ -1322,7 +1322,9 @@ Phase 4(account/pet)와 내 블록(report)이 서로 다른 위치라 자동 병
 - **설정 하위 화면은 모두 `MobileScreen` + `BackAppBar` full-bleed**, `goBack`은 히스토리 있으면
   `router.history.back()` 없으면 `/settings`로. 설정 홈 진입은 `/mypage`(Phase 4). **존재하지 않는
   라우트로의 죽은 nav 금지 원칙**을 지켜: 설정 홈은 이번 배치가 실제 소유한 하위 화면(알림/FAQ/정책/
-  가이드라인/동의/데이터삭제)으로만 이동하고, 본인인증/펫/고객센터 문의는 안 넣었다. `data-deletion`의
+  가이드라인/동의/데이터삭제)으로만 이동하고, 본인인증/펫/고객센터 문의는 안 넣었다(**고객센터 문의는
+  이후 SCRUM-189가 `/settings/inquiry`를 만들면서 설정 홈에 배선했다 — 아래 "web-buyer 고객센터 문의"
+  절 참고. 지금 설정 홈에 있는 문의 행은 이 원칙 위반이 아니니 지우지 말 것**). `data-deletion`의
   "회원 탈퇴 진행"은 Phase 4 소관 `/mypage/withdraw`가 내 트리에 없어 최근접 `/mypage`로 보냈다
   (병합 후 탈퇴 플로우로 정합성 조정 대상 — 코드 주석에 명시).
 - **설정 화면 공용 컴포넌트**: `SettingsSection.tsx`(`SettingsGroup`/`SettingsNavRow`/
@@ -1989,6 +1991,68 @@ BE(SCRUM-190, PR #62)가 `ProductSummaryResponse`에 필수·비-nullable `isLik
 - **테스트**: `wishlist.queries.test`에 툼스톤(진행 중/요청 완료 후 stale true 모두 차단, false로 해제 후 재-찜 반영)과
   epoch 가드 회귀를 추가(`AC-WISH-013~016`). 마켓/검색 첫 렌더 하트는 `catalog-route`/`search-route`
   (`AC-CATALOG-013`/`AC-SEARCH-018`), MSW 세 리스트 핸들러는 `likedProductRows`에서 `isLiked`를 주입한다.
+
+### 찜 상태 테스트 격리 — 서버측/클라이언트측을 항상 짝으로 리셋할 것 (2026-08-15)
+
+**`test-setup.ts`의 전역 `afterEach`가 서버측 `resetLikedProducts()`(MSW `likedProductRows`)만 되돌리고
+클라이언트측 `wishlist.queries.ts`의 모듈 상태는 아무도 안 지우던 비대칭이 있었다.** 스토어의
+`resetWishlist()`는 미러(`wished` Set)만 비우는데, 해제 툼스톤 `locallyUnliked`는 **다른 모듈**(queries)에
+있어 손이 닿지 않았다 — 이걸 지우는 유일한 진입점이 `onWishlistLogout(queryClient)`인데 라우트 테스트들은
+`resetWishlist()`만 부르고 있었다.
+
+증상은 "실패"가 아니라 **조용한 축소 검증**이라 더 위험했다. `wishlist-route.test.tsx`의 `[AC-WISH-004]`가
+`p-real-1`을 해제하고 툼스톤을 남기면, 다음 `[AC-WISH-UNDO-001]`이 3건을 시드해도
+`hydrateLikedFromSummaries`가 그 id를 계속 걸러 **2장만** 렌더된다. 두 후속 테스트가 상대 카운트
+(`initialCount`)만 단언하고 있어서 그대로 통과했다 — 절대값으로 바꿔 돌려보니 `expected 2 to be 3`,
+`expected 1 to be 2`로 즉시 드러났다.
+
+- **해결**: `wishlist.queries.ts`에 `resetWishlistState()`를 추가했다 — `onWishlistLogout`에서 쿼리 캐시
+  비의존 부분(epoch 증가 + `desiredState`/`generation`/`running`/`locallyUnliked` clear + `clearWished`)을
+  뽑아낸 것이고, `onWishlistLogout`은 이제 이걸 부른 뒤 `removeQueries`만 더한다(로그아웃 동작 무변경).
+  `shared/catalog` 배럴로 내보내 `test-setup.ts`의 `afterEach`가 `resetLikedProducts()`와 **나란히** 부른다.
+- **로그아웃에는 `resetWishlistState()`를 직접 쓰지 말 것** — 쿼리 캐시를 지우지 않아 재로그인 시 옛 pool과
+  빈 미러의 교집합이 빈 목록으로 뜬다. 로그아웃은 계속 `onWishlistLogout`.
+- **회귀 가드**: `[AC-WISH-UNDO-001]`/`[AC-GATE-001]`의 카운트 단언을 상대값에서 절대값(`toBe(3)`/`toBe(2)`)
+  으로 바꿨다. 시드한 수만큼 실제로 렌더되는지 보므로 같은 종류의 누수가 다시 생기면 바로 잡힌다
+  (`--sequence.shuffle.tests` 8개 시드로 순서 무관 확인).
+- **새 전역 클라이언트 상태를 추가할 때 이 짝 맞추기를 점검할 것.** 모듈 레벨 상태를 두면 그걸 되돌리는
+  경로를 함께 만들고 `test-setup.ts`에 배선해야 한다. 같은 종류의 미처리 상태가 하나 더 있다 —
+  `ProductDetailScreen.tsx`의 모듈 전역 `seededLikedIds`는 export도 리셋 경로도 없다. 지금은
+  `REAL_PRODUCT_DETAIL.isLiked`가 `false`라 채워지는 경로가 안 돌아서 무증상이지만, 상세 픽스처를
+  `isLiked: true`로 바꾸는 순간 같은 순서 의존이 생긴다.
+
+---
+
+### web-buyer 고객센터 문의(`/settings/inquiry`, b6-st-3) — SCRUM-189
+
+설정 홈/FAQ에서 진입하는 앱 서비스 문의 접수 화면. `POST /inquiries`(JWT 필수)에 실연동돼 있고
+feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry.queries`), 라우트는
+`routes/settings/inquiry.tsx`다. DS 변경 없음.
+
+- **어댑터 컨벤션은 breeds/배송지 절과 동일** — 생성된 react-query 훅이 아니라 fetcher(`submitInquiry`)만
+  소비하고 `inquiry.queries.ts`가 자체 `useMutation`으로 감싼다(packages/api와 앱의 react-query 선언 범위가
+  달라 훅/옵션 타입이 패키지 경계를 넘으면 버전 표류 시 깨진다). 문의는 fire-and-forget이라 store도 캐시도 없다.
+- **401은 화면이 떠안지 않는다** — axios 인터셉터의 refresh + `setOnAuthExpired` 전역 리다이렉트가 처리하므로
+  `inquiryErrorMessage`는 비401(400/500 등)만 인라인 `role="alert"`로 안내한다. 성공만 토스트, 오류는 화면에 머문다.
+- **문의 유형은 도메인 타입을 새로 만들지 않고 서버 enum(`SubmitInquiryRequestInquiryType`)을 그대로 쓴다.**
+  `inquiry.mock.ts`의 `INQUIRY_TYPE_OPTIONS`가 그 enum에 목업 3-B 라벨만 1:1로 붙여 서버 enum이 feature 밖으로
+  새지 않게 가둔다. 아이콘은 UI 관심사라 mock이 아니라 `InquiryScreen`의 `TYPE_ICONS`가 value로 매핑한다.
+- **유형 선택은 DS `Select`가 아니라 select-trigger 버튼 + `BottomSheet`** — 목업이 그 형태이고, 유형별 아이콘을
+  옵션에 넣어야 해서다(`Select`의 `options`는 `{value,label}`뿐).
+- **내용 상한은 목업 카운터(1000)가 아니라 BE 계약인 2000자**(`MAX_INQUIRY_CONTENT_LENGTH`). 이메일 형식은
+  `isValidEmail`이 느슨하게 거르고 최종 판정은 서버에 맡긴다. 제출 가능 판정은 `isValidInquiry` 하나가 단일 원본
+  (버튼 활성/`handleSubmit` 가드가 같은 함수를 본다).
+- **접수 성공은 토스트를 잠깐 띄운 뒤 `/settings`로 `replace: true` 이동**한다(Phase 6 결제 결과 화면과 같은 결 —
+  뒤로가기가 제출된 폼을 재진입하지 않게). 이동 타이머는 토스트 `onClose`가 아니라 `submitted`에만 의존하는
+  effect에 두고, 토스트 `duration`은 복귀 지연보다 길게 잡아 이동 전에 사라지지 않게 한다. `onClose`로는 모듈
+  레벨 stable no-op을 넘긴다 — 매 렌더 새 함수를 주면 DS `Toast`의 타이머가 리셋된다.
+- **진입점 2곳**: 설정 홈(`SettingsHomeScreen`의 `Headphones` 행)과 FAQ(`FaqScreen`의 하단 CTA + 결과 없음
+  `EmptyState`의 `action`). Phase 5 절의 "고객센터 문의는 안 넣었다"는 이 배치 이전 기준 서술이니 그 문장을
+  근거로 진입점을 지우지 말 것.
+- **MSW/E2E**: `INQUIRIES_URL` 핸들러는 `testing/msw/server.ts`의 `handlers` 최상위에 등록돼 있다
+  (`onboardingHandlers` 배열이 아님 — 상수 선언이 온보딩 구분 주석 아래 묶여 있지만 상태 없는 핸들러라
+  온보딩 시더와 무관하다). `e2e/inquiry.spec.ts`가 `page.route` 스텁으로 접수 성공(4 상태)과
+  401→refresh 실패→로그인 리다이렉트 두 갈래를 돈다.
 
 ---
 
