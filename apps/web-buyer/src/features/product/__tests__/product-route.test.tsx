@@ -130,6 +130,58 @@ describe('/products/$productId', () => {
     expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
   })
 
+  it('[AC-PRODUCT-015] 비회원이 하단 찜(하트)을 누르면 게이트가 뜨고 찜 토글이 일어나지 않는다', async () => {
+    // 하단 액션바의 찜/장바구니/구매는 모두 requireAuth로 감싸져 있어, 비회원은 실제 동작 대신
+    // 로그인 게이트가 먼저 뜬다(AC-014의 전체보기 게이트와 같은 부류, 이쪽은 액션바에 초점).
+    // 모듈 싱글턴이라 렌더가 loggedIn을 true로 되돌리지 않으므로 resetAuth 후 logout으로 비회원을 만든다.
+    logout()
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    // 하트는 텍스트가 아니라 aria-label 버튼이다(찜 전 '찜하기', 찜 후 '찜 해제').
+    // p-feeder-5l은 찜 시드(SEED_IDS)라 처음부터 '찜 해제'/aria-pressed=true 상태다.
+    await user.click(screen.getByRole('button', { name: '찜 해제' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('찜은 로그인한 회원만 이용할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 찜이 토글되지 않았다 — 여전히 '찜 해제'(찜 유지) + aria-pressed true, 찜 토스트도 없다.
+    expect(screen.getByRole('button', { name: '찜 해제' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('찜을 해제했어요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {
+    logout()
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('장바구니 담기는 로그인한 회원만 이용할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 옵션 선택 시트는 열리지 않는다(setSheetOpen이 호출되지 않음).
+    expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-017] 비회원이 하단 구매하기를 누르면 결제로 이동하지 않고 게이트가 뜬다', async () => {
+    logout()
+    const user = userEvent.setup()
+    const router = renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '구매하기' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('구매는 로그인한 뒤에 이어서 진행할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 결제/옵션으로 이동하지 않고 상세에 머문다.
+    expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+  })
+
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {
     renderAt('/products/p-feeder-5l')
     await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')

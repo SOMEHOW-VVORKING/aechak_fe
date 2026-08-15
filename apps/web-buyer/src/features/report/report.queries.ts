@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { getProductDetail } from '@aechak/api'
 import type { ProductReport, ProductReportReason } from '@aechak/domain'
-import { fetchReportTarget, type ReportTarget } from './report.mock'
+import { findMockProduct, mediaUrl } from '@/shared/catalog'
+import { fetchReportTarget, getReportTargetMock, type ReportTarget } from './report.mock'
 
 export interface SubmitReportInput {
   productId: string
@@ -8,13 +10,37 @@ export interface SubmitReportInput {
   detail: string
 }
 
-// 신고 대상 상품 조회. 상세 화면(useProductDetail)과 동일하게 비동기로 해석해 "로딩 → 있음/없음"을
-// 구분한다 — 실 상품 API 전환 시 하드 리프레시로 진입해도 로딩 후 정확한 상품/not-found로 갈린다.
+// 404(진짜 미존재)만 not-found로 보내고 다른 오류(500 등)는 그대로 던진다(가짜 대상으로 위장 금지).
+function isNotFound(e: unknown): boolean {
+  return (e as { response?: { status?: number } } | null)?.response?.status === 404
+}
+
+// 신고 대상 상품 조회. 상세 화면(useProductDetail)과 동일한 해석 전략을 쓴다 — 목업 카탈로그
+// 상품(p-*)은 네트워크 없이 목업으로, 실 상품(ULID)은 실 API(GET /products/{id})로 조회한다.
+// 실 상품을 목업으로만 해석하면 상세를 거치지 않고 신고 URL로 직접 진입/새로고침할 때 유효한
+// 상품도 not-found로 잘못 뜬다 — 그래서 실 API 폴백을 붙였다. 404(진짜 미존재)는 레지스트리로
+// 한 번 더 시도한 뒤 없으면 null(not-found), 다른 오류는 그대로 던진다(review/product.queries와 동일).
 export function useReportTarget(productId: string) {
   return useQuery<ReportTarget | null>({
     queryKey: ['report', 'target', productId],
-    queryFn: () => fetchReportTarget(productId),
     enabled: productId !== '',
+    queryFn: async ({ signal }) => {
+      if (findMockProduct(productId)) return fetchReportTarget(productId)
+      try {
+        const res = await getProductDetail(productId, signal)
+        const d = res.data
+        return {
+          productId: d.productId,
+          name: d.name,
+          storeName: d.seller.storeName,
+          price: d.discountPrice ?? d.regularPrice,
+          thumbnailUrl: mediaUrl(d.representativeImageKey),
+        }
+      } catch (e) {
+        if (isNotFound(e)) return getReportTargetMock(productId)
+        throw e
+      }
+    },
   })
 }
 

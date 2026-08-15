@@ -210,6 +210,50 @@ describe('리뷰 라우트', () => {
     expect(screen.getByText('첫페이지어')).toBeInTheDocument()
   })
 
+  it('[AC-REVIEW-ROUTE-013] 정렬 토글 요청이 실패하면 이전 목록을 조용히 유지하지 않고 에러로 안내한다', async () => {
+    // 최신순(첫 로드)은 200, 별점높은순은 500으로 응답하도록 덮어쓴다.
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, ({ params, request }) => {
+        if (params.productId !== REAL_PRODUCT_ID) return new HttpResponse(null, { status: 404 })
+        const sort = new URL(request.url).searchParams.get('sort') ?? 'latest'
+        if (sort === 'rating_desc') return new HttpResponse(null, { status: 500 })
+        return HttpResponse.json({
+          data: {
+            summary: {
+              reviewCount: 1,
+              averageRating: 5,
+              ratingDistribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 1 },
+            },
+            reviews: [
+              {
+                reviewId: 701,
+                rating: 5,
+                content: '정렬 실패 회귀 테스트용 리뷰예요.',
+                optionName: '기본형',
+                authorNickname: '정렬테스터',
+                authorProfileImageUrl: null,
+                createdAt: '2026-08-11T09:00:00',
+                images: [],
+              },
+            ],
+            totalCount: 1,
+            nextCursor: null,
+            hasNext: false,
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('정렬테스터')).toBeInTheDocument()
+
+    // 별점높은순 요청이 500 → placeholderData가 든 이전 목록을 조용히 남기지 않고 에러로 전환한다.
+    // (이 회귀 테스트는 isError && !data 조건에서는 stale 목록이 그대로 남아 실패한다.)
+    await user.click(screen.getByRole('button', { name: '별점높은순' }))
+    expect(await screen.findByText('리뷰를 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByText('정렬테스터')).not.toBeInTheDocument()
+  })
+
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {
     const user = userEvent.setup()
     // 내 리뷰 목록 위에서 시드 리뷰(rv-seed-1) 수정 화면으로 진입한 세션.
