@@ -1,7 +1,8 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { getLikedProducts } from '@aechak/api'
 import {
-  hydrateWished,
+  currentSessionEpoch,
+  hydrateLikedFromSummaries,
   LIKED_PRODUCTS_QUERY_KEY,
   toCatalogProduct,
   type CatalogProduct,
@@ -17,12 +18,14 @@ async function fetchLikedPage(
   pageParam: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<LikedProductPage> {
+  const epoch = currentSessionEpoch()
   const res = await getLikedProducts({ cursor: pageParam, size: 20 }, signal)
   const products = res.data.products.map(toCatalogProduct)
-  // 이 페이지의 찜 id만 미러에 머지한다(fetch당 1회). 전체 pool을 매 렌더 재머지하지 않으므로
-  // 이미 해제한 다른 페이지의 id가 페이지네이션 후 되살아나지 않는다. 하트가 채워지고 화면 필터
-  // (pool ∩ id-set)가 이 상품들을 통과시킨다.
-  hydrateWished(products.map(p => p.id))
+  // 이 페이지의 찜 id만 미러에 머지한다(fetch당 1회, 마켓/검색과 공유하는 헬퍼). 찜 목록은 전부
+  // isLiked=true라 사실상 모든 id를 머지하되, 로컬 해제 툼스톤이 있는 id는 스킵돼 방금 해제한
+  // 상품이 페이지네이션·리페치로 되살아나지 않는다. epoch로 로그아웃을 가로지른 응답도 무시한다.
+  // 하트가 채워지고 화면 필터(pool ∩ id-set)가 이 상품들을 통과시킨다.
+  hydrateLikedFromSummaries(res.data.products, epoch)
   return { products, nextCursor: res.data.nextCursor, hasNext: res.data.hasNext }
 }
 

@@ -347,6 +347,7 @@ export interface ProductSummaryResponse {
   /** @nullable */
   averageRating: number | null
   reviewCount: number
+  isLiked: boolean
 }
 
 export interface ProductListData {

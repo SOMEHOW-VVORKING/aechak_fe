@@ -14,6 +14,7 @@ function summary(overrides: Partial<ProductSummaryResponse> = {}): ProductSummar
     saleStatus: 'ON_SALE',
     averageRating: 4.5,
     reviewCount: 10,
+    isLiked: false,
     ...overrides,
   }
 }

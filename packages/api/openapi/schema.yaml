@@ -1089,7 +1089,7 @@ components:
       enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
     ProductSummaryResponse:
       type: object
-      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount]
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked]
       properties:
         productId:
           type: string
@@ -1118,6 +1118,8 @@ components:
           nullable: true
         reviewCount:
           type: integer
+        isLiked:
+          type: boolean
     ProductListData:
       type: object
       required: [products, totalCount, nextCursor, hasNext]
