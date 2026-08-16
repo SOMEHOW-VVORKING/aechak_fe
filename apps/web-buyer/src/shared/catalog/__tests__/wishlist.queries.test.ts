@@ -27,6 +27,8 @@ function summary(productId: string, isLiked: boolean): ProductSummaryResponse {
     averageRating: null,
     reviewCount: 0,
     isLiked,
+    isViewable: true,
+    isPurchasable: true,
   }
 }
 

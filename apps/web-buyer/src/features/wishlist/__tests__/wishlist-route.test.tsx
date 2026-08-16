@@ -96,6 +96,33 @@ describe('/wishlist', () => {
     expect(screen.getByRole('button', { name: '상품 둘러보기' })).toBeInTheDocument()
   })
 
+  it('[AC-WISH-020] 진입 불가(isViewable=false) 찜 상품은 카드 탭이 막히고 판매 중단으로 표시된다', async () => {
+    // PRODUCT_FIXTURES를 고치면 카탈로그/검색 핸들러까지 영향을 받으므로 시드 시점에만 오버라이드한다.
+    seedLikedProducts(
+      likedSeed(['p-real-1']).map(row => ({ ...row, isViewable: false, isPurchasable: false })),
+    )
+    renderAt('/wishlist')
+
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '강아지 연어 사료 2kg 상세 보기' }),
+    ).not.toBeInTheDocument()
+    // 품절과 같은 썸네일 오버레이를 쓰되 사유가 달라 라벨만 바꾼다.
+    expect(screen.getByText('판매 중단')).toBeInTheDocument()
+    expect(screen.queryByText('품절')).not.toBeInTheDocument()
+    // 찜 해제 수단(하트)은 그대로 남는다.
+    expect(screen.getByRole('button', { name: '찜 해제' })).toBeInTheDocument()
+  })
+
+  it('[AC-WISH-021] 진입 가능한 찜 상품은 카드 탭으로 상세에 갈 수 있다', async () => {
+    seedLikedProducts(likedSeed(['p-real-1']))
+    renderAt('/wishlist')
+
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '강아지 연어 사료 2kg 상세 보기' })).toBeInTheDocument()
+    expect(screen.queryByText('판매 중단')).not.toBeInTheDocument()
+  })
+
   it('[AC-WISH-006] 품절 찜 상품 카드에 재입고 알림 버튼이 없다', async () => {
     // p-real-5 = 스크래쳐 하우스 2종 세트(OUT_OF_STOCK)
     seedLikedProducts(likedSeed(['p-real-5']))

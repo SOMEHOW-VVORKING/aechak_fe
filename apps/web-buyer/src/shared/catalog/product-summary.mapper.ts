@@ -45,6 +45,7 @@ export function toCatalogProduct(p: ProductSummaryResponse): CatalogProduct {
     rating: p.averageRating ?? undefined,
     reviewCount: p.reviewCount,
     isSoldOut,
+    isViewable: p.isViewable,
     mainCategory: 'all',
   }
 }

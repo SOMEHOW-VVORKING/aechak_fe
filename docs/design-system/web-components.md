@@ -616,6 +616,7 @@ interface Column<T> {
 | `originalPrice` | `number` | — |
 | `storeName` | `string` | — |
 | `isSold` | `boolean` | — |
+| `soldLabel` | `string` | `'품절'` |
 | `onClick` | `() => void` | — |
 | `wished` | `boolean` | — |
 | `onWishToggle` | `() => void` | — |
@@ -623,7 +624,8 @@ interface Column<T> {
 
 상품 그리드 카드. 할인율은 `originalPrice`로 내부 자동 계산(세일 뱃지=코랄, 가격 행에 `%` + 원가
 취소선; 반올림이 0%면 표시 안 함), 가격은 `toLocaleString('ko-KR') + '원'`. `isSold`면 썸네일이
-흐려지고 품절 pill이 뜬다. `onWishToggle`을 주면 썸네일 우상단에 찜 하트가 나타난다 — 하트는 카드
+흐려지고 중앙에 pill이 뜬다 — 라벨은 기본 '품절'이고 `soldLabel`로 바꿀 수 있다(품절 외에 살 수 없는
+사유, 예: 진입 불가 상품의 '판매 중단'). `onWishToggle`을 주면 썸네일 우상단에 찜 하트가 나타난다 — 하트는 카드
 이동 클릭 영역(카드 전체를 덮는 stretched 버튼)과 **형제**로 분리돼 마우스·키보드(Enter/Space)
 모두에서 찜만 독립 토글되고 카드 이동을 유발하지 않으며(중첩 인터랙티브 없음), 탭 스톱도 둘로
 나뉜다. `onWishToggle` 없으면 하트 자체를 렌더링하지 않는다. 커서는 **비품절 + `onClick`** 카드가

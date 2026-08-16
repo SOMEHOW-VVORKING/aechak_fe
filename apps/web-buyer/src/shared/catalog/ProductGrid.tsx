@@ -38,7 +38,12 @@ export function ProductGrid({
 
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-      {products.map(product => (
+      {products.map(product => {
+        // 진입 불가(카테고리 비활성)는 품절과 다른 사유지만, 카드에서는 둘 다 "지금 살 수 없음"이라
+        // 같은 오버레이로 알린다 — 라벨만 사유에 맞게 바꾼다. CatalogProduct.isSoldOut 자체는
+        // 건드리지 않으므로 장바구니/주문 로직의 품절 판정에는 영향이 없다.
+        const unavailable = product.isSoldOut || product.isViewable === false
+        return (
         <div key={product.id} className="flex flex-col">
           <ProductCard
             image={product.thumbnailUrl ?? ''}
@@ -46,9 +51,11 @@ export function ProductGrid({
             name={product.name}
             price={product.price}
             originalPrice={product.originalPrice}
-            isSold={product.isSoldOut}
+            isSold={unavailable}
+            soldLabel={product.isSoldOut ? '품절' : '판매 중단'}
             onClick={
-              product.isSoldOut
+              // 진입 불가 상품은 상세가 404라 열어봐야 not-found로 떨어진다.
+              unavailable
                 ? undefined
                 : () => {
                     registerProducts([product])
@@ -72,7 +79,8 @@ export function ProductGrid({
           />
           {renderExtra?.(product)}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

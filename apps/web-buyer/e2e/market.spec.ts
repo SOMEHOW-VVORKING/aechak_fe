@@ -51,9 +51,11 @@ function product(productId: string, name: string) {
     saleStatus: 'ON_SALE',
     averageRating: 4.5,
     reviewCount: 10,
-    // ProductSummaryResponse의 필수 필드(SCRUM-190). 빼면 hydrateLikedFromSummaries가 undefined를
-    // 읽어 서버가 절대 주지 않는 응답을 흉내내게 된다 — e2e/는 tsc include 밖이라 손으로 맞출 것.
+    // ProductSummaryResponse의 필수 필드(SCRUM-190). 빼면 서버가 절대 주지 않는 응답을 흉내내게
+    // 된다 — e2e/는 tsc include 밖이라 손으로 맞출 것.
     isLiked: false,
+    isViewable: true,
+    isPurchasable: true,
   }
 }
 

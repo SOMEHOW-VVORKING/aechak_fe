@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import type { ProductSummaryResponse } from '@aechak/api'
 import { toCatalogProduct } from '../product-summary.mapper'
 
+// isPurchasable은 서버 불변식(isViewable && ON_SALE)을 그대로 따라 파생시킨다.
 function summary(overrides: Partial<ProductSummaryResponse> = {}): ProductSummaryResponse {
+  const saleStatus = overrides.saleStatus ?? 'ON_SALE'
+  const isViewable = overrides.isViewable ?? true
   return {
     productId: '01ABCDEF',
     name: '테스트 상품',
@@ -15,6 +18,8 @@ function summary(overrides: Partial<ProductSummaryResponse> = {}): ProductSummar
     averageRating: 4.5,
     reviewCount: 10,
     isLiked: false,
+    isViewable,
+    isPurchasable: isViewable && saleStatus === 'ON_SALE',
     ...overrides,
   }
 }

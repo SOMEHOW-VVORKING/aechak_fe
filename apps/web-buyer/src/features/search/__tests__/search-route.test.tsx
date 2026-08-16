@@ -25,6 +25,8 @@ function product(productId: string, name: string): ProductSummaryResponse {
     averageRating: 4.5,
     reviewCount: 10,
     isLiked: false,
+    isViewable: true,
+    isPurchasable: true,
   }
 }
 
