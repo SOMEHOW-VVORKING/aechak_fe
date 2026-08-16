@@ -323,10 +323,9 @@ paths:
   /products/{productId}:
     get:
       summary: "상품 상세 조회"
-      description: "상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404."
+      description: "상품 상세. 인증 필요(permitAll 매처가 /products 정확 일치라 하위 경로는 비로그인 401). principal로 isLiked를 계산한다. 미존재/노출불가 productId는 404."
       operationId: "getProductDetail"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -346,10 +345,9 @@ paths:
   /products/{productId}/options:
     get:
       summary: "상품 옵션 조회"
-      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404."
+      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 인증 필요(상세와 동일, permitAll 아님). 미존재 productId는 404."
       operationId: "getProductOptions"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -1109,7 +1107,7 @@ components:
       enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
     ProductSummaryResponse:
       type: object
-      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked]
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked, isViewable, isPurchasable]
       properties:
         productId:
           type: string
@@ -1140,6 +1138,12 @@ components:
           type: integer
         isLiked:
           type: boolean
+        isViewable:
+          type: boolean
+          description: "상세 진입 가능 여부(카테고리 체인 활성). 목록/검색은 항상 true, 찜 목록만 false가 나올 수 있다."
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(isViewable && saleStatus=ON_SALE). 진입 불가 상품은 판매중이어도 false라 품절과 다르다."
     ProductListData:
       type: object
       required: [products, totalCount, nextCursor, hasNext]
@@ -1255,7 +1259,7 @@ components:
           type: integer
     ProductDetailResponse:
       type: object
-      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked]
+      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked, isPurchasable]
       properties:
         productId:
           type: string
@@ -1295,6 +1299,9 @@ components:
             $ref: "#/components/schemas/ProductCategory"
         isLiked:
           type: boolean
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(saleStatus=ON_SALE). 상세는 카테고리 체인 활성을 이미 걸러 요약과 달리 isViewable 항이 없다."
     ProductDetailEnvelope:
       type: object
       required: [data]

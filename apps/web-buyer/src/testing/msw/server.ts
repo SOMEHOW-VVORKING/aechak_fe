@@ -73,6 +73,10 @@ interface ProductFixture {
     saleStatus: 'ON_SALE' | 'OUT_OF_STOCK' | 'SUSPENDED' | 'ENDED'
     averageRating: number | null
     reviewCount: number
+    // 찜 목록만 false가 나올 수 있다 — 그 케이스는 이 배열을 고치지 말고 seed 시점에 오버라이드할 것
+    // (여기 false 행을 넣으면 카탈로그/검색 핸들러가 서버가 줄 수 없는 응답을 흉내내게 된다).
+    isViewable: boolean
+    isPurchasable: boolean
   }
 }
 
@@ -108,6 +112,8 @@ function makeFixture(
       saleStatus,
       averageRating: 4.5,
       reviewCount: 12,
+      isViewable: true,
+      isPurchasable: saleStatus === 'ON_SALE',
     },
   }
 }
@@ -133,6 +139,7 @@ export const REAL_PRODUCT_DETAIL = {
     { categoryId: 11, name: '사료/간식', depth: 2 },
   ],
   isLiked: false,
+  isPurchasable: true,
 }
 
 export const REAL_PRODUCT_OPTIONS = {
@@ -816,6 +823,8 @@ export const handlers = [
           averageRating: product.rating ?? null,
           reviewCount: product.reviewCount ?? 0,
           isLiked: isLikedFixture(product.id),
+          isViewable: true,
+          isPurchasable: !product.isSoldOut,
         })),
         totalCount: cursor === 0 ? products.length : null,
         nextCursor: hasNext ? String(next) : null,

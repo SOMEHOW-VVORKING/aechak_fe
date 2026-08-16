@@ -9,6 +9,11 @@ import { getRegistered } from './registry'
 // 그대로 반영된다(찜 상태는 wishlist.store가 별도 관리).
 export interface CatalogProduct extends Product {
   mainCategory: MainCategory
+  /**
+   * 상세 진입 가능 여부(서버 `ProductSummaryResponse.isViewable`). 목업 상품에는 대응 소스가 없어
+   * optional이고 `undefined`는 진입 가능으로 읽는다 — 소비 측은 `isViewable === false`로 판정할 것.
+   */
+  isViewable?: boolean
 }
 
 interface ProductSeed {

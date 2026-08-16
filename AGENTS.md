@@ -1992,6 +1992,45 @@ BE(SCRUM-190, PR #62)가 `ProductSummaryResponse`에 필수·비-nullable `isLik
   epoch 가드 회귀를 추가(`AC-WISH-013~016`). 마켓/검색 첫 렌더 하트는 `catalog-route`/`search-route`
   (`AC-CATALOG-013`/`AC-SEARCH-018`), MSW 세 리스트 핸들러는 `likedProductRows`에서 `isLiked`를 주입한다.
 
+### 상품 카드/상세 isViewable·isPurchasable 소비 (SCRUM-190 후반, 2026-08-16)
+
+BE가 같은 티켓의 후속 커밋(`2906b4b`)으로 세 필드를 **필수 비null**로 더 얹었다. 위 isLiked 절이
+다룬 카드 찜 여부와 달리 이번 것은 노출/구매 판정이다.
+
+| 응답 | 새 필드 | 서버 계산식 |
+| --- | --- | --- |
+| `ProductSummaryResponse`(목록/검색/찜목록) | `isViewable` | 카테고리 체인(자신/부모/조부모) 전부 ACTIVE = 상세 진입 가능 |
+| | `isPurchasable` | `isViewable && saleStatus == ON_SALE` |
+| `ProductDetailResponse`(상세) | `isPurchasable` | `saleStatus == ON_SALE` |
+
+**FE가 실제로 얻은 새 정보는 찜 목록의 `isViewable` 하나뿐이다.** 카탈로그/검색 쿼리는 카테고리 체인
+활성을 where 필터로 쓰고 `isViewable`을 상수 true로 투영하며, 찜 목록만 같은 조건을 CASE 컬럼으로
+계산한다. 상세의 `isPurchasable`도 `product.map.ts`의 `res.saleStatus !== 'ON_SALE'` 파생과 정확히
+서로의 부정이라(상세 쿼리가 EXPOSABLE만 통과시켜 도달 가능한 상태가 둘뿐) 상세 매퍼는 그대로 뒀다.
+
+- **`isPurchasable`을 `isSoldOut`으로 옮기지 말 것.** 요약의 `isPurchasable`은 `isViewable && ON_SALE`
+  이라 찜 목록에서 카테고리만 내려간 판매중 상품이 false로 온다. 이걸 `isSoldOut`으로 읽으면 재고가
+  멀쩡한 상품에 품절 dim과 pill이 붙는다. 품절 축과 진입 축은 별개로 둔다.
+- **`CatalogProduct`에 `isViewable?: boolean`을 optional로 얹었다.** 도메인 `Product`는 안 건드렸다 —
+  셀러/어드민에 대응 개념이 없고 필수로 넣으면 web-seller의 `MOCK_PRODUCTS` 리터럴이 깨진다. 목업
+  상품에는 `undefined`가 흐르므로 **소비 측은 `isViewable === false` 부정형으로 판정할 것**(아니면
+  마켓/검색/찜의 모든 카드가 한꺼번에 진입 불가가 된다).
+- **찜 목록의 진입 불가 카드는 감추지 말고 탭만 막고, 품절과 같은 썸네일 오버레이로 알린다.**
+  `ProductGrid`가 `isSold={isSoldOut || isViewable === false}`로 dim + 중앙 pill을 띄우고 라벨만
+  사유에 맞게 바꾼다(품절 / 판매 중단). 이를 위해 DS `ProductCard`에 `soldLabel?: string`(기본
+  '품절')을 additive로 추가했다 — 이 컴포넌트는 web-buyer만 쓴다. 고치기 전에는 카드가 정상으로
+  보이는데 탭하면 상세 404 → not-found 막다른 화면으로 떨어졌다. **감추면 그 화면의 유일한 찜 해제
+  수단인 하트까지 사라져 영영 못 지운다**(BE `unlike`는 노출 조건을 안 봐서 해제 자체는 정상).
+  **라벨을 '판매종료'로 쓰지 말 것** — `ENDED`는 서버가 목록에서 아예 빼고, 이 상품은 `ON_SALE`인데
+  카테고리만 내려간 상태다. 카드가 넘기는 `isSold`는 표시 전용이고 `CatalogProduct.isSoldOut`은
+  그대로라 장바구니/주문의 품절 판정에는 영향이 없다.
+- **MSW 픽스처와 e2e 스텁은 게이트 넷 중 무엇도 검사하지 않는다.** `ProductFixture`는 생성 타입이
+  아닌 로컬 인터페이스이고 `e2e/`는 tsc include 밖이라, 필수 필드를 안 맞춰도 전부 통과하면서
+  런타임에는 `undefined`가 흐른다. 특히 **검색 핸들러는 픽스처를 스프레드하지 않고 필드를 나열**한다.
+- **`PRODUCT_FIXTURES`에 `isViewable: false` 행을 만들지 말 것.** 카탈로그/검색 핸들러도 공유해
+  `catalog-route.test`가 깨진다. 찜 테스트에서 시드 시점 오버라이드로 opt-in할 것
+  (회귀: `[AC-WISH-020]`/`[AC-WISH-021]`).
+
 ### 찜 상태 테스트 격리 — 서버측/클라이언트측을 항상 짝으로 리셋할 것 (2026-08-15)
 
 **`test-setup.ts`의 전역 `afterEach`가 서버측 `resetLikedProducts()`(MSW `likedProductRows`)만 되돌리고

@@ -348,6 +348,10 @@ export interface ProductSummaryResponse {
   averageRating: number | null
   reviewCount: number
   isLiked: boolean
+  /** 상세 진입 가능 여부(카테고리 체인 활성). 목록/검색은 항상 true, 찜 목록만 false가 나올 수 있다. */
+  isViewable: boolean
+  /** 구매 가능 여부(isViewable && saleStatus=ON_SALE). 진입 불가 상품은 판매중이어도 false라 품절과 다르다. */
+  isPurchasable: boolean
 }
 
 export interface ProductListData {
@@ -441,6 +445,8 @@ export interface ProductDetailResponse {
   review: ProductReviewSummary
   categories: ProductCategory[]
   isLiked: boolean
+  /** 구매 가능 여부(saleStatus=ON_SALE). 상세는 카테고리 체인 활성을 이미 걸러 요약과 달리 isViewable 항이 없다. */
+  isPurchasable: boolean
 }
 
 export interface ProductDetailEnvelope {
@@ -2468,7 +2474,7 @@ export const useDeleteRecentKeyword = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404.
+ * 상품 상세. 인증 필요(permitAll 매처가 /products 정확 일치라 하위 경로는 비로그인 401). principal로 isLiked를 계산한다. 미존재/노출불가 productId는 404.
  * @summary 상품 상세 조회
  */
 export const getProductDetail = (productId: string, signal?: AbortSignal) => {
@@ -2675,7 +2681,7 @@ export function useGetProductDetailSuspense<
 }
 
 /**
- * 옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404.
+ * 옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 인증 필요(상세와 동일, permitAll 아님). 미존재 productId는 404.
  * @summary 상품 옵션 조회
  */
 export const getProductOptions = (productId: string, signal?: AbortSignal) => {
