@@ -1,6 +1,7 @@
 import type { ProductSummaryResponse, SaleStatus } from '@aechak/api'
 import type { ProductSaleStatus } from '@aechak/domain'
-import { mediaUrl, type CatalogProduct } from '@/shared/catalog'
+import { mediaUrl } from './media'
+import type { CatalogProduct } from './products'
 
 // 서버 saleStatus -> 도메인 Product.status(목업 make()가 쓰는 값과 동일 어휘).
 const SALE_STATUS: Record<SaleStatus, ProductSaleStatus> = {
@@ -18,11 +19,13 @@ function toneFromId(id: string): number {
   return hash
 }
 
-// 상품 목록 요약(ProductSummaryResponse) -> 공용 CatalogProduct. 서버 계약 타입을 import해야 해서
-// shared가 아니라 feature에 둔다(shared는 서버 계약을 나르지 않는다 — breeds toBreedOptions 관례).
-// 도메인 Product 필수 필드는 표시에 안전한 값으로 채운다. 정렬은 서버가 하므로 createdAt은 미사용,
-// 정확 재고/카테고리 라벨은 요약 응답에 없어 상세/옵션에서 보강한다. sellerId를 목업과 같은
-// `seller-<이름>` 형태로 맞춰 실/목업 상품 모두에서 장바구니 셀러 그룹핑이 일관되게 동작한다.
+// 상품 목록 요약(ProductSummaryResponse) -> 공용 CatalogProduct. 마켓/검색/찜 목록이 공유한다
+// — 원래 features/catalog에 있었으나 찜 목록(features/wishlist)도 같은 매핑이 필요해 shared로
+// 승격했다(feature->feature import 회피). CatalogProduct/mediaUrl은 배럴 자기참조 사이클을 피해
+// 상대경로로 가져온다. 도메인 Product 필수 필드는 표시에 안전한 값으로 채운다. 정렬은 서버가
+// 하므로 createdAt은 미사용, 정확 재고/카테고리 라벨은 요약 응답에 없어 상세/옵션에서 보강한다.
+// sellerId를 목업과 같은 `seller-<이름>` 형태로 맞춰 실/목업 상품 모두에서 장바구니 셀러
+// 그룹핑이 일관되게 동작한다.
 export function toCatalogProduct(p: ProductSummaryResponse): CatalogProduct {
   const isSoldOut = p.saleStatus !== 'ON_SALE'
   return {
@@ -42,6 +45,7 @@ export function toCatalogProduct(p: ProductSummaryResponse): CatalogProduct {
     rating: p.averageRating ?? undefined,
     reviewCount: p.reviewCount,
     isSoldOut,
+    isViewable: p.isViewable,
     mainCategory: 'all',
   }
 }
