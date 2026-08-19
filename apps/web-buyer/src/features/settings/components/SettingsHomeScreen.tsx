@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
 import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { logout } from '@/shared/auth'
+import { endServerSession, logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
 import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
@@ -22,12 +22,22 @@ export function SettingsHomeScreen() {
 
   const goBack = useSafeBack({ to: '/mypage' })
 
+  // 서버 세션 종료(RT 무효화 + 쿠키 만료 + access 파기)를 먼저 하고 로컬 상태를 정리한다.
+  // endServerSession은 전송 실패를 삼키므로(멱등 204 계약) onSettled 한 곳에서 마무리한다.
+  const logoutSession = useMutation({ mutationFn: endServerSession })
+
   const handleLogout = () => {
-    logout()
-    // 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리(공유 기기·재진입 대비)
-    onWishlistLogout(queryClient)
-    setLogoutOpen(false)
-    navigate({ to: '/' })
+    logoutSession.mutate(undefined, {
+      onSettled: () => {
+        logout()
+        // 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리(공유 기기·재진입 대비)
+        onWishlistLogout(queryClient)
+        // 계정 단위 서버 캐시(내 정보/적립금/펫 등)가 다음 사용자에게 새지 않게 전부 비운다.
+        queryClient.clear()
+        setLogoutOpen(false)
+        navigate({ to: '/' })
+      },
+    })
   }
 
   return (
@@ -116,6 +126,7 @@ export function SettingsHomeScreen() {
         confirmLabel="로그아웃"
         cancelLabel="취소"
         onConfirm={handleLogout}
+        loading={logoutSession.isPending}
       />
     </MobileScreen>
   )
