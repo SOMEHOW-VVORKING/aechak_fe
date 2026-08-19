@@ -19,11 +19,9 @@ import {
   isOnboardingRequired,
   isSupportedAvatar,
   isWithinAvatarSizeLimit,
-  maskPhone,
   OVERSIZED_AVATAR_MESSAGE,
   UNSUPPORTED_AVATAR_MESSAGE,
   uploadAvatar,
-  useAccount,
   useMe,
   useUpdateProfile,
 } from '@/shared/account'
@@ -35,11 +33,10 @@ const PROFILE_SAVED_TOAST_MS = 1500
 
 // 프로필 수정(b10-st-2). 닉네임/자기소개/아바타 편집. 초기값·저장은 실서버(GET /users/me · PUT /users/me/profile).
 // 아바타는 저장 시점에 presigned(USER_PROFILE) 업로드로 tmp 키를 만들고, 안 바꾸면 조회에서 받은 기존 키를 그대로 되돌려 보낸다.
-// 휴대폰 본인 인증 표시는 아직 목업 흐름(shared/account 스토어)이라 그대로 스토어를 읽는다(전화 인증 EP 미머지).
+// 휴대폰 본인 인증 표시도 서버(isPhoneVerified·마스킹 phoneNumber)가 진실 원본이다 — 인증 화면과 같은 캐시를 읽는다.
 export function ProfileEditScreen() {
   const navigate = useNavigate()
   const { account, isLoading, isError, refetch } = useMe()
-  const storeAccount = useAccount()
   const updateProfile = useUpdateProfile()
   const goBack = useSafeBack({ to: '/mypage' })
 
@@ -181,10 +178,9 @@ export function ProfileEditScreen() {
     )
   }
 
-  const verified = storeAccount.verification === 'verified'
-  const maskedPhone = verified
-    ? storeAccount.verifiedPhoneMasked ?? maskPhone(storeAccount.phone)
-    : maskPhone(storeAccount.phone)
+  // 서버가 마스킹해 내려주는 번호(인증 전 null)를 그대로 표시한다 — 클라이언트 마스킹 없음.
+  const verified = account?.verification === 'verified'
+  const maskedPhone = account?.phone ? account.phone : '아직 인증된 번호가 없어요'
 
   return (
     <MobileScreen

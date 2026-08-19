@@ -694,6 +694,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/phone/verifications:
+    post:
+      summary: "휴대폰 인증번호 발송"
+      description: >-
+        휴대폰 점유 인증 시작 — 재발송은 같은 EP 재호출. ACTIVE 전용(PENDING 접근은 403 errorCode 20006).
+        응답의 expiresInSeconds/resendCooldownSeconds가 FE 타이머의 원천이다(수치 하드코딩 금지 — 서버 계약).
+        번호 형식 위반은 400 errorCode 90001, 재발송 쿨다운은 429 errorCode 30006,
+        일 발송 상한 초과는 429 errorCode 30008, SMS 벤더 발송 실패는 502 errorCode 30007.
+      operationId: "sendPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneCodeSentResponse"
+  /users/me/phone/verifications/confirm:
+    post:
+      summary: "휴대폰 인증번호 확인"
+      description: >-
+        발송된 인증번호를 대조해 점유 인증을 완료하고, 변경 후 내 정보를 반환한다
+        (phoneNumber는 서버 마스킹 표시용, isPhoneVerified=true). 다른 계정이 점유 중이던 번호는
+        서버가 점유를 이전하므로 별도의 중복 에러는 없다. 코드·번호 불일치는 400 errorCode 30005(의도적 미구분),
+        만료(저장 코드 없음)는 400 errorCode 30009, 입력 횟수 초과는 429 errorCode 30010 —
+        30009/30010 모두 재발송으로만 복구된다(30010은 코드 소각).
+      operationId: "confirmPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMeResponse"
   /inquiries:
     post:
       summary: "앱 서비스 문의 접수"
@@ -1443,6 +1492,39 @@ components:
       properties:
         nickname:
           type: string
+    SendPhoneCodeRequest:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber:
+          type: string
+          description: "^01[016789]-?\\d{3,4}-?\\d{4}$ — 하이픈 유무 모두 허용. 위반 400 errorCode 90001"
+    ConfirmPhoneCodeRequest:
+      type: object
+      required: [phoneNumber, code]
+      properties:
+        phoneNumber:
+          type: string
+          description: "발송 때 보낸 번호와 같아야 한다 — 불일치는 코드 오류와 함께 30005로 통합"
+        code:
+          type: string
+          description: "6자리 숫자(^\\d{6}$). 형식 위반 400 errorCode 90001"
+    PhoneCodeSent:
+      type: object
+      required: [expiresInSeconds, resendCooldownSeconds]
+      properties:
+        expiresInSeconds:
+          type: integer
+          description: "인증번호 유효시간(초, 현재 180). FE 만료 타이머의 원천 — 하드코딩 금지"
+        resendCooldownSeconds:
+          type: integer
+          description: "재발송 쿨다운(초, 현재 60). FE 재발송 타이머의 원천 — 하드코딩 금지"
+    PhoneCodeSentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PhoneCodeSent"
     # 내 정보. 8필드는 항상 존재하고(키 고정), PENDING_ONBOARDING이면 프로필 계열이 전부 null이라 값만 nullable이다.
     UserMe:
       type: object
@@ -1472,7 +1554,7 @@ components:
         phoneNumber:
           type: string
           nullable: true
-          description: "현재 항상 null(전화 인증 연동 전)"
+          description: "인증 전 null, 인증 후 서버 마스킹 표시용(예: 010-****-5678)"
         isPhoneVerified:
           type: boolean
     UserMeResponse:

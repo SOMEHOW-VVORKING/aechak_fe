@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { resetAccount, verifyPhone } from '@/shared/account'
+import { MSW_PHONE_CODE, currentAccount, seedAccount } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -19,24 +19,25 @@ function renderAt(path: string) {
   )
 }
 
-describe('/mypage/verify', () => {
+describe('/mypage/verify (실서버 계약 — MSW)', () => {
   beforeEach(() => {
-    resetAccount()
+    seedAccount()
   })
 
-  it('[AC-VERIFY-001] 인증번호 안내에 테스트 코드(000000)를 노출하지 않는다', async () => {
+  it('[AC-VERIFY-001] 인증번호 발송 후 입력이 나타나고 인증번호는 화면에 노출되지 않는다', async () => {
     const user = userEvent.setup()
     renderAt('/mypage/verify')
 
-    // 인증번호 받기 → 인증번호 입력이 나타난 뒤에도 테스트 코드 힌트가 없다.
-    await user.click(await screen.findByRole('button', { name: '인증번호 받기' }))
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
     expect(await screen.findByPlaceholderText('6자리 숫자')).toBeInTheDocument()
     expect(screen.queryByText(/테스트 인증번호/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/000000/)).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(MSW_PHONE_CODE))).not.toBeInTheDocument()
   })
 
   it('[AC-VERIFY-002] 인증 완료(9-B)에서 인증 상태/번호/일시 상세 행을 노출하지 않는다', async () => {
-    verifyPhone('010-1234-5678')
+    seedAccount({ phoneNumber: '010-****-5678', isPhoneVerified: true })
     renderAt('/mypage/verify')
 
     // 완료 표현(제목)은 유지하되 3개 상세 행은 걷어낸다.
@@ -44,5 +45,58 @@ describe('/mypage/verify', () => {
     expect(screen.queryByText('인증 상태')).not.toBeInTheDocument()
     expect(screen.queryByText('인증 번호')).not.toBeInTheDocument()
     expect(screen.queryByText('인증 일시')).not.toBeInTheDocument()
+  })
+
+  it('[AC-VERIFY-003] 잘못된 인증번호는 서버 30005 문구를 인라인으로 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+    await user.type(await screen.findByPlaceholderText('6자리 숫자'), '999999')
+    await user.click(screen.getByRole('button', { name: '인증 완료' }))
+
+    expect(await screen.findByText('인증번호가 올바르지 않아요.')).toBeInTheDocument()
+    expect(currentAccount().isPhoneVerified).toBe(false)
+  })
+
+  it('[AC-VERIFY-004] 올바른 인증번호는 confirm 응답(UserMe)으로 완료 화면으로 전환된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+    await user.type(await screen.findByPlaceholderText('6자리 숫자'), MSW_PHONE_CODE)
+    await user.click(screen.getByRole('button', { name: '인증 완료' }))
+
+    // confirm 응답이 계정 캐시에 반영돼 재조회 없이 9-B로 넘어간다.
+    expect(await screen.findByText('본인 인증 완료')).toBeInTheDocument()
+    expect(currentAccount().isPhoneVerified).toBe(true)
+    expect(currentAccount().phoneNumber).toBe('010-****-5678')
+  })
+
+  it('[AC-VERIFY-005] 발송 직후 재전송은 서버 쿨다운(60초) 동안 비활성화된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    // 재발송 타이머는 서버 응답(resendCooldownSeconds)이 원천 — 버튼이 남은 초와 함께 잠긴다.
+    const resend = await screen.findByRole('button', { name: /재전송 \(\d+초\)/ })
+    expect(resend).toBeDisabled()
+    // 만료 타이머(expiresInSeconds)도 표시된다.
+    expect(screen.getByText(/남은 시간 \d+:\d{2}/)).toBeInTheDocument()
+  })
+
+  it('[AC-VERIFY-006] 형식이 틀린 번호는 서버 호출 없이 인라인 오류를 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '02-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    expect(await screen.findByText('휴대폰 번호 형식을 확인해 주세요.')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('6자리 숫자')).not.toBeInTheDocument()
   })
 })

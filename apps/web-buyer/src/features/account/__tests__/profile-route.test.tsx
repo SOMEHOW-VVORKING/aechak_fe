@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HttpResponse, http } from 'msw'
-import { resetAccount, verifyPhone } from '@/shared/account'
+import { resetAccount } from '@/shared/account'
 import {
   currentAccount,
   seedAccount,
@@ -164,18 +164,18 @@ describe('/mypage/profile 실서버 연동', () => {
   })
 })
 
-// 휴대폰 본인 인증 표시는 아직 목업 흐름(shared/account 스토어)이라 스토어 상태 기준으로 검증한다.
-describe('/mypage/profile 휴대폰 필드 인증 배지(목업 유지)', () => {
+// 휴대폰 본인 인증 표시는 서버(GET /users/me의 isPhoneVerified·마스킹 phoneNumber)가 진실 원본이다.
+describe('/mypage/profile 휴대폰 필드 인증 배지(서버 기준)', () => {
   beforeEach(() => {
     resetAccount()
     seedAccount()
   })
 
-  it('[AC-PROFILE-001] 인증 완료 시 마스킹 번호만 남고 미인증/본인 인증하기 버튼이 없다', async () => {
-    verifyPhone('010-1234-5678')
+  it('[AC-PROFILE-001] 인증 완료 시 서버 마스킹 번호만 남고 미인증/본인 인증하기 버튼이 없다', async () => {
+    seedAccount({ phoneNumber: '010-****-5678', isPhoneVerified: true })
     renderAt('/mypage/profile')
 
-    expect(await screen.findByText('010-1234-****')).toBeInTheDocument()
+    expect(await screen.findByText('010-****-5678')).toBeInTheDocument()
     expect(screen.queryByText('미인증')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '본인 인증하기' })).not.toBeInTheDocument()
   })
