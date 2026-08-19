@@ -384,6 +384,9 @@ importers:
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0
+      msw:
+        specifier: ^2.4.9
+        version: 2.15.0(@types/node@26.1.0)(typescript@5.9.3)
       postcss:
         specifier: ^8.5.4
         version: 8.5.16
