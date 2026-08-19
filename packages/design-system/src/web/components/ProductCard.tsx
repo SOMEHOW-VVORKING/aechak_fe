@@ -7,6 +7,8 @@ export interface ProductCardProps {
   originalPrice?: number
   storeName?: string
   isSold?: boolean
+  /** `isSold`일 때 썸네일 중앙 오버레이에 표시할 라벨. 기본 '품절'. */
+  soldLabel?: string
   onClick?: () => void
   /** 찜(위시) 상태. `onWishToggle`과 함께 주면 썸네일 우상단에 하트 오버레이가 표시됨. */
   wished?: boolean
@@ -26,6 +28,7 @@ export function ProductCard({
   originalPrice,
   storeName,
   isSold,
+  soldLabel = '품절',
   onClick,
   wished,
   onWishToggle,
@@ -65,7 +68,7 @@ export function ProductCard({
         )}
         {isSold && (
           <span className="absolute inset-0 flex items-center justify-center">
-            <StatusPill variant="muted">품절</StatusPill>
+            <StatusPill variant="muted">{soldLabel}</StatusPill>
           </span>
         )}
       </div>

@@ -33,6 +33,12 @@ describe('ProductCard', () => {
     expect(screen.queryByRole('button', { name: /상세 보기/ })).not.toBeInTheDocument()
   })
 
+  it('[AC-DS-PRODUCTCARD-008] soldLabel을 주면 오버레이 라벨이 바뀐다', () => {
+    render(<ProductCard image={IMG} name="진입 불가 상품" price={29000} isSold soldLabel="판매 중단" />)
+    expect(screen.getByText('판매 중단')).toBeInTheDocument()
+    expect(screen.queryByText('품절')).not.toBeInTheDocument()
+  })
+
   it('[AC-DS-PRODUCTCARD-005] 비품절 카드는 상세 이동 버튼을 클릭하면 onClick이 호출된다', async () => {
     const onClick = vi.fn()
     render(<ProductCard image={IMG} name="자동 급식기" price={64000} onClick={onClick} />)

@@ -6,7 +6,7 @@ import { MarketAppBar } from '@/shared/components/MarketAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { truncateText } from '@/shared/truncate'
 import { useCartCount } from '@/shared/cart'
-import { placeholderImage, toggleWish, useWishedIds, type CatalogProduct } from '@/shared/catalog'
+import { placeholderImage, toggleWishlist, useWishedIds, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useHomeFeed } from '../home.queries'
 import { ALL_CATEGORY_LABEL, filterRankingByCategory, type HomeRankingItem } from '../home.mock'
@@ -26,9 +26,10 @@ export function HomeScreen() {
     navigate({ to: '/products/$productId', params: { productId: product.id } })
 
   // 추천 캐러셀 하트 — 반드시 비회원 로그인 게이트를 거친 뒤에만 토글한다(ProductGrid의 wishGuard와
-  // 동일 목적: 게이트 우회 버그 재발 방지). 게이트 없는 bare toggleWish 호출 금지.
+  // 동일 목적: 게이트 우회 버그 재발 방지). 게이트 없는 bare toggleWishlist 호출 금지.
+  // toggleWishlist는 mock 상품(현재 홈은 전부 mock)이면 클라이언트 토글만, 실 상품이면 서버 동기화.
   const toggleWishGated = (product: CatalogProduct) =>
-    requireAuth('wish', () => toggleWish(product.id))
+    requireAuth('wish', () => toggleWishlist(product.id))
 
   // "마켓에서 더 보기" — 선택된 칩이 있으면 그 카테고리가 열린 마켓으로, '전체'면 마켓 홈으로.
   const goMarket = () =>

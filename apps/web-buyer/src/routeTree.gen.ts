@@ -21,6 +21,7 @@ import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings/notifications'
+import { Route as SettingsInquiryRouteImport } from './routes/settings/inquiry'
 import { Route as SettingsGuidelinesRouteImport } from './routes/settings/guidelines'
 import { Route as SettingsFaqRouteImport } from './routes/settings/faq'
 import { Route as SettingsDataDeletionRouteImport } from './routes/settings/data-deletion'
@@ -105,6 +106,11 @@ const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
 const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
   id: '/settings/notifications',
   path: '/settings/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsInquiryRoute = SettingsInquiryRouteImport.update({
+  id: '/settings/inquiry',
+  path: '/settings/inquiry',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsGuidelinesRoute = SettingsGuidelinesRouteImport.update({
@@ -264,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/settings/data-deletion': typeof SettingsDataDeletionRoute
   '/settings/faq': typeof SettingsFaqRoute
   '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/orders/': typeof OrdersIndexRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/settings/data-deletion': typeof SettingsDataDeletionRoute
   '/settings/faq': typeof SettingsFaqRoute
   '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/': typeof TabsIndexRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/settings/data-deletion': typeof SettingsDataDeletionRoute
   '/settings/faq': typeof SettingsFaqRoute
   '/settings/guidelines': typeof SettingsGuidelinesRoute
+  '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/_tabs/': typeof TabsIndexRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/settings/data-deletion'
     | '/settings/faq'
     | '/settings/guidelines'
+    | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
     | '/orders/'
@@ -423,6 +433,7 @@ export interface FileRouteTypes {
     | '/settings/data-deletion'
     | '/settings/faq'
     | '/settings/guidelines'
+    | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
     | '/'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/settings/data-deletion'
     | '/settings/faq'
     | '/settings/guidelines'
+    | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
     | '/_tabs/'
@@ -500,6 +512,7 @@ export interface RootRouteChildren {
   SettingsDataDeletionRoute: typeof SettingsDataDeletionRoute
   SettingsFaqRoute: typeof SettingsFaqRoute
   SettingsGuidelinesRoute: typeof SettingsGuidelinesRoute
+  SettingsInquiryRoute: typeof SettingsInquiryRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
@@ -598,6 +611,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/notifications'
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/inquiry': {
+      id: '/settings/inquiry'
+      path: '/settings/inquiry'
+      fullPath: '/settings/inquiry'
+      preLoaderRoute: typeof SettingsInquiryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/guidelines': {
@@ -825,6 +845,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsDataDeletionRoute: SettingsDataDeletionRoute,
   SettingsFaqRoute: SettingsFaqRoute,
   SettingsGuidelinesRoute: SettingsGuidelinesRoute,
+  SettingsInquiryRoute: SettingsInquiryRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   OrdersIndexRoute: OrdersIndexRoute,

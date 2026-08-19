@@ -21,7 +21,12 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
 import { addToCart } from '@/shared/cart'
-import { addWish, SUB_CATEGORIES, toggleWish, useIsWished } from '@/shared/catalog'
+import {
+  hydrateLikedFromDetail,
+  SUB_CATEGORIES,
+  toggleWishlist,
+  useIsWished,
+} from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useProductDetail, useProductOptions } from '../product.queries'
 import type { ProductDetail } from '../product.mock'
@@ -71,10 +76,11 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
 
-  // 서버 상세의 isLiked를 찜 스토어에 단방향 시드한다(like API가 없어 세션 토글이 우선 — false여도
-  // 강제 해제하지 않는다). addWish는 멱등이라 재호출/StrictMode 이중 실행에 안전하다.
+  // 서버 상세의 isLiked를 미러에 단방향 시드한다. "id별 세션당 1회" 정책과 그 시드 기록은
+  // shared/catalog의 wishlist.queries가 소유한다 — 여기 모듈 전역으로 두면 로그아웃·테스트에서
+  // 되돌릴 방법이 없다. 이후 토글은 toggleWishlist가 소유.
   useEffect(() => {
-    if (data?.isLiked) addWish(productId)
+    hydrateLikedFromDetail(productId, data?.isLiked)
   }, [productId, data?.isLiked])
 
   const goBack = useSafeBack({ to: '/' })
@@ -106,7 +112,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             soldOut={data.isSoldOut}
             onToggleWish={() =>
               requireAuth('wish', () => {
-                toggleWish(productId)
+                toggleWishlist(productId)
                 showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
               })
             }

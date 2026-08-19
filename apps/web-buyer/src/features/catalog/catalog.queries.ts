@@ -1,7 +1,12 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getCategories, getProducts } from '@aechak/api'
-import { registerProducts, type CatalogProduct, type CatalogSort } from '@/shared/catalog'
-import { toCatalogProduct } from './catalog.mapper'
+import {
+  currentSessionEpoch,
+  hydrateLikedFromSummaries,
+  toCatalogProduct,
+  type CatalogProduct,
+  type CatalogSort,
+} from '@/shared/catalog'
 
 // 카테고리 트리(대>중>소). 세션 내 불변이라 staleTime Infinity. enabled로 비회원 트랩을 막는다 —
 // /categories는 서버에서 인증 필요라, 로그아웃 상태면 요청 자체를 걸어 401 -> 전역 로그인
@@ -23,19 +28,25 @@ interface ProductPage {
   hasNext: boolean
 }
 
-// 페이지를 fetch당 한 번만 CatalogProduct로 매핑하고 레지스트리에 등록한다. select에서 다시
-// 매핑하지 않도록 완성 형태로 반환한다(codex 리뷰 #5 — select 재매핑/참조 불안정 제거).
+// 페이지를 fetch당 한 번만 CatalogProduct로 매핑한다. select에서 다시 매핑하지 않도록 완성
+// 형태로 반환한다(codex 리뷰 #5 — select 재매핑/참조 불안정 제거). 레지스트리에는 ProductGrid에서
+// 상세 진입/찜처럼 후속 화면이 상품 스냅샷을 실제 소비할 때만 등록해 장기 세션 누적을 제한한다.
 async function fetchProductPage(
   params: { category?: number; sort: CatalogSort },
   pageParam: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<ProductPage> {
+  // 요청 시작 전 세션 epoch를 캡처한다 — 이 fetch가 로그아웃을 가로질러 늦게 resolve돼도
+  // hydrate가 이전 세션의 찜을 새 세션 미러로 시드하지 않게 한다.
+  const epoch = currentSessionEpoch()
   const res = await getProducts(
     { category: params.category, sort: params.sort, cursor: pageParam, size: 20 },
     signal,
   )
+  // 로그인 사용자면 카드별 isLiked가 실려 온다 — 페이지 로드 시점에 미러를 시드해 찜 목록 화면을
+  // 방문하지 않아도 이 페이지 하트가 첫 렌더부터 채워진다(비로그인은 전부 false라 no-op).
+  hydrateLikedFromSummaries(res.data.products, epoch)
   const products = res.data.products.map(toCatalogProduct)
-  registerProducts(products)
   return {
     products,
     totalCount: res.data.totalCount,
