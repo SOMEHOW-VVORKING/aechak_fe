@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { axiosInstance } from '@aechak/api'
+import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD } from '@/shared/catalog'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
 // envelope 해석)까지 검증하려고 모듈 모킹 대신 네트워크 레벨에서 가로챈다.
@@ -9,11 +10,29 @@ import { axiosInstance } from '@aechak/api'
 const base = axiosInstance.defaults.baseURL ?? ''
 export const BREEDS_URL = `${base}/breeds`
 export const WEB_REFRESH_URL = `${base}/auth/web/refresh`
+export const WEB_LOGOUT_URL = `${base}/auth/web/logout`
 export const DELIVERY_ADDRESSES_URL = `${base}/delivery-addresses`
 export const CATEGORIES_URL = `${base}/categories`
 export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
+export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
+export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
+export const SEARCH_PRODUCTS_URL = `${base}/search/products`
+export const SEARCH_KEYWORDS_URL = `${base}/search/keywords`
+export const RECENT_KEYWORDS_URL = `${base}/search/recent-keywords`
+
+const SEARCH_RECENT_KEYWORD_FIXTURES = [
+  { id: 1, keyword: '자동 급식기', searchedAt: '2026-08-06T09:00:00' },
+  { id: 2, keyword: '고양이 모래', searchedAt: '2026-08-05T09:00:00' },
+  { id: 3, keyword: '츄르', searchedAt: '2026-08-04T09:00:00' },
+  { id: 4, keyword: '스크래쳐', searchedAt: '2026-08-03T09:00:00' },
+]
+let searchRecentKeywords = [...SEARCH_RECENT_KEYWORD_FIXTURES]
+
+export function resetSearchFixtures(): void {
+  searchRecentKeywords = [...SEARCH_RECENT_KEYWORD_FIXTURES]
+}
 
 // 카테고리 트리 픽스처 — 대분류 2 + 각 중분류 2. name은 마켓 칩/그리드 라벨로 그대로 쓰인다.
 export const CATEGORY_FIXTURES = [
@@ -55,6 +74,10 @@ interface ProductFixture {
     saleStatus: 'ON_SALE' | 'OUT_OF_STOCK' | 'SUSPENDED' | 'ENDED'
     averageRating: number | null
     reviewCount: number
+    // 찜 목록만 false가 나올 수 있다 — 그 케이스는 이 배열을 고치지 말고 seed 시점에 오버라이드할 것
+    // (여기 false 행을 넣으면 카탈로그/검색 핸들러가 서버가 줄 수 없는 응답을 흉내내게 된다).
+    isViewable: boolean
+    isPurchasable: boolean
   }
 }
 
@@ -85,10 +108,13 @@ function makeFixture(
       thumbnailImageKey: null,
       regularPrice,
       discountPrice,
-      discountRate: discountPrice != null ? Math.round((1 - discountPrice / regularPrice) * 100) : null,
+      discountRate:
+        discountPrice != null ? Math.round((1 - discountPrice / regularPrice) * 100) : null,
       saleStatus,
       averageRating: 4.5,
       reviewCount: 12,
+      isViewable: true,
+      isPurchasable: saleStatus === 'ON_SALE',
     },
   }
 }
@@ -114,6 +140,7 @@ export const REAL_PRODUCT_DETAIL = {
     { categoryId: 11, name: '사료/간식', depth: 2 },
   ],
   isLiked: false,
+  isPurchasable: true,
 }
 
 export const REAL_PRODUCT_OPTIONS = {
@@ -130,11 +157,90 @@ export const REAL_PRODUCT_OPTIONS = {
     },
   ],
   optionCombinations: [
-    { optionCombinationId: 1, name: '기본형', additionalPrice: 0, optionValueIds: [1], remainingStock: 10, soldOut: false },
-    { optionCombinationId: 2, name: '프리미엄형', additionalPrice: 5000, optionValueIds: [2], remainingStock: 5, soldOut: false },
-    { optionCombinationId: 3, name: '한정형', additionalPrice: 0, optionValueIds: [3], remainingStock: 0, soldOut: true },
+    {
+      optionCombinationId: 1,
+      name: '기본형',
+      additionalPrice: 0,
+      optionValueIds: [1],
+      remainingStock: 10,
+      soldOut: false,
+    },
+    {
+      optionCombinationId: 2,
+      name: '프리미엄형',
+      additionalPrice: 5000,
+      optionValueIds: [2],
+      remainingStock: 5,
+      soldOut: false,
+    },
+    {
+      optionCombinationId: 3,
+      name: '한정형',
+      additionalPrice: 0,
+      optionValueIds: [3],
+      remainingStock: 0,
+      soldOut: true,
+    },
   ],
 }
+
+// 내 찜 목록 상태(서버 소유 목록의 축소). seedLikedProducts로 세우고 like/unlike로 갱신한다.
+// 카드 형태는 상품 목록과 동일한 ProductSummaryResponse(= ProductFixture['product']).
+let likedProductRows: ProductFixture['product'][] = []
+
+/** 테스트마다 찜 목록을 세운다. 인자 없이 부르면 빈 목록. */
+export function seedLikedProducts(rows: ProductFixture['product'][] = []): void {
+  likedProductRows = rows.map(row => ({ ...row }))
+}
+
+/** 상태 누수 방지 — test-setup afterEach에서 호출. */
+export function resetLikedProducts(): void {
+  likedProductRows = []
+}
+
+// 카드 응답의 isLiked 판정 — BE는 로그인 사용자면 목록/검색/찜목록 카드마다 찜 여부를 채운다.
+// 여기선 seedLikedProducts/like-POST로 쌓인 likedProductRows를 진실 소스로 삼는다(미시드면 전부 false).
+function isLikedFixture(productId: string): boolean {
+  return likedProductRows.some(row => row.productId === productId)
+}
+
+const likedProductHandlers = [
+  // 내 찜 목록 — 커서(인덱스) 페이지네이션. 상품 목록과 동일한 ProductListResponse 봉투.
+  http.get(LIKED_PRODUCTS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    const cursor = url.searchParams.get('cursor')
+    const size = Number(url.searchParams.get('size') ?? 20)
+    const start = cursor ? Number(cursor) : 0
+    const page = likedProductRows.slice(start, start + size)
+    const nextIndex = start + size
+    const hasNext = nextIndex < likedProductRows.length
+    return HttpResponse.json({
+      data: {
+        // 찜 목록 카드는 정의상 전부 찜 상태다.
+        products: page.map(product => ({ ...product, isLiked: true })),
+        totalCount: start === 0 ? likedProductRows.length : null,
+        nextCursor: hasNext ? String(nextIndex) : null,
+        hasNext,
+      },
+    })
+  }),
+  // 찜하기 — 멱등(이미 찜한 상품도 201). 픽스처에 있으면 목록 앞에 추가한다(undo 재-like 대비).
+  http.post(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    if (!likedProductRows.some(p => p.productId === id)) {
+      const fixture = PRODUCT_FIXTURES.find(f => f.product.productId === id)?.product
+      if (fixture) likedProductRows = [fixture, ...likedProductRows]
+    }
+    return new HttpResponse(null, { status: 201 })
+  }),
+  // 찜 해제 — 멱등(찜하지 않은 상품도 204).
+  http.delete(PRODUCT_LIKE_URL, ({ params }) => {
+    const id = String(params.productId)
+    likedProductRows = likedProductRows.filter(p => p.productId !== id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const PETS_URL = `${base}/users/me/pets`
 export const PRESIGNED_URL = `${base}/files/presigned-url`
 export const POINTS_URL = `${base}/users/me/points`
@@ -201,7 +307,13 @@ const deliveryAddressHandlers = [
     const row = { ...body, addressId: deliveryAddressSeq, isDefault } as DeliveryAddressRow
     deliveryAddressRows = [...deliveryAddressRows, row]
     return HttpResponse.json(
-      { data: { addressId: row.addressId, isDefault: row.isDefault, totalCount: deliveryAddressRows.length } },
+      {
+        data: {
+          addressId: row.addressId,
+          isDefault: row.isDefault,
+          totalCount: deliveryAddressRows.length,
+        },
+      },
       { status: 201 },
     )
   }),
@@ -215,7 +327,10 @@ const deliveryAddressHandlers = [
   }),
   http.patch(`${DELIVERY_ADDRESSES_URL}/:addressId/default`, ({ params }) => {
     const id = Number(params['addressId'])
-    deliveryAddressRows = deliveryAddressRows.map(row => ({ ...row, isDefault: row.addressId === id }))
+    deliveryAddressRows = deliveryAddressRows.map(row => ({
+      ...row,
+      isDefault: row.addressId === id,
+    }))
     return HttpResponse.json({ data: { addressId: id, isDefault: true } })
   }),
   http.delete(`${DELIVERY_ADDRESSES_URL}/:addressId`, ({ params }) => {
@@ -225,7 +340,10 @@ const deliveryAddressHandlers = [
     // 서버는 기본을 지웠을 때만 남은 것 중 하나를 승격하고 그 id를 돌려준다.
     const promoted = wasDefault ? (deliveryAddressRows[0]?.addressId ?? null) : null
     if (promoted != null) {
-      deliveryAddressRows = deliveryAddressRows.map(row => ({ ...row, isDefault: row.addressId === promoted }))
+      deliveryAddressRows = deliveryAddressRows.map(row => ({
+        ...row,
+        isDefault: row.addressId === promoted,
+      }))
     }
     return HttpResponse.json({ data: { promotedDefaultAddressId: promoted } })
   }),
@@ -355,6 +473,8 @@ const petHandlers = [
 
 export const USER_ME_URL = `${base}/users/me`
 export const USER_PROFILE_URL = `${base}/users/me/profile`
+export const PHONE_VERIFICATIONS_URL = `${base}/users/me/phone/verifications`
+export const PHONE_VERIFICATIONS_CONFIRM_URL = `${base}/users/me/phone/verifications/confirm`
 
 // 닉네임 점유 상태는 프로필 수정(PUT /users/me/profile)과 온보딩 닉네임(check·PUT)이 공유한다.
 let takenNicknames = new Set<string>()
@@ -396,11 +516,25 @@ const DEFAULT_ACCOUNT: AccountState = {
 let account: AccountState = { ...DEFAULT_ACCOUNT }
 let concurrentModOnce = false
 
-/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락 옵션도 함께 초기화한다. */
+// 휴대폰 인증(발송→확인) 상태. 기본 핸들러는 항상 이 고정 코드를 발급하고(응답엔 미노출),
+// confirm이 발송 때의 번호 + 코드를 대조한다 — 서버의 30005(불일치)/30009(만료=미발송)를 재현.
+export const MSW_PHONE_CODE = '123456'
+export const PHONE_CODE_EXPIRES_IN_SECONDS = 180
+export const PHONE_RESEND_COOLDOWN_SECONDS = 60
+let issuedPhoneCode: { phoneNumber: string } | null = null
+
+// BE PhoneNumberMasker 재현: 하이픈 제거 후 앞 3·뒤 4 사이를 '*'로 가린다('01012345678' → '010-****-5678').
+function maskPhoneWire(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/-/g, '')
+  return `${digits.slice(0, 3)}-${'*'.repeat(Math.max(0, digits.length - 7))}-${digits.slice(-4)}`
+}
+
+/** 테스트마다 내 정보 상태를 세운다. 점유 닉네임·낙관락·발송된 인증번호도 함께 초기화한다. */
 export function seedAccount(overrides: Partial<AccountState> = {}): void {
   account = { ...DEFAULT_ACCOUNT, ...overrides }
   takenNicknames = new Set()
   concurrentModOnce = false
+  issuedPhoneCode = null
 }
 
 /** 핸들러가 반영한 현재 내 정보. 테스트가 저장 결과를 단언할 때 읽는다. */
@@ -441,6 +575,35 @@ const accountHandlers = [
     }
     return HttpResponse.json({ data: account })
   }),
+  http.post(PHONE_VERIFICATIONS_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string }
+    issuedPhoneCode = { phoneNumber: body.phoneNumber }
+    return HttpResponse.json({
+      data: {
+        expiresInSeconds: PHONE_CODE_EXPIRES_IN_SECONDS,
+        resendCooldownSeconds: PHONE_RESEND_COOLDOWN_SECONDS,
+      },
+    })
+  }),
+  http.post(PHONE_VERIFICATIONS_CONFIRM_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string; code: string }
+    if (issuedPhoneCode == null) {
+      return HttpResponse.json(
+        { errorCode: 30009, message: '인증번호가 만료되었습니다. 재발송 시도해 주세요.' },
+        { status: 400 },
+      )
+    }
+    // 코드·번호 불일치는 서버가 의도적으로 구분하지 않는다(둘 다 30005).
+    if (body.code !== MSW_PHONE_CODE || body.phoneNumber !== issuedPhoneCode.phoneNumber) {
+      return HttpResponse.json(
+        { errorCode: 30005, message: '인증번호가 올바르지 않습니다.' },
+        { status: 400 },
+      )
+    }
+    issuedPhoneCode = null
+    account = { ...account, phoneNumber: maskPhoneWire(body.phoneNumber), isPhoneVerified: true }
+    return HttpResponse.json({ data: account })
+  }),
 ]
 
 // ── 온보딩(약관·동의·닉네임) ──────────────────────────────────────────────────
@@ -450,6 +613,7 @@ export const TERMS_URL = `${base}/terms`
 export const CONSENTS_URL = `${base}/users/me/consents`
 export const NICKNAME_CHECK_URL = `${base}/users/nickname/check`
 export const NICKNAME_URL = `${base}/users/me/nickname`
+export const INQUIRIES_URL = `${base}/inquiries`
 
 export interface TermRow {
   termId: number
@@ -577,6 +741,14 @@ export const handlers = [
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
+  ...likedProductHandlers,
+  // POST /inquiries — 접수 성공(RECEIVED). 실제 저장/통지는 BE 소관이라 계약(201 + data)만 재현한다.
+  http.post(INQUIRIES_URL, () =>
+    HttpResponse.json(
+      { data: { status: 'RECEIVED', createdAt: '2026-08-09T20:00:00' } },
+      { status: 201 },
+    ),
+  ),
   http.get(BREEDS_URL, ({ request }) => {
     const species = new URL(request.url).searchParams.get('species')
     if (species !== 'DOG' && species !== 'CAT') {
@@ -590,6 +762,8 @@ export const handlers = [
   http.post(WEB_REFRESH_URL, () =>
     HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
   ),
+  // 웹 로그아웃 — 서버 계약이 완전 멱등(쿠키가 없어도 204 No Content, 본문 없음).
+  http.post(WEB_LOGOUT_URL, () => new HttpResponse(null, { status: 204 })),
   // 적립금 잔액 — seedPointBalance로 세운 값을 봉투에 담아 내려준다(미시드면 0).
   http.get(POINTS_URL, () => HttpResponse.json({ data: { balance: pointBalance } })),
   // 카테고리 트리(마켓 대분류/중분류).
@@ -603,7 +777,9 @@ export const handlers = [
     let list = PRODUCT_FIXTURES
     if (catParam) {
       const id = Number(catParam)
-      list = PRODUCT_FIXTURES.filter(f => f.categoryId === id || CATEGORY_PARENT[f.categoryId] === id)
+      list = PRODUCT_FIXTURES.filter(
+        f => f.categoryId === id || CATEGORY_PARENT[f.categoryId] === id,
+      )
     }
     let products = list.map(f => f.product)
     if (sort === 'price_asc') {
@@ -617,7 +793,91 @@ export const handlers = [
     const nextIndex = start + pageSize
     const hasNext = nextIndex < products.length
     return HttpResponse.json({
-      data: { products: page, totalCount: products.length, nextCursor: hasNext ? String(nextIndex) : null, hasNext },
+      data: {
+        products: page.map(product => ({ ...product, isLiked: isLikedFixture(product.productId) })),
+        totalCount: products.length,
+        nextCursor: hasNext ? String(nextIndex) : null,
+        hasNext,
+      },
+    })
+  }),
+  http.get(SEARCH_KEYWORDS_URL, () =>
+    HttpResponse.json({
+      data: {
+        recentKeywords: searchRecentKeywords,
+        recommendedKeywords: [
+          { keyword: '여름 쿨매트' },
+          { keyword: '덴탈껌' },
+          { keyword: '대용량 사료' },
+        ],
+      },
+    }),
+  ),
+  http.delete(RECENT_KEYWORDS_URL, () => {
+    searchRecentKeywords = []
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.delete(`${RECENT_KEYWORDS_URL}/:id`, ({ params }) => {
+    searchRecentKeywords = searchRecentKeywords.filter(item => item.id !== Number(params.id))
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.get(SEARCH_PRODUCTS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const keyword = (params.get('keyword') ?? '').trim().toLowerCase()
+    const minPrice = Number(params.get('minPrice') ?? 0)
+    const maxPrice = Number(params.get('maxPrice') ?? Number.MAX_SAFE_INTEGER)
+    const minRating = Number(params.get('minRating') ?? 0)
+    const freeShipping = params.get('freeShipping') === 'true'
+    const excludeSoldOut = params.get('excludeSoldOut') === 'true'
+    const sort = params.get('sort') ?? 'popular'
+    const cursor = Number(params.get('cursor') ?? 0)
+    const size = Number(params.get('size') ?? 20)
+
+    let products = CATALOG_PRODUCTS.filter(product => {
+      const haystack = `${product.name} ${product.storeName ?? ''}`.toLowerCase()
+      const priceMatches = product.price >= minPrice && product.price <= maxPrice
+      const ratingMatches = (product.rating ?? 0) >= minRating
+      return (
+        haystack.includes(keyword) &&
+        priceMatches &&
+        ratingMatches &&
+        (!freeShipping || product.price >= FREE_SHIPPING_THRESHOLD) &&
+        (!excludeSoldOut || !product.isSoldOut)
+      )
+    })
+    if (sort === 'popular')
+      products = [...products].sort((a, b) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0))
+    if (sort === 'price_asc') products = [...products].sort((a, b) => a.price - b.price)
+    if (sort === 'latest')
+      products = [...products].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+    const page = products.slice(cursor, cursor + size)
+    const next = cursor + size
+    const hasNext = next < products.length
+    return HttpResponse.json({
+      data: {
+        products: page.map(product => ({
+          productId: product.id,
+          name: product.name,
+          sellerName: product.storeName ?? '',
+          thumbnailImageKey: null,
+          regularPrice: product.originalPrice ?? product.price,
+          discountPrice: product.originalPrice != null ? product.price : null,
+          discountRate:
+            product.originalPrice != null
+              ? Math.round((1 - product.price / product.originalPrice) * 100)
+              : null,
+          saleStatus: product.isSoldOut ? 'OUT_OF_STOCK' : 'ON_SALE',
+          averageRating: product.rating ?? null,
+          reviewCount: product.reviewCount ?? 0,
+          isLiked: isLikedFixture(product.id),
+          isViewable: true,
+          isPurchasable: !product.isSoldOut,
+        })),
+        totalCount: cursor === 0 ? products.length : null,
+        nextCursor: hasNext ? String(next) : null,
+        hasNext,
+      },
     })
   }),
   // 상품 상세 — 실 픽스처 id만 200, 나머지(목업 id 포함)는 404 -> 화면이 목업으로 폴백.

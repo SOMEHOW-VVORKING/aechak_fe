@@ -201,13 +201,131 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProductListResponse"
+  /search/products:
+    get:
+      summary: "키워드 상품 검색(커서 페이지네이션)"
+      description: "상품명·셀러명 키워드 검색. 비로그인 허용하며 로그인 사용자의 첫 페이지 검색은 최근 검색어로 기록한다."
+      operationId: "searchProducts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: sort
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProductKeywordSearchSort"
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: minRating
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+        - name: category
+          in: query
+          required: false
+          description: "중분류 categoryId"
+          schema:
+            type: integer
+            format: int64
+        - name: freeShipping
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: excludeSoldOut
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+  /search/keywords:
+    get:
+      summary: "최근·추천 검색어 조회"
+      operationId: "getSearchKeywords"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchKeywordsEnvelope"
+  /search/recent-keywords:
+    delete:
+      summary: "최근 검색어 전체 삭제"
+      operationId: "deleteAllRecentKeywords"
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: "No Content"
+  /search/recent-keywords/{id}:
+    delete:
+      summary: "최근 검색어 단건 삭제"
+      operationId: "deleteRecentKeyword"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content"
   /products/{productId}:
     get:
       summary: "상품 상세 조회"
-      description: "상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404."
+      description: "상품 상세. 인증 필요(permitAll 매처가 /products 정확 일치라 하위 경로는 비로그인 401). principal로 isLiked를 계산한다. 미존재/노출불가 productId는 404."
       operationId: "getProductDetail"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -227,10 +345,9 @@ paths:
   /products/{productId}/options:
     get:
       summary: "상품 옵션 조회"
-      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404."
+      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 인증 필요(상세와 동일, permitAll 아님). 미존재 productId는 404."
       operationId: "getProductOptions"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -247,6 +364,39 @@ paths:
                 $ref: "#/components/schemas/ProductOptionsEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/like:
+    post:
+      summary: "상품 찜하기"
+      description: "상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000."
+      operationId: "likeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: "Created(본문 없음)"
+        "404":
+          description: "존재하지 않는 상품(errorCode 40000)"
+    delete:
+      summary: "상품 찜 해제"
+      description: "상품을 찜 목록에서 제거한다(멱등 — 찜하지 않은 상품도 204)."
+      operationId: "unlikeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
   /files/presigned-url:
     post:
       summary: "업로드 presigned URL 발급"
@@ -285,6 +435,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/liked-products:
+    get:
+      summary: "내 찜 목록 조회(커서 페이지네이션)"
+      description: "로그인 사용자의 찜한 상품 목록. 품절도 saleStatus로 노출하며 자동 삭제하지 않는다. 상품 목록과 동일한 ProductListResponse."
+      operationId: "getLikedProducts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          description: "유효하지 않은 커서(errorCode 90002)"
   /users/me/profile:
     put:
       summary: "프로필 수정"
@@ -513,6 +694,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/phone/verifications:
+    post:
+      summary: "휴대폰 인증번호 발송"
+      description: >-
+        휴대폰 점유 인증 시작 — 재발송은 같은 EP 재호출. ACTIVE 전용(PENDING 접근은 403 errorCode 20006).
+        응답의 expiresInSeconds/resendCooldownSeconds가 FE 타이머의 원천이다(수치 하드코딩 금지 — 서버 계약).
+        번호 형식 위반은 400 errorCode 90001, 재발송 쿨다운은 429 errorCode 30006,
+        일 발송 상한 초과는 429 errorCode 30008, SMS 벤더 발송 실패는 502 errorCode 30007.
+      operationId: "sendPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneCodeSentResponse"
+  /users/me/phone/verifications/confirm:
+    post:
+      summary: "휴대폰 인증번호 확인"
+      description: >-
+        발송된 인증번호를 대조해 점유 인증을 완료하고, 변경 후 내 정보를 반환한다
+        (phoneNumber는 서버 마스킹 표시용, isPhoneVerified=true). 다른 계정이 점유 중이던 번호는
+        서버가 점유를 이전하므로 별도의 중복 에러는 없다. 코드·번호 불일치는 400 errorCode 30005(의도적 미구분),
+        만료(저장 코드 없음)는 400 errorCode 30009, 입력 횟수 초과는 429 errorCode 30010 —
+        30009/30010 모두 재발송으로만 복구된다(30010은 코드 소각).
+      operationId: "confirmPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMeResponse"
+  /inquiries:
+    post:
+      summary: "앱 서비스 문의 접수"
+      description: "로그인 사용자의 앱 서비스 문의를 접수한다(RECEIVED). 형식/필수 위반 400 INVALID_REQUEST, 미인증 401."
+      operationId: "submitInquiry"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitInquiryRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitInquiryResponse"
   /seller-applications:
     get:
       summary: "내 입점 신청 현황"
@@ -966,7 +1216,7 @@ components:
       enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
     ProductSummaryResponse:
       type: object
-      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount]
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked, isViewable, isPurchasable]
       properties:
         productId:
           type: string
@@ -995,6 +1245,14 @@ components:
           nullable: true
         reviewCount:
           type: integer
+        isLiked:
+          type: boolean
+        isViewable:
+          type: boolean
+          description: "상세 진입 가능 여부(카테고리 체인 활성). 목록/검색은 항상 true, 찜 목록만 false가 나올 수 있다."
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(isViewable && saleStatus=ON_SALE). 진입 불가 상품은 판매중이어도 false라 품절과 다르다."
     ProductListData:
       type: object
       required: [products, totalCount, nextCursor, hasNext]
@@ -1017,6 +1275,46 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ProductListData"
+    ProductKeywordSearchSort:
+      type: string
+      enum: [popular, price_asc, latest]
+      default: popular
+    RecentKeywordResponse:
+      type: object
+      required: [id, keyword, searchedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        keyword:
+          type: string
+        searchedAt:
+          type: string
+          format: date-time
+    RecommendedKeywordResponse:
+      type: object
+      required: [keyword]
+      properties:
+        keyword:
+          type: string
+    SearchKeywordsData:
+      type: object
+      required: [recentKeywords, recommendedKeywords]
+      properties:
+        recentKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentKeywordResponse"
+        recommendedKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecommendedKeywordResponse"
+    SearchKeywordsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SearchKeywordsData"
     ProductImage:
       type: object
       required: [imageType, storageKey, sortOrder]
@@ -1070,7 +1368,7 @@ components:
           type: integer
     ProductDetailResponse:
       type: object
-      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked]
+      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked, isPurchasable]
       properties:
         productId:
           type: string
@@ -1110,6 +1408,9 @@ components:
             $ref: "#/components/schemas/ProductCategory"
         isLiked:
           type: boolean
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(saleStatus=ON_SALE). 상세는 카테고리 체인 활성을 이미 걸러 요약과 달리 isViewable 항이 없다."
     ProductDetailEnvelope:
       type: object
       required: [data]
@@ -1393,6 +1694,39 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SellerApplicationDocumentInput"
+    SendPhoneCodeRequest:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber:
+          type: string
+          description: "^01[016789]-?\\d{3,4}-?\\d{4}$ — 하이픈 유무 모두 허용. 위반 400 errorCode 90001"
+    ConfirmPhoneCodeRequest:
+      type: object
+      required: [phoneNumber, code]
+      properties:
+        phoneNumber:
+          type: string
+          description: "발송 때 보낸 번호와 같아야 한다 — 불일치는 코드 오류와 함께 30005로 통합"
+        code:
+          type: string
+          description: "6자리 숫자(^\\d{6}$). 형식 위반 400 errorCode 90001"
+    PhoneCodeSent:
+      type: object
+      required: [expiresInSeconds, resendCooldownSeconds]
+      properties:
+        expiresInSeconds:
+          type: integer
+          description: "인증번호 유효시간(초, 현재 180). FE 만료 타이머의 원천 — 하드코딩 금지"
+        resendCooldownSeconds:
+          type: integer
+          description: "재발송 쿨다운(초, 현재 60). FE 재발송 타이머의 원천 — 하드코딩 금지"
+    PhoneCodeSentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PhoneCodeSent"
     # 내 정보. 8필드는 항상 존재하고(키 고정), PENDING_ONBOARDING이면 프로필 계열이 전부 null이라 값만 nullable이다.
     UserMe:
       type: object
@@ -1422,7 +1756,7 @@ components:
         phoneNumber:
           type: string
           nullable: true
-          description: "현재 항상 null(전화 인증 연동 전)"
+          description: "인증 전 null, 인증 후 서버 마스킹 표시용(예: 010-****-5678)"
         isPhoneVerified:
           type: boolean
     UserMeResponse:
@@ -1448,6 +1782,37 @@ components:
           type: string
           nullable: true
           description: "유지할 기존 키 또는 새 tmp 키. null이면 사진 제거"
+    SubmitInquiryRequest:
+      type: object
+      required: [inquiryType, replyEmail, content]
+      properties:
+        inquiryType:
+          type: string
+          enum: [ACCOUNT, ORDER_PAYMENT, DELIVERY_CLAIM, SELLER_PRODUCT, SERVICE_ETC]
+          description: "문의 유형"
+        replyEmail:
+          type: string
+          format: email
+          description: "답변받을 이메일. 형식 위반 400 INVALID_REQUEST"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: "문의 내용. 1~2000자"
+    SubmitInquiryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status, createdAt]
+          properties:
+            status:
+              type: string
+              description: "접수 상태. RECEIVED"
+            createdAt:
+              type: string
+              description: "접수 시각 ISO-8601"
   securitySchemes:
     bearerAuth:
       type: http

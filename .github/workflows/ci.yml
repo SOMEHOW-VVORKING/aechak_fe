@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 같은 PR에 새 커밋이 올라오면 이전 실행을 취소해 Actions 분(minute)을 아낀다.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: typecheck / lint / test / openapi
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 버전은 package.json의 packageManager(pnpm@11.9.0)에서 자동 감지된다.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test (unit / component)
+        run: pnpm test
+
+      - name: OpenAPI generate check
+        run: pnpm openapi:generate:check
+
+  e2e:
+    name: e2e (web-buyer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 실제 e2e spec은 현재 web-buyer에만 있다. web-seller/web-admin은
+      # test:e2e 스크립트만 있고 spec이 0개라 "no tests found"로 실패하므로,
+      # spec이 생기면 아래 두 줄에 --filter web-seller / --filter web-admin을 추가한다.
+      - name: Install Playwright browsers
+        run: pnpm --filter web-buyer exec playwright install --with-deps chromium
+
+      - name: Run e2e (web-buyer)
+        run: pnpm --filter web-buyer test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web-buyer/playwright-report/
+          retention-days: 7
