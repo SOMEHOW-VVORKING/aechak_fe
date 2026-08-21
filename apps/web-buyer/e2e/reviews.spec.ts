@@ -270,3 +270,23 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
   await expect(page.getByText('배송이 빨라요.')).toBeHidden()
   await shot(page, 'test-results/pr-c/01-detail-review-preview.png')
 })
+
+test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로 반영된다', async ({ page }) => {
+  // 목업 주문에는 서버 orderItemId가 없어 작성이 로컬 폴백을 탄다(주문 조회 API 미도입).
+  // 서버 경로(POST /reviews)는 MSW 라우트 테스트가 검증하고, 여기서는 화면 흐름을 본다.
+  await page.goto('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+  await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
+
+  // 별점 입력은 radio 5개(1~5점) — 마지막이 5점이다.
+  await page.getByRole('radio').last().click()
+  await page.getByRole('textbox').fill('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')
+  // 캡처 전에 등록 버튼이 실제로 활성인지 기다린다 — fill 직후 바로 찍으면 리렌더 전 상태가 잡혀
+  // PR 캡처에서 버튼이 비활성인 것처럼 보인다.
+  await expect(page.getByRole('button', { name: '리뷰 등록' })).toBeEnabled()
+  await shot(page, 'test-results/pr-c/02-review-write-form.png')
+
+  await page.getByRole('button', { name: '리뷰 등록' }).click()
+  await expect(page).toHaveURL(/\/reviews\/mine/)
+  await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
+  await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
+})
