@@ -18,6 +18,7 @@ export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
 export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
 export const REVIEWS_URL = `${base}/reviews`
+export const REVIEW_DETAIL_URL = `${base}/reviews/:reviewId`
 export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
 export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
@@ -1002,6 +1003,9 @@ export const handlers = [
       { status: 201 },
     )
   }),
+  // 리뷰 삭제 — 계약(204, 본문 없음)만 재현한다. 권한/존재 판정은 서버 소관이라 여기선 항상 성공하고,
+  // 403·404 분기는 테스트가 server.use로 갈아끼운다.
+  http.delete(REVIEW_DETAIL_URL, () => new HttpResponse(null, { status: 204 })),
   // 상품 리뷰 목록 — 실 픽스처 id만 200(sort/photoOnly/cursor 반영), 나머지는 404 -> 목업 리뷰 폴백.
   // summary/totalCount는 첫 페이지(cursor 없음)에만. summary는 photoOnly 무관 전체, totalCount는 반영.
   http.get(PRODUCT_REVIEWS_URL, ({ params, request }) => {

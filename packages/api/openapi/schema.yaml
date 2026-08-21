@@ -445,6 +445,28 @@ paths:
           description: "리뷰를 쓸 수 있는 주문 품목 없음(110005)"
         "409":
           description: "이미 리뷰를 쓴 주문(110004)"
+  /reviews/{reviewId}:
+    delete:
+      summary: "리뷰 삭제"
+      description: >-
+        본인이 쓴 리뷰를 소프트 삭제한다(재작성 불가). 삭제 시 상품 평점 평균·리뷰 수가 재집계된다.
+      operationId: "deleteReview"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "403":
+          description: "본인 리뷰가 아님(110003)"
+        "404":
+          description: "존재하지 않거나 이미 삭제된 리뷰(110000)"
   /products/{productId}/like:
     post:
       summary: "상품 찜하기"

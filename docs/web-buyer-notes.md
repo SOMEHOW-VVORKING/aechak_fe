@@ -1396,3 +1396,24 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   호출 0회·로컬 id 유지)·`[AC-REVIEW-WRITE-003]`(409 안내·화면 유지)가 잡는다.
 
 ---
+
+### 리뷰 삭제 — DELETE /reviews/{reviewId} 연동 (SCRUM-209, 2026-08-21)
+
+상품 리뷰 목록(b4-st-3)·내 리뷰(b4-st-6)의 삭제가 실 API로 전환됐다. 화면 구조(`MyReviewCard` →
+확인 `Modal`)는 그대로고 mutation만 갈렸다.
+
+- **서버/로컬 분기는 리뷰 id의 `srv-` 접두가 판정한다**(`serverReviewId(localId)`). 작성 연동이 서버
+  응답 `reviewId`를 이 접두로 저장하고, 목록 매퍼도 서버 리뷰를 같은 규칙으로 만들기 때문에 별도
+  필드 없이 두 출처를 구분할 수 있다. 목업 작성분은 예전처럼 스토어에서만 뺀다.
+- **`useDeleteReview`는 id 문자열이 아니라 대상 `Review`를 통째로 받는다.** 삭제 뒤 무효화할 캐시 키
+  (`['reviews','product',productId]`)가 필요해서다 — **서버에서 온 내 리뷰는 로컬 스토어에 없을 수
+  있어**(다른 기기·세션에서 쓴 것) `removeReview`만으로는 화면에서 사라지지 않고 재조회가 있어야 한다.
+  이 무효화 하나로 목록과 상세 미리보기가 함께 갱신된다(두 키가 같은 prefix를 쓴다).
+- **404(110000)는 실패로 다루지 않는다.** 이미 지워진 리뷰라 사용자가 할 일이 없으니 로컬에서도 빼고
+  성공으로 닫는다. 403(110003 본인 리뷰 아님)과 서버 오류만 던져 화면이 토스트로 사유를 알린다 —
+  예전엔 `onSuccess`만 있어 실패가 조용히 묻혔다(토스트에 `variant`를 추가해 error로 구분).
+- 회귀: `[AC-REVIEW-DELETE-001]`(서버 리뷰 → DELETE 호출·재조회로 목록에서 사라짐)·`[AC-REVIEW-DELETE-002]`
+  (목업 리뷰 → 호출 0회)·`[AC-REVIEW-DELETE-003]`(403 → 사유 안내·리뷰 유지). 기본 MSW 핸들러는 항상
+  204이고 403/404 분기는 테스트가 `server.use`로 갈아끼운다.
+
+---

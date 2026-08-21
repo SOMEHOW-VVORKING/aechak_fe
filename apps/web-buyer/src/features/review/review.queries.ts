@@ -1,6 +1,11 @@
 import { useMemo } from 'react'
 import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { createReview, getProductReviews, type ReviewItemResponse } from '@aechak/api'
+import {
+  createReview,
+  deleteReview as deleteReviewApi,
+  getProductReviews,
+  type ReviewItemResponse,
+} from '@aechak/api'
 import type { Review } from '@aechak/domain'
 import { findMockProduct } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
@@ -288,7 +293,7 @@ export function useCreateReview() {
   })
 }
 
-// 작성 실패 문구. 401은 axios 인터셉터의 refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다.
+// 리뷰 작성·삭제 실패 문구. 401은 axios 인터셉터의 refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다.
 // 같은 status에 사유가 여러 개라 errorCode를 먼저 본다(onboarding.queries의 readErrorCode 패턴).
 export function reviewErrorMessage(error: unknown): string {
   const response = (error as { response?: { status?: number; data?: { errorCode?: number; message?: string } } })
@@ -306,8 +311,12 @@ export function reviewErrorMessage(error: unknown): string {
       return '사진은 최대 5장까지 올릴 수 있어요.'
     case 110010:
       return '취소하거나 반품한 주문은 리뷰를 쓸 수 없어요.'
+    case 110003:
+      return '본인이 쓴 리뷰만 삭제할 수 있어요.'
+    case 110000:
+      return '이미 삭제된 리뷰예요.'
     default:
-      return response?.data?.message ?? '리뷰를 등록하지 못했어요. 잠시 후 다시 시도해주세요.'
+      return response?.data?.message ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.'
   }
 }
 
@@ -324,16 +333,31 @@ export function useEditReview() {
   })
 }
 
-// 리뷰 삭제 mutation.
+// 리뷰 삭제 mutation. 서버에 저장된 리뷰(srv- 접두)는 실제로 지우고, 목업 작성분은 스토어에서만
+// 뺀다. 대상 Review를 통째로 받는 이유는 삭제 후 무효화할 상품 캐시 키(productId)가 필요해서다 —
+// 서버에서 온 내 리뷰는 로컬 스토어에 없을 수 있어(다른 기기/세션에서 쓴 것) removeReview만으로는
+// 목록에서 사라지지 않고 재조회가 있어야 한다.
 export function useDeleteReview() {
-  return useMutation<void, Error, string>({
-    mutationFn: id =>
-      new Promise(resolve => {
-        setTimeout(() => {
-          removeReview(id)
-          resolve()
-        }, 400)
-      }),
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, Review>({
+    mutationFn: async review => {
+      const serverId = serverReviewId(review.id)
+      if (serverId == null) {
+        await new Promise(resolve => setTimeout(resolve, 400))
+        removeReview(review.id)
+        return
+      }
+      try {
+        await deleteReviewApi(serverId)
+      } catch (e) {
+        // 404(110000)는 이미 지워진 리뷰라 사용자가 할 일이 없다 — 로컬에서도 빼고 성공으로 닫는다.
+        // 403(110003 본인 리뷰 아님)이나 서버 오류는 그대로 던져 화면이 사유를 안내하게 한다.
+        if (!isNotFound(e)) throw e
+      }
+      removeReview(review.id)
+    },
+    onSuccess: (_, review) =>
+      queryClient.invalidateQueries({ queryKey: ['reviews', 'product', review.productId] }),
   })
 }
 
