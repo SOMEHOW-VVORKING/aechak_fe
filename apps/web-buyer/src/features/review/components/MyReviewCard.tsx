@@ -23,7 +23,11 @@ export function MyReviewCard({
   /** 내 리뷰 완료 탭에서만 상품 컨텍스트(썸네일/상품명)를 함께 보여준다. */
   productName?: string
   thumbnailUrl?: string
-  onEdit: () => void
+  /**
+   * 수정 진입. 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하므로, 서버에서 온 리뷰에는
+   * 호출부가 주지 않는다 — 그때는 버튼 자체를 그리지 않는다(삭제만 남는다).
+   */
+  onEdit?: () => void
   onDelete: () => void
   onImageOpen: (src: string) => void
 }) {
@@ -61,13 +65,15 @@ export function MyReviewCard({
           {nickname}
         </span>
         <div className="flex flex-none items-center gap-1">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="rounded-md px-2 py-1 text-caption font-medium text-text-secondary"
-          >
-            수정
-          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded-md px-2 py-1 text-caption font-medium text-text-secondary"
+            >
+              수정
+            </button>
+          )}
           <button
             type="button"
             onClick={onDelete}

@@ -14,7 +14,12 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
-import { useDeleteReview, useProductReviews, type ProductReviewsView } from '../review.queries'
+import {
+  serverReviewId,
+  useDeleteReview,
+  useProductReviews,
+  type ProductReviewsView,
+} from '../review.queries'
 import { REVIEW_SORTS, type ReviewSort } from '../review.mock'
 import { MyReviewCard } from './MyReviewCard'
 
@@ -26,6 +31,9 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
   const [photoOnly, setPhotoOnly] = useState(false)
   const { data, isLoading, isError, isPlaceholderData, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useProductReviews(productId, sort, photoOnly)
+
+  // 기본 필터(최신순 + 포토 off)에서 실패했으면 되돌릴 상태 자체가 없다.
+  const isDefaultFilter = sort === 'latest' && !photoOnly
 
   const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
 
@@ -46,10 +54,24 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
         // 실제 data라 목록을 통째로 에러 화면으로 교체하지 않고 그대로 유지한다(더보기 버튼으로 재시도).
         // 인증 실패는 인터셉터가 전역에서 로그인으로 보내고, 비인증 실패(네트워크/500)는 화면마다
         // 재시도 버튼을 떠안지 않고 안내만 한다(breeds 컨벤션).
+        // 단 정렬/포토 칩은 이 에러 화면에 없으므로(칩이 ReviewsBody 안에 있다) 위 주석이 말한
+        // "칩을 되돌리면 캐시된 목록이 다시 뜬다"를 사용자가 실행할 수단이 없다 — 기본 필터가
+        // 아닌 상태에서 실패했을 때만 기본으로 되돌리는 길을 준다(재시도가 아니라 상태 복원).
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
             title="리뷰를 불러오지 못했어요"
             description="네트워크 상태를 확인하고 잠시 후 다시 들어와 주세요."
+            action={
+              isDefaultFilter
+                ? undefined
+                : {
+                    label: '최신순으로 보기',
+                    onClick: () => {
+                      setSort('latest')
+                      setPhotoOnly(false)
+                    },
+                  }
+            }
           />
         </div>
       ) : !data ? (
@@ -193,7 +215,13 @@ function ReviewsBody({
                 key={review.id}
                 review={review}
                 nickname={nickname}
-                onEdit={() => navigate({ to: '/reviews/write', search: { reviewId: review.id } })}
+                // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버에서 온 리뷰는
+                // 스토어에 없어 작성 화면이 대상을 못 찾으므로 버튼을 아예 내리고 삭제만 남긴다.
+                onEdit={
+                  serverReviewId(review.id) == null
+                    ? () => navigate({ to: '/reviews/write', search: { reviewId: review.id } })
+                    : undefined
+                }
                 onDelete={() => setDeleteTarget(review)}
                 onImageOpen={setLightboxSrc}
               />

@@ -24,6 +24,18 @@ export interface ProductReviewItem extends Review {
   isMine: boolean
 }
 
+/**
+ * 서버에 저장된 리뷰의 로컬 id 접두. 서버 리뷰(`srv-<reviewId>`)와 아직 서버에 없는 목업 작성분을
+ * 구분하는 유일한 표식이라, 목록 머지와 수정 노출 판정이 이 접두를 함께 본다.
+ */
+const SERVER_ID_PREFIX = 'srv-'
+
+export function serverReviewId(localId: string): number | null {
+  if (!localId.startsWith(SERVER_ID_PREFIX)) return null
+  const parsed = Number(localId.slice(SERVER_ID_PREFIX.length))
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
 export interface ProductReviewsView {
   average: number
   /** 평점 요약 기준 전체 리뷰 수(별점 분포/평균의 모수, photoOnly와 무관). */
@@ -53,7 +65,7 @@ interface ReviewPage {
 function toReviewItem(productId: string, r: ReviewItemResponse): ProductReviewItem {
   const rating = Math.min(5, Math.max(1, Math.round(r.rating))) as 1 | 2 | 3 | 4 | 5
   return {
-    id: `srv-${r.reviewId}`,
+    id: `${SERVER_ID_PREFIX}${r.reviewId}`,
     productId,
     orderId: '',
     author: r.authorNickname,

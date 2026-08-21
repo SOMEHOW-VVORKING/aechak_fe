@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import type { ReviewItemResponse } from '@aechak/api'
 
 // 상품 리뷰 목록 ↔ reviews API(SCRUM-181) 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을
 // 재현한다(product-detail/pet-breeds spec과 동일한 CORS/프리플라이트 규칙). 서버가 sort/photoOnly/cursor를
@@ -13,24 +14,15 @@ const REAL_ID = '01J000000000000000000TEST'
 // 브라우저가 렌더링만 하면 되는 빈 SVG(포토리뷰 판정용 — 실제 이미지 내용은 무관).
 const IMG = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'
 
-interface ReviewFixture {
-  reviewId: number
-  rating: number
-  content: string
-  optionName: string
-  authorNickname: string
-  authorProfileImageUrl: string | null
-  createdAt: string
-  images: { imageUrl: string; sortOrder: number }[]
-}
-
+// 로컬 인터페이스가 아니라 생성 타입을 쓴다 — e2e는 tsc include 밖이라 로컬 인터페이스면 서버 계약에
+// 필수 필드가 늘어도(isMine 등) 아무도 못 잡고 런타임에만 undefined가 샌다(MSW 픽스처와 같은 이유).
 // id 내림차순 = 최신순. 사진 있는 리뷰 3건(505/503/501), 없는 리뷰 2건(504/502)으로 photoOnly를 검증한다.
-const REVIEWS: ReviewFixture[] = [
-  { reviewId: 505, rating: 2, content: '소음이 조금 있어요.', optionName: '기본형', authorNickname: '냥집사리뷰', authorProfileImageUrl: null, createdAt: '2026-08-10T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
-  { reviewId: 504, rating: 5, content: '믿고 쓰는 제품이에요.', optionName: '프리미엄형', authorNickname: '하늘둥이', authorProfileImageUrl: null, createdAt: '2026-08-09T09:00:00', images: [] },
-  { reviewId: 503, rating: 3, content: '가격 대비 무난해요.', optionName: '기본형', authorNickname: '코코대장', authorProfileImageUrl: null, createdAt: '2026-08-08T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
-  { reviewId: 502, rating: 4, content: '배송이 빨라요.', optionName: '프리미엄형', authorNickname: '멍토끼리뷰', authorProfileImageUrl: null, createdAt: '2026-08-07T09:00:00', images: [] },
-  { reviewId: 501, rating: 5, content: '기대 이상이에요.', optionName: '프리미엄형', authorNickname: '집사세븐', authorProfileImageUrl: null, createdAt: '2026-08-06T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
+const REVIEWS: ReviewItemResponse[] = [
+  { reviewId: 505, isMine: false, rating: 2, content: '소음이 조금 있어요.', optionName: '기본형', authorNickname: '냥집사리뷰', authorProfileImageUrl: null, createdAt: '2026-08-10T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
+  { reviewId: 504, isMine: false, rating: 5, content: '믿고 쓰는 제품이에요.', optionName: '프리미엄형', authorNickname: '하늘둥이', authorProfileImageUrl: null, createdAt: '2026-08-09T09:00:00', images: [] },
+  { reviewId: 503, isMine: false, rating: 3, content: '가격 대비 무난해요.', optionName: '기본형', authorNickname: '코코대장', authorProfileImageUrl: null, createdAt: '2026-08-08T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
+  { reviewId: 502, isMine: false, rating: 4, content: '배송이 빨라요.', optionName: '프리미엄형', authorNickname: '멍토끼리뷰', authorProfileImageUrl: null, createdAt: '2026-08-07T09:00:00', images: [] },
+  { reviewId: 501, isMine: false, rating: 5, content: '기대 이상이에요.', optionName: '프리미엄형', authorNickname: '집사세븐', authorProfileImageUrl: null, createdAt: '2026-08-06T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
 ]
 
 // 평점 요약 — photoOnly와 무관하게 전체 가시 리뷰 기준. 없는 별점도 0.
@@ -171,4 +163,52 @@ test('[AC-REVIEW-E2E-007] 더보기가 실패해도 기존 목록은 유지된�
   // 다음 페이지 실패는 목록을 통째로 에러 화면으로 교체하지 않는다 — 첫 페이지는 그대로 남고 에러 안내도 뜨지 않는다.
   await expect(page.getByText('냥집사리뷰')).toBeVisible()
   await expect(page.getByText('리뷰를 불러오지 못했어요')).toHaveCount(0)
+})
+
+// 서버가 내려준 "내 리뷰"(isMine=true) 한 건짜리 목록. 기본 픽스처는 전부 isMine=false라
+// 내 리뷰 카드(닉네임 + 액션)를 지나가지 않는다.
+async function stubMyServerReview(page: Page, reviewId = 321) {
+  await page.route(new RegExp(`/products/${REAL_ID}/reviews`), (route: Route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.fulfill({
+        status: 204,
+        headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+      })
+    }
+    const mine: ReviewItemResponse = {
+      reviewId,
+      isMine: true,
+      rating: 5,
+      content: '서버에 저장된 내 리뷰예요.',
+      optionName: '기본형',
+      authorNickname: '코코집사',
+      authorProfileImageUrl: null,
+      createdAt: '2026-08-20T10:00:00',
+      images: [],
+    }
+    return route.fulfill({
+      status: 200,
+      headers: CORS,
+      json: {
+        data: {
+          summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
+          reviews: [mine],
+          totalCount: 1,
+          nextCursor: null,
+          hasNext: false,
+        },
+      },
+    })
+  })
+}
+
+test('[AC-REVIEW-E2E-008] 서버가 내 리뷰(isMine)로 표시하면 삭제만 노출하고 수정은 감춘다', async ({ page }) => {
+  // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버 리뷰에 수정 버튼을 노출하면
+  // 작성 화면이 대상을 못 찾아 "리뷰할 상품을 찾을 수 없어요"로 빠지는 죽은 진입이 된다.
+  await stubMyServerReview(page)
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('서버에 저장된 내 리뷰예요.')).toBeVisible()
+
+  await expect(page.getByRole('button', { name: '삭제' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '수정' })).toHaveCount(0)
 })

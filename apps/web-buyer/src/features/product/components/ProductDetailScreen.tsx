@@ -240,6 +240,19 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                   <ReviewSummaryCard summary={data.reviewSummary} />
                   {/* 정렬 칩은 제거했다 — 상세에서는 최신 순 상위 3개만 미리 보여주고, 정렬·전체
                       목록은 위 "전체보기"(상품 리뷰 목록)에서만 제공한다. */}
+                  {reviewPreview.isError ? (
+                    // 던지기만 하고 받지 않으면 요약("리뷰 128") 아래가 그냥 비어 리뷰가 없는 것처럼
+                    // 보인다 — 비인증 실패는 재시도 버튼 대신 안내만 두고 전체보기로 유도한다.
+                    <p className="rounded-card border border-border-subtle bg-surface-raised px-4 py-5 text-center text-body-sm text-text-secondary">
+                      리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.
+                    </p>
+                  ) : reviewPreview.isPending && previewReviews.length === 0 ? (
+                    <div className="flex flex-col gap-3">
+                      {[0, 1, 2].map(i => (
+                        <Skeleton key={i} variant="rect" className="h-24 w-full" />
+                      ))}
+                    </div>
+                  ) : (
                   <div className="flex flex-col gap-3">
                     {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
                       <ReviewCard
@@ -257,6 +270,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                       />
                     ))}
                   </div>
+                  )}
                 </>
               ) : (
                 <div className="flex flex-col items-center gap-1.5 rounded-card border border-border-subtle bg-surface-raised px-4 py-6 text-center">

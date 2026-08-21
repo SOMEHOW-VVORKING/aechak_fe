@@ -217,6 +217,20 @@ describe('/products/$productId', () => {
     expect(screen.queryByText('소음이 조금 있어요. 기능은 무난해요.')).not.toBeInTheDocument()
   })
 
+  it('[AC-PRODUCT-020] 미리보기 조회가 실패하면 빈 목록 대신 사유를 알린다', async () => {
+    // 요약("리뷰 128")은 상세 응답에서 오므로 그대로 뜨는데 미리보기만 비면 리뷰가 없는 것처럼
+    // 보인다 — 던진 오류를 화면이 소비하지 않으면 그 보호가 실제로는 없는 셈이다.
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () => HttpResponse.json({ message: 'error' }, { status: 500 })),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    expect(
+      await screen.findByText('리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'),
+    ).toBeInTheDocument()
+  })
+
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {
     renderAt('/products/p-feeder-5l')
     await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')

@@ -254,6 +254,89 @@ describe('리뷰 라우트', () => {
     expect(screen.queryByText('정렬테스터')).not.toBeInTheDocument()
   })
 
+  // 서버가 내려준 "내 리뷰" 한 건짜리 목록으로 갈아끼운다 — 기본 픽스처는 전부 isMine=false라
+  // 내 리뷰 카드(닉네임 + 액션)를 지나가지 않는다.
+  function serveMyServerReview(reviewId: number) {
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () =>
+        HttpResponse.json({
+          data: {
+            summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
+            reviews: [
+              {
+                reviewId,
+                isMine: true,
+                rating: 5,
+                content: '서버에 저장된 내 리뷰예요.',
+                optionName: '기본형',
+                authorNickname: '코코집사',
+                authorProfileImageUrl: null,
+                createdAt: '2026-08-20T10:00:00',
+                images: [],
+              },
+            ],
+            totalCount: 1,
+            nextCursor: null,
+            hasNext: false,
+          },
+        }),
+      ),
+    )
+  }
+
+  it('[AC-REVIEW-ROUTE-014] 서버 리뷰(isMine)에는 수정 버튼을 노출하지 않는다', async () => {
+    // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버 리뷰에 버튼을 두면 작성 화면이
+    // 대상을 못 찾아 "리뷰할 상품을 찾을 수 없어요"로 빠지는 죽은 진입이 된다.
+    serveMyServerReview(321)
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('서버에 저장된 내 리뷰예요.')).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: '삭제' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-015] 정렬 전환이 실패하면 기본 필터로 되돌릴 길을 준다', async () => {
+    // 에러 화면에는 정렬 칩이 없어(칩이 본문 안에 있다) 사용자가 이전 필터로 돌아갈 수단이 없었다.
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, ({ request }) => {
+        if (new URL(request.url).searchParams.get('sort') === 'rating_desc') {
+          return HttpResponse.json({ message: 'error' }, { status: 500 })
+        }
+        return HttpResponse.json({
+          data: {
+            summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
+            reviews: [
+              {
+                reviewId: 1,
+                isMine: false,
+                rating: 5,
+                content: '최신순에서만 보이는 리뷰예요.',
+                optionName: '기본형',
+                authorNickname: '집사하나',
+                authorProfileImageUrl: null,
+                createdAt: '2026-08-20T10:00:00',
+                images: [],
+              },
+            ],
+            totalCount: 1,
+            nextCursor: null,
+            hasNext: false,
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    await screen.findByText('최신순에서만 보이는 리뷰예요.')
+
+    await user.click(screen.getByRole('button', { name: '별점높은순' }))
+    expect(await screen.findByText('리뷰를 불러오지 못했어요')).toBeInTheDocument()
+
+    // 되돌리기를 누르면 캐시된 최신순 목록이 다시 뜬다.
+    await user.click(screen.getByRole('button', { name: '최신순으로 보기' }))
+    expect(await screen.findByText('최신순에서만 보이는 리뷰예요.')).toBeInTheDocument()
+  })
+
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {
     const user = userEvent.setup()
     // 내 리뷰 목록 위에서 시드 리뷰(rv-seed-1) 수정 화면으로 진입한 세션.
