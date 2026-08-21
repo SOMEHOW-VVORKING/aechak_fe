@@ -458,37 +458,6 @@ describe('리뷰 라우트', () => {
     // 실패했으니 이동하지 않고 작성 화면에 머문다.
     expect(router.state.location.pathname).toBe('/reviews/write')
   })
-
-  // 서버가 내려준 "내 리뷰" 한 건짜리 목록으로 갈아끼운다 — 기본 픽스처는 전부 isMine=false라
-  // 수정/삭제 UI가 뜨지 않는다.
-  function serveMyServerReview(reviewId: number) {
-    server.use(
-      http.get(PRODUCT_REVIEWS_URL, () =>
-        HttpResponse.json({
-          data: {
-            summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
-            reviews: [
-              {
-                reviewId,
-                isMine: true,
-                rating: 5,
-                content: '서버에 저장된 내 리뷰예요.',
-                optionName: '기본형',
-                authorNickname: '코코집사',
-                authorProfileImageUrl: null,
-                createdAt: '2026-08-20T10:00:00',
-                images: [],
-              },
-            ],
-            totalCount: 1,
-            nextCursor: null,
-            hasNext: false,
-          },
-        }),
-      ),
-    )
-  }
-
   it('[AC-REVIEW-DELETE-001] 서버 리뷰를 삭제하면 DELETE를 호출하고 목록에서 사라진다', async () => {
     serveMyServerReview(321)
     let deletedId: string | null = null
@@ -523,6 +492,47 @@ describe('리뷰 라우트', () => {
     await waitFor(() =>
       expect(screen.queryByText('서버에 저장된 내 리뷰예요.')).not.toBeInTheDocument(),
     )
+  })
+
+  it('[AC-REVIEW-DELETE-004] 삭제 성공 직후 재조회를 기다리지 않고 목록에서 빠진다', async () => {
+    // 서버 리뷰는 로컬 스토어에 없어 removeReview가 no-op이라, 캐시에서 직접 빼지 않으면
+    // "삭제했어요" 토스트가 뜬 뒤에도 재조회가 끝날 때까지 카드가 남는다.
+    serveMyServerReview(555)
+    // 재조회를 붙잡아 두는 게이트 — 이 상태에서도 카드가 사라져야 한다.
+    let releaseRefetch = () => {}
+    const refetchGate = new Promise<void>(resolve => {
+      releaseRefetch = resolve
+    })
+    server.use(
+      http.delete(REVIEW_DETAIL_URL, () => {
+        server.use(
+          http.get(PRODUCT_REVIEWS_URL, async () => {
+            await refetchGate
+            return HttpResponse.json({
+              data: {
+                summary: { reviewCount: 0, averageRating: null, ratingDistribution: {} },
+                reviews: [],
+                totalCount: 0,
+                nextCursor: null,
+                hasNext: false,
+              },
+            })
+          }),
+        )
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    await screen.findByText('서버에 저장된 내 리뷰예요.')
+
+    await user.click(screen.getByRole('button', { name: '삭제' }))
+    await user.click(screen.getByRole('button', { name: '삭제하기' }))
+
+    await waitFor(() =>
+      expect(screen.queryByText('서버에 저장된 내 리뷰예요.')).not.toBeInTheDocument(),
+    )
+    releaseRefetch()
   })
 
   it('[AC-REVIEW-DELETE-002] 목업 리뷰 삭제는 서버를 부르지 않는다', async () => {
