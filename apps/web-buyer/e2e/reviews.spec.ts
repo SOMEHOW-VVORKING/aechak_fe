@@ -178,7 +178,7 @@ test('[AC-REVIEW-E2E-007] 더보기가 실패해도 기존 목록은 유지된�
 
 // 서버가 내려준 "내 리뷰"(isMine=true) 한 건짜리 목록. 기본 픽스처는 전부 isMine=false라
 // 내 리뷰 카드(닉네임 + 액션)를 지나가지 않는다.
-async function stubMyServerReview(page: Page, reviewId = 321) {
+async function stubMyServerReview(page: Page, reviewId = 321, state = { deleted: false }) {
   await page.route(new RegExp(`/products/${REAL_ID}/reviews`), (route: Route) => {
     if (route.request().method() === 'OPTIONS') {
       return route.fulfill({
@@ -197,14 +197,18 @@ async function stubMyServerReview(page: Page, reviewId = 321) {
       createdAt: '2026-08-20T10:00:00',
       images: [],
     }
+    // 삭제 뒤 재조회는 실서버처럼 빈 목록을 준다 — 같은 리뷰를 계속 내려주면 캐시에서 뺀 카드가
+    // 무효화 재조회로 되살아나 삭제가 안 된 것처럼 보인다.
     return route.fulfill({
       status: 200,
       headers: CORS,
       json: {
         data: {
-          summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
-          reviews: [mine],
-          totalCount: 1,
+          summary: state.deleted
+            ? { reviewCount: 0, averageRating: null, ratingDistribution: {} }
+            : { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
+          reviews: state.deleted ? [] : [mine],
+          totalCount: state.deleted ? 0 : 1,
           nextCursor: null,
           hasNext: false,
         },
@@ -269,4 +273,53 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
   await expect(page.getByText('가격 대비 무난해요.')).toBeVisible()
   await expect(page.getByText('배송이 빨라요.')).toBeHidden()
   await shot(page, 'test-results/pr-c/01-detail-review-preview.png')
+})
+
+test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로 반영된다', async ({ page }) => {
+  // 목업 주문에는 서버 orderItemId가 없어 작성이 로컬 폴백을 탄다(주문 조회 API 미도입).
+  // 서버 경로(POST /reviews)는 MSW 라우트 테스트가 검증하고, 여기서는 화면 흐름을 본다.
+  await page.goto('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+  await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
+
+  // 별점 입력은 radio 5개(1~5점) — 마지막이 5점이다.
+  await page.getByRole('radio').last().click()
+  await page.getByRole('textbox').fill('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')
+  // 캡처 전에 등록 버튼이 실제로 활성인지 기다린다 — fill 직후 바로 찍으면 리렌더 전 상태가 잡혀
+  // PR 캡처에서 버튼이 비활성인 것처럼 보인다.
+  await expect(page.getByRole('button', { name: '리뷰 등록' })).toBeEnabled()
+  await shot(page, 'test-results/pr-c/02-review-write-form.png')
+
+  await page.getByRole('button', { name: '리뷰 등록' }).click()
+  await expect(page).toHaveURL(/\/reviews\/mine/)
+  await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
+  await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
+})
+
+test('[AC-REVIEW-E2E-011] 서버 리뷰를 삭제하면 DELETE를 부르고 목록에서 사라진다', async ({ page }) => {
+  const state = { deleted: false }
+  await stubMyServerReview(page, 321, state)
+  let deletedId: string | null = null
+  await page.route('**/api/v1/reviews/*', (route: Route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.fulfill({
+        status: 204,
+        headers: { ...CORS, 'Access-Control-Allow-Methods': 'DELETE', 'Access-Control-Allow-Headers': '*' },
+      })
+    }
+    deletedId = new URL(route.request().url()).pathname.split('/').pop() ?? null
+    state.deleted = true
+    return route.fulfill({ status: 204, headers: CORS, body: '' })
+  })
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('서버에 저장된 내 리뷰예요.')).toBeVisible()
+  await shot(page, 'test-results/pr-c/04-product-reviews-mine.png')
+
+  await page.getByRole('button', { name: '삭제' }).click()
+  await expect(page.getByText('리뷰를 삭제할까요?')).toBeVisible()
+  await shot(page, 'test-results/pr-c/05-delete-confirm-modal.png')
+
+  await page.getByRole('button', { name: '삭제하기' }).click()
+  await expect.poll(() => deletedId).toBe('321')
+  // 재조회를 기다리지 않고 캐시에서 바로 빠진다.
+  await expect(page.getByText('서버에 저장된 내 리뷰예요.')).toBeHidden()
 })

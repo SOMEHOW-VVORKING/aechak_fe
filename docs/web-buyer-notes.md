@@ -1349,3 +1349,78 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   아무도 못 잡고 런타임에만 `undefined`가 샌다(실제로 `isMine`이 그렇게 빠져 있었다).
 
 ---
+
+### 리뷰 작성 — POST /reviews 연동 + orderItemId 게이트 (SCRUM-184, 2026-08-21)
+
+리뷰 작성(b4-st-2)이 로컬 스토어 목업에서 실 API(`POST /reviews`, JWT 필수)로 전환됐다.
+어댑터 관례(생성 훅이 아니라 fetcher만 소비, feature가 자체 `useMutation`으로 감쌈)는 breeds/문의
+절과 같고, 아래는 이 화면에서 새로 정한 것들이다.
+
+- **`orderItemId`가 있으면 서버, 없으면 로컬 스토어로 가는 게이트가 핵심이다.** 서버는 리뷰 대상을
+  `orderItemId`(Long)로 받는데 be에 주문 조회 API가 아직 없어(SCRUM-203/204 진행 중) 목업 주문에는
+  이 값이 없다. 그래서 `BuyerOrderItem.orderItemId?: number`를 optional로 얹고(순수 additive,
+  seller/admin 무영향) `useCreateReview`가 값 유무로 갈라진다 — 찜의 `findMockProduct` mock/real
+  게이트와 같은 방식이라, **주문 API가 열려 이 값이 채워지면 호출부 변경 없이 서버 경로로 넘어간다.**
+  지금 실제 화면은 항상 로컬 폴백을 타고, 서버 경로는 MSW/E2E로만 검증된다.
+- **서버 리뷰는 로컬 id에 `srv-` 접두를 붙여 구분한다**(`SERVER_ID_PREFIX`, `serverReviewId(localId)`).
+  작성 성공 시 응답의 `reviewId`/`content`/`optionName`/`createdAt`/`images`로 스토어를 덮어써서
+  목록·삭제가 서버와 같은 식별자를 본다. **`useProductReviews`의 로컬 머지는 `srv-` 리뷰를 제외해야
+  한다** — 서버 페이지가 이미 담고 있어 안 거르면 작성 직후 같은 리뷰가 두 번 렌더된다.
+- **사진은 presigned 업로드(`purpose: 'REVIEW_IMAGE'`) 후 tmp 키만 본문에 싣는다**
+  (`features/review/review.upload.ts`). `shared/pet`·`shared/account`의 업로드 유틸과 구조가 같지만
+  boundaries상 재사용이 안 돼 세 번째 복제다(그쪽 주석에도 같은 이유가 있다). 화면은 미리보기 URL만
+  들고 있으면 안 되고 **원본 `File`을 함께 보관**했다가 제출 시점에 올린다(`photos: { url, file? }[]` —
+  수정 진입으로 프리필된 기존 사진은 URL만 있어 `file`이 없다). 형식/용량은 발급 전에 화면에서
+  거른다(presigned PUT은 S3 직행이라 서버가 못 막는다). 한 장이라도 업로드에 실패하면 리뷰를 만들지
+  않는다(반쪽 리뷰 방지).
+- **리뷰가 바뀌면 상품 상세 캐시(`['product','detail',id]`)도 함께 무효화한다**(`invalidateReviewCaches`).
+  리뷰 수·평균 별점의 원본은 리뷰 목록이 아니라 상세 응답이라, 목록 키만 무효화하면 전역
+  `staleTime`(60초, `main.tsx`) 동안 헤더 숫자만 낡은 채 남아 미리보기 카드 수와 어긋난다 —
+  마지막 리뷰를 지운 경우엔 stale `total > 0` 때문에 "전체보기"가 빈 목록으로 안내한다.
+  **키 문자열은 product feature와 공유하는 계약이라 한쪽만 바꾸지 말 것.**
+- **사진 상한 초과분은 `createObjectURL`을 부르기 전에 자른다.** 먼저 만들고 `slice`로 버리면 그
+  blob이 참조를 잃은 채 문서가 닫힐 때까지 남는다(6장 선택 시 1장이 즉시 누수). 목록에서 뺀 사진은
+  `revokeIfBlob`으로 해제하되 **미제출 이탈 시 일괄 해제는 하지 않는다** — 목업 주문 경로는 이 blob
+  URL을 그대로 리뷰 스토어에 저장해 내 리뷰 화면에서 다시 그리므로, 언마운트에서 놓아주면 방금 쓴
+  리뷰의 사진이 깨진다(수정 진입으로 프리필된 서버 URL도 같은 이유로 건드리지 않는다).
+- **로그아웃과 세션 만료 양쪽에서 `resetReviews()`를 부른다.** 내가 쓴 리뷰는 서버 캐시가 아니라
+  클라이언트 스토어 싱글턴이라 `queryClient.clear()`로는 안 지워진다 — 공유 기기에서 다음 사용자가
+  `/reviews/mine`에 들어가면 그대로 보인다(찜의 `onWishlistLogout`과 같은 부류의 누락이었다).
+- **실패 문구는 `reviewErrorMessage`가 errorCode로 고른다** — 110004(이미 작성·409)/110005(대상 없음)/
+  110007(구매확정 전)/110008(30일 초과)/110009(사진 5장 초과)/110010(취소·반품 건). 401은 인터셉터의
+  refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다. 화면은 등록 실패 시 `Alert variant="error"`로
+  머무르며 안내하고 이동하지 않는다.
+- **MSW `POST /reviews` 핸들러는 `handlers` 최상위에 등록**했고, presigned 핸들러도 `REVIEW_IMAGE`
+  purpose에 `reviews/images` 키를 내주도록 넓혔다(서버 `UploadPurpose.prefix`와 동일). 회귀는
+  `[AC-REVIEW-WRITE-001]`(실 주문 → 서버 저장·응답으로 덮기)·`[AC-REVIEW-WRITE-002]`(목업 주문 →
+  호출 0회·로컬 id 유지)·`[AC-REVIEW-WRITE-003]`(409 안내·화면 유지)가 잡는다.
+
+---
+
+### 리뷰 삭제 — DELETE /reviews/{reviewId} 연동 (SCRUM-209, 2026-08-21)
+
+상품 리뷰 목록(b4-st-3)·내 리뷰(b4-st-6)의 삭제가 실 API로 전환됐다. 화면 구조(`MyReviewCard` →
+확인 `Modal`)는 그대로고 mutation만 갈렸다.
+
+- **서버/로컬 분기는 리뷰 id의 `srv-` 접두가 판정한다**(`serverReviewId(localId)`). 작성 연동이 서버
+  응답 `reviewId`를 이 접두로 저장하고, 목록 매퍼도 서버 리뷰를 같은 규칙으로 만들기 때문에 별도
+  필드 없이 두 출처를 구분할 수 있다. 목업 작성분은 예전처럼 스토어에서만 뺀다.
+- **`useDeleteReview`는 id 문자열이 아니라 대상 `Review`를 통째로 받는다.** 삭제 뒤 무효화할 캐시 키
+  (`['reviews','product',productId]`)가 필요해서다 — **서버에서 온 내 리뷰는 로컬 스토어에 없을 수
+  있어**(다른 기기·세션에서 쓴 것) `removeReview`만으로는 화면에서 사라지지 않고 재조회가 있어야 한다.
+  이 무효화 하나로 목록과 상세 미리보기가 함께 갱신된다(두 키가 같은 prefix를 쓴다).
+- **404(110000)는 실패로 다루지 않는다.** 이미 지워진 리뷰라 사용자가 할 일이 없으니 로컬에서도 빼고
+  성공으로 닫는다. 403(110003 본인 리뷰 아님)과 서버 오류만 던져 화면이 토스트로 사유를 알린다 —
+  예전엔 `onSuccess`만 있어 실패가 조용히 묻혔다(토스트에 `variant`를 추가해 error로 구분).
+- **삭제 성공 직후 무한쿼리 캐시에서 직접 빼낸다**(`dropReviewFromPages`). 서버 리뷰는 로컬 스토어에
+  없어 `removeReview`가 no-op이라, 캐시를 안 건드리면 "삭제했어요" 토스트가 뜬 뒤에도 재조회가 끝날
+  때까지 카드가 남는다 — 여러 페이지를 펼쳐 뒀으면 그 왕복이 페이지 수만큼 이어진다. 정렬/포토
+  조합마다 키가 달라 `setQueriesData` 접두 매칭으로 전부 손보고, 헤더 개수의 모수인 첫 페이지
+  `totalCount`도 같이 줄인다(상세 미리보기는 배열이라 `pages` 가드로 걸러 무효화에 맡긴다).
+  정확한 최종값은 이어지는 `invalidateReviewCaches`(상품 상세 캐시 포함)가 맞춘다.
+- 회귀: `[AC-REVIEW-DELETE-001]`(서버 리뷰 → DELETE 호출·재조회로 목록에서 사라짐)·`[AC-REVIEW-DELETE-002]`
+  (목업 리뷰 → 호출 0회)·`[AC-REVIEW-DELETE-003]`(403 → 사유 안내·리뷰 유지)·
+  `[AC-REVIEW-DELETE-004]`(재조회를 붙잡아 둔 채로도 카드가 즉시 사라짐). 기본 MSW 핸들러는 항상
+  204이고 403/404 분기는 테스트가 `server.use`로 갈아끼운다.
+
+---

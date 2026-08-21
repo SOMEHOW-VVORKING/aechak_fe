@@ -17,6 +17,8 @@ export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
 export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
+export const REVIEWS_URL = `${base}/reviews`
+export const REVIEW_DETAIL_URL = `${base}/reviews/:reviewId`
 export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
 export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
@@ -539,8 +541,13 @@ const petHandlers = [
   }),
   http.post(PRESIGNED_URL, async ({ request }) => {
     const body = (await request.json()) as { purpose: string; contentType: string }
-    // 키 경로에 purpose를 반영해 프로필(USER_PROFILE)과 펫(PET_PROFILE) 업로드를 재현한다.
-    const folder = body.purpose === 'USER_PROFILE' ? 'users/profile' : 'pets/profile'
+    // 키 경로에 purpose를 반영해 프로필/펫/리뷰 업로드를 재현한다(서버 UploadPurpose.prefix와 동일).
+    const folder =
+      body.purpose === 'USER_PROFILE'
+        ? 'users/profile'
+        : body.purpose === 'REVIEW_IMAGE'
+          ? 'reviews/images'
+          : 'pets/profile'
     const key = `tmp/1/${folder}/fixture.${body.contentType.split('/')[1]}`
     return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
   }),
@@ -969,6 +976,36 @@ export const handlers = [
       ? HttpResponse.json({ data: REAL_PRODUCT_OPTIONS })
       : new HttpResponse(null, { status: 404 }),
   ),
+  // 리뷰 작성 — 계약(201 + data)만 재현한다. reviewId는 요청 orderItemId에서 결정적으로 만들어
+  // 같은 주문 품목을 두 번 보내도 같은 id가 나온다(스토어 upsert 검증에 쓴다).
+  http.post(REVIEWS_URL, async ({ request }) => {
+    const body = (await request.json()) as {
+      orderItemId: number
+      rating: number
+      content: string
+      imageKeys?: string[]
+    }
+    return HttpResponse.json(
+      {
+        data: {
+          reviewId: 900 + body.orderItemId,
+          productId: 1,
+          rating: body.rating,
+          content: body.content,
+          optionName: '기본형',
+          createdAt: '2026-08-21T10:00:00',
+          images: (body.imageKeys ?? []).map((key, i) => ({
+            imageUrl: `https://fake-s3.local/${key}`,
+            sortOrder: i,
+          })),
+        },
+      },
+      { status: 201 },
+    )
+  }),
+  // 리뷰 삭제 — 계약(204, 본문 없음)만 재현한다. 권한/존재 판정은 서버 소관이라 여기선 항상 성공하고,
+  // 403·404 분기는 테스트가 server.use로 갈아끼운다.
+  http.delete(REVIEW_DETAIL_URL, () => new HttpResponse(null, { status: 204 })),
   // 상품 리뷰 목록 — 실 픽스처 id만 200(sort/photoOnly/cursor 반영), 나머지는 404 -> 목업 리뷰 폴백.
   // summary/totalCount는 첫 페이지(cursor 없음)에만. summary는 photoOnly 무관 전체, totalCount는 반영.
   http.get(PRODUCT_REVIEWS_URL, ({ params, request }) => {

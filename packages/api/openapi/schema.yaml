@@ -415,6 +415,58 @@ paths:
                 $ref: "#/components/schemas/ReviewListEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /reviews:
+    post:
+      summary: "리뷰 작성"
+      description: >-
+        구매확정한 주문 품목에 리뷰를 쓴다. 1주문 1리뷰이며 구매확정 30일 이내만 허용한다.
+        imageKeys는 presigned 업로드(purpose=REVIEW_IMAGE)로 받은 tmp 키 목록이고 서버가 정식 위치로 옮긴다.
+      operationId: "createReview"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateReviewEnvelope"
+        "400":
+          description: >-
+            별점·본문 길이 위반, 구매확정 전(110007), 구매확정 30일 초과(110008),
+            사진 5장 초과(110009), 취소·반품한 주문 품목(110010)
+        "404":
+          description: "리뷰를 쓸 수 있는 주문 품목 없음(110005)"
+        "409":
+          description: "이미 리뷰를 쓴 주문(110004)"
+  /reviews/{reviewId}:
+    delete:
+      summary: "리뷰 삭제"
+      description: >-
+        본인이 쓴 리뷰를 소프트 삭제한다(재작성 불가). 삭제 시 상품 평점 평균·리뷰 수가 재집계된다.
+      operationId: "deleteReview"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "403":
+          description: "본인 리뷰가 아님(110003)"
+        "404":
+          description: "존재하지 않거나 이미 삭제된 리뷰(110000)"
   /products/{productId}/like:
     post:
       summary: "상품 찜하기"
@@ -952,7 +1004,7 @@ components:
           description: "낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다"
     UploadPurpose:
       type: string
-      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT]
+      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT, REVIEW_IMAGE]
     IssuePresignedUrlRequest:
       type: object
       required: [purpose, contentType]
@@ -1493,6 +1545,57 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ReviewListData"
+    CreateReviewRequest:
+      type: object
+      required: [orderItemId, rating, content]
+      properties:
+        orderItemId:
+          type: integer
+          format: int64
+          description: "리뷰를 작성할 주문 품목 id"
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        content:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        imageKeys:
+          type: array
+          description: "presigned 업로드로 받은 tmp 키 목록(최대 5장). 생략하면 사진 없는 리뷰."
+          items:
+            type: string
+    CreateReviewResponse:
+      type: object
+      required: [reviewId, productId, rating, content, optionName, createdAt, images]
+      properties:
+        reviewId:
+          type: integer
+          format: int64
+        productId:
+          type: integer
+          format: int64
+          description: "서버 내부 상품 id(숫자). 화면이 쓰는 공개 ULID와 다르다."
+        rating:
+          type: integer
+        content:
+          type: string
+        optionName:
+          type: string
+        createdAt:
+          type: string
+          description: "ISO LocalDateTime(오프셋 없음, 예: 2026-08-21T10:00:00)"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewImageResponse"
+    CreateReviewEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CreateReviewResponse"
     ProductCategory:
       type: object
       required: [categoryId, name, depth]
