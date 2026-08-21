@@ -27,14 +27,16 @@ import {
   toggleWishlist,
   useIsWished,
 } from '@/shared/catalog'
-import { LoginGate, useLoginGate } from '@/shared/auth'
-import { useProductDetail, useProductOptions } from '../product.queries'
+import { LoginGate, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import {
+  DETAIL_REVIEW_LIMIT,
+  useProductDetail,
+  useProductOptions,
+  useProductReviewPreview,
+} from '../product.queries'
 import type { ProductDetail } from '../product.mock'
 import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } from '../product.map'
 import { AddedToCartSheet } from './AddedToCartSheet'
-
-// 상세 리뷰 섹션은 최대 3개만 노출하고 나머지는 "전체보기"(상품 리뷰 목록)로 넘긴다.
-const DETAIL_REVIEW_LIMIT = 3
 
 // 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
 // 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
@@ -74,6 +76,14 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 
   // 옵션은 시트를 열 때만 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
+  const isLoggedIn = useIsLoggedIn()
+  // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
+  // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
+  const reviewPreview = useProductReviewPreview(productId, {
+    enabled: isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
+  })
+  // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
+  const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
 
   // 서버 상세의 isLiked를 미러에 단방향 시드한다. "id별 세션당 1회" 정책과 그 시드 기록은
@@ -231,7 +241,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                   {/* 정렬 칩은 제거했다 — 상세에서는 최신 순 상위 3개만 미리 보여주고, 정렬·전체
                       목록은 위 "전체보기"(상품 리뷰 목록)에서만 제공한다. */}
                   <div className="flex flex-col gap-3">
-                    {data.reviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
+                    {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
                       <ReviewCard
                         key={`${review.author}-${i}`}
                         author={review.author}

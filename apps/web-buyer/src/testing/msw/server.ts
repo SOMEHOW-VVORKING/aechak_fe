@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { axiosInstance } from '@aechak/api'
+import { axiosInstance, type ReviewItemResponse } from '@aechak/api'
 import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
@@ -186,24 +186,12 @@ export const REAL_PRODUCT_OPTIONS = {
 }
 // 실 상품 리뷰 픽스처(REAL_PRODUCT_ID). id 내림차순=최신순. 사진 있는 리뷰 3건(501/503/505),
 // 없는 리뷰 2건(502/504)으로 photoOnly 필터를 검증한다.
-interface ReviewImageFixture {
-  imageUrl: string
-  sortOrder: number
-}
-interface ReviewItemFixture {
-  reviewId: number
-  rating: number
-  content: string
-  optionName: string
-  authorNickname: string
-  authorProfileImageUrl: string | null
-  createdAt: string
-  images: ReviewImageFixture[]
-}
-
-export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
+// 로컬 인터페이스가 아니라 생성 타입을 쓴다 — 서버 계약에 필수 필드가 늘면(isMine 등) tsc가
+// 픽스처 누락을 잡아준다. 로컬 인터페이스면 필드가 빠져도 통과하고 런타임에만 undefined가 샌다.
+export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
   {
     reviewId: 505,
+    isMine: false,
     rating: 2,
     content: '소음이 조금 있어요. 기능은 무난해요.',
     optionName: '기본형',
@@ -214,6 +202,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
   },
   {
     reviewId: 504,
+    isMine: false,
     rating: 5,
     content: '두 번째 구매예요. 믿고 쓰는 제품이라 계속 살 것 같아요.',
     optionName: '프리미엄형',
@@ -224,6 +213,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
   },
   {
     reviewId: 503,
+    isMine: false,
     rating: 3,
     content: '가격 대비 무난해요. 조금 더 컸으면 하는 아쉬움은 있어요.',
     optionName: '기본형',
@@ -234,6 +224,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
   },
   {
     reviewId: 502,
+    isMine: false,
     rating: 4,
     content: '배송도 빠르고 포장도 튼튼했어요. 실물이 더 좋아요.',
     optionName: '프리미엄형',
@@ -244,6 +235,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemFixture[] = [
   },
   {
     reviewId: 501,
+    isMine: false,
     rating: 5,
     content: '기대 이상이에요. 마감도 꼼꼼하고 우리 아이가 잘 써요. 재구매 의사 있어요.',
     optionName: '프리미엄형',

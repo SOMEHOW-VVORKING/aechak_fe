@@ -1421,11 +1421,14 @@ components:
     ReviewItemResponse:
       type: object
       required:
-        [reviewId, rating, content, optionName, authorNickname, authorProfileImageUrl, createdAt, images]
+        [reviewId, rating, content, optionName, authorNickname, authorProfileImageUrl, createdAt, images, isMine]
       properties:
         reviewId:
           type: integer
           format: int64
+        isMine:
+          type: boolean
+          description: "요청자 본인이 쓴 리뷰인지. 수정/삭제 노출 대상 판별에 쓴다(SCRUM-210)."
         rating:
           type: integer
         content:

@@ -1,8 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { getProductDetail, getProductOptions } from '@aechak/api'
+import { getProductDetail, getProductOptions, getProductReviews } from '@aechak/api'
 import { findMockProduct, registerProducts } from '@/shared/catalog'
-import { getProductDetailMock, type ProductDetail } from './product.mock'
-import { mapProductDetail, mapProductOptions, toCatalogProduct, type ProductOptionsView } from './product.map'
+import { getProductDetailMock, type ProductDetail, type ProductReviewEntry } from './product.mock'
+import {
+  mapProductDetail,
+  mapProductOptions,
+  mapReviewPreview,
+  toCatalogProduct,
+  type ProductOptionsView,
+} from './product.map'
 
 // axios는 web-buyer의 직접 의존성이 아니라(@aechak/api의 transitive) import하지 않고 에러 shape로
 // 404를 판별한다 — 미존재 상품(404)일 때만 목업으로 폴백하고, 다른 오류(500 등)는 그대로 던진다.
@@ -44,6 +50,35 @@ export function useProductOptions(id: string, options: { enabled: boolean }) {
         return mapProductOptions(res.data)
       } catch (e) {
         if (isNotFound(e) && findMockProduct(id)) return null
+        throw e
+      }
+    },
+  })
+}
+
+/** 상세에서 미리 보여줄 리뷰 개수. 서버 요청 size와 화면 렌더 상한이 같은 값을 봐야 한다. */
+export const DETAIL_REVIEW_LIMIT = 3
+
+// 상세 리뷰 미리보기 — 상세 응답에는 평균/건수만 있고 목록이 없어 리뷰 목록 API 첫 페이지를 따로
+// 부른다. 목록 API는 permitAll이 아니라 JWT 필수(비로그인 401)이므로 호출부가 로그인 상태를
+// enabled로 넘겨 비회원은 아예 호출하지 않는다 — 401이 나면 전역 리다이렉트로 상세를 잃는다.
+// 리뷰 목록 화면은 useInfiniteQuery라 캐시 구조가 달라 키를 겹치지 않게 'preview'로 분리한다.
+export function useProductReviewPreview(id: string, options: { enabled: boolean }) {
+  return useQuery<ProductReviewEntry[]>({
+    queryKey: ['reviews', 'product', id, 'preview'],
+    enabled: options.enabled && id !== '',
+    queryFn: async ({ signal }) => {
+      try {
+        const res = await getProductReviews(
+          id,
+          { sort: 'latest', photoOnly: false, size: DETAIL_REVIEW_LIMIT },
+          signal,
+        )
+        return mapReviewPreview(res.data.reviews)
+      } catch (e) {
+        // 미존재/비노출 상품(404)은 미리보기만 비운다 — 상세 본문은 이미 그려져 있어 화면을
+        // not-found로 바꾸지 않는다. 다른 오류(500 등)는 그대로 던져 섹션이 조용히 비지 않게 한다.
+        if (isNotFound(e)) return []
         throw e
       }
     },

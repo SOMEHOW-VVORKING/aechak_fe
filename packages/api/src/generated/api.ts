@@ -436,6 +436,8 @@ export interface ReviewImageResponse {
 
 export interface ReviewItemResponse {
   reviewId: number
+  /** 요청자 본인이 쓴 리뷰인지. 수정/삭제 노출 대상 판별에 쓴다(SCRUM-210). */
+  isMine: boolean
   rating: number
   content: string
   optionName: string

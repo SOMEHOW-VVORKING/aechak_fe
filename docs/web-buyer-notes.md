@@ -1302,3 +1302,34 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   (정렬/필터 분리), 그리고 `e2e/reviews.spec.ts`(`[AC-REVIEW-E2E-001~004]`)가 잡는다.
 
 ---
+
+### 상품 상세 리뷰 미리보기 + 서버 isMine 소비 (SCRUM-185, 2026-08-21)
+
+위 리뷰 목록 연동이 남겨둔 두 구멍을 메웠다 — 상세(b1-st-2)의 리뷰 미리보기가 실 상품에서 항상
+비어 있던 것과, 내 리뷰 판별을 로컬 스토어로만 추측하던 것.
+
+- **상세 미리보기는 `features/product`가 리뷰 목록 API를 직접 부른다**
+  (`product.queries.ts`의 `useProductReviewPreview` + `product.map.ts`의 `mapReviewPreview`).
+  `features/product`는 `features/review`를 import할 수 없어(boundaries) `useProductReviews`를
+  재사용하지 못한다 — 훅을 shared로 승격하는 대신 상세 전용 얇은 `useQuery`를 두었다.
+  **쿼리 키는 `['reviews','product',id,'preview']`로 목록 화면과 분리한다** — 목록은
+  `useInfiniteQuery`라 같은 키를 쓰면 캐시 구조가 충돌한다.
+- **`enabled`에 로그인 여부를 반드시 넣을 것.** 리뷰 목록 API는 be `SecurityConfig`의 permitAll에
+  없어 JWT 필수다(상세 조회 자체는 permitAll). 비회원이 상세를 열었다고 미리보기를 부르면 401 →
+  `setOnAuthExpired` 전역 리다이렉트로 **보고 있던 상세를 잃는다**. 그래서
+  `enabled: isLoggedIn && data.reviews.length === 0 && data.reviewSummary.total > 0`이다 —
+  목업 상품은 상세 뷰모델이 이미 `sampleReviews`를 들고 있어 서버를 부르지 않고(실 상품만 빈 배열),
+  리뷰 0건이면 호출 자체가 낭비다. 404는 던지지 않고 빈 배열로 흡수한다(상세 본문은 이미 그려져
+  있어 화면을 not-found로 되돌리면 안 된다). 회귀: `[AC-PRODUCT-018]`(로그인 시 상위 3건 노출·
+  4번째 부재), `[AC-PRODUCT-019]`(비회원은 호출 횟수 0).
+- **내 리뷰 판별(isMine)은 서버 응답을 그대로 신뢰한다(SCRUM-210).** 한때 `ReviewItemResponse`에
+  작성자 식별자가 없어(`ProductReviewController`가 `@AuthenticationPrincipal`을 안 받음) FE가
+  로컬 스토어로만 추측했는데, BE가 `isMine`을 필수 비null로 내려주기로 해 `toReviewItem`이 그 값을
+  쓴다. **닉네임 비교 같은 추측 판별을 되살리지 말 것** — 닉네임 유일성은 DB UNIQUE 제약이지 API
+  계약이 아니라 정책이 바뀌면 조용히 깨진다.
+- **MSW 리뷰 픽스처는 로컬 인터페이스가 아니라 생성 타입(`ReviewItemResponse`)을 쓴다.** 예전
+  `ReviewItemFixture` 인터페이스는 서버 계약에 필수 필드가 늘어도 tsc가 못 잡아 런타임에만
+  `undefined`가 샜다(찜 `ProductFixture`가 같은 함정을 안고 있다). 생성 타입으로 바꾸니 `isMine`
+  누락을 컴파일 단계에서 잡는다 — 다른 픽스처도 새로 만들 땐 생성 타입을 먼저 볼 것.
+
+---

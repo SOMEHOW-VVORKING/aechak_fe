@@ -17,8 +17,9 @@ import {
 const PAGE_SIZE = 20
 
 // 상품 리뷰 목록 항목 — 서버/목업 리뷰를 도메인 Review 형태로 정규화하고 "내가 쓴 리뷰"인지(isMine)
-// 태그를 얹은 뷰 모델. 서버는 isMine을 주지 않으므로 내 리뷰는 로컬 스토어(내가 작성한 mock 리뷰)로만
-// 판별한다 — 소비 측(ProductReviewsScreen)이 이 플래그로 닉네임 표기·수정/삭제 노출을 구분한다.
+// 태그를 얹은 뷰 모델. 서버 리뷰는 응답의 isMine(SCRUM-210)을 그대로 신뢰하고, 아직 서버에 없는
+// 로컬 목업 작성분만 true로 얹는다 — 소비 측(ProductReviewsScreen)이 이 플래그로 닉네임 표기·
+// 수정/삭제 노출을 구분한다. 작성자 닉네임 비교 같은 추측 판별은 쓰지 않는다.
 export interface ProductReviewItem extends Review {
   isMine: boolean
 }
@@ -60,10 +61,10 @@ function toReviewItem(productId: string, r: ReviewItemResponse): ProductReviewIt
     content: r.content,
     images: [...r.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
     option: r.optionName,
-    // 서버는 구매 인증/isMine을 주지 않고, '구매' pill은 Phase 9에서 이미 제거됨.
+    // 서버는 구매 인증을 주지 않고, '구매' pill은 Phase 9에서 이미 제거됨.
     verifiedPurchase: false,
     createdAt: r.createdAt.slice(0, 10).replace(/-/g, '.'), // ISO 'YYYY-MM-DD...' -> 'YYYY.MM.DD'
-    isMine: false,
+    isMine: r.isMine,
   }
 }
 

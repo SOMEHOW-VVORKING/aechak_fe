@@ -1,7 +1,12 @@
-import type { ProductDetailResponse, ProductOptionsResponse, SaleStatus } from '@aechak/api'
+import type {
+  ProductDetailResponse,
+  ProductOptionsResponse,
+  ReviewItemResponse,
+  SaleStatus,
+} from '@aechak/api'
 import type { ProductSaleStatus } from '@aechak/domain'
 import { mediaUrl, type CatalogProduct } from '@/shared/catalog'
-import type { ProductDetail } from './product.mock'
+import type { ProductDetail, ProductReviewEntry } from './product.mock'
 
 const SALE_STATUS: Record<SaleStatus, ProductSaleStatus> = {
   ON_SALE: 'selling',
@@ -115,4 +120,19 @@ export function mockOptionsFromDetail(detail: ProductDetail): ProductOptionsView
       soldOut: detail.stockCount <= 0,
     })),
   }
+}
+
+// 서버 리뷰 항목 -> 상세 미리보기 엔트리. 상세 응답에는 리뷰 목록이 없어(집계만) 리뷰 목록 API의
+// 첫 페이지를 따로 불러 이 형태로 옮긴다. 리뷰 목록 화면(features/review)에도 비슷한 매핑이 있지만
+// feature 간 직접 import가 금지라 각자 자기 뷰모델로 옮긴다.
+export function mapReviewPreview(items: ReviewItemResponse[]): ProductReviewEntry[] {
+  return items.map(r => ({
+    author: r.authorNickname,
+    rating: Math.min(5, Math.max(1, Math.round(r.rating))) as ProductReviewEntry['rating'],
+    // ISO 'YYYY-MM-DD...' -> 'YYYY.MM.DD'
+    date: r.createdAt.slice(0, 10).replace(/-/g, '.'),
+    content: r.content,
+    option: r.optionName,
+    images: [...r.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
+  }))
 }

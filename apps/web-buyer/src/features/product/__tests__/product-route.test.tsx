@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
-import { PRODUCT_OPTIONS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
+import { PRODUCT_OPTIONS_URL, PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -180,6 +180,41 @@ describe('/products/$productId', () => {
     // 결제/옵션으로 이동하지 않고 상세에 머문다.
     expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+  })
+
+  it('[AC-PRODUCT-018] 로그인 상태의 실 상품 상세는 서버 리뷰를 최대 3개까지 미리 보여준다', async () => {
+    // 상세 응답에는 평균/건수만 있고 목록이 없어 리뷰 목록 API 첫 페이지(size=3)를 따로 불러 채운다.
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    // 최신순 상위 3건(505/504/503)만 뜨고 4번째(502)는 전체보기로 넘어간다.
+    expect(await screen.findByText('소음이 조금 있어요. 기능은 무난해요.')).toBeInTheDocument()
+    expect(
+      screen.getByText('두 번째 구매예요. 믿고 쓰는 제품이라 계속 살 것 같아요.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('가격 대비 무난해요. 조금 더 컸으면 하는 아쉬움은 있어요.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('배송도 빠르고 포장도 튼튼했어요. 실물이 더 좋아요.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-019] 비회원 상세는 리뷰 목록 API를 아예 호출하지 않는다', async () => {
+    // 리뷰 목록 API는 JWT 필수(비로그인 401)라, 호출하면 전역 리다이렉트로 상세를 잃는다.
+    // 그래서 비회원은 요약·전체보기 진입점만 보고 미리보기 요청 자체가 나가지 않아야 한다.
+    let reviewCalls = 0
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () => {
+        reviewCalls += 1
+        return HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+      }),
+    )
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+    // 요약(리뷰 128)은 상세 응답에서 오므로 그대로 뜬다.
+    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
+    await waitFor(() => expect(reviewCalls).toBe(0))
+    expect(screen.queryByText('소음이 조금 있어요. 기능은 무난해요.')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {
