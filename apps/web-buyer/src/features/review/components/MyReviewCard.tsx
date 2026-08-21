@@ -64,12 +64,14 @@ export function MyReviewCard({
         <span className="min-w-0 truncate text-label font-semibold text-text-secondary">
           {nickname}
         </span>
-        <div className="flex flex-none items-center gap-1">
+        {/* 액션은 카드 우측 정렬선에 맞춘다 — 버튼 패딩이 그대로 남으면 마지막 글자가 위 행의
+            작성일보다 안쪽으로 들어가 어긋나 보이므로, 패딩만큼 음수 마진으로 상쇄한다. */}
+        <div className="-mr-1.5 flex flex-none items-center gap-0.5">
           {onEdit && (
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-md px-2 py-1 text-caption font-medium text-text-secondary"
+              className="rounded-md px-1.5 py-1 text-caption font-medium text-text-secondary"
             >
               수정
             </button>
@@ -77,7 +79,7 @@ export function MyReviewCard({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded-md px-2 py-1 text-caption font-medium text-error-fg"
+            className="rounded-md px-1.5 py-1 text-caption font-medium text-error-fg"
           >
             삭제
           </button>
