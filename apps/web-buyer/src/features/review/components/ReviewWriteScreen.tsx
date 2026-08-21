@@ -32,6 +32,13 @@ export interface ReviewWriteScreenProps {
   reviewId?: string
 }
 
+/** 서버에서 받은 표시용 URL은 놓아주면 안 되고, 로컬 미리보기 blob만 해제한다(펫 폼과 동일). */
+function revokeIfBlob(url: string) {
+  if (url.startsWith('blob:') && typeof URL?.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(url)
+  }
+}
+
 const RATING_WORDS = ['', '별로예요', '그저 그래요', '괜찮아요', '좋아요', '최고예요']
 
 // 리뷰 작성(b4-st-2). 별점·사진·본문 + 최소 글자/금칙어 검증. 등록 → 내 리뷰로 이동(토스트).
@@ -119,15 +126,35 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
       setPhotoError(OVERSIZED_REVIEW_PHOTO_MESSAGE)
       return
     }
-    setPhotoError(null)
-    const added = files.map((file, i) => ({
+    // 상한을 넘는 파일은 URL을 만들기 전에 자른다 — 먼저 만들고 slice로 버리면 그 blob이
+    // 참조를 잃은 채 문서가 닫힐 때까지 남는다. 잘린 이유도 말없이 두지 않고 알린다.
+    const room = Math.max(0, MAX_REVIEW_PHOTOS - photos.length)
+    const accepted = files.slice(0, room)
+    setPhotoError(
+      files.length > accepted.length
+        ? `사진은 최대 ${MAX_REVIEW_PHOTOS}장까지 올릴 수 있어요`
+        : null,
+    )
+    if (accepted.length === 0) return
+    const added = accepted.map((file, i) => ({
       file,
       url:
         typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
           ? URL.createObjectURL(file)
           : placeholderImage(200 + i * 40),
     }))
-    setPhotos(prev => [...prev, ...added].slice(0, MAX_REVIEW_PHOTOS))
+    setPhotos(prev => [...prev, ...added])
+  }
+
+  // 목록에서 뺀 사진의 blob만 해제한다. 미제출 이탈 시 일괄 해제는 하지 않는다 — 목업 주문
+  // 경로는 이 blob URL을 그대로 리뷰 스토어에 저장해 내 리뷰 화면에서 다시 그리므로,
+  // 언마운트에서 놓아주면 방금 쓴 리뷰의 사진이 깨진다(수정 진입으로 프리필된 서버 URL도 동일).
+  const handleRemovePhoto = (index: number) => {
+    setPhotos(prev => {
+      const target = prev[index]
+      if (target?.file) revokeIfBlob(target.url)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   if (!productName) {
@@ -208,7 +235,7 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
           <PhotoUpload
             photos={images}
             onAdd={handleAddPhotos}
-            onRemove={i => setPhotos(prev => prev.filter((_, idx) => idx !== i))}
+            onRemove={handleRemovePhoto}
             max={MAX_REVIEW_PHOTOS}
           />
           {photoError && (

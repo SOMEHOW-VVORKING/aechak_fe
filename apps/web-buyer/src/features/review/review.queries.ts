@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { createReview, getProductReviews, type ReviewItemResponse } from '@aechak/api'
 import type { Review } from '@aechak/domain'
 import { findMockProduct } from '@/shared/catalog'
@@ -227,6 +227,18 @@ export function useProductReviews(
   }
 }
 
+/**
+ * 리뷰가 바뀌면 목록·상세 미리보기(`['reviews','product',id]` 접두)뿐 아니라 상품 상세
+ * (`['product','detail',id]`)도 무효화한다 — 리뷰 수와 평균 별점의 원본이 상세 응답이라,
+ * 이걸 빼면 전역 staleTime(60초) 동안 헤더 숫자만 낡은 채 남아 미리보기 카드 수와 어긋난다
+ * (마지막 리뷰를 지우면 "전체보기"가 빈 목록으로 안내하는 상태까지 간다).
+ * 키 문자열은 product feature와 공유하는 계약이라 한쪽만 바꾸지 말 것.
+ */
+function invalidateReviewCaches(queryClient: QueryClient, productId: string): void {
+  void queryClient.invalidateQueries({ queryKey: ['reviews', 'product', productId] })
+  void queryClient.invalidateQueries({ queryKey: ['product', 'detail', productId] })
+}
+
 export interface CreateReviewInput {
   /** 화면이 조립한 리뷰(별점·본문·상품/주문). 서버 경로에서도 응답값으로 덮어 스토어에 넣는다. */
   review: Review
@@ -272,9 +284,7 @@ export function useCreateReview() {
         createdAt: saved.createdAt.slice(0, 10).replace(/-/g, '.'),
       })
     },
-    // 목록·상세 미리보기 캐시를 모두 무효화한다(둘 다 ['reviews','product',id]로 시작).
-    onSuccess: (_, variables) =>
-      queryClient.invalidateQueries({ queryKey: ['reviews', 'product', variables.review.productId] }),
+    onSuccess: (_, variables) => invalidateReviewCaches(queryClient, variables.review.productId),
   })
 }
 

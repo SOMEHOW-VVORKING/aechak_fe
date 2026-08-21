@@ -8,6 +8,7 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { endServerSession, logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
+import { resetReviews } from '@/shared/review'
 import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 
@@ -32,6 +33,9 @@ export function SettingsHomeScreen() {
         logout()
         // 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리(공유 기기·재진입 대비)
         onWishlistLogout(queryClient)
+        // 내가 쓴 리뷰는 서버 캐시가 아니라 클라이언트 스토어 싱글턴이라 queryClient.clear()로는
+        // 안 지워진다 — 공유 기기에서 다음 사용자가 /reviews/mine에 들어가면 그대로 보인다.
+        resetReviews()
         // 계정 단위 서버 캐시(내 정보/적립금/펫 등)가 다음 사용자에게 새지 않게 전부 비운다.
         queryClient.clear()
         setLogoutOpen(false)
