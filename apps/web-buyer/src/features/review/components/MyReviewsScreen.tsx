@@ -15,7 +15,7 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
 import { findProduct } from '@/shared/catalog'
-import { useDeleteReview, useMyReviews } from '../review.queries'
+import { reviewErrorMessage, useDeleteReview, useMyReviews } from '../review.queries'
 import { REVIEW_REWARD, type PendingReview } from '../review.mock'
 import { MyReviewCard } from './MyReviewCard'
 
@@ -30,9 +30,10 @@ export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) 
 
   // 방금 리뷰를 등록하고 돌아왔으면 완료 탭을 먼저 보여주고 성공 토스트를 띄운다.
   const [tab, setTab] = useState<MyReviewTab>(submitted ? 'completed' : 'pending')
-  const [toast, setToast] = useState<{ open: boolean; message: string }>({
+  const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' }>({
     open: submitted,
     message: submitted ? `리뷰가 등록됐어요. 적립금 ${REVIEW_REWARD.toLocaleString('ko-KR')}원 지급 예정` : '',
+    variant: 'success',
   })
   const [deleteTarget, setDeleteTarget] = useState<Review | null>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -47,10 +48,15 @@ export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) 
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteReview.mutate(deleteTarget.id, {
+    deleteReview.mutate(deleteTarget, {
       onSuccess: () => {
         setDeleteTarget(null)
-        setToast({ open: true, message: '리뷰를 삭제했어요.' })
+        setToast({ open: true, message: '리뷰를 삭제했어요.', variant: 'success' })
+      },
+      // 403(본인 리뷰 아님) 등 서버가 거절한 사유를 조용히 삼키지 않고 그대로 알린다.
+      onError: error => {
+        setDeleteTarget(null)
+        setToast({ open: true, message: reviewErrorMessage(error), variant: 'error' })
       },
     })
   }
@@ -124,7 +130,7 @@ export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) 
         open={toast.open}
         onClose={() => setToast(t => ({ ...t, open: false }))}
         message={toast.message}
-        variant="success"
+        variant={toast.variant}
       />
     </MobileScreen>
   )

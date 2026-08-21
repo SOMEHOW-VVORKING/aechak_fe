@@ -27,14 +27,16 @@ import {
   toggleWishlist,
   useIsWished,
 } from '@/shared/catalog'
-import { LoginGate, useLoginGate } from '@/shared/auth'
-import { useProductDetail, useProductOptions } from '../product.queries'
+import { LoginGate, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import {
+  DETAIL_REVIEW_LIMIT,
+  useProductDetail,
+  useProductOptions,
+  useProductReviewPreview,
+} from '../product.queries'
 import type { ProductDetail } from '../product.mock'
 import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } from '../product.map'
 import { AddedToCartSheet } from './AddedToCartSheet'
-
-// 상세 리뷰 섹션은 최대 3개만 노출하고 나머지는 "전체보기"(상품 리뷰 목록)로 넘긴다.
-const DETAIL_REVIEW_LIMIT = 3
 
 // 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
 // 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
@@ -74,6 +76,14 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 
   // 옵션은 시트를 열 때만 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
+  const isLoggedIn = useIsLoggedIn()
+  // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
+  // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
+  const reviewPreview = useProductReviewPreview(productId, {
+    enabled: isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
+  })
+  // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
+  const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
 
   // 서버 상세의 isLiked를 미러에 단방향 시드한다. "id별 세션당 1회" 정책과 그 시드 기록은
@@ -125,7 +135,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       {isLoading ? (
         <DetailSkeleton />
       ) : isError ? (
-        // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다(codex 리뷰 #7).
+        // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다.
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
             title="상품 정보를 불러오지 못했어요"
@@ -205,13 +215,18 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 <span className="text-subheading font-semibold text-text-primary">
                   리뷰 {data.reviewSummary.total.toLocaleString('ko-KR')}
                 </span>
-                {/* 전체보기는 실제로 보여줄 리뷰 목록이 있을 때만 — 실 상품은 집계만 있고 목록 소스가
-                    없어 링크를 감춘다(codex 리뷰 #13). 목록 API가 생기면 되살린다. */}
-                {data.reviews.length > 0 && (
+                {/* 전체보기 진입은 리뷰가 하나라도 있으면 노출한다 — 목록은 리뷰 목록 API(SCRUM-181)를
+                    쓰는 ProductReviewsScreen이 담당한다. 상세는 permitAll이라 미리보기 목록은 채우지
+                    않고(비회원 상세 열람 유지) 진입점만 건수 기준으로 노출한다. 다만 리뷰 목록 API는
+                    JWT 필수라, 비회원이 바로 진입하면 401 → 전역 로그인 리다이렉트로 상세를 잃는다.
+                    그래서 로그인 게이트로 감싸 비회원에겐 로그인 시트를 먼저 띄운다(강제 이탈 방지). */}
+                {data.reviewSummary.total > 0 && (
                   <button
                     type="button"
                     onClick={() =>
-                      navigate({ to: '/reviews/product/$productId', params: { productId } })
+                      requireAuth('review', () =>
+                        navigate({ to: '/reviews/product/$productId', params: { productId } }),
+                      )
                     }
                     className="flex items-center gap-0.5 text-body-sm text-text-tertiary"
                   >
@@ -225,8 +240,21 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                   <ReviewSummaryCard summary={data.reviewSummary} />
                   {/* 정렬 칩은 제거했다 — 상세에서는 최신 순 상위 3개만 미리 보여주고, 정렬·전체
                       목록은 위 "전체보기"(상품 리뷰 목록)에서만 제공한다. */}
+                  {reviewPreview.isError ? (
+                    // 던지기만 하고 받지 않으면 요약("리뷰 128") 아래가 그냥 비어 리뷰가 없는 것처럼
+                    // 보인다 — 비인증 실패는 재시도 버튼 대신 안내만 두고 전체보기로 유도한다.
+                    <p className="rounded-card border border-border-subtle bg-surface-raised px-4 py-5 text-center text-body-sm text-text-secondary">
+                      리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.
+                    </p>
+                  ) : reviewPreview.isPending && previewReviews.length === 0 ? (
+                    <div className="flex flex-col gap-3">
+                      {[0, 1, 2].map(i => (
+                        <Skeleton key={i} variant="rect" className="h-24 w-full" />
+                      ))}
+                    </div>
+                  ) : (
                   <div className="flex flex-col gap-3">
-                    {data.reviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
+                    {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
                       <ReviewCard
                         key={`${review.author}-${i}`}
                         author={review.author}
@@ -242,6 +270,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                       />
                     ))}
                   </div>
+                  )}
                 </>
               ) : (
                 <div className="flex flex-col items-center gap-1.5 rounded-card border border-border-subtle bg-surface-raised px-4 py-6 text-center">
@@ -262,9 +291,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 </p>
               )}
               {/* 회색 "상품 상세 이미지" 박스는 실 상세 이미지가 없는 장식/깨진 이미지처럼 보이는 죽은
-                  UI라 제거했다 — 실제 이미지는 상단 캐러셀에 있고, 실 상세 미디어 API가 생기면 그때 렌더한다(codex UI/UX #12). */}
+                  UI라 제거했다 — 실제 이미지는 상단 캐러셀에 있고, 실 상세 미디어 API가 생기면 그때 렌더한다. */}
               {/* 사양표는 실 API 소스가 없어 실 상품에선 비어 온다 — 목업 사양을 실데이터로 위장하지
-                  않으려고 값이 있을 때만 렌더한다(codex 리뷰 #13). */}
+                  않으려고 값이 있을 때만 렌더한다. */}
               {data.specs.length > 0 && (
                 <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
                   {data.specs.map(spec => (
@@ -364,7 +393,7 @@ function getDiscount(product: ProductDetail): number | null {
 
 function ReviewSummaryCard({ summary }: { summary: ProductDetail['reviewSummary'] }) {
   // 분포 소스가 없는 실 상품(집계 전용)은 큰 빈 오른쪽 여백 대신 평균/별점/건수를 한 줄로 콤팩트하게
-  // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지, codex UI/UX #11).
+  // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지).
   if (!summary.distribution) {
     return (
       <div className="flex items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
@@ -424,7 +453,7 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
           </div>
         ))}
       </div>
-      {/* 품절 표시 — 상태 pill 줄을 제거했으므로(item 1) dim만으로는 불명확해 캐러셀 중앙에
+      {/* 품절 표시 — 상태 pill 줄을 제거했으므로 dim만으로는 불명확해 캐러셀 중앙에
           "품절" 오버레이를 남긴다(DS ProductCard의 품절 표현과 동일 패턴). */}
       {sold && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -476,7 +505,7 @@ function ActionBar({
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
       </button>
-      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다(codex UI/UX #9). 찜은 유지. */}
+      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다. 찜은 유지. */}
       <Button variant="secondary" size="lg" onClick={onCart} className="flex-1" disabled={soldOut}>
         장바구니
       </Button>
@@ -513,7 +542,7 @@ function OptionSheet({
   const [selectedKey, setSelectedKey] = useState('')
   const [qty, setQty] = useState(1)
   // 기본 선택은 주문 가능한(품절 아닌) 첫 조합 — 첫 조합이 품절인데 뒤에 판매 조합이 있으면 첫인상이
-  // "구매 불가"가 되지 않게 한다(codex UI/UX #8).
+  // "구매 불가"가 되지 않게 한다.
   const choice = choices.find(c => c.key === selectedKey) ?? choices.find(c => !c.soldOut) ?? choices[0]
   const allSoldOut = choices.length > 0 && choices.every(c => c.soldOut)
 
@@ -523,7 +552,7 @@ function OptionSheet({
   }, [choice?.key])
 
   // 옵션 조회가 (404 아닌) 오류면 담기/구매를 막는다 — 조용히 "기본 구성" 기본가로 주문하게 두면
-  // 실제 옵션/재고를 무시한 잘못된 주문이 된다(codex 리뷰 #8).
+  // 실제 옵션/재고를 무시한 잘못된 주문이 된다.
   if (error) {
     return (
       <BottomSheet open={open} onClose={onClose} title="옵션 선택">
@@ -547,7 +576,7 @@ function OptionSheet({
     )
   }
 
-  // 모든 조합이 품절이면 선택/담기 UI 대신 명확한 전량 품절 안내를 보여준다(codex UI/UX #8).
+  // 모든 조합이 품절이면 선택/담기 UI 대신 명확한 전량 품절 안내를 보여준다.
   if (allSoldOut) {
     return (
       <BottomSheet open={open} onClose={onClose} title="옵션 선택">

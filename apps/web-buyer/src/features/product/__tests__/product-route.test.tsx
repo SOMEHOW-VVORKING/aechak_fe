@@ -4,9 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { resetAuth } from '@/shared/auth'
+import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
-import { PRODUCT_OPTIONS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
+import { PRODUCT_OPTIONS_URL, PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -54,7 +54,7 @@ describe('/products/$productId', () => {
   })
 
   it('[AC-PRODUCT-013] 실 옵션 조회가 오류면 옵션 시트가 담기/구매를 막고 재시도를 보여준다', async () => {
-    // 실 상품의 /options를 500으로 강제 — 실 옵션 실패를 "기본 구성" 기본가로 위장하면 안 된다(codex 리뷰 #8).
+    // 실 상품의 /options를 500으로 강제 — 실 옵션 실패를 "기본 구성" 기본가로 위장하면 안 된다.
     server.use(
       http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
         params.productId === REAL_PRODUCT_ID
@@ -96,16 +96,16 @@ describe('/products/$productId', () => {
     renderAt('/products/p-feeder-5l')
     await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
 
-    // item 1: 판매중/SALE 상태 pill 줄 제거(할인% 표기는 가격 블록에 유지)
+    // 판매중/SALE 상태 pill 줄 제거(할인% 표기는 가격 블록에 유지)
     expect(screen.queryByText('판매중')).not.toBeInTheDocument()
     expect(screen.queryByText(/SALE/)).not.toBeInTheDocument()
     expect(screen.getByText('28%')).toBeInTheDocument()
     expect(screen.getByText('89,000원')).toBeInTheDocument()
 
-    // item 3: 가격 바로 아래 "총별점 / 5 · 리뷰 N건" 요약 링크 제거
+    // 가격 바로 아래 "총별점 / 5 · 리뷰 N건" 요약 링크 제거
     expect(screen.queryByText('/ 5')).not.toBeInTheDocument()
 
-    // item 5: 리뷰 섹션 정렬 칩 제거 + 전체보기는 유지
+    // 리뷰 섹션 정렬 칩 제거 + 전체보기는 유지
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('별점높은순')).not.toBeInTheDocument()
     expect(screen.queryByText('포토리뷰만')).not.toBeInTheDocument()
@@ -114,6 +114,121 @@ describe('/products/$productId', () => {
     // 리뷰 '구매' 인증 pill 제거(소비측에서 verifiedPurchase 미전달) — '구매하기' 버튼은 별개라 유지
     expect(screen.queryByText('구매')).not.toBeInTheDocument()
     expect(screen.getByText('구매하기')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-014] 비회원이 전체보기를 누르면 강제 이동 대신 로그인 게이트가 뜬다', async () => {
+    // 리뷰 목록 API는 JWT 필수라, 비회원이 전체보기로 바로 진입하면 401 → 전역 로그인 리다이렉트로
+    // 상세를 잃는다. 로그인 게이트로 감싸 비회원에겐 로그인 시트를 먼저 띄우고 이동은 막는다.
+    logout()
+    const user = userEvent.setup()
+    const router = renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByText('전체보기'))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    // 리뷰 목록으로 이동하지 않고 상세에 머문다.
+    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+  })
+
+  it('[AC-PRODUCT-015] 비회원이 하단 찜(하트)을 누르면 게이트가 뜨고 찜 토글이 일어나지 않는다', async () => {
+    // 하단 액션바의 찜/장바구니/구매는 모두 requireAuth로 감싸져 있어, 비회원은 실제 동작 대신
+    // 로그인 게이트가 먼저 뜬다(AC-014의 전체보기 게이트와 같은 부류, 이쪽은 액션바에 초점).
+    // 모듈 싱글턴이라 렌더가 loggedIn을 true로 되돌리지 않으므로 resetAuth 후 logout으로 비회원을 만든다.
+    logout()
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    // 하트는 텍스트가 아니라 aria-label 버튼이다(찜 전 '찜하기', 찜 후 '찜 해제').
+    // 찜 미러는 SCRUM-113에서 시드가 사라져 빈 상태로 시작하므로 처음엔 '찜하기'/aria-pressed=false다.
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('찜은 로그인한 회원만 이용할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 찜이 토글되지 않았다 — 여전히 '찜하기'(미찜) + aria-pressed false, 찜 토스트도 없다.
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {
+    logout()
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('장바구니 담기는 로그인한 회원만 이용할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 옵션 선택 시트는 열리지 않는다(setSheetOpen이 호출되지 않음).
+    expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-017] 비회원이 하단 구매하기를 누르면 결제로 이동하지 않고 게이트가 뜬다', async () => {
+    logout()
+    const user = userEvent.setup()
+    const router = renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '구매하기' }))
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(
+      screen.getByText('구매는 로그인한 뒤에 이어서 진행할 수 있어요.', { exact: false }),
+    ).toBeInTheDocument()
+    // 결제/옵션으로 이동하지 않고 상세에 머문다.
+    expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+  })
+
+  it('[AC-PRODUCT-018] 로그인 상태의 실 상품 상세는 서버 리뷰를 최대 3개까지 미리 보여준다', async () => {
+    // 상세 응답에는 평균/건수만 있고 목록이 없어 리뷰 목록 API 첫 페이지(size=3)를 따로 불러 채운다.
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    // 최신순 상위 3건(505/504/503)만 뜨고 4번째(502)는 전체보기로 넘어간다.
+    expect(await screen.findByText('소음이 조금 있어요. 기능은 무난해요.')).toBeInTheDocument()
+    expect(
+      screen.getByText('두 번째 구매예요. 믿고 쓰는 제품이라 계속 살 것 같아요.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('가격 대비 무난해요. 조금 더 컸으면 하는 아쉬움은 있어요.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('배송도 빠르고 포장도 튼튼했어요. 실물이 더 좋아요.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-019] 비회원 상세는 리뷰 목록 API를 아예 호출하지 않는다', async () => {
+    // 리뷰 목록 API는 JWT 필수(비로그인 401)라, 호출하면 전역 리다이렉트로 상세를 잃는다.
+    // 그래서 비회원은 요약·전체보기 진입점만 보고 미리보기 요청 자체가 나가지 않아야 한다.
+    let reviewCalls = 0
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () => {
+        reviewCalls += 1
+        return HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+      }),
+    )
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+    // 요약(리뷰 128)은 상세 응답에서 오므로 그대로 뜬다.
+    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
+    await waitFor(() => expect(reviewCalls).toBe(0))
+    expect(screen.queryByText('소음이 조금 있어요. 기능은 무난해요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-020] 미리보기 조회가 실패하면 빈 목록 대신 사유를 알린다', async () => {
+    // 요약("리뷰 128")은 상세 응답에서 오므로 그대로 뜨는데 미리보기만 비면 리뷰가 없는 것처럼
+    // 보인다 — 던진 오류를 화면이 소비하지 않으면 그 보호가 실제로는 없는 셈이다.
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () => HttpResponse.json({ message: 'error' }, { status: 500 })),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    expect(
+      await screen.findByText('리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'),
+    ).toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {

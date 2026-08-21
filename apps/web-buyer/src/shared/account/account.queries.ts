@@ -33,7 +33,7 @@ export function toBuyerAccount(res: UserMe): BuyerAccount {
 }
 
 // 403/20006(ONBOARDING_REQUIRED) 여부. PENDING 유저가 ACTIVE 전용 경로(프로필 수정 PUT 등)를
-// 부르면 온다 — 인라인 문구로 막다른 길을 만들지 말고 온보딩 약관 화면으로 보내야 한다(design 결정 #10).
+// 부르면 온다 — 인라인 문구로 막다른 길을 만들지 말고 온보딩 약관 화면으로 보내야 한다.
 export function isOnboardingRequired(error: unknown): boolean {
   const response = (error as { response?: { status?: number; data?: { errorCode?: number } } })
     ?.response

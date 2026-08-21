@@ -187,7 +187,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
         {/* 결과 그리드 / 빈 상태 */}
         <div className="px-4">
           {isError && !data ? (
-            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다(codex UI/UX #4).
+            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다.
             <div className="flex flex-col items-center gap-4 py-16 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
                 <SearchX className="size-7" />

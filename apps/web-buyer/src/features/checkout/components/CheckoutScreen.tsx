@@ -79,7 +79,7 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
   const canPay = hasOrder && defaultAddress != null && agree
 
   // 바로구매인데 상품이 해석되지 않으면(예: 실 상품 URL로 하드 리프레시 → 인메모리 레지스트리가
-  // 비어 findProduct 미스) 빈 주문서 대신 안내를 띄운다(codex 리뷰 #4). 정상 SPA 흐름은 레지스트리가
+  // 비어 findProduct 미스) 빈 주문서 대신 안내를 띄운다. 정상 SPA 흐름은 레지스트리가
   // 채워져 있어 이 분기를 타지 않는다.
   const unresolvedBuyNow = buyNow != null && view.isEmpty
 

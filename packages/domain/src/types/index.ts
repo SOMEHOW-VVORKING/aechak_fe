@@ -61,7 +61,7 @@ export interface CartItem {
   //
   // TODO(후속, 실 cart/order/payment API 착수 전 필수): 가격/재고는 URL의 addl·option 문자열을
   // 신뢰하지 말고 서버에서 재검증하고, 라인 정체성을 조합명(option)이 아니라 optionCombinationId로
-  // 삼을 것 — 조합명 중복 시 라인 충돌, 클라이언트 addl 변조로 결제 금액 조작이 가능하다(codex 리뷰 #11).
+  // 삼을 것 — 조합명 중복 시 라인 충돌, 클라이언트 addl 변조로 결제 금액 조작이 가능하다.
   optionCombinationId?: number
 }
 
@@ -135,6 +135,11 @@ export interface BuyerOrderItem {
   quantity: number
   unitPrice: number
   thumbnailUrl?: string
+  /**
+   * 서버 주문 품목 id. 리뷰 작성 API(POST /reviews)가 이 값을 요구한다.
+   * 주문 조회 API가 아직 없어 목업 주문에는 없다 — 값이 있을 때만 서버 경로를 탄다.
+   */
+  orderItemId?: number
 }
 
 // 셀러별 주문 그룹(배송비는 셀러 단위로 부과 — Phase 2 장바구니 order_group 구조와 일관).

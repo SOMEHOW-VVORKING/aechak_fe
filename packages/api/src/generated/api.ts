@@ -101,6 +101,7 @@ export const UploadPurpose = {
   USER_PROFILE: 'USER_PROFILE',
   PET_PROFILE: 'PET_PROFILE',
   SELLER_DOCUMENT: 'SELLER_DOCUMENT',
+  REVIEW_IMAGE: 'REVIEW_IMAGE',
 } as const
 
 export interface IssuePresignedUrlRequest {
@@ -419,6 +420,107 @@ export interface ProductReviewSummary {
   reviewCount: number
   /** @nullable */
   averageRating: number | null
+}
+
+export type ReviewSort = (typeof ReviewSort)[keyof typeof ReviewSort]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReviewSort = {
+  latest: 'latest',
+  rating_desc: 'rating_desc',
+} as const
+
+export interface ReviewImageResponse {
+  imageUrl: string
+  sortOrder: number
+}
+
+export interface ReviewItemResponse {
+  reviewId: number
+  /** 요청자 본인이 쓴 리뷰인지. 수정/삭제 노출 대상 판별에 쓴다(SCRUM-210). */
+  isMine: boolean
+  rating: number
+  content: string
+  optionName: string
+  authorNickname: string
+  /** @nullable */
+  authorProfileImageUrl: string | null
+  /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-12T10:00:00) */
+  createdAt: string
+  images: ReviewImageResponse[]
+}
+
+/**
+ * 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5').
+ */
+export type ReviewRatingSummaryResponseRatingDistribution = { [key: string]: number }
+
+export interface ReviewRatingSummaryResponse {
+  reviewCount: number
+  /** @nullable */
+  averageRating: number | null
+  /** 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5'). */
+  ratingDistribution: ReviewRatingSummaryResponseRatingDistribution
+}
+
+/**
+ * 평점 요약 — 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null.
+ * @nullable
+ */
+export type ReviewListDataSummary = ReviewRatingSummaryResponse | null
+
+export interface ReviewListData {
+  /**
+   * 평점 요약 — 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null.
+   * @nullable
+   */
+  summary: ReviewListDataSummary
+  reviews: ReviewItemResponse[]
+  /**
+   * photoOnly 필터를 반영한 총 리뷰 수 — 첫 페이지에만, 이후 null.
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface ReviewListEnvelope {
+  data: ReviewListData
+}
+
+export interface CreateReviewRequest {
+  /** 리뷰를 작성할 주문 품목 id */
+  orderItemId: number
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  rating: number
+  /**
+   * @minLength 10
+   * @maxLength 1000
+   */
+  content: string
+  /** presigned 업로드로 받은 tmp 키 목록(최대 5장). 생략하면 사진 없는 리뷰. */
+  imageKeys?: string[]
+}
+
+export interface CreateReviewResponse {
+  reviewId: number
+  /** 서버 내부 상품 id(숫자). 화면이 쓰는 공개 ULID와 다르다. */
+  productId: number
+  rating: number
+  content: string
+  optionName: string
+  /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-21T10:00:00) */
+  createdAt: string
+  images: ReviewImageResponse[]
+}
+
+export interface CreateReviewEnvelope {
+  data: CreateReviewResponse
 }
 
 export interface ProductCategory {
@@ -851,6 +953,26 @@ export type SearchProductsParams = {
   category?: number
   freeShipping?: boolean
   excludeSoldOut?: boolean
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetProductReviewsParams = {
+  /**
+   * 정렬(기본 latest)
+   */
+  sort?: ReviewSort
+  /**
+   * 사진이 있는 리뷰만
+   */
+  photoOnly?: boolean
+  /**
+   * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
   cursor?: string
   /**
    * @minimum 1
@@ -3056,6 +3178,375 @@ export function useGetProductOptionsSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 상품별 리뷰 목록 + 평점 요약. summary/totalCount는 첫 페이지(cursor 없음)에만 실린다. 인증 필요(비로그인 401). productId는 상품 공개 ULID. 미존재/비노출 상품은 404.
+ * @summary 상품 리뷰 목록 조회(커서 페이지네이션)
+ */
+export const getProductReviews = (
+  productId: string,
+  params?: GetProductReviewsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ReviewListEnvelope>({
+    url: `/products/${productId}/reviews`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetProductReviewsQueryKey = (
+  productId?: string,
+  params?: GetProductReviewsParams,
+) => {
+  return [`/products/${productId}/reviews`, ...(params ? [params] : [])] as const
+}
+
+export const getGetProductReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductReviewsQueryKey(productId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductReviews>>> = ({ signal }) =>
+    getProductReviews(productId, params, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductReviewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductReviews>>
+>
+export type GetProductReviewsQueryError = void
+
+export function useGetProductReviews<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params: undefined | GetProductReviewsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getProductReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviews<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getProductReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviews<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 리뷰 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetProductReviews<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductReviewsQueryOptions(productId, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductReviewsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductReviewsQueryKey(productId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductReviews>>> = ({ signal }) =>
+    getProductReviews(productId, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProductReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductReviewsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductReviews>>
+>
+export type GetProductReviewsSuspenseQueryError = void
+
+export function useGetProductReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params: undefined | GetProductReviewsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 리뷰 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetProductReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getProductReviews>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductReviewsSuspenseQueryOptions(productId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 구매확정한 주문 품목에 리뷰를 쓴다. 1주문 1리뷰이며 구매확정 30일 이내만 허용한다. imageKeys는 presigned 업로드(purpose=REVIEW_IMAGE)로 받은 tmp 키 목록이고 서버가 정식 위치로 옮긴다.
+ * @summary 리뷰 작성
+ */
+export const createReview = (createReviewRequest: CreateReviewRequest, signal?: AbortSignal) => {
+  return customInstance<CreateReviewEnvelope>({
+    url: `/reviews`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: createReviewRequest,
+    signal,
+  })
+}
+
+export const getCreateReviewMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createReview>>,
+    TError,
+    { data: CreateReviewRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createReview>>,
+  TError,
+  { data: CreateReviewRequest },
+  TContext
+> => {
+  const mutationKey = ['createReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createReview>>,
+    { data: CreateReviewRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return createReview(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createReview>>>
+export type CreateReviewMutationBody = CreateReviewRequest
+export type CreateReviewMutationError = void
+
+/**
+ * @summary 리뷰 작성
+ */
+export const useCreateReview = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createReview>>,
+      TError,
+      { data: CreateReviewRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createReview>>,
+  TError,
+  { data: CreateReviewRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 본인이 쓴 리뷰를 소프트 삭제한다(재작성 불가). 삭제 시 상품 평점 평균·리뷰 수가 재집계된다.
+ * @summary 리뷰 삭제
+ */
+export const deleteReview = (reviewId: number) => {
+  return customInstance<void>({ url: `/reviews/${reviewId}`, method: 'DELETE' })
+}
+
+export const getDeleteReviewMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteReview>>,
+    TError,
+    { reviewId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationKey = ['deleteReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteReview>>,
+    { reviewId: number }
+  > = props => {
+    const { reviewId } = props ?? {}
+
+    return deleteReview(reviewId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteReviewMutationResult = NonNullable<Awaited<ReturnType<typeof deleteReview>>>
+
+export type DeleteReviewMutationError = void
+
+/**
+ * @summary 리뷰 삭제
+ */
+export const useDeleteReview = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteReview>>,
+      TError,
+      { reviewId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**

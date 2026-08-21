@@ -48,7 +48,7 @@ export function ConsentSettingsScreen() {
               </>
             )
             // 문서 라우트가 있는 항목만 그 문서로 이동한다 — 없는 항목을 다른 문서로 보내면
-            // 잘못된 문서를 여는 오내비게이션이 된다(codex/리뷰 지적).
+            // 잘못된 문서를 여는 오내비게이션이 된다.
             return route ? (
               <button
                 key={consent.id}

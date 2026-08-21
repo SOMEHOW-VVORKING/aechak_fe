@@ -73,7 +73,7 @@ export function HomeScreen() {
       </div>
 
       {isError ? (
-        // 로드 실패는 영구 스켈레톤이 아니라 재시도 가능한 에러로 구분한다(codex UI/UX #5).
+        // 로드 실패는 영구 스켈레톤이 아니라 재시도 가능한 에러로 구분한다.
         <div className="flex flex-col items-center px-6 py-16">
           <EmptyState
             title="홈을 불러오지 못했어요"

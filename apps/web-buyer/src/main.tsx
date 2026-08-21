@@ -7,6 +7,7 @@ import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired, setOnOnboardingRequir
 import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
+import { resetReviews } from '@/shared/review'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -40,6 +41,7 @@ setOnAuthExpired(() => {
   redirectingToLogin = true
   logout()
   onWishlistLogout(queryClient) // 세션 만료 시 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리
+  resetReviews() // 내가 쓴 리뷰는 클라이언트 스토어라 쿼리 캐시 정리로는 안 지워진다(설정 로그아웃과 동일)
   void router.navigate({ to: '/onboarding/login' }).finally(() => {
     redirectingToLogin = false
   })

@@ -68,9 +68,40 @@ test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 �
   await expect(page.getByText('69,000원')).toBeVisible()
 })
 
+test('[AC-PRODUCT-E2E-003] 옵션 시트 수량 조절이 총액/재고 경계에 반영되고 옵션 변경 시 리셋된다', async ({ page }) => {
+  await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
+  await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
+
+  await page.goto(`/products/${REAL_ID}`)
+  await expect(page.getByRole('heading', { name: '리얼 프리미엄 자동 급식기' })).toBeVisible()
+
+  // 옵션 시트 → 프리미엄형(+5,000원, remainingStock 5) 선택
+  await page.getByRole('button', { name: '장바구니', exact: true }).click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByRole('combobox').selectOption('프리미엄형')
+  await expect(sheet.getByText('69,000원')).toBeVisible()
+
+  // 수량 +로 2개 → (64,000 + 5,000) * 2 = 138,000원
+  const increase = sheet.getByRole('button', { name: '증가' })
+  await increase.click()
+  await expect(sheet.getByText('138,000원')).toBeVisible()
+
+  // 재고 경계 — remainingStock 5까지 올리면 + 버튼이 disabled
+  await increase.click() // 3
+  await increase.click() // 4
+  await increase.click() // 5
+  await expect(increase).toBeDisabled()
+
+  // 옵션 변경 리셋 — 기본형(+0)으로 바꾸면 수량이 1로 리셋되어 64,000원
+  await sheet.getByRole('combobox').selectOption('기본형')
+  await expect(sheet.getByText('64,000원')).toBeVisible()
+})
+
 test('[AC-PRODUCT-E2E-002] 존재하지 않는 상품(404)은 not-found 상태를 렌더한다', async ({ page }) => {
   // 실 API가 404 → 화면이 목업 폴백을 시도하고, 목업에도 없으면 not-found.
-  await page.route('**/api/v1/products/*/options', route => fulfillJson(route, 404, { message: 'not found' }))
+  // 옵션 스텁은 두지 않는다 — not-found면 하단 액션바(ActionBar)가 렌더되지 않아 옵션 시트를
+  // 열 수 없고, useProductOptions는 시트를 열 때만(enabled: sheetOpen) 발사되므로 옵션 요청
+  // 자체가 나가지 않는다(죽은 스텁 제거).
   await page.route('**/api/v1/products/*', route => fulfillJson(route, 404, { message: 'not found' }))
 
   await page.goto('/products/01JNONEXISTENT00000000000')

@@ -15,14 +15,28 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { findProduct, placeholderImage } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
-import { useCreateReview, useEditReview, useReviewById } from '../review.queries'
+import { reviewErrorMessage, useCreateReview, useEditReview, useReviewById } from '../review.queries'
 import { MAX_REVIEW_LENGTH, MIN_REVIEW_LENGTH, REVIEW_REWARD, validateReview } from '../review.mock'
+import {
+  isSupportedReviewPhoto,
+  isWithinReviewPhotoSizeLimit,
+  MAX_REVIEW_PHOTOS,
+  OVERSIZED_REVIEW_PHOTO_MESSAGE,
+  UNSUPPORTED_REVIEW_PHOTO_MESSAGE,
+} from '../review.upload'
 
 export interface ReviewWriteScreenProps {
   productId?: string
   orderId?: string
   /** 수정 진입 시 대상 리뷰 id(있으면 프리필 + 수정 모드). */
   reviewId?: string
+}
+
+/** 서버에서 받은 표시용 URL은 놓아주면 안 되고, 로컬 미리보기 blob만 해제한다(펫 폼과 동일). */
+function revokeIfBlob(url: string) {
+  if (url.startsWith('blob:') && typeof URL?.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(url)
+  }
 }
 
 const RATING_WORDS = ['', '별로예요', '그저 그래요', '괜찮아요', '좋아요', '최고예요']
@@ -50,7 +64,13 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
 
   const [rating, setRating] = useState(editing?.rating ?? 0)
   const [content, setContent] = useState(editing?.content ?? '')
-  const [images, setImages] = useState<string[]>(editing?.images ?? [])
+  // 미리보기 URL과 원본 File을 짝으로 들고 있는다 — 서버 경로는 제출 시점에 File을 presigned
+  // 업로드해야 하고, 수정 진입으로 프리필된 기존 사진은 URL만 있어 file이 없다.
+  const [photos, setPhotos] = useState<{ url: string; file?: File }[]>(
+    (editing?.images ?? []).map(url => ({ url })),
+  )
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const images = photos.map(p => p.url)
 
   const goBack = useSafeBack({ to: '/reviews/mine', search: { submitted: false } })
 
@@ -86,19 +106,55 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
       verifiedPurchase: true,
       createdAt: '2026.07.10',
     }
-    createReview.mutate(review, {
-      onSuccess: () =>
-        navigate({ to: '/reviews/mine', search: { submitted: true }, replace: true }),
-    })
+    createReview.mutate(
+      // orderItemId는 실 주문에만 있다 — 없으면 mutation이 로컬 스토어 경로로 폴백한다.
+      { review, orderItemId: orderItem?.orderItemId, files: photos.flatMap(p => (p.file ? [p.file] : [])) },
+      {
+        onSuccess: () =>
+          navigate({ to: '/reviews/mine', search: { submitted: true }, replace: true }),
+      },
+    )
   }
 
   const handleAddPhotos = (files: File[]) => {
-    const urls = files.map((file, i) =>
-      typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-        ? URL.createObjectURL(file)
-        : placeholderImage(200 + i * 40),
+    // presigned PUT은 S3 직행이라 서버가 형식·크기를 못 막는다 — 발급 전에 여기서 걸러 안내한다.
+    if (files.some(file => !isSupportedReviewPhoto(file))) {
+      setPhotoError(UNSUPPORTED_REVIEW_PHOTO_MESSAGE)
+      return
+    }
+    if (files.some(file => !isWithinReviewPhotoSizeLimit(file))) {
+      setPhotoError(OVERSIZED_REVIEW_PHOTO_MESSAGE)
+      return
+    }
+    // 상한을 넘는 파일은 URL을 만들기 전에 자른다 — 먼저 만들고 slice로 버리면 그 blob이
+    // 참조를 잃은 채 문서가 닫힐 때까지 남는다. 잘린 이유도 말없이 두지 않고 알린다.
+    const room = Math.max(0, MAX_REVIEW_PHOTOS - photos.length)
+    const accepted = files.slice(0, room)
+    setPhotoError(
+      files.length > accepted.length
+        ? `사진은 최대 ${MAX_REVIEW_PHOTOS}장까지 올릴 수 있어요`
+        : null,
     )
-    setImages(prev => [...prev, ...urls].slice(0, 5))
+    if (accepted.length === 0) return
+    const added = accepted.map((file, i) => ({
+      file,
+      url:
+        typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+          ? URL.createObjectURL(file)
+          : placeholderImage(200 + i * 40),
+    }))
+    setPhotos(prev => [...prev, ...added])
+  }
+
+  // 목록에서 뺀 사진의 blob만 해제한다. 미제출 이탈 시 일괄 해제는 하지 않는다 — 목업 주문
+  // 경로는 이 blob URL을 그대로 리뷰 스토어에 저장해 내 리뷰 화면에서 다시 그리므로,
+  // 언마운트에서 놓아주면 방금 쓴 리뷰의 사진이 깨진다(수정 진입으로 프리필된 서버 URL도 동일).
+  const handleRemovePhoto = (index: number) => {
+    setPhotos(prev => {
+      const target = prev[index]
+      if (target?.file) revokeIfBlob(target.url)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   if (!productName) {
@@ -176,8 +232,25 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
           <span className="text-label font-medium text-text-secondary">
             사진 첨부 <span className="text-caption text-text-tertiary">(선택)</span>
           </span>
-          <PhotoUpload photos={images} onAdd={handleAddPhotos} onRemove={i => setImages(prev => prev.filter((_, idx) => idx !== i))} max={5} />
+          <PhotoUpload
+            photos={images}
+            onAdd={handleAddPhotos}
+            onRemove={handleRemovePhoto}
+            max={MAX_REVIEW_PHOTOS}
+          />
+          {photoError && (
+            <p role="alert" className="text-caption text-error-fg">
+              {photoError}
+            </p>
+          )}
         </div>
+
+        {/* 등록 실패 — 401은 인터셉터가 처리하므로 여기 오는 건 구매확정/기간/중복 같은 사유다. */}
+        {createReview.isError && (
+          <Alert variant="error" title="리뷰를 등록하지 못했어요">
+            {reviewErrorMessage(createReview.error)}
+          </Alert>
+        )}
 
         {/* 적립 안내 */}
         <Alert variant="info" title={`포토 리뷰 적립금 ${REVIEW_REWARD.toLocaleString('ko-KR')}원`}>

@@ -56,7 +56,7 @@ describe('mapProductDetail', () => {
     // 신뢰 가능한 집계 요약(건수/평균)은 실 데이터로 노출한다.
     expect(d.reviewSummary.total).toBe(128)
     expect(d.reviewSummary.average).toBe(4.7)
-    // 실 API 소스가 없는 것들은 목업으로 위장하지 않고 비운다(codex 리뷰 #13).
+    // 실 API 소스가 없는 것들은 목업으로 위장하지 않고 비운다.
     expect(d.reviews).toHaveLength(0)
     expect(d.reviewSummary.distribution).toBeUndefined()
     expect(d.specs).toHaveLength(0)
