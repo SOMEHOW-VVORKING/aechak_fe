@@ -5,7 +5,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
-import { PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, REVIEWS_URL, server } from '@/testing/msw/server'
+import {
+  PRODUCT_REVIEWS_URL,
+  REAL_PRODUCT_ID,
+  REVIEW_DETAIL_URL,
+  REVIEWS_URL,
+  server,
+} from '@/testing/msw/server'
 import { addOrder, resetOrders } from '@/shared/order'
 import { getReviews, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
@@ -451,6 +457,120 @@ describe('리뷰 라우트', () => {
     expect(await screen.findByText('이미 리뷰를 쓴 주문이에요.')).toBeInTheDocument()
     // 실패했으니 이동하지 않고 작성 화면에 머문다.
     expect(router.state.location.pathname).toBe('/reviews/write')
+  })
+  it('[AC-REVIEW-DELETE-001] 서버 리뷰를 삭제하면 DELETE를 호출하고 목록에서 사라진다', async () => {
+    serveMyServerReview(321)
+    let deletedId: string | null = null
+    server.use(
+      http.delete(REVIEW_DETAIL_URL, ({ params }) => {
+        deletedId = String(params.reviewId)
+        // 삭제 후 재조회는 빈 목록을 준다(무효화가 실제로 목록을 갱신하는지 확인하기 위함).
+        server.use(
+          http.get(PRODUCT_REVIEWS_URL, () =>
+            HttpResponse.json({
+              data: {
+                summary: { reviewCount: 0, averageRating: null, ratingDistribution: {} },
+                reviews: [],
+                totalCount: 0,
+                nextCursor: null,
+                hasNext: false,
+              },
+            }),
+          ),
+        )
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    await screen.findByText('서버에 저장된 내 리뷰예요.')
+
+    await user.click(screen.getByRole('button', { name: '삭제' }))
+    await user.click(screen.getByRole('button', { name: '삭제하기' }))
+
+    await waitFor(() => expect(deletedId).toBe('321'))
+    await waitFor(() =>
+      expect(screen.queryByText('서버에 저장된 내 리뷰예요.')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('[AC-REVIEW-DELETE-004] 삭제 성공 직후 재조회를 기다리지 않고 목록에서 빠진다', async () => {
+    // 서버 리뷰는 로컬 스토어에 없어 removeReview가 no-op이라, 캐시에서 직접 빼지 않으면
+    // "삭제했어요" 토스트가 뜬 뒤에도 재조회가 끝날 때까지 카드가 남는다.
+    serveMyServerReview(555)
+    // 재조회를 붙잡아 두는 게이트 — 이 상태에서도 카드가 사라져야 한다.
+    let releaseRefetch = () => {}
+    const refetchGate = new Promise<void>(resolve => {
+      releaseRefetch = resolve
+    })
+    server.use(
+      http.delete(REVIEW_DETAIL_URL, () => {
+        server.use(
+          http.get(PRODUCT_REVIEWS_URL, async () => {
+            await refetchGate
+            return HttpResponse.json({
+              data: {
+                summary: { reviewCount: 0, averageRating: null, ratingDistribution: {} },
+                reviews: [],
+                totalCount: 0,
+                nextCursor: null,
+                hasNext: false,
+              },
+            })
+          }),
+        )
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    await screen.findByText('서버에 저장된 내 리뷰예요.')
+
+    await user.click(screen.getByRole('button', { name: '삭제' }))
+    await user.click(screen.getByRole('button', { name: '삭제하기' }))
+
+    await waitFor(() =>
+      expect(screen.queryByText('서버에 저장된 내 리뷰예요.')).not.toBeInTheDocument(),
+    )
+    releaseRefetch()
+  })
+
+  it('[AC-REVIEW-DELETE-002] 목업 리뷰 삭제는 서버를 부르지 않는다', async () => {
+    let called = 0
+    server.use(
+      http.delete(REVIEW_DETAIL_URL, () => {
+        called += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/reviews/mine')
+    await screen.findByText('작성 완료 2')
+    await user.click(screen.getByText('작성 완료 2'))
+
+    await user.click(screen.getAllByRole('button', { name: '삭제' })[0]!)
+    await user.click(screen.getByRole('button', { name: '삭제하기' }))
+
+    expect(await screen.findByText('리뷰를 삭제했어요.')).toBeInTheDocument()
+    expect(called).toBe(0)
+  })
+
+  it('[AC-REVIEW-DELETE-003] 남의 리뷰 삭제(403)는 사유를 알리고 리뷰를 남긴다', async () => {
+    serveMyServerReview(654)
+    server.use(
+      http.delete(REVIEW_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 110003, message: '본인 리뷰만 삭제할 수 있습니다.' }, { status: 403 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    await screen.findByText('서버에 저장된 내 리뷰예요.')
+
+    await user.click(screen.getByRole('button', { name: '삭제' }))
+    await user.click(screen.getByRole('button', { name: '삭제하기' }))
+
+    expect(await screen.findByText('본인이 쓴 리뷰만 삭제할 수 있어요.')).toBeInTheDocument()
+    expect(screen.getByText('서버에 저장된 내 리뷰예요.')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {

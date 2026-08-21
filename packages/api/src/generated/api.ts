@@ -3482,6 +3482,74 @@ export const useCreateReview = <TError = void, TContext = unknown>(
 }
 
 /**
+ * 본인이 쓴 리뷰를 소프트 삭제한다(재작성 불가). 삭제 시 상품 평점 평균·리뷰 수가 재집계된다.
+ * @summary 리뷰 삭제
+ */
+export const deleteReview = (reviewId: number) => {
+  return customInstance<void>({ url: `/reviews/${reviewId}`, method: 'DELETE' })
+}
+
+export const getDeleteReviewMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteReview>>,
+    TError,
+    { reviewId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationKey = ['deleteReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteReview>>,
+    { reviewId: number }
+  > = props => {
+    const { reviewId } = props ?? {}
+
+    return deleteReview(reviewId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteReviewMutationResult = NonNullable<Awaited<ReturnType<typeof deleteReview>>>
+
+export type DeleteReviewMutationError = void
+
+/**
+ * @summary 리뷰 삭제
+ */
+export const useDeleteReview = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteReview>>,
+      TError,
+      { reviewId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000.
  * @summary 상품 찜하기
  */

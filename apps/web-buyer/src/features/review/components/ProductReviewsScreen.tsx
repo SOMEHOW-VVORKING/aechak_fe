@@ -15,6 +15,7 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
 import {
+  reviewErrorMessage,
   serverReviewId,
   useDeleteReview,
   useProductReviews,
@@ -124,14 +125,23 @@ function ReviewsBody({
   const visible = data.reviews
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Review | null>(null)
-  const [toast, setToast] = useState<{ open: boolean; message: string }>({ open: false, message: '' })
+  const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    variant: 'success',
+  })
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteReview.mutate(deleteTarget.id, {
+    deleteReview.mutate(deleteTarget, {
       onSuccess: () => {
         setDeleteTarget(null)
-        setToast({ open: true, message: '리뷰를 삭제했어요.' })
+        setToast({ open: true, message: '리뷰를 삭제했어요.', variant: 'success' })
+      },
+      // 403(본인 리뷰 아님) 등 서버가 거절한 사유를 조용히 삼키지 않고 그대로 알린다.
+      onError: error => {
+        setDeleteTarget(null)
+        setToast({ open: true, message: reviewErrorMessage(error), variant: 'error' })
       },
     })
   }
@@ -275,7 +285,7 @@ function ReviewsBody({
         open={toast.open}
         onClose={() => setToast(t => ({ ...t, open: false }))}
         message={toast.message}
-        variant="success"
+        variant={toast.variant}
       />
     </div>
   )

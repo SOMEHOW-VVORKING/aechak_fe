@@ -178,7 +178,7 @@ test('[AC-REVIEW-E2E-007] 더보기가 실패해도 기존 목록은 유지된�
 
 // 서버가 내려준 "내 리뷰"(isMine=true) 한 건짜리 목록. 기본 픽스처는 전부 isMine=false라
 // 내 리뷰 카드(닉네임 + 액션)를 지나가지 않는다.
-async function stubMyServerReview(page: Page, reviewId = 321) {
+async function stubMyServerReview(page: Page, reviewId = 321, state = { deleted: false }) {
   await page.route(new RegExp(`/products/${REAL_ID}/reviews`), (route: Route) => {
     if (route.request().method() === 'OPTIONS') {
       return route.fulfill({
@@ -197,14 +197,18 @@ async function stubMyServerReview(page: Page, reviewId = 321) {
       createdAt: '2026-08-20T10:00:00',
       images: [],
     }
+    // 삭제 뒤 재조회는 실서버처럼 빈 목록을 준다 — 같은 리뷰를 계속 내려주면 캐시에서 뺀 카드가
+    // 무효화 재조회로 되살아나 삭제가 안 된 것처럼 보인다.
     return route.fulfill({
       status: 200,
       headers: CORS,
       json: {
         data: {
-          summary: { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
-          reviews: [mine],
-          totalCount: 1,
+          summary: state.deleted
+            ? { reviewCount: 0, averageRating: null, ratingDistribution: {} }
+            : { reviewCount: 1, averageRating: 5, ratingDistribution: { '5': 1 } },
+          reviews: state.deleted ? [] : [mine],
+          totalCount: state.deleted ? 0 : 1,
           nextCursor: null,
           hasNext: false,
         },
@@ -289,4 +293,33 @@ test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
   await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
+})
+
+test('[AC-REVIEW-E2E-011] 서버 리뷰를 삭제하면 DELETE를 부르고 목록에서 사라진다', async ({ page }) => {
+  const state = { deleted: false }
+  await stubMyServerReview(page, 321, state)
+  let deletedId: string | null = null
+  await page.route('**/api/v1/reviews/*', (route: Route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.fulfill({
+        status: 204,
+        headers: { ...CORS, 'Access-Control-Allow-Methods': 'DELETE', 'Access-Control-Allow-Headers': '*' },
+      })
+    }
+    deletedId = new URL(route.request().url()).pathname.split('/').pop() ?? null
+    state.deleted = true
+    return route.fulfill({ status: 204, headers: CORS, body: '' })
+  })
+  await page.goto(`/reviews/product/${REAL_ID}`)
+  await expect(page.getByText('서버에 저장된 내 리뷰예요.')).toBeVisible()
+  await shot(page, 'test-results/pr-c/04-product-reviews-mine.png')
+
+  await page.getByRole('button', { name: '삭제' }).click()
+  await expect(page.getByText('리뷰를 삭제할까요?')).toBeVisible()
+  await shot(page, 'test-results/pr-c/05-delete-confirm-modal.png')
+
+  await page.getByRole('button', { name: '삭제하기' }).click()
+  await expect.poll(() => deletedId).toBe('321')
+  // 재조회를 기다리지 않고 캐시에서 바로 빠진다.
+  await expect(page.getByText('서버에 저장된 내 리뷰예요.')).toBeHidden()
 })
