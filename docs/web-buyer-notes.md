@@ -1349,3 +1349,37 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   아무도 못 잡고 런타임에만 `undefined`가 샌다(실제로 `isMine`이 그렇게 빠져 있었다).
 
 ---
+
+### 리뷰 작성 — POST /reviews 연동 + orderItemId 게이트 (SCRUM-184, 2026-08-21)
+
+리뷰 작성(b4-st-2)이 로컬 스토어 목업에서 실 API(`POST /reviews`, JWT 필수)로 전환됐다.
+어댑터 관례(생성 훅이 아니라 fetcher만 소비, feature가 자체 `useMutation`으로 감쌈)는 breeds/문의
+절과 같고, 아래는 이 화면에서 새로 정한 것들이다.
+
+- **`orderItemId`가 있으면 서버, 없으면 로컬 스토어로 가는 게이트가 핵심이다.** 서버는 리뷰 대상을
+  `orderItemId`(Long)로 받는데 be에 주문 조회 API가 아직 없어(SCRUM-203/204 진행 중) 목업 주문에는
+  이 값이 없다. 그래서 `BuyerOrderItem.orderItemId?: number`를 optional로 얹고(순수 additive,
+  seller/admin 무영향) `useCreateReview`가 값 유무로 갈라진다 — 찜의 `findMockProduct` mock/real
+  게이트와 같은 방식이라, **주문 API가 열려 이 값이 채워지면 호출부 변경 없이 서버 경로로 넘어간다.**
+  지금 실제 화면은 항상 로컬 폴백을 타고, 서버 경로는 MSW/E2E로만 검증된다.
+- **서버 리뷰는 로컬 id에 `srv-` 접두를 붙여 구분한다**(`SERVER_ID_PREFIX`, `serverReviewId(localId)`).
+  작성 성공 시 응답의 `reviewId`/`content`/`optionName`/`createdAt`/`images`로 스토어를 덮어써서
+  목록·삭제가 서버와 같은 식별자를 본다. **`useProductReviews`의 로컬 머지는 `srv-` 리뷰를 제외해야
+  한다** — 서버 페이지가 이미 담고 있어 안 거르면 작성 직후 같은 리뷰가 두 번 렌더된다.
+- **사진은 presigned 업로드(`purpose: 'REVIEW_IMAGE'`) 후 tmp 키만 본문에 싣는다**
+  (`features/review/review.upload.ts`). `shared/pet`·`shared/account`의 업로드 유틸과 구조가 같지만
+  boundaries상 재사용이 안 돼 세 번째 복제다(그쪽 주석에도 같은 이유가 있다). 화면은 미리보기 URL만
+  들고 있으면 안 되고 **원본 `File`을 함께 보관**했다가 제출 시점에 올린다(`photos: { url, file? }[]` —
+  수정 진입으로 프리필된 기존 사진은 URL만 있어 `file`이 없다). 형식/용량은 발급 전에 화면에서
+  거른다(presigned PUT은 S3 직행이라 서버가 못 막는다). 한 장이라도 업로드에 실패하면 리뷰를 만들지
+  않는다(반쪽 리뷰 방지).
+- **실패 문구는 `reviewErrorMessage`가 errorCode로 고른다** — 110004(이미 작성·409)/110005(대상 없음)/
+  110007(구매확정 전)/110008(30일 초과)/110009(사진 5장 초과)/110010(취소·반품 건). 401은 인터셉터의
+  refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다. 화면은 등록 실패 시 `Alert variant="error"`로
+  머무르며 안내하고 이동하지 않는다.
+- **MSW `POST /reviews` 핸들러는 `handlers` 최상위에 등록**했고, presigned 핸들러도 `REVIEW_IMAGE`
+  purpose에 `reviews/images` 키를 내주도록 넓혔다(서버 `UploadPurpose.prefix`와 동일). 회귀는
+  `[AC-REVIEW-WRITE-001]`(실 주문 → 서버 저장·응답으로 덮기)·`[AC-REVIEW-WRITE-002]`(목업 주문 →
+  호출 0회·로컬 id 유지)·`[AC-REVIEW-WRITE-003]`(409 안내·화면 유지)가 잡는다.
+
+---

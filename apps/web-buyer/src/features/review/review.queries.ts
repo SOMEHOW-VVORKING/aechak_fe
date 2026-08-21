@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
-import { getProductReviews, type ReviewItemResponse } from '@aechak/api'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { createReview, getProductReviews, type ReviewItemResponse } from '@aechak/api'
 import type { Review } from '@aechak/domain'
 import { findMockProduct } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
@@ -13,6 +13,7 @@ import {
   type PendingReview,
   type ReviewSort,
 } from './review.mock'
+import { uploadReviewPhoto } from './review.upload'
 
 const PAGE_SIZE = 20
 
@@ -26,7 +27,8 @@ export interface ProductReviewItem extends Review {
 
 /**
  * 서버에 저장된 리뷰의 로컬 id 접두. 서버 리뷰(`srv-<reviewId>`)와 아직 서버에 없는 목업 작성분을
- * 구분하는 유일한 표식이라, 목록 머지와 수정 노출 판정이 이 접두를 함께 본다.
+ * 하나의 스토어에서 구분하는 유일한 표식이라, 목록 머지와 수정 노출 판정, 삭제 경로가 이 접두를
+ * 함께 본다.
  */
 const SERVER_ID_PREFIX = 'srv-'
 
@@ -196,8 +198,10 @@ export function useProductReviews(
     const others = pages.flatMap(p => p.items)
     // 내 리뷰(스토어)는 isMine=true로 얹되, mine+others를 활성 정렬로 함께 정렬한다 — 내 리뷰가
     // 정렬과 무관하게 상단에 고정되지 않도록. 포토 필터는 mine에도 동일 적용(others는 서버가 필터).
+    // 서버에 저장된 리뷰(srv-)는 서버 페이지가 이미 담고 있어 로컬에서 또 얹으면 두 번 보인다 —
+    // 아직 서버에 없는 목업 작성분만 올린다.
     let mine: ProductReviewItem[] = userReviews
-      .filter(r => r.productId === productId)
+      .filter(r => r.productId === productId && serverReviewId(r.id) == null)
       .map(r => ({ ...r, isMine: true }))
     if (photoOnly) mine = filterPhotoReviews(mine)
     return {
@@ -223,17 +227,78 @@ export function useProductReviews(
   }
 }
 
-// 리뷰 작성 mutation(신규). 리뷰 스토어에 반영되면 내 리뷰/상품 리뷰에 즉시 나타난다.
+export interface CreateReviewInput {
+  /** 화면이 조립한 리뷰(별점·본문·상품/주문). 서버 경로에서도 응답값으로 덮어 스토어에 넣는다. */
+  review: Review
+  /**
+   * 서버 주문 품목 id. 있으면 POST /reviews로 실제 저장하고, 없으면(목업 주문) 로컬 스토어만
+   * 갱신한다 — 주문 조회 API가 아직 없어 지금은 항상 후자를 탄다. 찜의 mock/real 게이트와 같은
+   * 방식이라, 주문 API가 열려 이 값이 채워지면 호출부 변경 없이 서버 경로로 넘어간다.
+   */
+  orderItemId?: number
+  /** 첨부 사진 원본. 서버 경로에서만 presigned 업로드해 imageKeys로 바꾼다. */
+  files?: File[]
+}
+
+// 리뷰 작성 mutation. 리뷰 스토어에 반영되면 내 리뷰/상품 리뷰에 즉시 나타난다.
 export function useCreateReview() {
-  return useMutation<void, Error, Review>({
-    mutationFn: review =>
-      new Promise(resolve => {
-        setTimeout(() => {
-          addReview(review)
-          resolve()
-        }, 500)
-      }),
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, CreateReviewInput>({
+    mutationFn: async ({ review, orderItemId, files = [] }) => {
+      if (orderItemId == null) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        addReview(review)
+        return
+      }
+      // 사진은 S3로 직접 올리고 tmp 키만 본문에 싣는다. 한 장이라도 실패하면 리뷰를 만들지 않는다
+      // (반쪽 리뷰가 남지 않게) — 업로드 실패는 그대로 mutation 에러로 올라간다.
+      const imageKeys = await Promise.all(files.map(uploadReviewPhoto))
+      const res = await createReview({
+        orderItemId,
+        rating: review.rating,
+        content: review.content,
+        imageKeys,
+      })
+      const saved = res.data
+      // 서버가 확정한 id·작성시각·옵션 스냅샷·이미지 URL로 덮어 스토어에 넣는다 — 목록/삭제가
+      // 서버와 같은 식별자를 보게 된다(id 접두로 서버 반영분을 구분).
+      addReview({
+        ...review,
+        id: `${SERVER_ID_PREFIX}${saved.reviewId}`,
+        rating: saved.rating as Review['rating'],
+        content: saved.content,
+        option: saved.optionName,
+        images: [...saved.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
+        createdAt: saved.createdAt.slice(0, 10).replace(/-/g, '.'),
+      })
+    },
+    // 목록·상세 미리보기 캐시를 모두 무효화한다(둘 다 ['reviews','product',id]로 시작).
+    onSuccess: (_, variables) =>
+      queryClient.invalidateQueries({ queryKey: ['reviews', 'product', variables.review.productId] }),
   })
+}
+
+// 작성 실패 문구. 401은 axios 인터셉터의 refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다.
+// 같은 status에 사유가 여러 개라 errorCode를 먼저 본다(onboarding.queries의 readErrorCode 패턴).
+export function reviewErrorMessage(error: unknown): string {
+  const response = (error as { response?: { status?: number; data?: { errorCode?: number; message?: string } } })
+    ?.response
+  switch (response?.data?.errorCode) {
+    case 110004:
+      return '이미 리뷰를 쓴 주문이에요.'
+    case 110005:
+      return '리뷰를 쓸 수 있는 주문을 찾지 못했어요.'
+    case 110007:
+      return '구매확정한 주문만 리뷰를 쓸 수 있어요.'
+    case 110008:
+      return '구매확정 30일이 지나 리뷰를 쓸 수 없어요.'
+    case 110009:
+      return '사진은 최대 5장까지 올릴 수 있어요.'
+    case 110010:
+      return '취소하거나 반품한 주문은 리뷰를 쓸 수 없어요.'
+    default:
+      return response?.data?.message ?? '리뷰를 등록하지 못했어요. 잠시 후 다시 시도해주세요.'
+  }
 }
 
 // 리뷰 수정 mutation.

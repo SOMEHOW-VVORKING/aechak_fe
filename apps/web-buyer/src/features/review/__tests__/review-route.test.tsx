@@ -5,9 +5,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
-import { PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
-import { resetOrders } from '@/shared/order'
-import { resetReviews } from '@/shared/review'
+import { PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, REVIEWS_URL, server } from '@/testing/msw/server'
+import { addOrder, resetOrders } from '@/shared/order'
+import { getReviews, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
 
 function renderAt(path: string) {
@@ -335,6 +335,122 @@ describe('리뷰 라우트', () => {
     // 되돌리기를 누르면 캐시된 최신순 목록이 다시 뜬다.
     await user.click(screen.getByRole('button', { name: '최신순으로 보기' }))
     expect(await screen.findByText('최신순에서만 보이는 리뷰예요.')).toBeInTheDocument()
+  })
+
+  // 실 주문(서버 orderItemId 보유) 하나를 얹는다 — 목업 시드 주문에는 orderItemId가 없어
+  // 작성이 로컬 폴백을 타므로, 서버 경로를 재현하려면 이 값을 가진 주문이 필요하다.
+  function seedServerOrder() {
+    addOrder({
+      id: '20260805-0001',
+      orderedAt: '2026.08.05 10:00',
+      status: 'delivered',
+      method: 'kakaopay',
+      groups: [
+        {
+          sellerId: 'seller-멍멍마트',
+          storeName: '멍멍마트',
+          shippingFee: 0,
+          items: [
+            {
+              productId: 'p-leash-5m',
+              name: '자동 리드줄 5m 대형견용',
+              option: '5m / 블랙',
+              quantity: 1,
+              unitPrice: 24000,
+              orderItemId: 77,
+            },
+          ],
+        },
+      ],
+      itemsTotal: 24000,
+      shippingTotal: 0,
+      couponDiscount: 0,
+      pointsUsed: 0,
+      paidAmount: 24000,
+      pointsEarned: 240,
+      deliveredAt: '2026.08.06',
+      autoConfirmAt: '2026.08.13',
+    })
+  }
+
+  async function writeReview(content: string) {
+    const user = userEvent.setup()
+    await screen.findByText('상품은 만족하셨나요?')
+    // 별점 입력은 radio 5개(1~5점) — 마지막이 5점이다.
+    const stars = screen.getAllByRole('radio')
+    await user.click(stars[stars.length - 1]!)
+    await user.type(screen.getByRole('textbox'), content)
+    await user.click(screen.getByRole('button', { name: '리뷰 등록' }))
+    return user
+  }
+
+  it('[AC-REVIEW-WRITE-001] 실 주문(orderItemId 보유)의 리뷰는 서버에 저장되고 서버 id로 반영된다', async () => {
+    seedServerOrder()
+    let posted: { orderItemId?: number; rating?: number } | null = null
+    server.use(
+      http.post(REVIEWS_URL, async ({ request }) => {
+        posted = (await request.json()) as { orderItemId: number; rating: number }
+        return HttpResponse.json(
+          {
+            data: {
+              reviewId: 977,
+              productId: 1,
+              rating: posted.rating,
+              content: '서버가 확정한 본문이에요.',
+              optionName: '5m / 블랙',
+              createdAt: '2026-08-21T10:00:00',
+              images: [],
+            },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    const router = renderAt('/reviews/write?productId=p-leash-5m&orderId=20260805-0001')
+    await writeReview('배송도 빠르고 튼튼해서 만족스러워요.')
+
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted!.orderItemId).toBe(77)
+    expect(posted!.rating).toBe(5)
+    // 서버 응답으로 스토어를 덮는다 — id는 srv- 접두, 본문/옵션/작성일도 서버 값이다.
+    await waitFor(() => expect(getReviews().some(r => r.id === 'srv-977')).toBe(true))
+    const saved = getReviews().find(r => r.id === 'srv-977')!
+    expect(saved.content).toBe('서버가 확정한 본문이에요.')
+    expect(saved.option).toBe('5m / 블랙')
+    expect(saved.createdAt).toBe('2026.08.21')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/mine'))
+  })
+
+  it('[AC-REVIEW-WRITE-002] 목업 주문(orderItemId 없음)은 서버를 부르지 않고 로컬에만 남는다', async () => {
+    let called = 0
+    server.use(
+      http.post(REVIEWS_URL, () => {
+        called += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+    await writeReview('목업 주문이라 로컬에만 남아야 해요.')
+
+    await waitFor(() =>
+      expect(getReviews().some(r => r.id === 'rv-20260703-0098-p-leash-5m')).toBe(true),
+    )
+    expect(called).toBe(0)
+  })
+
+  it('[AC-REVIEW-WRITE-003] 이미 리뷰를 쓴 주문(409)은 화면에 사유를 안내한다', async () => {
+    seedServerOrder()
+    server.use(
+      http.post(REVIEWS_URL, () =>
+        HttpResponse.json({ errorCode: 110004, message: '이미 리뷰를 작성한 주문입니다.' }, { status: 409 }),
+      ),
+    )
+    const router = renderAt('/reviews/write?productId=p-leash-5m&orderId=20260805-0001')
+    await writeReview('이미 쓴 주문이라 실패해야 해요.')
+
+    expect(await screen.findByText('이미 리뷰를 쓴 주문이에요.')).toBeInTheDocument()
+    // 실패했으니 이동하지 않고 작성 화면에 머문다.
+    expect(router.state.location.pathname).toBe('/reviews/write')
   })
 
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {

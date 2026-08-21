@@ -101,6 +101,7 @@ export const UploadPurpose = {
   USER_PROFILE: 'USER_PROFILE',
   PET_PROFILE: 'PET_PROFILE',
   SELLER_DOCUMENT: 'SELLER_DOCUMENT',
+  REVIEW_IMAGE: 'REVIEW_IMAGE',
 } as const
 
 export interface IssuePresignedUrlRequest {
@@ -487,6 +488,39 @@ export interface ReviewListData {
 
 export interface ReviewListEnvelope {
   data: ReviewListData
+}
+
+export interface CreateReviewRequest {
+  /** 리뷰를 작성할 주문 품목 id */
+  orderItemId: number
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  rating: number
+  /**
+   * @minLength 10
+   * @maxLength 1000
+   */
+  content: string
+  /** presigned 업로드로 받은 tmp 키 목록(최대 5장). 생략하면 사진 없는 리뷰. */
+  imageKeys?: string[]
+}
+
+export interface CreateReviewResponse {
+  reviewId: number
+  /** 서버 내부 상품 id(숫자). 화면이 쓰는 공개 ULID와 다르다. */
+  productId: number
+  rating: number
+  content: string
+  optionName: string
+  /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-21T10:00:00) */
+  createdAt: string
+  images: ReviewImageResponse[]
+}
+
+export interface CreateReviewEnvelope {
+  data: CreateReviewResponse
 }
 
 export interface ProductCategory {
@@ -3371,6 +3405,80 @@ export function useGetProductReviewsSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 구매확정한 주문 품목에 리뷰를 쓴다. 1주문 1리뷰이며 구매확정 30일 이내만 허용한다. imageKeys는 presigned 업로드(purpose=REVIEW_IMAGE)로 받은 tmp 키 목록이고 서버가 정식 위치로 옮긴다.
+ * @summary 리뷰 작성
+ */
+export const createReview = (createReviewRequest: CreateReviewRequest, signal?: AbortSignal) => {
+  return customInstance<CreateReviewEnvelope>({
+    url: `/reviews`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: createReviewRequest,
+    signal,
+  })
+}
+
+export const getCreateReviewMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createReview>>,
+    TError,
+    { data: CreateReviewRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createReview>>,
+  TError,
+  { data: CreateReviewRequest },
+  TContext
+> => {
+  const mutationKey = ['createReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createReview>>,
+    { data: CreateReviewRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return createReview(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createReview>>>
+export type CreateReviewMutationBody = CreateReviewRequest
+export type CreateReviewMutationError = void
+
+/**
+ * @summary 리뷰 작성
+ */
+export const useCreateReview = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createReview>>,
+      TError,
+      { data: CreateReviewRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createReview>>,
+  TError,
+  { data: CreateReviewRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**
