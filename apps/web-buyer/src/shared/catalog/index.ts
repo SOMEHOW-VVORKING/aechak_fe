@@ -25,6 +25,7 @@ export {
   isFreeShipping,
 } from './products'
 export type { CatalogProduct } from './products'
+export { toCatalogProduct } from './product-summary.mapper'
 export { buildCartView } from './cart-view'
 export type { CartView, CartSellerGroup, CartLineView } from './cart-view'
 export { buildOrderFromContext } from './order-build'
@@ -32,10 +33,19 @@ export type { OrderBuildInput } from './order-build'
 export { ProductGrid } from './ProductGrid'
 export type { ProductGridProps } from './ProductGrid'
 export {
+  toggleWishlist,
+  onWishlistLogout,
+  resetWishlistState,
+  hydrateLikedFromSummaries,
+  hydrateLikedFromDetail,
+  currentSessionEpoch,
+  LIKED_PRODUCTS_QUERY_KEY,
+} from './wishlist.queries'
+export {
   isWished,
   addWish,
   removeWish,
-  toggleWish,
+  hydrateWished,
   resetWishlist,
   useWishedIds,
   useIsWished,

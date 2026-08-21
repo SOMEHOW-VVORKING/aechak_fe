@@ -3,6 +3,7 @@ import type { ProductDetailResponse, ProductOptionsResponse } from '@aechak/api'
 import { mapProductDetail, mapProductOptions, mockOptionsFromDetail } from '../product.map'
 
 function detail(overrides: Partial<ProductDetailResponse> = {}): ProductDetailResponse {
+  const saleStatus = overrides.saleStatus ?? 'ON_SALE'
   return {
     productId: '01DETAIL',
     name: '리얼 급식기',
@@ -21,6 +22,7 @@ function detail(overrides: Partial<ProductDetailResponse> = {}): ProductDetailRe
       { categoryId: 11, name: '사료/간식', depth: 2 },
     ],
     isLiked: true,
+    isPurchasable: saleStatus === 'ON_SALE',
     ...overrides,
   }
 }

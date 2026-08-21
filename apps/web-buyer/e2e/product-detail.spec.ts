@@ -39,7 +39,9 @@ const DETAIL = {
       { categoryId: 1, name: '강아지', depth: 1 },
       { categoryId: 11, name: '사료/간식', depth: 2 },
     ],
+    // ProductDetailResponse의 필수 필드(SCRUM-190) — e2e/는 tsc include 밖이라 손으로 맞출 것.
     isLiked: false,
+    isPurchasable: true,
   },
 }
 

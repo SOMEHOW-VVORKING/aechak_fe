@@ -1,27 +1,43 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
-import { /* Bell, */ Database, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
+import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { logout } from '@/shared/auth'
+import { endServerSession, logout } from '@/shared/auth'
+import { onWishlistLogout } from '@/shared/catalog'
 import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 
-// 설정 홈(b11-st-1). 섹션형 설정 목록 + 로그아웃(확인 Modal). 목업의 본인 인증/펫 프로필/
-// 고객센터 문의/회원 탈퇴/셀러 입점은 각각 다른 배치(Phase 4·범위 밖) 소관이라, 이번 배치가
-// 실제로 소유한 하위 화면으로만 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
+// 설정 홈(b11-st-1). 섹션형 설정 목록 + 로그아웃(확인 Modal). 고객센터 문의(b6-st-3)는
+// SCRUM-189에서 추가돼 /settings/inquiry로 배선했다. 목업의 본인 인증/펫 프로필/회원 탈퇴/
+// 셀러 입점은 각각 다른 배치(Phase 4·범위 밖) 소관이라, 이번 배치가 실제로 소유한 하위 화면으로만
+// 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
 export function SettingsHomeScreen() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [logoutOpen, setLogoutOpen] = useState(false)
 
   const goBack = useSafeBack({ to: '/mypage' })
 
+  // 서버 세션 종료(RT 무효화 + 쿠키 만료 + access 파기)를 먼저 하고 로컬 상태를 정리한다.
+  // endServerSession은 전송 실패를 삼키므로(멱등 204 계약) onSettled 한 곳에서 마무리한다.
+  const logoutSession = useMutation({ mutationFn: endServerSession })
+
   const handleLogout = () => {
-    logout()
-    setLogoutOpen(false)
-    navigate({ to: '/' })
+    logoutSession.mutate(undefined, {
+      onSettled: () => {
+        logout()
+        // 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리(공유 기기·재진입 대비)
+        onWishlistLogout(queryClient)
+        // 계정 단위 서버 캐시(내 정보/적립금/펫 등)가 다음 사용자에게 새지 않게 전부 비운다.
+        queryClient.clear()
+        setLogoutOpen(false)
+        navigate({ to: '/' })
+      },
+    })
   }
 
   return (
@@ -43,6 +59,11 @@ export function SettingsHomeScreen() {
             icon={<HelpCircle className="size-5" />}
             label="자주 묻는 질문"
             onClick={() => navigate({ to: '/settings/faq' })}
+          />
+          <SettingsNavRow
+            icon={<Headphones className="size-5" />}
+            label="고객센터 문의"
+            onClick={() => navigate({ to: '/settings/inquiry' })}
           />
         </SettingsGroup>
 
@@ -105,6 +126,7 @@ export function SettingsHomeScreen() {
         confirmLabel="로그아웃"
         cancelLabel="취소"
         onConfirm={handleLogout}
+        loading={logoutSession.isPending}
       />
     </MobileScreen>
   )

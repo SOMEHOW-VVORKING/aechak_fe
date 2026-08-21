@@ -140,15 +140,15 @@ describe('/products/$productId', () => {
     await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
 
     // 하트는 텍스트가 아니라 aria-label 버튼이다(찜 전 '찜하기', 찜 후 '찜 해제').
-    // p-feeder-5l은 찜 시드(SEED_IDS)라 처음부터 '찜 해제'/aria-pressed=true 상태다.
-    await user.click(screen.getByRole('button', { name: '찜 해제' }))
+    // 찜 미러는 SCRUM-113에서 시드가 사라져 빈 상태로 시작하므로 처음엔 '찜하기'/aria-pressed=false다.
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
     expect(
       screen.getByText('찜은 로그인한 회원만 이용할 수 있어요.', { exact: false }),
     ).toBeInTheDocument()
-    // 찜이 토글되지 않았다 — 여전히 '찜 해제'(찜 유지) + aria-pressed true, 찜 토스트도 없다.
-    expect(screen.getByRole('button', { name: '찜 해제' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByText('찜을 해제했어요.')).not.toBeInTheDocument()
+    // 찜이 토글되지 않았다 — 여전히 '찜하기'(미찜) + aria-pressed false, 찜 토스트도 없다.
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
+  Ban,
   Briefcase,
   Building2,
   Check,
@@ -9,7 +10,6 @@ import {
   FileEdit,
   FileText,
   Loader,
-  RotateCw,
   User,
   XCircle,
 } from 'lucide-react'
@@ -38,16 +38,22 @@ export const Route = createFileRoute('/sellers/applications')({
   component: SellerApplicationsPage,
 })
 
+// BE ApplicationStatus 1:1. draft/cancelled는 어드민 목록에 실릴 일이 없는 값이지만(작성 중은
+// 셀러 로컬 단계, cancelled는 할당 경로 없음) Record라 전 키를 채운다 — 필터 옵션에도 그대로 파생.
 const statusMeta: Record<
   SellerApplicationStatus,
-  { label: string; variant: 'neutral' | 'info' | 'success' | 'error' | 'warning'; icon: typeof Clock }
+  {
+    label: string
+    variant: 'neutral' | 'info' | 'success' | 'error' | 'warning' | 'muted'
+    icon: typeof Clock
+  }
 > = {
-  pending: { label: '심사 대기', variant: 'neutral', icon: Clock },
+  draft: { label: '작성 중', variant: 'muted', icon: FileEdit },
+  submitted: { label: '심사 대기', variant: 'neutral', icon: Clock },
   reviewing: { label: '심사 중', variant: 'info', icon: Loader },
   approved: { label: '승인', variant: 'success', icon: Check },
   rejected: { label: '반려', variant: 'error', icon: XCircle },
-  'revision-requested': { label: '보완 요청', variant: 'warning', icon: FileEdit },
-  resubmitted: { label: '재제출', variant: 'warning', icon: RotateCw },
+  cancelled: { label: '신청 취소', variant: 'muted', icon: Ban },
 }
 
 const decisionModalMeta: Record<
@@ -71,19 +77,11 @@ const decisionModalMeta: Record<
   },
   reject: {
     title: '신청을 반려할까요?',
-    description: '반려 사유가 신청자에게 통보돼요.',
+    description: '반려 사유가 신청자에게 통보돼요. 신청자는 보완 후 다시 제출할 수 있어요.',
     confirmLabel: '반려',
     confirmVariant: 'danger',
     nextStatus: 'rejected',
     message: '신청을 반려했어요.',
-  },
-  revision: {
-    title: '보완을 요청할까요?',
-    description: '보완 요청 내용이 신청자에게 전달돼요.',
-    confirmLabel: '보완 요청',
-    confirmVariant: 'primary',
-    nextStatus: 'revision-requested',
-    message: '보완을 요청했어요.',
   },
 }
 
@@ -185,7 +183,11 @@ function SellerApplicationsPage() {
       items.filter(row => {
         if (statusFilter !== 'all' && row.status !== statusFilter) return false
         if (typeFilter !== 'all' && row.sellerType !== typeFilter) return false
-        if (search && !row.applicantName.includes(search) && !row.businessNumberMasked?.includes(search))
+        if (
+          search &&
+          !(row.applicantName ?? '').includes(search) &&
+          !row.businessNumberMasked?.includes(search)
+        )
           return false
         return true
       }),
@@ -198,7 +200,6 @@ function SellerApplicationsPage() {
 
   const [decision, setDecision] = useState('approve')
   const [rejectionReason, setRejectionReason] = useState('')
-  const [revisionNote, setRevisionNote] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
 
@@ -206,11 +207,8 @@ function SellerApplicationsPage() {
 
   function openDrawer(row: SellerApplication) {
     setSelectedId(row.id)
-    setDecision(
-      row.status === 'rejected' ? 'reject' : row.status === 'revision-requested' ? 'revision' : 'approve',
-    )
+    setDecision(row.status === 'rejected' ? 'reject' : 'approve')
     setRejectionReason(row.rejectionReason ?? '')
-    setRevisionNote(row.revisionNote ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
 
@@ -227,8 +225,8 @@ function SellerApplicationsPage() {
           ? {
               ...row,
               status: nextStatus,
-              rejectionReason: nextStatus === 'rejected' ? rejectionReason : row.rejectionReason,
-              revisionNote: nextStatus === 'revision-requested' ? revisionNote : row.revisionNote,
+              // BE 계약: rejectionReason은 REJECTED일 때만 값이 있다(승인 시 null로 비워짐).
+              rejectionReason: nextStatus === 'rejected' ? rejectionReason : undefined,
               internalMemo,
             }
           : row,
@@ -239,7 +237,7 @@ function SellerApplicationsPage() {
   }
 
   const pendingCount = useMemo(
-    () => items.filter(row => row.status === 'pending' || row.status === 'reviewing').length,
+    () => items.filter(row => row.status === 'submitted' || row.status === 'reviewing').length,
     [items],
   )
   const applicationColumns = useMemo(() => makeApplicationColumns(openDrawer), [])
@@ -248,7 +246,7 @@ function SellerApplicationsPage() {
     <div className="p-6">
       <PageHeader title="셀러 입점 심사" />
       <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        입점 신청을 확인하고 승인 · 반려 · 보완 요청을 처리합니다.
+        입점 신청을 확인하고 승인 · 반려를 처리합니다.
       </p>
 
       <div className="mb-3.5 flex items-center justify-between gap-4">
@@ -307,20 +305,14 @@ function SellerApplicationsPage() {
                     {SelectedStatusIcon && <SelectedStatusIcon className="size-3" />}
                     {statusMeta[selected.status].label}
                   </StatusPill>
-                  {!!selected.resubmissionCount && (
-                    <StatusPill variant="warning">
-                      <RotateCw className="size-3" />
-                      재제출 {selected.resubmissionCount}회
-                    </StatusPill>
-                  )}
                 </>
               }
             >
               <SummaryGrid
                 items={[
-                  { label: '대표자', value: selected.representativeNameMasked },
+                  { label: '대표자', value: selected.representativeNameMasked ?? '—' },
                   { label: '사업자번호', value: selected.businessNumberMasked ?? '미보유' },
-                  { label: '연락처', value: selected.phoneMasked },
+                  { label: '연락처', value: selected.phoneMasked ?? '—' },
                 ]}
               />
             </DrawerSummaryCard>
@@ -342,6 +334,8 @@ function SellerApplicationsPage() {
               </div>
             </DetailField>
 
+            {/* BE 심사 결정은 승인/반려 2종이다 — 보완 요청은 별도 상태가 아니라 반려(사유 통보)
+                후 신청자가 재제출하는 플로우로 흡수됐다(ApplicationStatus 1:1 정리). */}
             <DetailField label="심사 결과">
               <DecisionRadioGroup
                 name="application-decision"
@@ -349,8 +343,7 @@ function SellerApplicationsPage() {
                 onChange={setDecision}
                 options={[
                   { value: 'approve', label: '승인', caption: '입점 승인 후 셀러 어드민 활성화' },
-                  { value: 'reject', label: '반려', caption: '신청 반려 · 사유 통보' },
-                  { value: 'revision', label: '보완 요청', caption: '서류 보완 후 재제출 요청' },
+                  { value: 'reject', label: '반려', caption: '신청 반려 · 사유 통보 후 재제출 유도' },
                 ]}
               />
             </DetailField>
@@ -366,18 +359,6 @@ function SellerApplicationsPage() {
                   value={rejectionReason}
                   onChange={setRejectionReason}
                   placeholder="사유 선택"
-                />
-              </DetailField>
-            )}
-
-            {decision === 'revision' && (
-              <DetailField label="보완 요청 내용" visibility="visible-to-user">
-                <Textarea
-                  value={revisionNote}
-                  onChange={setRevisionNote}
-                  maxLength={300}
-                  rows={3}
-                  placeholder="보완이 필요한 내용을 입력하세요."
                 />
               </DetailField>
             )}

@@ -229,13 +229,11 @@ export interface BuyerAccount {
   nickname: string
   bio: string // 자기소개(프로필에 노출)
   email: string // 마스킹 표시용
-  phone: string // 본인 인증 입력 프리필용 전체 번호
+  phone: string // 서버 마스킹 표시용 번호(인증 전 빈 문자열) — 클라이언트 마스킹 없음
   avatarUrl?: string // 표시용 URL
   profileImageKey?: string // 프로필 수정 시 사진 유지로 되돌려 보낼 원본 키(avatarUrl에서 역파싱 금지)
   isPendingOnboarding?: boolean // 온보딩 미완료(PENDING) 여부 — 이 유저는 마이 허브 대신 온보딩으로 보낸다
   verification: VerificationStatus
-  verifiedPhoneMasked?: string // 인증 완료 시 마스킹된 번호
-  verifiedAt?: string // 'YYYY.MM.DD'
 }
 
 export type ClaimType = 'cancel' | 'return' | 'exchange' | 'dispute'
@@ -285,52 +283,55 @@ export interface HistoryEntry {
   date: string
 }
 
+// BE ApplicationStatus(DRAFT/SUBMITTED/REVIEWING/APPROVED/REJECTED/CANCELLED)와 1:1 —
+// 과거 FE 전용 상태(pending/revision-requested/resubmitted)는 BE 응답 스키마에 존재하지 않아
+// 제거됐다. 반려 후 재제출은 별도 상태가 아니라 REJECTED → (saveDraft 자동 reopen) → DRAFT →
+// SUBMITTED 전이로 표현된다. reviewing/cancelled는 서버에 정의만 있고 현재 할당 경로가 없다.
 export type SellerApplicationStatus =
-  | 'pending'
+  | 'draft'
+  | 'submitted'
   | 'reviewing'
   | 'approved'
   | 'rejected'
-  | 'revision-requested'
-  | 'resubmitted'
+  | 'cancelled'
 
-// 'business'의 세부 유형(개인 사업자 vs 법인 사업자) — sellerType은 admin 필터·표시용 굵은 분류로 그대로 두고,
-// 셀러 자신의 재제출 폼(b5-st-2)에서만 필요한 세부값이라 별도 optional 필드로 분리했다.
+// BE BusinessType(PERSONAL_GENERAL/SOLE_PROPRIETORSHIP/CORPORATE)과 1:1. sellerType은 admin
+// 필터·표시용 굵은 분류로 그대로 두고, 세분류가 필요한 화면은 legalType을 본다.
 export type SellerLegalType = 'individual' | 'individual-business' | 'corporate-business'
 
-export type SellerApplicationDocumentStatus = 'submitted' | 'resubmission-required' | 'not-applicable'
-
+// 신청 서류. BE는 종류(documentType)와 등록 시각만 갖는다 — 서류별 개별 상태(보완요청 등)는
+// BE에 없고 반려는 신청 단위(rejectionReason)다. label은 FE가 documentType에서 파생한다.
 export interface SellerApplicationDocument {
-  key: string
+  key: string // BE SellerDocumentType 값(ID_CARD 등) 또는 admin mock의 서류 키
   label: string
-  status?: SellerApplicationDocumentStatus
-  note?: string
-  required?: boolean
+  uploadedAt?: string
 }
 
+// BE ApplicationResponse와 1:1인 셀러 신청서 + web-admin 심사 화면 전용 마스킹 프로젝션(optional).
+// admin 심사 API(SCRUM-170)는 미머지 상태라 masked 계열은 admin mock에서만 채워진다.
 export interface SellerApplication {
-  id: string
-  applicantName: string
-  sellerType: 'business' | 'individual'
-  legalType?: SellerLegalType
-  businessNumberMasked?: string
+  id: string // BE applicationId(Long) 문자열화
   status: SellerApplicationStatus
-  appliedAt: string
-  representativeNameMasked: string
-  phoneMasked: string
-  // 아래 필드들은 셀러 자신이 자기 신청서를 보는 화면(마스킹 불필요)에서만 채워진다 —
-  // web-admin 심사 화면은 위 masked 필드만 계속 사용.
+  legalType: SellerLegalType // BE businessType 1:1 매핑
+  businessName?: string
+  businessRegNo?: string
+  corpRegNo?: string
   representativeName?: string
-  phone?: string
-  phoneVerified?: boolean
-  email?: string
-  businessAddress?: string
-  bankName?: string
-  bankAccountNumber?: string
-  bankAccountHolder?: string
+  telesalesNumber?: string
+  bankCode?: string
+  accountNumberMasked?: string // 평문 계좌번호는 응답에 없다 — 수정하려면 재입력
+  accountHolder?: string
+  appliedAt: string
+  submittedAt?: string
+  decidedAt?: string
+  rejectionReason?: string // REJECTED일 때만 값
   documents: SellerApplicationDocument[]
-  resubmissionCount?: number
-  rejectionReason?: string
-  revisionNote?: string
+  // ── web-admin 심사 화면 전용(마스킹 프로젝션, admin mock에서만 채움) ──
+  applicantName?: string
+  sellerType?: 'business' | 'individual'
+  businessNumberMasked?: string
+  representativeNameMasked?: string
+  phoneMasked?: string
   internalMemo?: string
 }
 

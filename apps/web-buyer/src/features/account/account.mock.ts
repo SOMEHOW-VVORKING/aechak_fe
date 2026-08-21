@@ -11,9 +11,14 @@ const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
 
 export const BIO_MAX = 150
 
-// 본인 인증 목업 — 테스트 고정 인증번호(실제 SMS 연동은 범위 밖). 이 코드만 인증 성공 처리한다.
-export const TEST_OTP_CODE = '000000'
+// 본인 인증(b10-st-9) 클라이언트 사전 검증 — 서버(@Pattern)와 동일한 규칙. 형식이 통과할 때만
+// 발송 요청을 쏜다(위반은 서버도 400 errorCode 90001로 거절). 인증번호 대조는 전적으로 서버 소관.
 export const OTP_LENGTH = 6
+const PHONE_NUMBER_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/
+
+export function isValidPhoneNumber(phone: string): boolean {
+  return PHONE_NUMBER_PATTERN.test(phone.trim())
+}
 
 // 닉네임 형식 검증(실서버 정규식). 성공 시 목업의 "사용할 수 있는 닉네임이에요" 메시지를 돌려준다.
 export function validateNickname(nickname: string): { ok: boolean; message: string } {
@@ -22,11 +27,6 @@ export function validateNickname(nickname: string): { ok: boolean; message: stri
   if (!NICKNAME_PATTERN.test(normalized))
     return { ok: false, message: '닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요.' }
   return { ok: true, message: '사용할 수 있는 닉네임이에요.' }
-}
-
-// 인증번호 형식 검증(6자리 숫자 + 고정 코드 일치).
-export function isValidOtp(code: string): boolean {
-  return code === TEST_OTP_CODE
 }
 
 // ── 회원 탈퇴 차단 판정(b10-st-5) ──

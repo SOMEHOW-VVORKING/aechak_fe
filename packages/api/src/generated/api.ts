@@ -100,11 +100,12 @@ export type UploadPurpose = (typeof UploadPurpose)[keyof typeof UploadPurpose]
 export const UploadPurpose = {
   USER_PROFILE: 'USER_PROFILE',
   PET_PROFILE: 'PET_PROFILE',
+  SELLER_DOCUMENT: 'SELLER_DOCUMENT',
 } as const
 
 export interface IssuePresignedUrlRequest {
   purpose: UploadPurpose
-  /** image/png, image/jpeg, image/webp (프로필 사진). 허용 밖이면 400 errorCode 100000 */
+  /** 프로필 사진(USER_PROFILE/PET_PROFILE)은 image/png·image/jpeg·image/webp, 셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000 */
   contentType: string
 }
 
@@ -347,6 +348,11 @@ export interface ProductSummaryResponse {
   /** @nullable */
   averageRating: number | null
   reviewCount: number
+  isLiked: boolean
+  /** 상세 진입 가능 여부(카테고리 체인 활성). 목록/검색은 항상 true, 찜 목록만 false가 나올 수 있다. */
+  isViewable: boolean
+  /** 구매 가능 여부(isViewable && saleStatus=ON_SALE). 진입 불가 상품은 판매중이어도 false라 품절과 다르다. */
+  isPurchasable: boolean
 }
 
 export interface ProductListData {
@@ -506,6 +512,8 @@ export interface ProductDetailResponse {
   review: ProductReviewSummary
   categories: ProductCategory[]
   isLiked: boolean
+  /** 구매 가능 여부(saleStatus=ON_SALE). 상세는 카테고리 체인 활성을 이미 걸러 요약과 달리 isViewable 항이 없다. */
+  isPurchasable: boolean
 }
 
 export interface ProductDetailEnvelope {
@@ -595,6 +603,174 @@ export interface NicknameRequest {
   nickname: string
 }
 
+/**
+ * 입점 신청 상태. 현재 서버가 실제로 할당하는 값은 DRAFT/SUBMITTED/APPROVED/REJECTED이고 REVIEWING·CANCELLED은 정의만 존재한다(도달 경로 없음 — 어드민 심사 API 확장 대비)
+ */
+export type ApplicationStatus = (typeof ApplicationStatus)[keyof typeof ApplicationStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ApplicationStatus = {
+  DRAFT: 'DRAFT',
+  SUBMITTED: 'SUBMITTED',
+  REVIEWING: 'REVIEWING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED',
+} as const
+
+/**
+ * 셀러 유형 — 개인 일반/개인 사업자/법인 사업자. 제출 시점의 유형 기준으로 필수 정보·서류를 재평가한다
+ */
+export type BusinessType = (typeof BusinessType)[keyof typeof BusinessType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const BusinessType = {
+  PERSONAL_GENERAL: 'PERSONAL_GENERAL',
+  SOLE_PROPRIETORSHIP: 'SOLE_PROPRIETORSHIP',
+  CORPORATE: 'CORPORATE',
+} as const
+
+/**
+ * 입점 서류 종류(서버 DocumentType). 유형별 필수 세트 — PERSONAL_GENERAL: 신분증·통장 사본 / SOLE_PROPRIETORSHIP: + 사업자등록증·통신판매업 신고증 / CORPORATE: 6종 전부
+ */
+export type SellerDocumentType = (typeof SellerDocumentType)[keyof typeof SellerDocumentType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerDocumentType = {
+  ID_CARD: 'ID_CARD',
+  BANKBOOK_COPY: 'BANKBOOK_COPY',
+  BUSINESS_REGISTRATION: 'BUSINESS_REGISTRATION',
+  TELESALES_REPORT: 'TELESALES_REPORT',
+  CORP_REGISTER: 'CORP_REGISTER',
+  CORP_SEAL: 'CORP_SEAL',
+} as const
+
+export interface SellerApplicationDocument {
+  /** SellerDocumentType 값(서버가 String으로 직렬화) */
+  documentType: string
+  /** 등록/교체 시각 — LocalDateTime 직렬화라 타임존 오프셋이 없다 */
+  uploadedAt: string
+}
+
+export interface SellerApplicationDetail {
+  applicationId: number
+  status: ApplicationStatus
+  businessType: BusinessType
+  /** @nullable */
+  businessName: string | null
+  /** @nullable */
+  businessRegNo: string | null
+  /** @nullable */
+  corpRegNo: string | null
+  /** @nullable */
+  representativeName: string | null
+  /** @nullable */
+  telesalesNumber: string | null
+  /** @nullable */
+  bankCode: string | null
+  /**
+   * 뒤 4자리 외 전부 '*'. 평문 계좌번호는 응답에 절대 실리지 않는다 — 수정하려면 사용자가 다시 입력해야 한다
+   * @nullable
+   */
+  accountNumberMasked: string | null
+  /** @nullable */
+  accountHolder: string | null
+  /** 신청 생성 시각(LocalDateTime) */
+  appliedAt: string
+  /** @nullable */
+  submittedAt: string | null
+  /** @nullable */
+  decidedAt: string | null
+  /**
+   * status가 REJECTED일 때만 값이 있고 그 외에는 항상 null
+   * @nullable
+   */
+  rejectionReason: string | null
+  documents: SellerApplicationDocument[]
+}
+
+export interface SellerApplicationResponse {
+  data: SellerApplicationDetail
+}
+
+export interface SellerApplicationDocumentInput {
+  documentType: SellerDocumentType
+  /** presigned 발급(purpose=SELLER_DOCUMENT) 응답의 key를 그대로 싣는다 */
+  tmpKey: string
+}
+
+/**
+ * 폼 필드는 전체 덮어쓰기(생략/null이면 소거), documents는 부분 upsert(같은 종류는 한 요청에 한 번만 — 위반 400 errorCode 90001). 계좌번호는 응답이 마스킹뿐이라 수정 시 재입력 필요.
+ */
+export interface SaveSellerApplicationDraftRequest {
+  businessType: BusinessType
+  /**
+   * @maxLength 100
+   * @nullable
+   */
+  businessName?: string | null
+  /**
+   * 하이픈 허용 10자리 + 국세청 체크섬. 위반 400 errorCode 90001
+   * @nullable
+   */
+  businessRegNo?: string | null
+  /**
+   * @maxLength 20
+   * @nullable
+   */
+  corpRegNo?: string | null
+  /**
+   * @maxLength 50
+   * @nullable
+   */
+  representativeName?: string | null
+  /**
+   * @maxLength 50
+   * @nullable
+   */
+  telesalesNumber?: string | null
+  /**
+   * @maxLength 10
+   * @nullable
+   */
+  bankCode?: string | null
+  /**
+   * 평문 입력 — 서버가 암호화 저장하고 응답에는 accountNumberMasked만 온다
+   * @maxLength 64
+   * @nullable
+   */
+  accountNumber?: string | null
+  /**
+   * @maxLength 50
+   * @nullable
+   */
+  accountHolder?: string | null
+  documents?: SellerApplicationDocumentInput[]
+}
+
+export interface SendPhoneCodeRequest {
+  /** ^01[016789]-?\d{3,4}-?\d{4}$ — 하이픈 유무 모두 허용. 위반 400 errorCode 90001 */
+  phoneNumber: string
+}
+
+export interface ConfirmPhoneCodeRequest {
+  /** 발송 때 보낸 번호와 같아야 한다 — 불일치는 코드 오류와 함께 30005로 통합 */
+  phoneNumber: string
+  /** 6자리 숫자(^\d{6}$). 형식 위반 400 errorCode 90001 */
+  code: string
+}
+
+export interface PhoneCodeSent {
+  /** 인증번호 유효시간(초, 현재 180). FE 만료 타이머의 원천 — 하드코딩 금지 */
+  expiresInSeconds: number
+  /** 재발송 쿨다운(초, 현재 60). FE 재발송 타이머의 원천 — 하드코딩 금지 */
+  resendCooldownSeconds: number
+}
+
+export interface PhoneCodeSentResponse {
+  data: PhoneCodeSent
+}
+
 export interface UserMe {
   /** 계정 상태 — PENDING_ONBOARDING | ACTIVE | SUSPENDED | WITHDRAWN. 닉네임 설정 완료 후 ACTIVE */
   status: string
@@ -618,7 +794,7 @@ export interface UserMe {
    */
   email: string | null
   /**
-   * 현재 항상 null(전화 인증 연동 전)
+   * 인증 전 null, 인증 후 서버 마스킹 표시용(예: 010-****-5678)
    * @nullable
    */
   phoneNumber: string | null
@@ -646,6 +822,45 @@ export interface UpdateProfileRequest {
    * @nullable
    */
   profileImageKey: string | null
+}
+
+/**
+ * 문의 유형
+ */
+export type SubmitInquiryRequestInquiryType =
+  (typeof SubmitInquiryRequestInquiryType)[keyof typeof SubmitInquiryRequestInquiryType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SubmitInquiryRequestInquiryType = {
+  ACCOUNT: 'ACCOUNT',
+  ORDER_PAYMENT: 'ORDER_PAYMENT',
+  DELIVERY_CLAIM: 'DELIVERY_CLAIM',
+  SELLER_PRODUCT: 'SELLER_PRODUCT',
+  SERVICE_ETC: 'SERVICE_ETC',
+} as const
+
+export interface SubmitInquiryRequest {
+  /** 문의 유형 */
+  inquiryType: SubmitInquiryRequestInquiryType
+  /** 답변받을 이메일. 형식 위반 400 INVALID_REQUEST */
+  replyEmail: string
+  /**
+   * 문의 내용. 1~2000자
+   * @minLength 1
+   * @maxLength 2000
+   */
+  content: string
+}
+
+export type SubmitInquiryResponseData = {
+  /** 접수 상태. RECEIVED */
+  status: string
+  /** 접수 시각 ISO-8601 */
+  createdAt: string
+}
+
+export interface SubmitInquiryResponse {
+  data: SubmitInquiryResponseData
 }
 
 export type HealthCheck200 = {
@@ -719,6 +934,18 @@ export type GetProductReviewsParams = {
    * 사진이 있는 리뷰만
    */
   photoOnly?: boolean
+  /**
+   * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetLikedProductsParams = {
   /**
    * 다음 페이지 커서(이전 응답의 nextCursor)
    */
@@ -2502,7 +2729,7 @@ export const useDeleteRecentKeyword = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404.
+ * 상품 상세. 인증 필요(permitAll 매처가 /products 정확 일치라 하위 경로는 비로그인 401). principal로 isLiked를 계산한다. 미존재/노출불가 productId는 404.
  * @summary 상품 상세 조회
  */
 export const getProductDetail = (productId: string, signal?: AbortSignal) => {
@@ -2709,7 +2936,7 @@ export function useGetProductDetailSuspense<
 }
 
 /**
- * 옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404.
+ * 옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 인증 필요(상세와 동일, permitAll 아님). 미존재 productId는 404.
  * @summary 상품 옵션 조회
  */
 export const getProductOptions = (productId: string, signal?: AbortSignal) => {
@@ -3145,6 +3372,142 @@ export function useGetProductReviewsSuspense<
 }
 
 /**
+ * 상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000.
+ * @summary 상품 찜하기
+ */
+export const likeProduct = (productId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/products/${productId}/like`, method: 'POST', signal })
+}
+
+export const getLikeProductMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof likeProduct>>,
+    TError,
+    { productId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof likeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationKey = ['likeProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof likeProduct>>,
+    { productId: string }
+  > = props => {
+    const { productId } = props ?? {}
+
+    return likeProduct(productId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type LikeProductMutationResult = NonNullable<Awaited<ReturnType<typeof likeProduct>>>
+
+export type LikeProductMutationError = void
+
+/**
+ * @summary 상품 찜하기
+ */
+export const useLikeProduct = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof likeProduct>>,
+      TError,
+      { productId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof likeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationOptions = getLikeProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 상품을 찜 목록에서 제거한다(멱등 — 찜하지 않은 상품도 204).
+ * @summary 상품 찜 해제
+ */
+export const unlikeProduct = (productId: string) => {
+  return customInstance<void>({ url: `/products/${productId}/like`, method: 'DELETE' })
+}
+
+export const getUnlikeProductMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlikeProduct>>,
+    TError,
+    { productId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlikeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationKey = ['unlikeProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlikeProduct>>,
+    { productId: string }
+  > = props => {
+    const { productId } = props ?? {}
+
+    return unlikeProduct(productId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnlikeProductMutationResult = NonNullable<Awaited<ReturnType<typeof unlikeProduct>>>
+
+export type UnlikeProductMutationError = unknown
+
+/**
+ * @summary 상품 찜 해제
+ */
+export const useUnlikeProduct = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlikeProduct>>,
+      TError,
+      { productId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlikeProduct>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationOptions = getUnlikeProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 발급받은 url에 파일을 PUT하고, 돌려받은 key를 도메인 API(펫 등록·수정 등)에 실어 보낸다. 키는 tmp 영역이고 도메인 API가 정식 위치로 옮긴다. 지원 형식은 purpose별로 다르다.
  * @summary 업로드 presigned URL 발급
  */
@@ -3362,6 +3725,214 @@ export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TErr
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetMeSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 로그인 사용자의 찜한 상품 목록. 품절도 saleStatus로 노출하며 자동 삭제하지 않는다. 상품 목록과 동일한 ProductListResponse.
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+export const getLikedProducts = (params?: GetLikedProductsParams, signal?: AbortSignal) => {
+  return customInstance<ProductListResponse>({
+    url: `/users/me/liked-products`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetLikedProductsQueryKey = (params?: GetLikedProductsParams) => {
+  return [`/users/me/liked-products`, ...(params ? [params] : [])] as const
+}
+
+export const getGetLikedProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetLikedProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLikedProducts>>> = ({ signal }) =>
+    getLikedProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getLikedProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLikedProductsQueryResult = NonNullable<Awaited<ReturnType<typeof getLikedProducts>>>
+export type GetLikedProductsQueryError = void
+
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params: undefined | GetLikedProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLikedProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getLikedProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLikedProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getLikedProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetLikedProducts<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetLikedProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetLikedProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetLikedProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLikedProducts>>> = ({ signal }) =>
+    getLikedProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getLikedProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLikedProductsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getLikedProducts>>
+>
+export type GetLikedProductsSuspenseQueryError = void
+
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params: undefined | GetLikedProductsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 찜 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetLikedProductsSuspense<
+  TData = Awaited<ReturnType<typeof getLikedProducts>>,
+  TError = void,
+>(
+  params?: GetLikedProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getLikedProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetLikedProductsSuspenseQueryOptions(params, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,
@@ -4587,6 +5158,589 @@ export const useSetNickname = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getSetNicknameMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 휴대폰 점유 인증 시작 — 재발송은 같은 EP 재호출. ACTIVE 전용(PENDING 접근은 403 errorCode 20006). 응답의 expiresInSeconds/resendCooldownSeconds가 FE 타이머의 원천이다(수치 하드코딩 금지 — 서버 계약). 번호 형식 위반은 400 errorCode 90001, 재발송 쿨다운은 429 errorCode 30006, 일 발송 상한 초과는 429 errorCode 30008, SMS 벤더 발송 실패는 502 errorCode 30007.
+ * @summary 휴대폰 인증번호 발송
+ */
+export const sendPhoneCode = (sendPhoneCodeRequest: SendPhoneCodeRequest, signal?: AbortSignal) => {
+  return customInstance<PhoneCodeSentResponse>({
+    url: `/users/me/phone/verifications`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sendPhoneCodeRequest,
+    signal,
+  })
+}
+
+export const getSendPhoneCodeMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendPhoneCode>>,
+    TError,
+    { data: SendPhoneCodeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendPhoneCode>>,
+  TError,
+  { data: SendPhoneCodeRequest },
+  TContext
+> => {
+  const mutationKey = ['sendPhoneCode']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendPhoneCode>>,
+    { data: SendPhoneCodeRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return sendPhoneCode(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SendPhoneCodeMutationResult = NonNullable<Awaited<ReturnType<typeof sendPhoneCode>>>
+export type SendPhoneCodeMutationBody = SendPhoneCodeRequest
+export type SendPhoneCodeMutationError = unknown
+
+/**
+ * @summary 휴대폰 인증번호 발송
+ */
+export const useSendPhoneCode = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sendPhoneCode>>,
+      TError,
+      { data: SendPhoneCodeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sendPhoneCode>>,
+  TError,
+  { data: SendPhoneCodeRequest },
+  TContext
+> => {
+  const mutationOptions = getSendPhoneCodeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 발송된 인증번호를 대조해 점유 인증을 완료하고, 변경 후 내 정보를 반환한다 (phoneNumber는 서버 마스킹 표시용, isPhoneVerified=true). 다른 계정이 점유 중이던 번호는 서버가 점유를 이전하므로 별도의 중복 에러는 없다. 코드·번호 불일치는 400 errorCode 30005(의도적 미구분), 만료(저장 코드 없음)는 400 errorCode 30009, 입력 횟수 초과는 429 errorCode 30010 — 30009/30010 모두 재발송으로만 복구된다(30010은 코드 소각).
+ * @summary 휴대폰 인증번호 확인
+ */
+export const confirmPhoneCode = (
+  confirmPhoneCodeRequest: ConfirmPhoneCodeRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<UserMeResponse>({
+    url: `/users/me/phone/verifications/confirm`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: confirmPhoneCodeRequest,
+    signal,
+  })
+}
+
+export const getConfirmPhoneCodeMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPhoneCode>>,
+    TError,
+    { data: ConfirmPhoneCodeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmPhoneCode>>,
+  TError,
+  { data: ConfirmPhoneCodeRequest },
+  TContext
+> => {
+  const mutationKey = ['confirmPhoneCode']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmPhoneCode>>,
+    { data: ConfirmPhoneCodeRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return confirmPhoneCode(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ConfirmPhoneCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmPhoneCode>>
+>
+export type ConfirmPhoneCodeMutationBody = ConfirmPhoneCodeRequest
+export type ConfirmPhoneCodeMutationError = unknown
+
+/**
+ * @summary 휴대폰 인증번호 확인
+ */
+export const useConfirmPhoneCode = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof confirmPhoneCode>>,
+      TError,
+      { data: ConfirmPhoneCodeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof confirmPhoneCode>>,
+  TError,
+  { data: ConfirmPhoneCodeRequest },
+  TContext
+> => {
+  const mutationOptions = getConfirmPhoneCodeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 로그인 사용자의 앱 서비스 문의를 접수한다(RECEIVED). 형식/필수 위반 400 INVALID_REQUEST, 미인증 401.
+ * @summary 앱 서비스 문의 접수
+ */
+export const submitInquiry = (submitInquiryRequest: SubmitInquiryRequest, signal?: AbortSignal) => {
+  return customInstance<SubmitInquiryResponse>({
+    url: `/inquiries`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: submitInquiryRequest,
+    signal,
+  })
+}
+
+export const getSubmitInquiryMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitInquiry>>,
+    TError,
+    { data: SubmitInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitInquiry>>,
+  TError,
+  { data: SubmitInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['submitInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitInquiry>>,
+    { data: SubmitInquiryRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return submitInquiry(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SubmitInquiryMutationResult = NonNullable<Awaited<ReturnType<typeof submitInquiry>>>
+export type SubmitInquiryMutationBody = SubmitInquiryRequest
+export type SubmitInquiryMutationError = unknown
+
+/**
+ * @summary 앱 서비스 문의 접수
+ */
+export const useSubmitInquiry = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof submitInquiry>>,
+      TError,
+      { data: SubmitInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof submitInquiry>>,
+  TError,
+  { data: SubmitInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getSubmitInquiryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 인증 주체의 신청서 1건(경로 식별자 없음). ACTIVE 전용(PENDING 접근은 403 errorCode 20006). 신청 이력이 없으면 404 errorCode 10100 — 화면은 이를 '신규 신청 폼'으로 해석한다.
+ * @summary 내 입점 신청 현황
+ */
+export const getSellerApplication = (signal?: AbortSignal) => {
+  return customInstance<SellerApplicationResponse>({
+    url: `/seller-applications`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerApplicationQueryKey = () => {
+  return [`/seller-applications`] as const
+}
+
+export const getGetSellerApplicationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerApplicationQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerApplication>>> = ({ signal }) =>
+    getSellerApplication(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerApplication>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerApplicationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerApplication>>
+>
+export type GetSellerApplicationQueryError = unknown
+
+export function useGetSellerApplication<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerApplication>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerApplication>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerApplication<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerApplication>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerApplication>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerApplication<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 입점 신청 현황
+ */
+
+export function useGetSellerApplication<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerApplicationQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerApplicationSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerApplicationQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerApplication>>> = ({ signal }) =>
+    getSellerApplication(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerApplication>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerApplicationSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerApplication>>
+>
+export type GetSellerApplicationSuspenseQueryError = unknown
+
+export function useGetSellerApplicationSuspense<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerApplicationSuspense<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerApplicationSuspense<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 입점 신청 현황
+ */
+
+export function useGetSellerApplicationSuspense<
+  TData = Awaited<ReturnType<typeof getSellerApplication>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerApplication>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerApplicationSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 필수는 businessType뿐 — 필수성 검증은 제출(10105)로 일원화하고 여기선 형식만 본다. 폼 필드는 전체 덮어쓰기라 생략(null)하면 저장된 값이 지워진다(항상 폼 전체를 실을 것). 서류만 부분 upsert — 요청에 포함한 종류만 등록/교체되고 미포함 종류는 유지된다. REJECTED 상태에서 부르면 자동으로 DRAFT로 재개(reopen)돼 응답 status가 DRAFT로 온다. 휴대폰 미인증은 403 errorCode 10103(선행 조건 — 가장 먼저 검사), 이미 셀러면 409 errorCode 10001, 저장 불가 상태는 409 errorCode 10101, 동시 최초 신청 충돌은 409 errorCode 10104. 서류 tmpKey 승격 실패는 404 errorCode 100001(미업로드)/403 100002(소유자 불일치)/400 100003(용도 불일치). 사업자등록번호 형식(하이픈 허용 10자리+국세청 체크섬) 위반은 400 errorCode 90001.
+ * @summary 입점 신청 임시저장(폼+서류 일괄 upsert)
+ */
+export const saveSellerApplicationDraft = (
+  saveSellerApplicationDraftRequest: SaveSellerApplicationDraftRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerApplicationResponse>({
+    url: `/seller-applications`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: saveSellerApplicationDraftRequest,
+    signal,
+  })
+}
+
+export const getSaveSellerApplicationDraftMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveSellerApplicationDraft>>,
+    TError,
+    { data: SaveSellerApplicationDraftRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveSellerApplicationDraft>>,
+  TError,
+  { data: SaveSellerApplicationDraftRequest },
+  TContext
+> => {
+  const mutationKey = ['saveSellerApplicationDraft']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveSellerApplicationDraft>>,
+    { data: SaveSellerApplicationDraftRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return saveSellerApplicationDraft(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SaveSellerApplicationDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveSellerApplicationDraft>>
+>
+export type SaveSellerApplicationDraftMutationBody = SaveSellerApplicationDraftRequest
+export type SaveSellerApplicationDraftMutationError = unknown
+
+/**
+ * @summary 입점 신청 임시저장(폼+서류 일괄 upsert)
+ */
+export const useSaveSellerApplicationDraft = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof saveSellerApplicationDraft>>,
+      TError,
+      { data: SaveSellerApplicationDraftRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof saveSellerApplicationDraft>>,
+  TError,
+  { data: SaveSellerApplicationDraftRequest },
+  TContext
+> => {
+  const mutationOptions = getSaveSellerApplicationDraftMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * DRAFT만 제출 가능 — 그 외 상태는 409 errorCode 10101, 신청서가 없으면 404 errorCode 10100. REJECTED에서 재제출하려면 saveDraft(자동 reopen → DRAFT)를 먼저 거쳐야 한다. 유형별 필수 정보·서류 미비는 400 errorCode 10105 — 부족 목록은 message 문자열 한 줄로만 오고 구조화 필드가 없다(클라이언트도 유형별 필수 표를 자체 보유할 것). 성공은 204 No Content(빈 바디)이며 이후 수정·서류가 잠긴다.
+ * @summary 입점 신청 제출
+ */
+export const submitSellerApplication = (signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/seller-applications/submit`, method: 'POST', signal })
+}
+
+export const getSubmitSellerApplicationMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitSellerApplication>>,
+    TError,
+    void,
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitSellerApplication>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ['submitSellerApplication']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitSellerApplication>>,
+    void
+  > = () => {
+    return submitSellerApplication()
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SubmitSellerApplicationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitSellerApplication>>
+>
+
+export type SubmitSellerApplicationMutationError = unknown
+
+/**
+ * @summary 입점 신청 제출
+ */
+export const useSubmitSellerApplication = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof submitSellerApplication>>,
+      TError,
+      void,
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof submitSellerApplication>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationOptions = getSubmitSellerApplicationMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

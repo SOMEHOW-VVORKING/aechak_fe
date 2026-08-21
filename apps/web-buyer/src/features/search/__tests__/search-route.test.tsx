@@ -4,11 +4,15 @@ import { HttpResponse, http } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, expect, it, vi } from 'vitest'
-import { setOnAuthExpired } from '@aechak/api'
+import { setOnAuthExpired, type ProductSummaryResponse } from '@aechak/api'
+import { resetWishlist } from '@/shared/catalog'
 import { routeTree } from '../../../routeTree.gen'
 import { SEARCH_KEYWORDS_URL, SEARCH_PRODUCTS_URL, server } from '@/testing/msw/server'
 
-function product(productId: string, name: string) {
+// 반환 타입을 명시해 필수 필드 누락을 tsc가 잡게 한다 — 예전엔 타입 주석이 없어 `isLiked`(SCRUM-190에서
+// required로 승격)가 빠진 채 서버가 줄 수 없는 카드 응답을 흉내내고 있었다. 찜 상태가 필요한 케이스는
+// 호출부에서 `{ ...product(...), isLiked: true }`로 덮어쓴다.
+function product(productId: string, name: string): ProductSummaryResponse {
   return {
     productId,
     name,
@@ -20,6 +24,9 @@ function product(productId: string, name: string) {
     saleStatus: 'ON_SALE',
     averageRating: 4.5,
     reviewCount: 10,
+    isLiked: false,
+    isViewable: true,
+    isPurchasable: true,
   }
 }
 
@@ -199,6 +206,32 @@ describe('/search/results', () => {
     expect(screen.getByText('존재하지않는상품zz')).toBeInTheDocument()
     // 곡선/직선 따옴표 문자가 없어야 한다(카피 관례: 직접 인용부호 금지).
     expect(heading.parentElement?.textContent ?? '').not.toMatch(/['"‘’“”]/)
+  })
+
+  it('[AC-SEARCH-018] 이전에 찜한 상품은 검색 결과 첫 렌더부터 하트가 채워진다', async () => {
+    // 전역 afterEach는 미러(store)를 리셋하지 않으므로 이 테스트에서 격리한다.
+    resetWishlist()
+    server.use(
+      http.get(SEARCH_PRODUCTS_URL, () =>
+        HttpResponse.json({
+          data: {
+            products: [
+              { ...product('liked-1', '찜한 사료'), isLiked: true },
+              { ...product('plain-1', '안 찜한 사료'), isLiked: false },
+            ],
+            totalCount: 2,
+            nextCursor: null,
+            hasNext: false,
+          },
+        }),
+      ),
+    )
+    renderAt('/search/results?q=사료')
+
+    expect(await screen.findByText('찜한 사료')).toBeInTheDocument()
+    // liked-1은 isLiked=true라 fetch 시점 미러 시드로 첫 렌더부터 '찜 해제'(채워짐).
+    expect(await screen.findByRole('button', { name: '찜 해제' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜하기' })).toBeInTheDocument()
   })
 
   it('[AC-SEARCH-009] 가격 칩은 전체 필터 시트가 아니라 가격대 전용 시트를 열고 프리셋이 결과에 반영된다', async () => {

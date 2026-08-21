@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { resetSearchFixtures, server } from './testing/msw/server'
+import { resetLikedProducts, resetSearchFixtures, server } from './testing/msw/server'
+import { resetWishlistState } from './shared/catalog'
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해하지만 노이즈이고, 예외가 전환 중 리렌더를 유발해 테스트 노드를 detach시키므로
@@ -13,5 +14,9 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   resetSearchFixtures()
+  // 찜은 서버측(MSW likedProductRows)과 클라이언트측(미러 + 해제 툼스톤)이 짝이라 함께 되돌린다.
+  // 한쪽만 지우면 앞 테스트에서 해제한 id가 다음 테스트에서 계속 걸러져 시드보다 적게 렌더된다.
+  resetLikedProducts()
+  resetWishlistState()
 })
 afterAll(() => server.close())

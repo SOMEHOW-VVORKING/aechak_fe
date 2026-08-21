@@ -4,10 +4,9 @@ export { WithdrawScreen } from './components/WithdrawScreen'
 export {
   NICKNAME_MAX,
   BIO_MAX,
-  TEST_OTP_CODE,
   OTP_LENGTH,
   validateNickname,
-  isValidOtp,
+  isValidPhoneNumber,
   WITHDRAW_BLOCKING_STATUSES,
   WITHDRAW_DELETED_INFO,
   WITHDRAW_RETAINED_INFO,
@@ -16,4 +15,9 @@ export {
   isWithdrawBlocked,
   blockingBreakdown,
 } from './account.mock'
-export { useUpdateProfile, useSendOtp, useVerifyPhone, useWithdraw } from './account.queries'
+export {
+  phoneVerificationErrorMessage,
+  useConfirmPhoneCode,
+  useSendPhoneCode,
+  useWithdraw,
+} from './account.queries'

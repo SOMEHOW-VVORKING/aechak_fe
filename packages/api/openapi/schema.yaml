@@ -323,10 +323,9 @@ paths:
   /products/{productId}:
     get:
       summary: "상품 상세 조회"
-      description: "상품 상세(permitAll, 비로그인 허용). 로그인 시 principal로 isLiked 계산, 비로그인은 false. 미존재/노출불가 productId는 404."
+      description: "상품 상세. 인증 필요(permitAll 매처가 /products 정확 일치라 하위 경로는 비로그인 401). principal로 isLiked를 계산한다. 미존재/노출불가 productId는 404."
       operationId: "getProductDetail"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -346,10 +345,9 @@ paths:
   /products/{productId}/options:
     get:
       summary: "상품 옵션 조회"
-      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 미존재 productId는 404."
+      description: "옵션 그룹 + 옵션 조합(조합별 추가금/재고/품절). 인증 필요(상세와 동일, permitAll 아님). 미존재 productId는 404."
       operationId: "getProductOptions"
       security:
-        - {}
         - bearerAuth: []
       parameters:
         - name: productId
@@ -417,6 +415,39 @@ paths:
                 $ref: "#/components/schemas/ReviewListEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/like:
+    post:
+      summary: "상품 찜하기"
+      description: "상품을 찜 목록에 추가한다(멱등 — 이미 찜한 상품도 201). 미존재 productId는 404 errorCode 40000."
+      operationId: "likeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: "Created(본문 없음)"
+        "404":
+          description: "존재하지 않는 상품(errorCode 40000)"
+    delete:
+      summary: "상품 찜 해제"
+      description: "상품을 찜 목록에서 제거한다(멱등 — 찜하지 않은 상품도 204)."
+      operationId: "unlikeProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
   /files/presigned-url:
     post:
       summary: "업로드 presigned URL 발급"
@@ -455,6 +486,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/liked-products:
+    get:
+      summary: "내 찜 목록 조회(커서 페이지네이션)"
+      description: "로그인 사용자의 찜한 상품 목록. 품절도 saleStatus로 노출하며 자동 삭제하지 않는다. 상품 목록과 동일한 ProductListResponse."
+      operationId: "getLikedProducts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          description: "유효하지 않은 커서(errorCode 90002)"
   /users/me/profile:
     put:
       summary: "프로필 수정"
@@ -683,6 +745,133 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+  /users/me/phone/verifications:
+    post:
+      summary: "휴대폰 인증번호 발송"
+      description: >-
+        휴대폰 점유 인증 시작 — 재발송은 같은 EP 재호출. ACTIVE 전용(PENDING 접근은 403 errorCode 20006).
+        응답의 expiresInSeconds/resendCooldownSeconds가 FE 타이머의 원천이다(수치 하드코딩 금지 — 서버 계약).
+        번호 형식 위반은 400 errorCode 90001, 재발송 쿨다운은 429 errorCode 30006,
+        일 발송 상한 초과는 429 errorCode 30008, SMS 벤더 발송 실패는 502 errorCode 30007.
+      operationId: "sendPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneCodeSentResponse"
+  /users/me/phone/verifications/confirm:
+    post:
+      summary: "휴대폰 인증번호 확인"
+      description: >-
+        발송된 인증번호를 대조해 점유 인증을 완료하고, 변경 후 내 정보를 반환한다
+        (phoneNumber는 서버 마스킹 표시용, isPhoneVerified=true). 다른 계정이 점유 중이던 번호는
+        서버가 점유를 이전하므로 별도의 중복 에러는 없다. 코드·번호 불일치는 400 errorCode 30005(의도적 미구분),
+        만료(저장 코드 없음)는 400 errorCode 30009, 입력 횟수 초과는 429 errorCode 30010 —
+        30009/30010 모두 재발송으로만 복구된다(30010은 코드 소각).
+      operationId: "confirmPhoneCode"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPhoneCodeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMeResponse"
+  /inquiries:
+    post:
+      summary: "앱 서비스 문의 접수"
+      description: "로그인 사용자의 앱 서비스 문의를 접수한다(RECEIVED). 형식/필수 위반 400 INVALID_REQUEST, 미인증 401."
+      operationId: "submitInquiry"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitInquiryRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitInquiryResponse"
+  /seller-applications:
+    get:
+      summary: "내 입점 신청 현황"
+      description: >-
+        인증 주체의 신청서 1건(경로 식별자 없음). ACTIVE 전용(PENDING 접근은 403 errorCode 20006).
+        신청 이력이 없으면 404 errorCode 10100 — 화면은 이를 '신규 신청 폼'으로 해석한다.
+      operationId: "getSellerApplication"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerApplicationResponse"
+    post:
+      summary: "입점 신청 임시저장(폼+서류 일괄 upsert)"
+      description: >-
+        필수는 businessType뿐 — 필수성 검증은 제출(10105)로 일원화하고 여기선 형식만 본다.
+        폼 필드는 전체 덮어쓰기라 생략(null)하면 저장된 값이 지워진다(항상 폼 전체를 실을 것).
+        서류만 부분 upsert — 요청에 포함한 종류만 등록/교체되고 미포함 종류는 유지된다.
+        REJECTED 상태에서 부르면 자동으로 DRAFT로 재개(reopen)돼 응답 status가 DRAFT로 온다.
+        휴대폰 미인증은 403 errorCode 10103(선행 조건 — 가장 먼저 검사), 이미 셀러면 409 errorCode 10001,
+        저장 불가 상태는 409 errorCode 10101, 동시 최초 신청 충돌은 409 errorCode 10104.
+        서류 tmpKey 승격 실패는 404 errorCode 100001(미업로드)/403 100002(소유자 불일치)/400 100003(용도 불일치).
+        사업자등록번호 형식(하이픈 허용 10자리+국세청 체크섬) 위반은 400 errorCode 90001.
+      operationId: "saveSellerApplicationDraft"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveSellerApplicationDraftRequest"
+      responses:
+        "200":
+          description: "저장된 신청서 전체 — 화면은 이 응답으로 재구성한다"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerApplicationResponse"
+  /seller-applications/submit:
+    post:
+      summary: "입점 신청 제출"
+      description: >-
+        DRAFT만 제출 가능 — 그 외 상태는 409 errorCode 10101, 신청서가 없으면 404 errorCode 10100.
+        REJECTED에서 재제출하려면 saveDraft(자동 reopen → DRAFT)를 먼저 거쳐야 한다.
+        유형별 필수 정보·서류 미비는 400 errorCode 10105 — 부족 목록은 message 문자열 한 줄로만
+        오고 구조화 필드가 없다(클라이언트도 유형별 필수 표를 자체 보유할 것). 성공은
+        204 No Content(빈 바디)이며 이후 수정·서류가 잠긴다.
+      operationId: "submitSellerApplication"
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: "No Content"
 components:
   schemas:
     Species:
@@ -763,7 +952,7 @@ components:
           description: "낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다"
     UploadPurpose:
       type: string
-      enum: [USER_PROFILE, PET_PROFILE]
+      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT]
     IssuePresignedUrlRequest:
       type: object
       required: [purpose, contentType]
@@ -772,7 +961,9 @@ components:
           $ref: "#/components/schemas/UploadPurpose"
         contentType:
           type: string
-          description: "image/png, image/jpeg, image/webp (프로필 사진). 허용 밖이면 400 errorCode 100000"
+          description: >-
+            프로필 사진(USER_PROFILE/PET_PROFILE)은 image/png·image/jpeg·image/webp,
+            셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000
           example: "image/png"
     PresignedUrlResponse:
       type: object
@@ -1076,7 +1267,7 @@ components:
       enum: [ON_SALE, OUT_OF_STOCK, SUSPENDED, ENDED]
     ProductSummaryResponse:
       type: object
-      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount]
+      required: [productId, name, sellerName, thumbnailImageKey, regularPrice, discountPrice, discountRate, saleStatus, averageRating, reviewCount, isLiked, isViewable, isPurchasable]
       properties:
         productId:
           type: string
@@ -1105,6 +1296,14 @@ components:
           nullable: true
         reviewCount:
           type: integer
+        isLiked:
+          type: boolean
+        isViewable:
+          type: boolean
+          description: "상세 진입 가능 여부(카테고리 체인 활성). 목록/검색은 항상 true, 찜 목록만 false가 나올 수 있다."
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(isViewable && saleStatus=ON_SALE). 진입 불가 상품은 판매중이어도 false라 품절과 다르다."
     ProductListData:
       type: object
       required: [products, totalCount, nextCursor, hasNext]
@@ -1304,7 +1503,7 @@ components:
           type: integer
     ProductDetailResponse:
       type: object
-      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked]
+      required: [productId, name, description, representativeImageKey, images, regularPrice, discountPrice, discountRate, saleStatus, shipping, seller, review, categories, isLiked, isPurchasable]
       properties:
         productId:
           type: string
@@ -1344,6 +1543,9 @@ components:
             $ref: "#/components/schemas/ProductCategory"
         isLiked:
           type: boolean
+        isPurchasable:
+          type: boolean
+          description: "구매 가능 여부(saleStatus=ON_SALE). 상세는 카테고리 체인 활성을 이미 걸러 요약과 달리 isViewable 항이 없다."
     ProductDetailEnvelope:
       type: object
       required: [data]
@@ -1485,6 +1687,181 @@ components:
       properties:
         nickname:
           type: string
+    ApplicationStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, REVIEWING, APPROVED, REJECTED, CANCELLED]
+      description: >-
+        입점 신청 상태. 현재 서버가 실제로 할당하는 값은 DRAFT/SUBMITTED/APPROVED/REJECTED이고
+        REVIEWING·CANCELLED은 정의만 존재한다(도달 경로 없음 — 어드민 심사 API 확장 대비)
+    BusinessType:
+      type: string
+      enum: [PERSONAL_GENERAL, SOLE_PROPRIETORSHIP, CORPORATE]
+      description: "셀러 유형 — 개인 일반/개인 사업자/법인 사업자. 제출 시점의 유형 기준으로 필수 정보·서류를 재평가한다"
+    SellerDocumentType:
+      type: string
+      enum: [ID_CARD, BANKBOOK_COPY, BUSINESS_REGISTRATION, TELESALES_REPORT, CORP_REGISTER, CORP_SEAL]
+      description: >-
+        입점 서류 종류(서버 DocumentType). 유형별 필수 세트 — PERSONAL_GENERAL: 신분증·통장 사본 /
+        SOLE_PROPRIETORSHIP: + 사업자등록증·통신판매업 신고증 / CORPORATE: 6종 전부
+    SellerApplicationDocument:
+      type: object
+      required: [documentType, uploadedAt]
+      properties:
+        documentType:
+          type: string
+          description: "SellerDocumentType 값(서버가 String으로 직렬화)"
+        uploadedAt:
+          type: string
+          description: "등록/교체 시각 — LocalDateTime 직렬화라 타임존 오프셋이 없다"
+    SellerApplicationDetail:
+      type: object
+      required: [applicationId, status, businessType, businessName, businessRegNo, corpRegNo,
+                 representativeName, telesalesNumber, bankCode, accountNumberMasked, accountHolder,
+                 appliedAt, submittedAt, decidedAt, rejectionReason, documents]
+      properties:
+        applicationId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        businessType:
+          $ref: "#/components/schemas/BusinessType"
+        businessName:
+          type: string
+          nullable: true
+        businessRegNo:
+          type: string
+          nullable: true
+        corpRegNo:
+          type: string
+          nullable: true
+        representativeName:
+          type: string
+          nullable: true
+        telesalesNumber:
+          type: string
+          nullable: true
+        bankCode:
+          type: string
+          nullable: true
+        accountNumberMasked:
+          type: string
+          nullable: true
+          description: "뒤 4자리 외 전부 '*'. 평문 계좌번호는 응답에 절대 실리지 않는다 — 수정하려면 사용자가 다시 입력해야 한다"
+        accountHolder:
+          type: string
+          nullable: true
+        appliedAt:
+          type: string
+          description: "신청 생성 시각(LocalDateTime)"
+        submittedAt:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+          description: "status가 REJECTED일 때만 값이 있고 그 외에는 항상 null"
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerApplicationDocument"
+    SellerApplicationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerApplicationDetail"
+    SellerApplicationDocumentInput:
+      type: object
+      required: [documentType, tmpKey]
+      properties:
+        documentType:
+          $ref: "#/components/schemas/SellerDocumentType"
+        tmpKey:
+          type: string
+          description: "presigned 발급(purpose=SELLER_DOCUMENT) 응답의 key를 그대로 싣는다"
+    SaveSellerApplicationDraftRequest:
+      type: object
+      required: [businessType]
+      description: >-
+        폼 필드는 전체 덮어쓰기(생략/null이면 소거), documents는 부분 upsert(같은 종류는 한 요청에
+        한 번만 — 위반 400 errorCode 90001). 계좌번호는 응답이 마스킹뿐이라 수정 시 재입력 필요.
+      properties:
+        businessType:
+          $ref: "#/components/schemas/BusinessType"
+        businessName:
+          type: string
+          nullable: true
+          maxLength: 100
+        businessRegNo:
+          type: string
+          nullable: true
+          description: "하이픈 허용 10자리 + 국세청 체크섬. 위반 400 errorCode 90001"
+        corpRegNo:
+          type: string
+          nullable: true
+          maxLength: 20
+        representativeName:
+          type: string
+          nullable: true
+          maxLength: 50
+        telesalesNumber:
+          type: string
+          nullable: true
+          maxLength: 50
+        bankCode:
+          type: string
+          nullable: true
+          maxLength: 10
+        accountNumber:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: "평문 입력 — 서버가 암호화 저장하고 응답에는 accountNumberMasked만 온다"
+        accountHolder:
+          type: string
+          nullable: true
+          maxLength: 50
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerApplicationDocumentInput"
+    SendPhoneCodeRequest:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber:
+          type: string
+          description: "^01[016789]-?\\d{3,4}-?\\d{4}$ — 하이픈 유무 모두 허용. 위반 400 errorCode 90001"
+    ConfirmPhoneCodeRequest:
+      type: object
+      required: [phoneNumber, code]
+      properties:
+        phoneNumber:
+          type: string
+          description: "발송 때 보낸 번호와 같아야 한다 — 불일치는 코드 오류와 함께 30005로 통합"
+        code:
+          type: string
+          description: "6자리 숫자(^\\d{6}$). 형식 위반 400 errorCode 90001"
+    PhoneCodeSent:
+      type: object
+      required: [expiresInSeconds, resendCooldownSeconds]
+      properties:
+        expiresInSeconds:
+          type: integer
+          description: "인증번호 유효시간(초, 현재 180). FE 만료 타이머의 원천 — 하드코딩 금지"
+        resendCooldownSeconds:
+          type: integer
+          description: "재발송 쿨다운(초, 현재 60). FE 재발송 타이머의 원천 — 하드코딩 금지"
+    PhoneCodeSentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PhoneCodeSent"
     # 내 정보. 8필드는 항상 존재하고(키 고정), PENDING_ONBOARDING이면 프로필 계열이 전부 null이라 값만 nullable이다.
     UserMe:
       type: object
@@ -1514,7 +1891,7 @@ components:
         phoneNumber:
           type: string
           nullable: true
-          description: "현재 항상 null(전화 인증 연동 전)"
+          description: "인증 전 null, 인증 후 서버 마스킹 표시용(예: 010-****-5678)"
         isPhoneVerified:
           type: boolean
     UserMeResponse:
@@ -1540,6 +1917,37 @@ components:
           type: string
           nullable: true
           description: "유지할 기존 키 또는 새 tmp 키. null이면 사진 제거"
+    SubmitInquiryRequest:
+      type: object
+      required: [inquiryType, replyEmail, content]
+      properties:
+        inquiryType:
+          type: string
+          enum: [ACCOUNT, ORDER_PAYMENT, DELIVERY_CLAIM, SELLER_PRODUCT, SERVICE_ETC]
+          description: "문의 유형"
+        replyEmail:
+          type: string
+          format: email
+          description: "답변받을 이메일. 형식 위반 400 INVALID_REQUEST"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: "문의 내용. 1~2000자"
+    SubmitInquiryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status, createdAt]
+          properties:
+            status:
+              type: string
+              description: "접수 상태. RECEIVED"
+            createdAt:
+              type: string
+              description: "접수 시각 ISO-8601"
   securitySchemes:
     bearerAuth:
       type: http
