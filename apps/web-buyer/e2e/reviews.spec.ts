@@ -25,6 +25,17 @@ const REVIEWS: ReviewItemResponse[] = [
   { reviewId: 501, isMine: false, rating: 5, content: '기대 이상이에요.', optionName: '프리미엄형', authorNickname: '집사세븐', authorProfileImageUrl: null, createdAt: '2026-08-06T09:00:00', images: [{ imageUrl: IMG, sortOrder: 0 }] },
 ]
 
+// PR 캡처 직전 dev 전용 ReactQueryDevtools 플로팅 버튼을 숨긴다(실제 화면에는 없는 dev 오버레이).
+async function shot(page: Page, path: string) {
+  await page.addStyleTag({
+    content:
+      '.tsqd-parent-container,.tsqd-open-btn-container,[aria-label*="query devtools" i],[aria-label*="Tanstack" i]{display:none!important}',
+  })
+  // animations: 'disabled'로 진입 애니메이션을 끝 프레임으로 고정한 뒤 찍는다 — toBeVisible()은
+  // opacity가 0보다 크기만 하면 통과해서, 그냥 찍으면 모달이 반투명한 중간 프레임으로 잡힌다.
+  await page.screenshot({ path, animations: 'disabled' })
+}
+
 // 평점 요약 — photoOnly와 무관하게 전체 가시 리뷰 기준. 없는 별점도 0.
 function summary() {
   const dist: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
@@ -211,4 +222,51 @@ test('[AC-REVIEW-E2E-008] 서버가 내 리뷰(isMine)로 표시하면 삭제만
 
   await expect(page.getByRole('button', { name: '삭제' })).toBeVisible()
   await expect(page.getByRole('button', { name: '수정' })).toHaveCount(0)
+})
+// 상품 상세 스텁 — 상세 응답에는 리뷰 목록이 없고 집계(reviewCount/averageRating)만 있어, 미리보기는
+// 리뷰 목록 API 첫 페이지를 따로 부른다. 그 조합을 브라우저에서 그대로 재현한다.
+const DETAIL_FOR_PREVIEW = {
+  data: {
+    productId: REAL_ID,
+    name: '리얼 프리미엄 자동 급식기',
+    description: '앱으로 급여 시간을 관리하는 실데이터 급식기예요.',
+    representativeImageKey: null,
+    images: [],
+    regularPrice: 89000,
+    discountPrice: 64000,
+    discountRate: 28,
+    saleStatus: 'ON_SALE',
+    shipping: { baseShippingFee: 3000, freeShippingThreshold: 50000 },
+    seller: { storeName: '리얼상점', profileImageKey: null },
+    review: { reviewCount: REVIEWS.length, averageRating: 4 },
+    categories: [
+      { categoryId: 1, name: '강아지', depth: 1 },
+      { categoryId: 11, name: '사료/간식', depth: 2 },
+    ],
+    isLiked: false,
+    isPurchasable: true,
+  },
+}
+
+test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3개를 채운다', async ({ page }) => {
+  await stubReviews(page, 100)
+  // API 경로를 통째로 지정한다 — `/products/{id}$` 같은 정규식은 페이지 내비게이션 URL
+  // (localhost:5175/products/{id})까지 잡아 앱 대신 JSON이 렌더된다(product-detail spec과 동일한 형태).
+  await page.route(`**/api/v1/products/${REAL_ID}`, (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({ status: 200, headers: CORS, json: DETAIL_FOR_PREVIEW }),
+  )
+  await page.goto(`/products/${REAL_ID}`)
+  await expect(page.getByText('리얼 프리미엄 자동 급식기')).toBeVisible()
+
+  // 최신순 상위 3건(505/504/503)만 상세에 뜨고 나머지는 전체보기로 넘어간다.
+  await expect(page.getByText('소음이 조금 있어요.')).toBeVisible()
+  await expect(page.getByText('믿고 쓰는 제품이에요.')).toBeVisible()
+  await expect(page.getByText('가격 대비 무난해요.')).toBeVisible()
+  await expect(page.getByText('배송이 빨라요.')).toBeHidden()
+  await shot(page, 'test-results/pr-c/01-detail-review-preview.png')
 })
