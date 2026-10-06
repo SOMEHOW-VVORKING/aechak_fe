@@ -81,7 +81,8 @@ export function AppShell() {
     <div className="flex h-screen w-full bg-surface-base">
       <SideNav
         groups={groups}
-        activeKey={pathname}
+        // /products/new 같은 하위 화면에서도 상위 메뉴가 활성으로 보이게 첫 세그먼트로 맞춘다.
+        activeKey={'/' + (pathname.split('/')[1] ?? '')}
         onSelect={key => navigate({ to: key })}
         collapsed={collapsed}
         onCollapsedChange={setCollapsed}

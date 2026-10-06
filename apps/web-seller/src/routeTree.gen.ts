@@ -17,7 +17,9 @@ import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as ClaimsIndexRouteImport } from './routes/claims/index'
+import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
+import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId/edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -59,15 +61,26 @@ const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
   path: '/claims/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsNewRoute = ProductsNewRouteImport.update({
+  id: '/products/new',
+  path: '/products/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginCompleteRoute = LoginCompleteRouteImport.update({
   id: '/login/complete',
   path: '/login/complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsProductIdEditRoute = ProductsProductIdEditRouteImport.update({
+  id: '/products/$productId/edit',
+  path: '/products/$productId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/new': typeof ProductsNewRoute
   '/claims/': typeof ClaimsIndexRoute
   '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -75,10 +88,12 @@ export interface FileRoutesByFullPath {
   '/settlements/': typeof SettlementsIndexRoute
   '/shipping-policy/': typeof ShippingPolicyIndexRoute
   '/store-settings/': typeof StoreSettingsIndexRoute
+  '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/new': typeof ProductsNewRoute
   '/claims': typeof ClaimsIndexRoute
   '/login': typeof LoginIndexRoute
   '/orders': typeof OrdersIndexRoute
@@ -86,11 +101,13 @@ export interface FileRoutesByTo {
   '/settlements': typeof SettlementsIndexRoute
   '/shipping-policy': typeof ShippingPolicyIndexRoute
   '/store-settings': typeof StoreSettingsIndexRoute
+  '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/new': typeof ProductsNewRoute
   '/claims/': typeof ClaimsIndexRoute
   '/login/': typeof LoginIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -98,12 +115,14 @@ export interface FileRoutesById {
   '/settlements/': typeof SettlementsIndexRoute
   '/shipping-policy/': typeof ShippingPolicyIndexRoute
   '/store-settings/': typeof StoreSettingsIndexRoute
+  '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login/complete'
+    | '/products/new'
     | '/claims/'
     | '/login/'
     | '/orders/'
@@ -111,10 +130,12 @@ export interface FileRouteTypes {
     | '/settlements/'
     | '/shipping-policy/'
     | '/store-settings/'
+    | '/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login/complete'
+    | '/products/new'
     | '/claims'
     | '/login'
     | '/orders'
@@ -122,10 +143,12 @@ export interface FileRouteTypes {
     | '/settlements'
     | '/shipping-policy'
     | '/store-settings'
+    | '/products/$productId/edit'
   id:
     | '__root__'
     | '/'
     | '/login/complete'
+    | '/products/new'
     | '/claims/'
     | '/login/'
     | '/orders/'
@@ -133,11 +156,13 @@ export interface FileRouteTypes {
     | '/settlements/'
     | '/shipping-policy/'
     | '/store-settings/'
+    | '/products/$productId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
+  ProductsNewRoute: typeof ProductsNewRoute
   ClaimsIndexRoute: typeof ClaimsIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
@@ -145,6 +170,7 @@ export interface RootRouteChildren {
   SettlementsIndexRoute: typeof SettlementsIndexRoute
   ShippingPolicyIndexRoute: typeof ShippingPolicyIndexRoute
   StoreSettingsIndexRoute: typeof StoreSettingsIndexRoute
+  ProductsProductIdEditRoute: typeof ProductsProductIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -205,11 +231,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClaimsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/new': {
+      id: '/products/new'
+      path: '/products/new'
+      fullPath: '/products/new'
+      preLoaderRoute: typeof ProductsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/complete': {
       id: '/login/complete'
       path: '/login/complete'
       fullPath: '/login/complete'
       preLoaderRoute: typeof LoginCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/$productId/edit': {
+      id: '/products/$productId/edit'
+      path: '/products/$productId/edit'
+      fullPath: '/products/$productId/edit'
+      preLoaderRoute: typeof ProductsProductIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -218,6 +258,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginCompleteRoute: LoginCompleteRoute,
+  ProductsNewRoute: ProductsNewRoute,
   ClaimsIndexRoute: ClaimsIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
   OrdersIndexRoute: OrdersIndexRoute,
@@ -225,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettlementsIndexRoute: SettlementsIndexRoute,
   ShippingPolicyIndexRoute: ShippingPolicyIndexRoute,
   StoreSettingsIndexRoute: StoreSettingsIndexRoute,
+  ProductsProductIdEditRoute: ProductsProductIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
