@@ -538,6 +538,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserMeResponse"
+    delete:
+      summary: "회원 탈퇴"
+      description: >-
+        계정을 WITHDRAWN으로 바꾸고 모든 세션(refresh)을 폐기한 뒤 refresh 쿠키를 만료(Set-Cookie)한다.
+        성공은 204 No Content(빈 바디). 정리되지 않은 거래가 있으면 409 errorCode 30011,
+        이미 탈퇴한 계정은 409 errorCode 30003. 탈퇴/정지 계정의 옛 토큰은 상태 필터가 먼저 403 errorCode 20005로 막는다.
+        PENDING_ONBOARDING 계정도 호출할 수 있다.
+      operationId: "withdraw"
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: "No Content"
+  /users/me/withdrawal/check:
+    get:
+      summary: "탈퇴 가능 여부 조회"
+      description: >-
+        탈퇴 안내 화면이 탈퇴 버튼을 열지 정할 때 부른다. 제한 사유 목록은 주지 않고 withdrawable만 준다.
+        PENDING_ONBOARDING 계정도 호출할 수 있다.
+      operationId: "checkWithdrawal"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalCheckResponse"
   /users/me/liked-products:
     get:
       summary: "내 찜 목록 조회(커서 페이지네이션)"
@@ -1932,6 +1961,19 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/NicknameCheckData"
+    WithdrawalCheckData:
+      type: object
+      required: [withdrawable]
+      properties:
+        withdrawable:
+          type: boolean
+          description: "탈퇴 가능 여부. false면 정리되지 않은 거래가 있다"
+    WithdrawalCheckResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/WithdrawalCheckData"
     NicknameRequest:
       type: object
       required: [nickname]

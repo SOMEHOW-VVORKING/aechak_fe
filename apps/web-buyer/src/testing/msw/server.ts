@@ -699,6 +699,7 @@ export const CONSENTS_URL = `${base}/users/me/consents`
 export const NICKNAME_CHECK_URL = `${base}/users/nickname/check`
 export const NICKNAME_URL = `${base}/users/me/nickname`
 export const INQUIRIES_URL = `${base}/inquiries`
+export const WITHDRAWAL_CHECK_URL = `${base}/users/me/withdrawal/check`
 
 export interface TermRow {
   termId: number
@@ -827,6 +828,9 @@ export const handlers = [
   ...accountHandlers,
   ...onboardingHandlers,
   ...likedProductHandlers,
+  // 탈퇴 — 기본은 BE 현행(WithdrawalFacade가 항상 withdrawable=true)과 같다. 제한/에러는 테스트가 server.use로 덮는다.
+  http.get(WITHDRAWAL_CHECK_URL, () => HttpResponse.json({ data: { withdrawable: true } })),
+  http.delete(USER_ME_URL, () => new HttpResponse(null, { status: 204 })),
   // POST /inquiries — 접수 성공(RECEIVED). 실제 저장/통지는 BE 소관이라 계약(201 + data)만 재현한다.
   http.post(INQUIRIES_URL, () =>
     HttpResponse.json(

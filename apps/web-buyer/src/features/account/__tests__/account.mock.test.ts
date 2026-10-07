@@ -1,30 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import type { BuyerOrder, BuyerOrderStatus } from '@aechak/domain'
 import {
   NICKNAME_MAX,
-  blockingBreakdown,
-  getBlockingOrders,
   isValidPhoneNumber,
-  isWithdrawBlocked,
   validateNickname,
 } from '../account.mock'
-
-// status만 보는 판정 함수 검증용 최소 주문 픽스처(나머지 필드는 판정에 무관).
-function makeOrder(status: BuyerOrderStatus): BuyerOrder {
-  return {
-    id: `order-${status}`,
-    orderedAt: '2026.07.10',
-    status,
-    method: 'kakaopay',
-    groups: [],
-    itemsTotal: 10000,
-    shippingTotal: 0,
-    couponDiscount: 0,
-    pointsUsed: 0,
-    paidAmount: 10000,
-    pointsEarned: 100,
-  }
-}
 
 describe('account.mock — 닉네임/휴대폰 번호 검증', () => {
   it('[AC-ACCOUNT-001] 빈 닉네임은 검증 실패한다', () => {
@@ -64,35 +43,5 @@ describe('account.mock — 닉네임/휴대폰 번호 검증', () => {
     expect(isValidPhoneNumber('02-1234-5678')).toBe(false) // 지역번호
     expect(isValidPhoneNumber('010-1234-567')).toBe(false) // 끝 4자리 미달
     expect(isValidPhoneNumber('')).toBe(false)
-  })
-})
-
-describe('account.mock — 탈퇴 차단 판정', () => {
-  it('[AC-ACCOUNT-005] 진행 중 주문(결제완료/준비중/배송중)이 있으면 탈퇴가 차단된다', () => {
-    const orders = [makeOrder('paid'), makeOrder('delivered'), makeOrder('confirmed')]
-    expect(isWithdrawBlocked(orders)).toBe(true)
-    expect(getBlockingOrders(orders)).toHaveLength(1)
-  })
-
-  it('[AC-ACCOUNT-006] 완료/구매확정/취소완료만 있으면 탈퇴가 가능하다', () => {
-    const orders = [makeOrder('delivered'), makeOrder('confirmed'), makeOrder('cancelled')]
-    expect(isWithdrawBlocked(orders)).toBe(false)
-    expect(getBlockingOrders(orders)).toHaveLength(0)
-  })
-
-  it('[AC-ACCOUNT-007] 차단 내역은 배송 준비 중/배송 중으로 나눠 집계한다', () => {
-    const orders = [
-      makeOrder('paid'),
-      makeOrder('preparing'),
-      makeOrder('shipping'),
-      makeOrder('delivered'),
-    ]
-    const rows = blockingBreakdown(orders)
-    expect(rows.find(r => r.label === '배송 준비 중 주문')?.count).toBe(2)
-    expect(rows.find(r => r.label === '배송 중 주문')?.count).toBe(1)
-  })
-
-  it('[AC-ACCOUNT-008] 차단 주문이 없으면 내역 행도 비어 있다', () => {
-    expect(blockingBreakdown([makeOrder('confirmed')])).toHaveLength(0)
   })
 })
