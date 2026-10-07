@@ -19,7 +19,7 @@ function fulfillEmpty(route: Route, status: number) {
   return route.fulfill({ status, headers: CORS })
 }
 
-test('[AC-LOGOUT-E2E-001] 로그아웃 확인 → 서버 로그아웃 호출 → 홈 복귀 + 비회원 전환', async ({
+test('[AC-LOGOUT-E2E-001] 로그아웃 확인 → 서버 로그아웃 호출 → 홈 가드가 로그인 화면으로', async ({
   page,
 }) => {
   let logoutCalls = 0
@@ -33,11 +33,9 @@ test('[AC-LOGOUT-E2E-001] 로그아웃 확인 → 서버 로그아웃 호출 →
   // Modal 확인 버튼(같은 라벨이 둘 — 마지막이 Modal 쪽).
   await page.getByRole('button', { name: '로그아웃' }).last().click()
 
-  await expect(page).toHaveURL(`${ORIGIN}/`)
+  // 로그아웃은 홈으로 보내고, 홈 가드가 로그아웃 상태를 보고 /home 없이 로그인 화면으로 넘긴다.
+  // 리로드하면 mock 로그인 플래그가 리셋되므로 같은 SPA 세션에서 확인한다.
+  await expect(page).toHaveURL(`${ORIGIN}/onboarding/login`)
+  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
   expect(logoutCalls).toBeGreaterThanOrEqual(1)
-
-  // 비회원 전환 확인 — 회원 전용 액션(홈 추천 캐러셀 찜 하트, 목업 데이터라 추가 스텁 불요)이
-  // 로그인 게이트를 띄운다. 리로드하면 mock 로그인 플래그가 리셋되므로 같은 SPA 세션에서 확인한다.
-  await page.getByRole('button', { name: '찜하기' }).first().click()
-  await expect(page.getByText('로그인이 필요해요')).toBeVisible()
 })

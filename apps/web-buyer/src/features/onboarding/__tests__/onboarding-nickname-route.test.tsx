@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { beforeEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import { setAccessToken } from '@aechak/api'
 import { HttpResponse, http } from 'msw'
 import {
   NICKNAME_CHECK_URL,
@@ -44,6 +45,7 @@ describe('/onboarding/nickname', () => {
     // 계정 스토어는 전역 싱글턴이라 온보딩 완료 동기화가 테스트 간 새지 않게 시드로 되돌린다.
     resetAccount()
   })
+  afterEach(() => setAccessToken(null))
 
   // 형식 위반 3종(1자·자모·이모지)은 모두 서버 호출 없이 인라인 형식 에러로 끝나야 한다.
   // 이모지는 maxLength slice(서로게이트 쌍)와도 겹치는 입력이라 정규식 공유만 믿지 않고 함께 검증한다.
@@ -76,6 +78,8 @@ describe('/onboarding/nickname', () => {
 
   it('[AC-ONBOARD-010] 가용 닉네임을 제출하면 완료 화면이 뜨고 CTA로 홈에 들어간다', async () => {
     const user = userEvent.setup()
+    // 온보딩은 로그인 직후라 access가 있다. 없으면 홈 가드가 refresh(MSW 기본 401) 후 로그인으로 보낸다.
+    setAccessToken('onboarding-token')
     const router = renderNicknameRoute()
 
     await fillNicknameAndSubmit(user, '초코집사')

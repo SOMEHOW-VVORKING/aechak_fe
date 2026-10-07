@@ -161,6 +161,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryListResponse"
+  /home:
+    get:
+      summary: "홈 화면 조회(추천/인기 랭킹)"
+      description: "SCRUM-155 HomeController. 인증 필요(SecurityConfig permitAll 아님, 비로그인 401 errorCode 20004, 온보딩 미완료 403 20006). recommended는 판매중 상품 최대 8개 무작위, ranking은 리뷰 수>찜 수>최신 등록순 상위 최대 5개(품절 포함). 펫 개인화 없음. 카드는 상품 목록과 같은 ProductSummaryResponse이며 isLiked는 로그인 사용자 기준."
+      operationId: "getHome"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeResponse"
+        "401":
+          description: "비로그인(errorCode 20004)"
+        "403":
+          description: "온보딩 미완료(20006) 또는 이용 제한 계정(20005)"
   /products:
     get:
       summary: "상품 목록 조회(커서 페이지네이션)"
@@ -1448,6 +1466,24 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ProductListData"
+    HomeData:
+      type: object
+      required: [recommended, ranking]
+      properties:
+        recommended:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummaryResponse"
+        ranking:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummaryResponse"
+    HomeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HomeData"
     ProductKeywordSearchSort:
       type: string
       enum: [popular, price_asc, latest]

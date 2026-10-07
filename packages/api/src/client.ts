@@ -77,6 +77,16 @@ function refreshAccessToken(): Promise<string> {
   return refreshPromise
 }
 
+/**
+ * 메모리 access가 없을 때(새로고침/첫 진입) refresh 쿠키로 세션을 복원한다. 401 인터셉터와 같은
+ * 공유 Promise를 타므로 진행 중인 refresh와 겹쳐도 쿠키 회전이 꼬이지 않는다. 실패(쿠키 없음/만료
+ * = 401 20002, 재사용 = 401 20003, 네트워크)는 그대로 reject하고 전역 로그인 이동은 하지 않는다
+ * — 호출부(라우트 가드)가 이동을 정한다.
+ */
+export async function restoreSession(): Promise<void> {
+  setAccessToken(await refreshAccessToken())
+}
+
 // 401 → 쿠키로 refresh 1회 → 새 access 저장 후 원 요청 재시도.
 // auth 경로 자체의 401과 이미 재시도한 요청은 그대로 실패시킨다(루프 방지).
 const retriedRequests = new WeakSet<object>()
