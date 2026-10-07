@@ -518,6 +518,85 @@ Modal로 8개 화면 중 가장 무거웠지만, 캡틴이 이번 배치에서 "
   그대로 베끼면 이 규칙을 어기게 되는 경우가 종종 있으니, 목업에 `·`가 있어도 항상 `/`로
   변환해서 옮길 것.
 
+## web-seller 상품 관리(`/products`, `/products/new`, `/products/$productId/edit`, b5-st-3) (SCRUM-119/120)
+
+실연동 전이라 `features/products/products.mock.ts`의 메모리 스토어로 동작한다. 목업은 BE `origin/develop`의
+`SellerProductController`(SCRUM-114/116/117/118/195)와 같은 DTO, 검증 순서, 에러 코드, 자동 품절 규칙을 따른다.
+각 목업 함수는 실 fetcher처럼 `{ data }`를 돌려주고 `products.queries.ts`가 벗긴다. 실패는 AxiosError 모양
+(`response.status`, `response.data = { errorCode, message }`)으로 reject한다. 실연동 때는 queries의 `mock*` 호출을
+생성 fetcher로 바꾸면 된다. DTO와 폼 변환은 `products.contract.ts`에 있다. localStorage는 쓰지 않으므로
+새로고침하면 시드로 돌아간다(E2E도 첫 goto 이후 SPA 내비게이션만 쓴다).
+
+BE 코드로 확인해 맞춘 것
+- **날짜**: 요청과 응답 모두 오프셋 없는 `LocalDateTime`(KST 벽시계)이다. 할인 기간은 `YYYY-MM-DDT00:00:00`,
+  `YYYY-MM-DDT23:59:59`로 보낸다. `+09:00`을 붙이면 400/90001이다.
+- **검증 실패 코드**: `@Valid`, 본문 파싱, 파라미터 타입 오류는 전부 400/90001이다. 90002는 `INVALID_CURSOR`라
+  셀러 상품 API가 보내지 않는다. `productErrorMessage`가 errorCode별 FE 문구로 바꾼다(서버 message는 격식체라
+  띄우지 않는다). 409/90003은 동시 수정 안내로만 쓴다.
+- **옵션 없는 상품**: `optionGroups: null`과 `optionCombinations: [{ optionValues: [], additionalPrice: 0,
+  stockQuantity }]`를 보낸다. `optionCombinations`는 필수다. 옵션값 이름은 그룹을 넘어서도 겹치면 40005라
+  `OptionBuilder`가 모든 그룹을 보고 막는다. 조합 이름은 요청 순서대로 ` / `로 잇고 옵션 없는 상품은 `기본`이다.
+- **등록 직후 상태**: 재고와 상관없이 `ON_SALE`/`APPROVED`다. 자동 품절은 판매 상태 변경과 옵션 PATCH 때만 일어난다.
+- **판매 상태 PATCH**: `ON_SALE`/`SUSPENDED`만 받고 현재 상태는 보지 않는다. 판매종료도 다시 판매할 수 있어
+  토글을 모든 행에 둔다. 판매 가능한 재고(`isActive && stockQuantity > 0`)가 없으면 `ON_SALE` 요청의 응답이
+  바로 `OUT_OF_STOCK`이다.
+- **재고**: `PATCH /{productId}/options/{combinationId}`는 `stockDelta`(0 금지, ±1,000,000 이내)와 `isActive`만
+  받는다. 재고 Drawer는 셀러가 적은 목표 재고와 지금 재고의 차이를 보내고, 응답 `stockQuantity`가 목표와
+  다르면(그사이 주문 등) 실제 값을 토스트로 알린다. 응답에 판매 상태가 없고 BE는 커밋 후 비동기로 자동
+  품절/복귀를 하므로 목록을 다시 불러와 반영한다(목업은 바로 적용). 옵션별 판매 토글도 Drawer에 있다.
+- **목록**: `GET /sellers/me/products`의 파라미터로 검색(상품명만), 카테고리(어느 깊이든, 하위 포함), 판매 상태,
+  검수 상태, 정렬(최신/가격), 페이지(20개)를 건다. 행은 `SellerProductSummaryResponse` 필드만 쓰고 와이어
+  enum 라벨 매핑은 feature 안에 둔다(공유 도메인 타입은 그대로). BE에 없는 상품번호, 판매 이력 수, 처리 필요
+  체크박스, 반려 사유 확인과 재검수/이의 신청 Modal(`InspectionReviewModal`)은 뺐다. 등록일 범위와 재고 필터는
+  목업과 타입에는 있지만 화면에는 아직 두지 않았다.
+- **이미지**: 업로드는 api 호스트 `POST /files/presigned-url`(purpose=PRODUCT, png/jpeg/webp)이고 tmp 키를 본문에
+  싣는다. BE 크기 제한은 없어 10MB는 FE 정책이다. 목록과 프리필은 저장 키(`products/...`)만 주므로
+  `productImageUrl`이 `VITE_MEDIA_BASE_URL`로 URL을 만든다(없으면 목업 URL). 수정은 남긴 이미지의 저장 키와
+  새 tmp 키를 보내고, 목록 단위로 통째 교체되며 한 목록 안 중복 키는 90001이라 보내기 전에 뺀다.
+- **수정 폼**: PUT은 옵션/재고/판매 상태를 바꾸지 않는다. 수정 화면 5번 칸은 `GET /{productId}/options`로 현재
+  조합을 읽기 전용 표로 보여주고 목록의 재고 버튼을 안내한다.
+- **카테고리**: `GET /categories`는 api 호스트에만 있다(셀러 호스트에는 없음). 연쇄 `Select` 3개로 소분류(깊이 3)만
+  보낸다.
+
+BE 엔드포인트가 없어 목업으로만 동작하는 것(`products.mock.ts`, `products.queries.ts`의 `BE 엔드포인트 없음` 구역)
+- **수정 폼 프리필 단건 조회**: BE에 현재 `categoryId`, 설명, 할인 기간, 추가/상세 이미지 키를 돌려주는 API가 없다.
+  `SellerProductDetail`은 PUT 본문 필드 + `productId`만 담는다.
+- **삭제**: DELETE가 없다. 판매 이력 규칙(CRQ-PRD-05)과 에러 코드는 BE가 생길 때 정한다. 목업은 항상 지운다.
+- **임시저장**: 목록, 단건, upsert, 등록 후 삭제. 등록 본문에는 임시저장 id를 실을 자리가 없어 등록 성공 뒤
+  `useRegisterProduct`가 따로 지운다.
+
+그 밖의 화면 결정
+- **배송 정책**: 셀러 단위(CRQ-SLR-04)라 등록 본문에 넣지 않는다. 폼 6번 칸은 `ShippingPolicySummary`
+  (shipping-policy feature) 읽기 전용 요약과 새 탭 `배송 정책 수정` 링크다. feature끼리 import할 수 없어 라우트가
+  `shippingSummary` 슬롯으로 넘긴다.
+- **가격 UI**: 정가 필수 + `할인 설정` 토글(할인가, 할인율, 시작일/종료일). 할인가는 0부터 정가까지, 시작일 필수,
+  종료일은 비우면 계속 할인이다.
+- **목업에서 뺀 칸**: 상품 속성, 사료/간식 정보, 검수/저장은 BE 필드가 없어 넣지 않았다. 한 페이지 단일 제출이라
+  `다음 단계` 버튼도 없다.
+- **필수값 안내(CRQ-PRD-02)**: 필드를 `FieldAnchor`(id=`product-field-{key}`) div로 감싼다. 제출 시 첫 오류 키로
+  `scrollIntoView` + 포커스 + `role=tooltip` 말풍선을 띄운다. DS에 Tooltip이 없어 말풍선은 feature에 둔다.
+- **미리보기**: 고를 때는 objectURL 미리보기만 만들고 업로드는 제출/임시저장 직전에 한다(presigned 10분). 삭제 시와
+  언마운트 시 이 화면이 만든 objectURL만 해제한다.
+
+실연동 때 확인할 것 (be origin/develop terraform 기준, 2026-10-07)
+
+셀러 웹 배포 도메인은 `seller-dev.aechak.co.kr`(prod `seller.aechak.co.kr`, Cloudflare Pages `aechak-seller`)이다.
+web-seller는 로그인/토큰 갱신/업로드/카테고리를 api 호스트(`api-dev.aechak.co.kr`)에서, 상품 API를 seller 호스트
+(`seller-api-dev.aechak.co.kr`)에서 쓴다. seller 호스트는 api가 발급한 토큰을 공개키로 검증만 한다.
+
+1. **CORS와 로그인 복귀 URL에 셀러 웹 도메인이 없다.** 배포와 로컬 모두 막힌다.
+   - seller 호스트: `dev.tfvars`의 `seller_frontend_origins`가 `http://localhost:5174` 하나뿐이고 local 프로파일도
+     같다. 배포된 셀러 웹과 로컬 web-seller(5173) 둘 다 상품 API가 CORS에 막힌다. 5174는 이 리포의 web-admin 포트다.
+   - api 호스트: CORS와 `AUTH_WEB_RETURN_URLS`가 `https://dev.aechak.co.kr`, `localhost:5175`, `localhost:5173`만
+     담는다. 로컬 web-seller는 통과하지만 배포된 셀러 웹은 로그인 복귀, refresh, 업로드, 카테고리가 모두 막힌다.
+   - be에 필요한 변경: `seller_frontend_origins`에 `https://seller-dev.aechak.co.kr`과 `http://localhost:5173`,
+     api 쪽 허용 목록(`web_origins`)에 `https://seller-dev.aechak.co.kr`.
+2. **API base URL이 둘 필요하다.** 지금은 `VITE_API_BASE_URL` 하나다. seller 호스트용 env를 추가하고 Cloudflare Pages
+   `aechak-seller` 프로젝트 환경변수에도 둘 다 넣어야 한다.
+3. **미디어 base URL.** 목록은 `thumbnailImageKey`만 내려준다. `VITE_MEDIA_BASE_URL`을 `https://media-dev.aechak.co.kr`
+   (prod `https://media.aechak.co.kr`)로 로컬 `.env`와 Pages 환경변수 양쪽에 둬야 썸네일이 보인다.
+4. **seller 호스트에는 prod 프로파일이 아직 없다.** `boot/seller` 리소스에 `application-dev.yml`과 `-local.yml`만 있다.
+
 ---
 
 ---
