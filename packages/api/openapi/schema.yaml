@@ -569,6 +569,47 @@ paths:
                 $ref: "#/components/schemas/ProductListResponse"
         "400":
           description: "유효하지 않은 커서(errorCode 90002)"
+  /users/me/reviews:
+    get:
+      summary: "내 리뷰 목록 조회(커서 페이지네이션)"
+      description: >-
+        tab=unreviewed는 구매확정했고 리뷰 행이 없는 주문 품목(구매확정일 desc, 품목 id desc. 30일이 지나도
+        canReview=false로 남는다. 리뷰를 지운 품목은 재작성 불가라 빠진다), tab=written은 내가 쓴 리뷰
+        (리뷰 id desc, DELETED 제외. HIDDEN/BLOCKED/MASKED도 reviewStatus와 함께 내린다).
+        totalCount는 첫 페이지(cursor 없음)에만 실린다. 다른 탭에서 받은 커서는 400(90002).
+      operationId: "getMyReviews"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tab
+          in: query
+          required: true
+          description: "목록 탭. 없거나 다른 값이면 400(90001)"
+          schema:
+            $ref: "#/components/schemas/MyReviewTab"
+        - name: cursor
+          in: query
+          required: false
+          description: "다음 페이지 커서(같은 탭 이전 응답의 nextCursor)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyReviewListEnvelope"
+        "400":
+          description: "탭 누락/오류(90001), size 범위 밖, 유효하지 않은 커서(90002)"
   /users/me/profile:
     put:
       summary: "프로필 수정"
@@ -1596,6 +1637,110 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/CreateReviewResponse"
+    MyReviewTab:
+      type: string
+      enum: [written, unreviewed]
+    ReviewStatus:
+      type: string
+      enum: [PUBLIC, MASKED, BLOCKED, HIDDEN, DELETED]
+      description: "written 목록에는 DELETED가 오지 않는다. MASKED면 content가 대체 문구다."
+    WrittenReviewItemResponse:
+      type: object
+      required:
+        [type, reviewId, rating, content, reviewStatus, optionName, productPublicId, productName, productThumbnailUrl, createdAt, images]
+      properties:
+        type:
+          type: string
+          enum: [WRITTEN]
+        reviewId:
+          type: integer
+          format: int64
+        rating:
+          type: integer
+        content:
+          type: string
+        reviewStatus:
+          $ref: "#/components/schemas/ReviewStatus"
+        optionName:
+          type: string
+        productPublicId:
+          type: string
+        productName:
+          type: string
+          description: "주문 시점 상품명 스냅샷"
+        productThumbnailUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          description: "ISO LocalDateTime(오프셋 없음)"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewImageResponse"
+    UnreviewedOrderItemResponse:
+      type: object
+      required:
+        [type, orderItemId, optionName, productPublicId, productName, productThumbnailUrl, purchaseConfirmedAt, reviewableUntil, canReview]
+      properties:
+        type:
+          type: string
+          enum: [UNREVIEWED]
+        orderItemId:
+          type: integer
+          format: int64
+        optionName:
+          type: string
+        productPublicId:
+          type: string
+        productName:
+          type: string
+          description: "주문 시점 상품명 스냅샷"
+        productThumbnailUrl:
+          type: string
+          nullable: true
+        purchaseConfirmedAt:
+          type: string
+          description: "ISO LocalDateTime(오프셋 없음)"
+        reviewableUntil:
+          type: string
+          format: date
+          description: "작성 마감일(구매확정일 + 30일, 그날 끝까지)"
+        canReview:
+          type: boolean
+          description: "마감 전이면 true. 마감이 지나도 목록에 남는다."
+    MyReviewListData:
+      type: object
+      required: [items, totalCount, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          description: "tab=written이면 WRITTEN만, tab=unreviewed면 UNREVIEWED만 담긴다."
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/WrittenReviewItemResponse"
+              - $ref: "#/components/schemas/UnreviewedOrderItemResponse"
+            discriminator:
+              propertyName: type
+              mapping:
+                WRITTEN: "#/components/schemas/WrittenReviewItemResponse"
+                UNREVIEWED: "#/components/schemas/UnreviewedOrderItemResponse"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "첫 페이지에만, 이후 null."
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    MyReviewListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/MyReviewListData"
     ProductCategory:
       type: object
       required: [categoryId, name, depth]

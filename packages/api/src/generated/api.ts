@@ -523,6 +523,97 @@ export interface CreateReviewEnvelope {
   data: CreateReviewResponse
 }
 
+export type MyReviewTab = (typeof MyReviewTab)[keyof typeof MyReviewTab]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MyReviewTab = {
+  written: 'written',
+  unreviewed: 'unreviewed',
+} as const
+
+/**
+ * written 목록에는 DELETED가 오지 않는다. MASKED면 content가 대체 문구다.
+ */
+export type ReviewStatus = (typeof ReviewStatus)[keyof typeof ReviewStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReviewStatus = {
+  PUBLIC: 'PUBLIC',
+  MASKED: 'MASKED',
+  BLOCKED: 'BLOCKED',
+  HIDDEN: 'HIDDEN',
+  DELETED: 'DELETED',
+} as const
+
+export type WrittenReviewItemResponseType =
+  (typeof WrittenReviewItemResponseType)[keyof typeof WrittenReviewItemResponseType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WrittenReviewItemResponseType = {
+  WRITTEN: 'WRITTEN',
+} as const
+
+export interface WrittenReviewItemResponse {
+  type: WrittenReviewItemResponseType
+  reviewId: number
+  rating: number
+  content: string
+  reviewStatus: ReviewStatus
+  optionName: string
+  productPublicId: string
+  /** 주문 시점 상품명 스냅샷 */
+  productName: string
+  /** @nullable */
+  productThumbnailUrl: string | null
+  /** ISO LocalDateTime(오프셋 없음) */
+  createdAt: string
+  images: ReviewImageResponse[]
+}
+
+export type UnreviewedOrderItemResponseType =
+  (typeof UnreviewedOrderItemResponseType)[keyof typeof UnreviewedOrderItemResponseType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UnreviewedOrderItemResponseType = {
+  UNREVIEWED: 'UNREVIEWED',
+} as const
+
+export interface UnreviewedOrderItemResponse {
+  type: UnreviewedOrderItemResponseType
+  orderItemId: number
+  optionName: string
+  productPublicId: string
+  /** 주문 시점 상품명 스냅샷 */
+  productName: string
+  /** @nullable */
+  productThumbnailUrl: string | null
+  /** ISO LocalDateTime(오프셋 없음) */
+  purchaseConfirmedAt: string
+  /** 작성 마감일(구매확정일 + 30일, 그날 끝까지) */
+  reviewableUntil: string
+  /** 마감 전이면 true. 마감이 지나도 목록에 남는다. */
+  canReview: boolean
+}
+
+export type MyReviewListDataItemsItem = WrittenReviewItemResponse | UnreviewedOrderItemResponse
+
+export interface MyReviewListData {
+  /** tab=written이면 WRITTEN만, tab=unreviewed면 UNREVIEWED만 담긴다. */
+  items: MyReviewListDataItemsItem[]
+  /**
+   * 첫 페이지에만, 이후 null.
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface MyReviewListEnvelope {
+  data: MyReviewListData
+}
+
 export interface ProductCategory {
   categoryId: number
   name: string
@@ -984,6 +1075,22 @@ export type GetProductReviewsParams = {
 export type GetLikedProductsParams = {
   /**
    * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetMyReviewsParams = {
+  /**
+   * 목록 탭. 없거나 다른 값이면 400(90001)
+   */
+  tab: MyReviewTab
+  /**
+   * 다음 페이지 커서(같은 탭 이전 응답의 nextCursor)
    */
   cursor?: string
   /**
@@ -4111,6 +4218,198 @@ export function useGetLikedProductsSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetLikedProductsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * tab=unreviewed는 구매확정했고 리뷰 행이 없는 주문 품목(구매확정일 desc, 품목 id desc. 30일이 지나도 canReview=false로 남는다. 리뷰를 지운 품목은 재작성 불가라 빠진다), tab=written은 내가 쓴 리뷰 (리뷰 id desc, DELETED 제외. HIDDEN/BLOCKED/MASKED도 reviewStatus와 함께 내린다). totalCount는 첫 페이지(cursor 없음)에만 실린다. 다른 탭에서 받은 커서는 400(90002).
+ * @summary 내 리뷰 목록 조회(커서 페이지네이션)
+ */
+export const getMyReviews = (params: GetMyReviewsParams, signal?: AbortSignal) => {
+  return customInstance<MyReviewListEnvelope>({
+    url: `/users/me/reviews`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetMyReviewsQueryKey = (params?: GetMyReviewsParams) => {
+  return [`/users/me/reviews`, ...(params ? [params] : [])] as const
+}
+
+export const getGetMyReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyReviews>>> = ({ signal }) =>
+    getMyReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyReviews>>>
+export type GetMyReviewsQueryError = void
+
+export function useGetMyReviews<TData = Awaited<ReturnType<typeof getMyReviews>>, TError = void>(
+  params: GetMyReviewsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getMyReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyReviews<TData = Awaited<ReturnType<typeof getMyReviews>>, TError = void>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getMyReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyReviews<TData = Awaited<ReturnType<typeof getMyReviews>>, TError = void>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 리뷰 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetMyReviews<TData = Awaited<ReturnType<typeof getMyReviews>>, TError = void>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyReviewsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMyReviewsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyReviews>>> = ({ signal }) =>
+    getMyReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMyReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyReviewsSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getMyReviews>>>
+export type GetMyReviewsSuspenseQueryError = void
+
+export function useGetMyReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 리뷰 목록 조회(커서 페이지네이션)
+ */
+
+export function useGetMyReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getMyReviews>>,
+  TError = void,
+>(
+  params: GetMyReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyReviewsSuspenseQueryOptions(params, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,
