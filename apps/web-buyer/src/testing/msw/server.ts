@@ -24,6 +24,7 @@ export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
 export const SEARCH_PRODUCTS_URL = `${base}/search/products`
 export const SEARCH_KEYWORDS_URL = `${base}/search/keywords`
 export const RECENT_KEYWORDS_URL = `${base}/search/recent-keywords`
+export const HOME_URL = `${base}/home`
 
 const SEARCH_RECENT_KEYWORD_FIXTURES = [
   { id: 1, keyword: '자동 급식기', searchedAt: '2026-08-06T09:00:00' },
@@ -850,6 +851,21 @@ export const handlers = [
   http.post(WEB_LOGOUT_URL, () => new HttpResponse(null, { status: 204 })),
   // 적립금 잔액 — seedPointBalance로 세운 값을 봉투에 담아 내려준다(미시드면 0).
   http.get(POINTS_URL, () => HttpResponse.json({ data: { balance: pointBalance } })),
+  // 홈(GET /home) — BE HomeResponse 봉투. 추천은 판매중만(최대 8), 랭킹은 품절 포함 상위 5.
+  // 카드 isLiked는 다른 목록과 같이 likedProductRows를 진실 소스로 삼는다.
+  http.get(HOME_URL, () => {
+    const card = (product: ProductFixture['product']) => ({
+      ...product,
+      isLiked: isLikedFixture(product.productId),
+    })
+    const products = PRODUCT_FIXTURES.map(f => f.product)
+    return HttpResponse.json({
+      data: {
+        recommended: products.filter(p => p.saleStatus === 'ON_SALE').slice(0, 8).map(card),
+        ranking: products.slice(0, 5).map(card),
+      },
+    })
+  }),
   // 카테고리 트리(마켓 대분류/중분류).
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: CATEGORY_FIXTURES })),
   // 상품 목록 — category 필터 + sort(price_asc) + 커서(인덱스 2개씩) 페이지네이션.

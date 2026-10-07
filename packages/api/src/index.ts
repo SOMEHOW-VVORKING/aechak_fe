@@ -3,6 +3,7 @@ export {
   axiosInstance,
   customInstance,
   getAccessToken,
+  restoreSession,
   setAccessToken,
   setOnAuthExpired,
   setOnOnboardingRequired,

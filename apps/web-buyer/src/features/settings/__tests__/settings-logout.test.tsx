@@ -26,7 +26,7 @@ describe('/settings 로그아웃 — 서버 세션 종료 배선', () => {
   beforeEach(() => resetAuth())
   afterEach(() => setAccessToken(null))
 
-  it('[AC-LOGOUT-003] 확인 시 서버 로그아웃 → 토큰 파기 → 홈 이동 + 로컬 로그아웃', async () => {
+  it('[AC-LOGOUT-003] 확인 시 서버 로그아웃 → 토큰 파기 → 로컬 로그아웃 + 홈 가드가 로그인으로 보냄', async () => {
     let called = 0
     server.use(
       http.post(WEB_LOGOUT_URL, () => {
@@ -43,8 +43,9 @@ describe('/settings 로그아웃 — 서버 세션 종료 배선', () => {
     const confirmButtons = await screen.findAllByRole('button', { name: '로그아웃' })
     await user.click(confirmButtons[confirmButtons.length - 1]!)
 
-    // 홈으로 이동했고(설정 화면이 아님), 서버 호출·토큰 파기·로컬 플래그까지 전부 반영.
-    expect(await screen.findByText(/지금 인기 있는 상품/)).toBeInTheDocument()
+    // 홈으로 이동하면 홈 가드가 로그아웃 상태를 보고 /home 없이 로그인 화면으로 보낸다.
+    // 서버 호출·토큰 파기·로컬 플래그까지 전부 반영.
+    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeInTheDocument()
     expect(called).toBe(1)
     expect(getAccessToken()).toBeNull()
     expect(getIsLoggedIn()).toBe(false)
