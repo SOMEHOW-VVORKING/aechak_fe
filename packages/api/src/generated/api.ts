@@ -369,6 +369,15 @@ export interface ProductListResponse {
   data: ProductListData
 }
 
+export interface HomeData {
+  recommended: ProductSummaryResponse[]
+  ranking: ProductSummaryResponse[]
+}
+
+export interface HomeResponse {
+  data: HomeData
+}
+
 export type ProductKeywordSearchSort =
   (typeof ProductKeywordSearchSort)[keyof typeof ProductKeywordSearchSort]
 
@@ -2034,6 +2043,159 @@ export function useGetCategoriesSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetCategoriesSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * SCRUM-155 HomeController. 인증 필요(SecurityConfig permitAll 아님, 비로그인 401 errorCode 20004, 온보딩 미완료 403 20006). recommended는 판매중 상품 최대 8개 무작위, ranking은 리뷰 수>찜 수>최신 등록순 상위 최대 5개(품절 포함). 펫 개인화 없음. 카드는 상품 목록과 같은 ProductSummaryResponse이며 isLiked는 로그인 사용자 기준.
+ * @summary 홈 화면 조회(추천/인기 랭킹)
+ */
+export const getHome = (signal?: AbortSignal) => {
+  return customInstance<HomeResponse>({ url: `/home`, method: 'GET', signal })
+}
+
+export const getGetHomeQueryKey = () => {
+  return [`/home`] as const
+}
+
+export const getGetHomeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHome>>,
+  TError = void,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetHomeQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHome>>> = ({ signal }) =>
+    getHome(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHome>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHomeQueryResult = NonNullable<Awaited<ReturnType<typeof getHome>>>
+export type GetHomeQueryError = void
+
+export function useGetHome<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHome>>,
+          TError,
+          Awaited<ReturnType<typeof getHome>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHome<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHome>>,
+          TError,
+          Awaited<ReturnType<typeof getHome>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHome<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 홈 화면 조회(추천/인기 랭킹)
+ */
+
+export function useGetHome<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetHomeQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetHomeSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHome>>,
+  TError = void,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetHomeQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHome>>> = ({ signal }) =>
+    getHome(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getHome>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHomeSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getHome>>>
+export type GetHomeSuspenseQueryError = void
+
+export function useGetHomeSuspense<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHomeSuspense<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHomeSuspense<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 홈 화면 조회(추천/인기 랭킹)
+ */
+
+export function useGetHomeSuspense<TData = Awaited<ReturnType<typeof getHome>>, TError = void>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getHome>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetHomeSuspenseQueryOptions(options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,
