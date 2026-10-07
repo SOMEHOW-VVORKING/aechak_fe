@@ -6,6 +6,7 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import {
+  MY_REVIEWS_URL,
   PRODUCT_REVIEWS_URL,
   REAL_PRODUCT_ID,
   REVIEW_DETAIL_URL,
@@ -390,10 +391,34 @@ describe('리뷰 라우트', () => {
     return user
   }
 
-  it('[AC-REVIEW-WRITE-001] 실 주문(orderItemId 보유)의 리뷰는 서버에 저장되고 서버 id로 반영된다', async () => {
+  it('[AC-REVIEW-WRITE-001] 실 주문(orderItemId 보유)의 리뷰는 서버에 저장되고 내 리뷰는 서버 목록으로 보인다', async () => {
     seedServerOrder()
     let posted: { orderItemId?: number; rating?: number } | null = null
     server.use(
+      // 저장 전에는 비어 있고 저장 뒤에는 그 리뷰를 내려주는 written 탭.
+      http.get(MY_REVIEWS_URL, ({ request }) => {
+        const written = new URL(request.url).searchParams.get('tab') === 'written' && posted != null
+        const items = written
+          ? [
+              {
+                type: 'WRITTEN',
+                reviewId: 977,
+                rating: 5,
+                content: '서버가 확정한 본문이에요.',
+                reviewStatus: 'PUBLIC',
+                optionName: '5m / 블랙',
+                productPublicId: 'p-leash-5m',
+                productName: '자동 리드줄 5m 대형견용',
+                productThumbnailUrl: null,
+                createdAt: '2026-08-21T10:00:00',
+                images: [],
+              },
+            ]
+          : []
+        return HttpResponse.json({
+          data: { items, totalCount: items.length, nextCursor: null, hasNext: false },
+        })
+      }),
       http.post(REVIEWS_URL, async ({ request }) => {
         posted = (await request.json()) as { orderItemId: number; rating: number }
         return HttpResponse.json(
@@ -418,13 +443,10 @@ describe('리뷰 라우트', () => {
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted!.orderItemId).toBe(77)
     expect(posted!.rating).toBe(5)
-    // 서버 응답으로 스토어를 덮는다 — id는 srv- 접두, 본문/옵션/작성일도 서버 값이다.
-    await waitFor(() => expect(getReviews().some(r => r.id === 'srv-977')).toBe(true))
-    const saved = getReviews().find(r => r.id === 'srv-977')!
-    expect(saved.content).toBe('서버가 확정한 본문이에요.')
-    expect(saved.option).toBe('5m / 블랙')
-    expect(saved.createdAt).toBe('2026.08.21')
     await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/mine'))
+    // 작성 완료 탭은 서버 written 목록을 그린다. 서버 리뷰는 로컬 스토어에 따로 쌓지 않는다.
+    expect(await screen.findByText('서버가 확정한 본문이에요.')).toBeInTheDocument()
+    expect(getReviews().some(r => r.id === 'srv-977')).toBe(false)
   })
 
   it('[AC-REVIEW-WRITE-002] 목업 주문(orderItemId 없음)은 서버를 부르지 않고 로컬에만 남는다', async () => {

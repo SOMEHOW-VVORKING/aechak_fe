@@ -30,6 +30,11 @@ export interface ReviewWriteScreenProps {
   orderId?: string
   /** 수정 진입 시 대상 리뷰 id(있으면 프리필 + 수정 모드). */
   reviewId?: string
+  /** 서버 작성 대기 항목에서 진입할 때의 주문 품목 id와 표시용 스냅샷(내 리뷰가 넘긴다). */
+  orderItemId?: number
+  productName?: string
+  option?: string
+  thumbnailUrl?: string
 }
 
 /** 서버에서 받은 표시용 URL은 놓아주면 안 되고, 로컬 미리보기 blob만 해제한다(펫 폼과 동일). */
@@ -42,7 +47,15 @@ function revokeIfBlob(url: string) {
 const RATING_WORDS = ['', '별로예요', '그저 그래요', '괜찮아요', '좋아요', '최고예요']
 
 // 리뷰 작성(b4-st-2). 별점·사진·본문 + 최소 글자/금칙어 검증. 등록 → 내 리뷰로 이동(토스트).
-export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteScreenProps) {
+export function ReviewWriteScreen({
+  productId,
+  orderId,
+  reviewId,
+  orderItemId: serverOrderItemId,
+  productName: snapshotName,
+  option: snapshotOption,
+  thumbnailUrl: snapshotThumbnail,
+}: ReviewWriteScreenProps) {
   const navigate = useNavigate()
   const editing = useReviewById(reviewId)
   const orders = useOrders()
@@ -58,9 +71,11 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
     .find(o => o.id === targetOrderId)
     ?.groups.flatMap(g => g.items)
     .find(i => i.productId === targetProductId)
-  const productName = orderItem?.name ?? product?.name
-  const productOption = orderItem?.option ?? product?.category ?? '기본 구성'
-  const thumbnail = orderItem?.thumbnailUrl ?? product?.thumbnailUrl
+  // 목업 주문 품목 -> 서버 작성 대기 스냅샷 -> 카탈로그 순. 서버 품목은 목업 주문 스토어에 없다.
+  const productName = orderItem?.name ?? snapshotName ?? product?.name
+  const productOption = orderItem?.option ?? snapshotOption ?? product?.category ?? '기본 구성'
+  const thumbnail = orderItem?.thumbnailUrl ?? snapshotThumbnail ?? product?.thumbnailUrl
+  const targetOrderItemId = orderItem?.orderItemId ?? serverOrderItemId
 
   const [rating, setRating] = useState(editing?.rating ?? 0)
   const [content, setContent] = useState(editing?.content ?? '')
@@ -107,8 +122,8 @@ export function ReviewWriteScreen({ productId, orderId, reviewId }: ReviewWriteS
       createdAt: '2026.07.10',
     }
     createReview.mutate(
-      // orderItemId는 실 주문에만 있다 — 없으면 mutation이 로컬 스토어 경로로 폴백한다.
-      { review, orderItemId: orderItem?.orderItemId, files: photos.flatMap(p => (p.file ? [p.file] : [])) },
+      // orderItemId는 서버 주문 품목에만 있다. 없으면(목업 주문) mutation이 로컬 스토어 경로로 간다.
+      { review, orderItemId: targetOrderItemId, files: photos.flatMap(p => (p.file ? [p.file] : [])) },
       {
         onSuccess: () =>
           navigate({ to: '/reviews/mine', search: { submitted: true }, replace: true }),
