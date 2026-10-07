@@ -578,10 +578,24 @@ BE 엔드포인트가 없어 목업으로만 동작하는 것(`products.mock.ts`
 - **미리보기**: 고를 때는 objectURL 미리보기만 만들고 업로드는 제출/임시저장 직전에 한다(presigned 10분). 삭제 시와
   언마운트 시 이 화면이 만든 objectURL만 해제한다.
 
-실연동 때 확인할 것
-1. 셀러 호스트(8081) 로컬 CORS가 `http://localhost:5174`만 허용한다. web-seller dev 서버는 5173이다.
-2. 카테고리와 업로드는 api 호스트, 상품 API는 셀러 호스트라 axios 인스턴스 baseURL이 둘 필요하다.
-3. 미디어 base URL(`VITE_MEDIA_BASE_URL`)을 web-seller env에도 둬야 목록 썸네일이 보인다.
+실연동 때 확인할 것 (be origin/develop terraform 기준, 2026-10-07)
+
+셀러 웹 배포 도메인은 `seller-dev.aechak.co.kr`(prod `seller.aechak.co.kr`, Cloudflare Pages `aechak-seller`)이다.
+web-seller는 로그인/토큰 갱신/업로드/카테고리를 api 호스트(`api-dev.aechak.co.kr`)에서, 상품 API를 seller 호스트
+(`seller-api-dev.aechak.co.kr`)에서 쓴다. seller 호스트는 api가 발급한 토큰을 공개키로 검증만 한다.
+
+1. **CORS와 로그인 복귀 URL에 셀러 웹 도메인이 없다.** 배포와 로컬 모두 막힌다.
+   - seller 호스트: `dev.tfvars`의 `seller_frontend_origins`가 `http://localhost:5174` 하나뿐이고 local 프로파일도
+     같다. 배포된 셀러 웹과 로컬 web-seller(5173) 둘 다 상품 API가 CORS에 막힌다. 5174는 이 리포의 web-admin 포트다.
+   - api 호스트: CORS와 `AUTH_WEB_RETURN_URLS`가 `https://dev.aechak.co.kr`, `localhost:5175`, `localhost:5173`만
+     담는다. 로컬 web-seller는 통과하지만 배포된 셀러 웹은 로그인 복귀, refresh, 업로드, 카테고리가 모두 막힌다.
+   - be에 필요한 변경: `seller_frontend_origins`에 `https://seller-dev.aechak.co.kr`과 `http://localhost:5173`,
+     api 쪽 허용 목록(`web_origins`)에 `https://seller-dev.aechak.co.kr`.
+2. **API base URL이 둘 필요하다.** 지금은 `VITE_API_BASE_URL` 하나다. seller 호스트용 env를 추가하고 Cloudflare Pages
+   `aechak-seller` 프로젝트 환경변수에도 둘 다 넣어야 한다.
+3. **미디어 base URL.** 목록은 `thumbnailImageKey`만 내려준다. `VITE_MEDIA_BASE_URL`을 `https://media-dev.aechak.co.kr`
+   (prod `https://media.aechak.co.kr`)로 로컬 `.env`와 Pages 환경변수 양쪽에 둬야 썸네일이 보인다.
+4. **seller 호스트에는 prod 프로파일이 아직 없다.** `boot/seller` 리소스에 `application-dev.yml`과 `-local.yml`만 있다.
 
 ---
 
