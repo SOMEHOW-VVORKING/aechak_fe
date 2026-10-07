@@ -14,6 +14,7 @@ export function MyReviewCard({
   nickname,
   productName,
   thumbnailUrl,
+  notice,
   onEdit,
   onDelete,
   onImageOpen,
@@ -23,6 +24,8 @@ export function MyReviewCard({
   /** 내 리뷰 완료 탭에서만 상품 컨텍스트(썸네일/상품명)를 함께 보여준다. */
   productName?: string
   thumbnailUrl?: string
+  /** 운영 조치(마스킹/차단/숨김)로 다른 구매자에게 다르게 보일 때 본문 아래에 붙이는 안내. */
+  notice?: string
   /**
    * 수정 진입. 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하므로, 서버에서 온 리뷰에는
    * 호출부가 주지 않는다 — 그때는 버튼 자체를 그리지 않는다(삭제만 남는다).
@@ -88,6 +91,7 @@ export function MyReviewCard({
 
       {/* 본문 */}
       <p className="text-body-sm leading-relaxed text-text-primary">{review.content}</p>
+      {notice && <p className="text-caption text-text-tertiary">{notice}</p>}
 
       {/* 사진(가로 스크롤 썸네일, 탭 시 확대) */}
       {images.length > 0 && (

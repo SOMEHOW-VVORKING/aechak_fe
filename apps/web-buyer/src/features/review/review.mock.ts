@@ -141,6 +141,12 @@ export interface PendingReview {
   thumbnailUrl?: string
   /** "구매확정 06.10" / "배송완료 06.05" 안내. */
   since: string
+  /** 서버 작성 대기 항목(GET /users/me/reviews?tab=unreviewed)만 있다. 목업 주문 항목은 없다. */
+  orderItemId?: number
+  /** 작성 마감 'MM.DD'(서버 항목만). */
+  reviewableUntil?: string
+  /** 마감이 지나면 false. 서버는 지난 항목도 목록에 남긴다. 목업 항목은 항상 작성 가능으로 본다. */
+  canReview?: boolean
 }
 
 // 배송완료/구매확정 주문 상품 중 아직 리뷰를 쓰지 않은 항목(작성 대기). isReviewed는 리뷰 스토어 판정.

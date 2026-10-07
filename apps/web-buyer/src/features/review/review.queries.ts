@@ -3,11 +3,16 @@ import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from 
 import {
   createReview,
   deleteReview as deleteReviewApi,
+  getMyReviews,
   getProductReviews,
+  type MyReviewTab as ServerMyReviewTab,
   type ReviewItemResponse,
+  type ReviewStatus,
+  type UnreviewedOrderItemResponse,
+  type WrittenReviewItemResponse,
 } from '@aechak/api'
 import type { Review } from '@aechak/domain'
-import { findMockProduct } from '@/shared/catalog'
+import { findMockProduct, findProduct, placeholderImage } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
 import { addReview, removeReview, updateReview, useReviews } from '@/shared/review'
 import {
@@ -21,6 +26,9 @@ import {
 import { uploadReviewPhoto } from './review.upload'
 
 const PAGE_SIZE = 20
+
+/** 내 리뷰 탭 쿼리 접두. 뒤에 서버 탭 이름(written/unreviewed)이 붙는다. */
+const MY_REVIEWS_KEY = ['reviews', 'mine'] as const
 
 // 상품 리뷰 목록 항목 — 서버/목업 리뷰를 도메인 Review 형태로 정규화하고 "내가 쓴 리뷰"인지(isMine)
 // 태그를 얹은 뷰 모델. 서버 리뷰는 응답의 isMine(SCRUM-210)을 그대로 신뢰하고, 아직 서버에 없는
@@ -242,6 +250,8 @@ export function useProductReviews(
 function invalidateReviewCaches(queryClient: QueryClient, productId: string): void {
   void queryClient.invalidateQueries({ queryKey: ['reviews', 'product', productId] })
   void queryClient.invalidateQueries({ queryKey: ['product', 'detail', productId] })
+  // 내 리뷰 두 탭(작성 대기 개수, 작성 완료 목록)도 같은 리뷰를 담고 있다.
+  void queryClient.invalidateQueries({ queryKey: MY_REVIEWS_KEY })
 }
 
 /**
@@ -249,11 +259,15 @@ function invalidateReviewCaches(queryClient: QueryClient, productId: string): vo
  * `removeReview`가 no-op이라, 이게 없으면 "삭제했어요" 토스트가 뜬 뒤에도 재조회가 끝날 때까지
  * 카드가 남는다 — 여러 페이지를 펼쳐 뒀으면 그 왕복이 페이지 수만큼 이어진다.
  * 헤더 개수의 모수인 첫 페이지 totalCount도 같이 줄여 카드 수와 어긋나지 않게 한다.
- * 정렬/포토 조합마다 키가 달라 접두 매칭(setQueriesData)으로 전부 손본다.
+ * 정렬/포토 조합마다 키가 달라 접두 매칭(setQueriesData)으로 전부 손본다. 내 리뷰 작성 완료 탭
+ * 캐시도 같은 모양(items[].id, totalCount)이라 같은 함수로 뺀다.
  */
-function dropReviewFromPages(queryClient: QueryClient, productId: string, localId: string): void {
-  queryClient.setQueriesData<{ pages: ReviewPage[]; pageParams: unknown[] }>(
-    { queryKey: ['reviews', 'product', productId] },
+function dropReviewFromPages(queryClient: QueryClient, queryKey: readonly unknown[], localId: string): void {
+  queryClient.setQueriesData<{
+    pages: { items: { id: string }[]; totalCount: number | null }[]
+    pageParams: unknown[]
+  }>(
+    { queryKey },
     old => {
       // 상세 미리보기 쿼리는 같은 접두를 쓰지만 배열이라 pages가 없다 — 그건 무효화에 맡긴다.
       if (!old?.pages) return old
@@ -303,26 +317,21 @@ export function useCreateReview() {
       // 사진은 S3로 직접 올리고 tmp 키만 본문에 싣는다. 한 장이라도 실패하면 리뷰를 만들지 않는다
       // (반쪽 리뷰가 남지 않게) — 업로드 실패는 그대로 mutation 에러로 올라간다.
       const imageKeys = await Promise.all(files.map(uploadReviewPhoto))
-      const res = await createReview({
+      // 서버 리뷰는 로컬 스토어에 두지 않는다. 내 리뷰와 상품 리뷰 모두 서버 목록이 원본이다.
+      await createReview({
         orderItemId,
         rating: review.rating,
         content: review.content,
         imageKeys,
       })
-      const saved = res.data
-      // 서버가 확정한 id·작성시각·옵션 스냅샷·이미지 URL로 덮어 스토어에 넣는다 — 목록/삭제가
-      // 서버와 같은 식별자를 보게 된다(id 접두로 서버 반영분을 구분).
-      addReview({
-        ...review,
-        id: `${SERVER_ID_PREFIX}${saved.reviewId}`,
-        rating: saved.rating as Review['rating'],
-        content: saved.content,
-        option: saved.optionName,
-        images: [...saved.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
-        createdAt: saved.createdAt.slice(0, 10).replace(/-/g, '.'),
-      })
     },
-    onSuccess: (_, variables) => invalidateReviewCaches(queryClient, variables.review.productId),
+    onSuccess: (_, variables) => {
+      invalidateReviewCaches(queryClient, variables.review.productId)
+      // 작성 화면에서 돌아가면 내 리뷰 캐시는 비활성이라 무효화만으로는 마운트 직후 이전 목록
+      // (방금 쓴 품목이 아직 작성 대기에 있고 작성 완료에는 없는 상태)이 재조회 전까지 보인다.
+      // 캐시를 비워 마운트 시 로딩을 거쳐 새 목록을 받게 한다.
+      if (variables.orderItemId != null) void queryClient.resetQueries({ queryKey: MY_REVIEWS_KEY })
+    },
   })
 }
 
@@ -367,9 +376,7 @@ export function useEditReview() {
 }
 
 // 리뷰 삭제 mutation. 서버에 저장된 리뷰(srv- 접두)는 실제로 지우고, 목업 작성분은 스토어에서만
-// 뺀다. 대상 Review를 통째로 받는 이유는 삭제 후 무효화할 상품 캐시 키(productId)가 필요해서다 —
-// 서버에서 온 내 리뷰는 로컬 스토어에 없을 수 있어(다른 기기/세션에서 쓴 것) removeReview만으로는
-// 목록에서 사라지지 않고 재조회가 있어야 한다.
+// 뺀다. 대상 Review를 통째로 받는 이유는 삭제 후 무효화할 상품 캐시 키(productId)가 필요해서다.
 export function useDeleteReview() {
   const queryClient = useQueryClient()
   return useMutation<void, Error, Review>({
@@ -387,24 +394,146 @@ export function useDeleteReview() {
         // 403(110003 본인 리뷰 아님)이나 서버 오류는 그대로 던져 화면이 사유를 안내하게 한다.
         if (!isNotFound(e)) throw e
       }
-      removeReview(review.id)
-      // 서버 리뷰는 스토어에 없을 수 있어 위 제거가 화면에 안 닿는다 — 캐시에서도 바로 빼서
-      // 토스트와 목록이 어긋나지 않게 한 뒤, 재집계된 요약은 아래 무효화로 맞춘다.
-      dropReviewFromPages(queryClient, review.productId, review.id)
+      // 서버 리뷰는 로컬 스토어에 없다. 상품 리뷰와 내 리뷰 캐시에서 바로 빼서 토스트와 목록이
+      // 어긋나지 않게 한 뒤, 재집계된 요약과 개수는 아래 무효화로 맞춘다. 지운 품목은 재작성할 수
+      // 없어(서버가 작성 대기에서도 뺀다) 작성 대기 캐시는 건드리지 않는다.
+      dropReviewFromPages(queryClient, ['reviews', 'product', review.productId], review.id)
+      dropReviewFromPages(queryClient, [...MY_REVIEWS_KEY, 'written'], review.id)
     },
     onSuccess: (_, review) => invalidateReviewCaches(queryClient, review.productId),
   })
 }
 
-// 내 리뷰(b4-st-6) — 작성 대기(배송완료/구매확정 미작성) + 작성 완료(내가 쓴 리뷰).
-export function useMyReviews(): { pending: PendingReview[]; completed: Review[] } {
+// ── 내 리뷰(b4-st-6) ──
+
+/** 내 리뷰 작성 완료 항목. 서버 리뷰는 주문 시점 상품 스냅샷과 노출 상태를 함께 싣는다. */
+export interface MyWrittenReview extends Review {
+  productName?: string
+  thumbnailUrl?: string
+  /** 서버 리뷰만 있다. PUBLIC이 아니면 화면이 다른 구매자에게 어떻게 보이는지 안내한다. */
+  reviewStatus?: ReviewStatus
+}
+
+interface MyReviewPage<T> {
+  items: T[]
+  /** 첫 페이지에만 실린다(이후 null). */
+  totalCount: number | null
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+/** 'YYYY-MM-DD...' -> 'MM.DD' */
+function monthDay(iso: string): string {
+  return iso.slice(5, 10).replace('-', '.')
+}
+
+function toWrittenReview(r: WrittenReviewItemResponse): MyWrittenReview {
+  return {
+    id: `${SERVER_ID_PREFIX}${r.reviewId}`,
+    productId: r.productPublicId,
+    orderId: '',
+    author: '나',
+    rating: Math.min(5, Math.max(1, Math.round(r.rating))) as Review['rating'],
+    content: r.content,
+    images: [...r.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
+    option: r.optionName,
+    verifiedPurchase: true,
+    createdAt: r.createdAt.slice(0, 10).replace(/-/g, '.'),
+    productName: r.productName,
+    thumbnailUrl: r.productThumbnailUrl ?? placeholderImage(),
+    reviewStatus: r.reviewStatus,
+  }
+}
+
+function toPendingReview(r: UnreviewedOrderItemResponse): PendingReview {
+  return {
+    orderId: '',
+    productId: r.productPublicId,
+    name: r.productName,
+    option: r.optionName,
+    thumbnailUrl: r.productThumbnailUrl ?? placeholderImage(),
+    since: `구매확정 ${monthDay(r.purchaseConfirmedAt)}`,
+    orderItemId: r.orderItemId,
+    reviewableUntil: monthDay(r.reviewableUntil),
+    canReview: r.canReview,
+  }
+}
+
+export interface MyReviewTabView<T> {
+  /** 서버 항목 뒤에 목업 주문 항목을 붙인 목록. 서버 첫 페이지를 받기 전(로딩/실패)에는 null. */
+  items: T[] | null
+  /** 탭 라벨 개수(서버 totalCount + 목업 항목 수). 첫 페이지를 받기 전에는 null. */
+  count: number | null
+  isError: boolean
+  hasNextPage: boolean
+  fetchNextPage: () => void
+  isFetchingNextPage: boolean
+}
+
+function useMyReviewTab<T>(
+  tab: ServerMyReviewTab,
+  toItem: (item: WrittenReviewItemResponse | UnreviewedOrderItemResponse) => T[],
+  local: T[],
+): MyReviewTabView<T> {
+  const query = useInfiniteQuery({
+    queryKey: [...MY_REVIEWS_KEY, tab],
+    queryFn: async ({ pageParam, signal }): Promise<MyReviewPage<T>> => {
+      const { data } = await getMyReviews({ tab, cursor: pageParam, size: PAGE_SIZE }, signal)
+      return {
+        items: data.items.flatMap(toItem),
+        totalCount: data.totalCount,
+        nextCursor: data.nextCursor,
+        hasNext: data.hasNext,
+      }
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+  })
+  const pages = query.data?.pages
+  const items = useMemo(() => (pages ? [...pages.flatMap(p => p.items), ...local] : null), [pages, local])
+  return {
+    items,
+    count: pages ? (pages[0]?.totalCount ?? 0) + local.length : null,
+    isError: query.isError,
+    hasNextPage: query.hasNextPage,
+    fetchNextPage: () => void query.fetchNextPage(),
+    isFetchingNextPage: query.isFetchingNextPage,
+  }
+}
+
+/**
+ * 내 리뷰 두 탭. 작성 대기는 GET /users/me/reviews?tab=unreviewed, 작성 완료는 tab=written이 원본이다.
+ *
+ * 주문 조회 API가 아직 없어 체크아웃/주문 내역은 클라이언트 목업 주문 스토어로만 돈다. 그 주문의 품목은
+ * 서버에 없어 서버 목록에 나오지 않고, 리뷰도 POST 없이 로컬 리뷰 스토어에만 남는다(useCreateReview의
+ * orderItemId 없는 경로). 그래서 목업 주문에서 파생한 작성 대기와 로컬 스토어 리뷰만 서버 항목 뒤에
+ * 붙인다. 주문 API가 열려 목업 주문이 사라지면 local 두 줄만 지우면 된다.
+ */
+export function useMyReviews(): {
+  pending: MyReviewTabView<PendingReview>
+  completed: MyReviewTabView<MyWrittenReview>
+} {
   const orders = useOrders()
   const reviews = useReviews()
-  return useMemo(() => {
-    const isReviewed = (orderId: string, productId: string) =>
-      reviews.some(r => r.orderId === orderId && r.productId === productId)
-    return { pending: buildPendingReviews(orders, isReviewed), completed: [...reviews] }
-  }, [orders, reviews])
+  const localPending = useMemo(
+    () =>
+      buildPendingReviews(orders, (orderId, productId) =>
+        reviews.some(r => r.orderId === orderId && r.productId === productId),
+      ),
+    [orders, reviews],
+  )
+  const localCompleted = useMemo<MyWrittenReview[]>(
+    () =>
+      reviews.map(r => {
+        const product = findProduct(r.productId)
+        return { ...r, productName: product?.name, thumbnailUrl: product?.thumbnailUrl }
+      }),
+    [reviews],
+  )
+  return {
+    pending: useMyReviewTab('unreviewed', i => (i.type === 'UNREVIEWED' ? [toPendingReview(i)] : []), localPending),
+    completed: useMyReviewTab('written', i => (i.type === 'WRITTEN' ? [toWrittenReview(i)] : []), localCompleted),
+  }
 }
 
 // 리뷰 하나를 조회한다(수정 진입 시 프리필용).

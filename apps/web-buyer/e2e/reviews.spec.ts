@@ -277,7 +277,20 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
 
 test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로 반영된다', async ({ page }) => {
   // 목업 주문에는 서버 orderItemId가 없어 작성이 로컬 폴백을 탄다(주문 조회 API 미도입).
-  // 서버 경로(POST /reviews)는 MSW 라우트 테스트가 검증하고, 여기서는 화면 흐름을 본다.
+  // 서버 경로(POST /reviews)는 MSW 라우트 테스트와 my-reviews spec이 검증하고, 여기서는 화면 흐름을 본다.
+  // 내 리뷰는 서버 목록(GET /users/me/reviews)을 먼저 받아야 목업 리뷰를 붙여 그리므로 빈 목록으로 응답한다.
+  await page.route(/\/users\/me\/reviews(\?|$)/, (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({
+          status: 200,
+          headers: CORS,
+          json: { data: { items: [], totalCount: 0, nextCursor: null, hasNext: false } },
+        }),
+  )
   await page.goto('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
   await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
 
