@@ -1,15 +1,21 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  checkWithdrawal,
   confirmPhoneCode,
   sendPhoneCode,
+  setAccessToken,
+  withdraw,
   type ConfirmPhoneCodeRequest,
   type PhoneCodeSent,
 } from '@aechak/api'
 import { ACCOUNT_QUERY_KEY } from '@/shared/account'
+import { logout } from '@/shared/auth'
+import { onWishlistLogout } from '@/shared/catalog'
+import { resetReviews } from '@/shared/review'
 
 // 휴대폰 본인 인증(b10-st-9)을 실서버(POST /users/me/phone/verifications · /confirm)에 붙이는
 // 얇은 어댑터. breeds 컨벤션대로 생성된 react-query 훅이 아니라 fetcher만 소비하고, 이 파일이
-// 자체 useMutation으로 감싼다. 탈퇴(useWithdraw)만 BE 미구현이라 setTimeout 목업으로 남는다.
+// 자체 useMutation으로 감싼다. 탈퇴(GET /users/me/withdrawal/check · DELETE /users/me)도 같은 방식이다.
 
 // 서버 에러코드(SMS 세분화 — BE UserErrorCode 30005~30010).
 const SMS_CODE_INVALID = 30005
@@ -91,9 +97,60 @@ export function phoneVerificationErrorMessage(error: unknown): string {
   }
 }
 
-/** 회원 탈퇴 처리(b10-st-5). 되돌릴 수 없는 목업 종결 액션 — 확인 Modal 버튼 로딩용(BE 미구현). */
-export function useWithdraw() {
-  return useMutation<void, Error, void>({
-    mutationFn: () => new Promise(resolve => setTimeout(resolve, 600)),
+// 탈퇴 에러코드(BE UserErrorCode 30003/30011, AuthErrorCode 20005).
+const ALREADY_WITHDRAWN = 30003
+const WITHDRAWAL_BLOCKED = 30011
+const ACCOUNT_BLOCKED = 20005
+
+export const WITHDRAWAL_CHECK_QUERY_KEY = ['account', 'withdrawal-check'] as const
+
+/** 탈퇴 가능 여부(b10-st-5). 서버는 사유 목록 없이 withdrawable만 준다. */
+export function useWithdrawalCheck() {
+  return useQuery({
+    queryKey: WITHDRAWAL_CHECK_QUERY_KEY,
+    queryFn: ({ signal }) => checkWithdrawal(signal).then(response => response.data),
   })
+}
+
+/**
+ * 회원 탈퇴(DELETE /users/me, 204). 서버가 세션을 폐기하고 refresh 쿠키를 만료하므로 성공 시
+ * access 토큰을 버리고 설정 홈 로그아웃과 같은 순서로 클라이언트 상태를 정리한다. 정리를 호출부
+ * mutate 콜백이 아니라 여기 두는 이유는 응답 전에 화면을 떠나면 호출부 콜백은 실행되지 않기 때문이다.
+ */
+export function useWithdraw() {
+  const queryClient = useQueryClient()
+  return useMutation<void, unknown, void>({
+    mutationFn: withdraw,
+    onSuccess: () => {
+      setAccessToken(null)
+      logout()
+      onWishlistLogout(queryClient)
+      resetReviews()
+      queryClient.clear()
+    },
+  })
+}
+
+export function isWithdrawalBlockedError(error: unknown): boolean {
+  return errorCodeOf(error) === WITHDRAWAL_BLOCKED
+}
+
+export function withdrawErrorMessage(
+  error: unknown,
+  fallback = '탈퇴를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.',
+): string {
+  switch (errorCodeOf(error)) {
+    case WITHDRAWAL_BLOCKED:
+      return '정리되지 않은 거래가 있어 탈퇴할 수 없어요.'
+    case ALREADY_WITHDRAWN:
+      return '이미 탈퇴한 계정이에요.'
+    case ACCOUNT_BLOCKED:
+      return '이용이 제한된 계정이라 탈퇴할 수 없어요.'
+    default:
+      return fallback
+  }
+}
+
+function errorCodeOf(error: unknown): number | undefined {
+  return (error as { response?: { data?: { errorCode?: number } } })?.response?.data?.errorCode
 }

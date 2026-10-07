@@ -1,7 +1,5 @@
-import type { BuyerOrder, BuyerOrderStatus } from '@aechak/domain'
-
 // 계정 화면(b10-st-2 프로필 / b10-st-9 본인 인증 / b10-st-5 탈퇴) 공용 상수·파생 로직.
-// 실제 계정/주문 데이터는 shared/account·shared/order 스토어가 단일 소스이고, 여기서는 검증·판정만 둔다.
+// 실제 계정 데이터는 서버(shared/account)가 단일 소스이고, 여기서는 검증 규칙과 안내 문구만 둔다.
 
 export const NICKNAME_MAX = 12
 
@@ -29,31 +27,13 @@ export function validateNickname(nickname: string): { ok: boolean; message: stri
   return { ok: true, message: '사용할 수 있는 닉네임이에요.' }
 }
 
-// ── 회원 탈퇴 차단 판정(b10-st-5) ──
-// 진행 중인 거래(결제완료/상품준비중/배송중)가 하나라도 있으면 탈퇴할 수 없다.
-// 반품/교환은 web-buyer 범위 밖이라 진행 중 주문만으로 판정한다.
-export const WITHDRAW_BLOCKING_STATUSES: BuyerOrderStatus[] = ['paid', 'preparing', 'shipping']
-
-export function getBlockingOrders(orders: readonly BuyerOrder[]): BuyerOrder[] {
-  return orders.filter(o => WITHDRAW_BLOCKING_STATUSES.includes(o.status))
-}
-
-export function isWithdrawBlocked(orders: readonly BuyerOrder[]): boolean {
-  return getBlockingOrders(orders).length > 0
-}
-
-// 진행 중 주문을 "배송 준비 중"(결제완료/상품준비중)과 "배송 중"으로 나눠 건수를 센다(탈퇴 제한 안내용).
-export function blockingBreakdown(orders: readonly BuyerOrder[]): { label: string; count: number }[] {
-  const blocking = getBlockingOrders(orders)
-  const preparing = blocking.filter(o => o.status === 'paid' || o.status === 'preparing').length
-  const shipping = blocking.filter(o => o.status === 'shipping').length
-  return [
-    { label: '배송 준비 중 주문', count: preparing },
-    { label: '배송 중 주문', count: shipping },
-  ].filter(row => row.count > 0)
-}
-
+// ── 회원 탈퇴 안내(b10-st-5) ── 탈퇴 가능 여부는 서버(GET /users/me/withdrawal/check)가 판정한다.
 export const WITHDRAW_RETENTION_YEARS = 5
+
+// 재가입 제한(BE auth.rejoin.blocked-period=30d, 403/20012 REJOIN_BLOCKED). BE는 같은 소셜 계정
+// (provider + providerId)으로 다시 로그인할 때만 막고, 탈퇴일 + 30일 자정부터 새 계정으로 가입을 연다.
+export const WITHDRAW_REJOIN_BLOCK_DAYS = 30
+export const WITHDRAW_REJOIN_NOTICE = `탈퇴 후 ${WITHDRAW_REJOIN_BLOCK_DAYS}일 동안은 같은 소셜 계정으로 다시 가입할 수 없어요.`
 
 // 탈퇴 시 삭제/비활성화되는 정보(안내 카드).
 export const WITHDRAW_DELETED_INFO: { label: string; note: string }[] = [
