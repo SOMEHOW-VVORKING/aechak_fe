@@ -635,6 +635,15 @@ export interface NicknameCheckResponse {
   data: NicknameCheckData
 }
 
+export interface WithdrawalCheckData {
+  /** 탈퇴 가능 여부. false면 정리되지 않은 거래가 있다 */
+  withdrawable: boolean
+}
+
+export interface WithdrawalCheckResponse {
+  data: WithdrawalCheckData
+}
+
 export interface NicknameRequest {
   nickname: string
 }
@@ -3903,6 +3912,242 @@ export function useGetMeSuspense<TData = Awaited<ReturnType<typeof getMe>>, TErr
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetMeSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 계정을 WITHDRAWN으로 바꾸고 모든 세션(refresh)을 폐기한 뒤 refresh 쿠키를 만료(Set-Cookie)한다. 성공은 204 No Content(빈 바디). 정리되지 않은 거래가 있으면 409 errorCode 30011, 이미 탈퇴한 계정은 409 errorCode 30003. 탈퇴/정지 계정의 옛 토큰은 상태 필터가 먼저 403 errorCode 20005로 막는다. PENDING_ONBOARDING 계정도 호출할 수 있다.
+ * @summary 회원 탈퇴
+ */
+export const withdraw = () => {
+  return customInstance<void>({ url: `/users/me`, method: 'DELETE' })
+}
+
+export const getWithdrawMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError, void, TContext>
+}): UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError, void, TContext> => {
+  const mutationKey = ['withdraw']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof withdraw>>, void> = () => {
+    return withdraw()
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type WithdrawMutationResult = NonNullable<Awaited<ReturnType<typeof withdraw>>>
+
+export type WithdrawMutationError = unknown
+
+/**
+ * @summary 회원 탈퇴
+ */
+export const useWithdraw = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError, void, TContext>
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof withdraw>>, TError, void, TContext> => {
+  const mutationOptions = getWithdrawMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 탈퇴 안내 화면이 탈퇴 버튼을 열지 정할 때 부른다. 제한 사유 목록은 주지 않고 withdrawable만 준다. PENDING_ONBOARDING 계정도 호출할 수 있다.
+ * @summary 탈퇴 가능 여부 조회
+ */
+export const checkWithdrawal = (signal?: AbortSignal) => {
+  return customInstance<WithdrawalCheckResponse>({
+    url: `/users/me/withdrawal/check`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getCheckWithdrawalQueryKey = () => {
+  return [`/users/me/withdrawal/check`] as const
+}
+
+export const getCheckWithdrawalQueryOptions = <
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCheckWithdrawalQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof checkWithdrawal>>> = ({ signal }) =>
+    checkWithdrawal(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof checkWithdrawal>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CheckWithdrawalQueryResult = NonNullable<Awaited<ReturnType<typeof checkWithdrawal>>>
+export type CheckWithdrawalQueryError = unknown
+
+export function useCheckWithdrawal<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof checkWithdrawal>>,
+          TError,
+          Awaited<ReturnType<typeof checkWithdrawal>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckWithdrawal<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof checkWithdrawal>>,
+          TError,
+          Awaited<ReturnType<typeof checkWithdrawal>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckWithdrawal<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 탈퇴 가능 여부 조회
+ */
+
+export function useCheckWithdrawal<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCheckWithdrawalQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getCheckWithdrawalSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getCheckWithdrawalQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof checkWithdrawal>>> = ({ signal }) =>
+    checkWithdrawal(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof checkWithdrawal>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CheckWithdrawalSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof checkWithdrawal>>
+>
+export type CheckWithdrawalSuspenseQueryError = unknown
+
+export function useCheckWithdrawalSuspense<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckWithdrawalSuspense<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCheckWithdrawalSuspense<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 탈퇴 가능 여부 조회
+ */
+
+export function useCheckWithdrawalSuspense<
+  TData = Awaited<ReturnType<typeof checkWithdrawal>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof checkWithdrawal>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCheckWithdrawalSuspenseQueryOptions(options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,
