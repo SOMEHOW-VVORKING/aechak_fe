@@ -81,7 +81,7 @@ async function openConfirm(page: Page) {
   return dialog
 }
 
-test('[AC-WITHDRAW-E2E-001] 안내 → 확인 Modal → DELETE → 완료 → 홈 복귀 + 비회원 전환', async ({ page }) => {
+test('[AC-WITHDRAW-E2E-001] 안내 → 확인 Modal → DELETE → 완료 → 홈으로 누르면 로그인 화면', async ({ page }) => {
   const calls = await stubWithdrawal(page)
 
   await page.goto('/mypage/withdraw')
@@ -104,11 +104,10 @@ test('[AC-WITHDRAW-E2E-001] 안내 → 확인 Modal → DELETE → 완료 → �
   await expect(page.getByRole('button', { name: '뒤로 가기' })).toHaveCount(0)
   await shot(page, 'withdraw-03-done')
 
+  // 탈퇴 정리로 로그아웃 상태라 홈 가드가 /home을 부르지 않고 로그인 화면으로 보낸다(logout spec과 같은 확인).
   await page.getByRole('button', { name: '홈으로' }).click()
-  await expect(page).toHaveURL(`${ORIGIN}/`)
-  // 비회원 전환 확인(logout spec과 같은 방법). 리로드하면 mock 로그인 플래그가 리셋되므로 같은 SPA 세션에서 본다.
-  await page.getByRole('button', { name: '찜하기' }).first().click()
-  await expect(page.getByText('로그인이 필요해요')).toBeVisible()
+  await expect(page).toHaveURL(`${ORIGIN}/onboarding/login`)
+  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
 })
 
 test('[AC-WITHDRAW-E2E-002] 서버가 withdrawable=false면 제한 안내와 잠긴 탈퇴 버튼을 보여준다', async ({ page }) => {
