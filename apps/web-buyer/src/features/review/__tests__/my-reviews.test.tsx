@@ -187,6 +187,8 @@ describe('내 리뷰 서버 연동', () => {
     const router = renderAt('/reviews/mine')
 
     await user.click(await screen.findByRole('button', { name: '리뷰 쓰기' }))
+    // 상품명은 작성 대기 카드에도 있어 작성 화면 전환을 먼저 기다린다(안 그러면 떠나는 카드를 잡는다).
+    await screen.findByText('상품은 만족하셨나요?')
     // 작성 화면은 내 리뷰가 넘긴 주문 시점 스냅샷(상품명/옵션)을 그린다.
     expect(await screen.findByText('서버 주문 연어 사료')).toBeInTheDocument()
     expect(screen.getByText('2kg / 연어')).toBeInTheDocument()
