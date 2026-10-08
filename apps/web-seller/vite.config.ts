@@ -8,8 +8,8 @@ export default defineConfig({
     TanStackRouterVite({
       routesDirectory: './src/routes',
       generatedRouteTree: './src/routeTree.gen.ts',
-      // 라우트 컴포넌트를 방문 시점에 로드(엔트리 청크 547→약 400 kB).
-      autoCodeSplitting: true,
+      // 라우트 컴포넌트를 방문 시점에 로드(엔트리 청크 547→약 400 kB). vitest에선 끈다(지연 로드 청크가 CI에서 findBy 1초 타임아웃을 넘김).
+      autoCodeSplitting: !process.env.VITEST,
     }),
     react(),
   ],
