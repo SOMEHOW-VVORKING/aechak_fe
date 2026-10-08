@@ -3,7 +3,6 @@
 // "기본값"과 표시 콘텐츠만 제공한다.
 
 export const APP_VERSION = 'v2.4.1'
-export const IS_LATEST_VERSION = true
 
 // ── FAQ(b11-st-5) ───────────────────────────────────────────────────────────
 
