@@ -1,173 +1,108 @@
-// 셀러 상품 BE(origin/develop `boot/seller/.../product/**`)의 요청/응답 DTO와 화면 사이의 순수 타입·매핑·규칙.
-// 서버 enum(saleStatus 등)은 이 feature 밖으로 새지 않게 여기 가둔다(store-settings.contract 관례).
-// 실연동 전이라 products.mock.ts가 같은 시그니처로 응답한다 — 실연동은 products.queries.ts의 호출만 바꾼다.
+// 셀러 상품 BE(origin/develop `boot/seller/.../product/**`)와 화면 사이의 순수 타입·매핑·규칙.
+// 와이어 타입은 전부 생성물(@aechak/api)에서 가져오고 이 파일은 FE 쪽 이름만 붙인다 — OpenAPI 스펙이
+// 바뀌면 생성물을 재생성하는 것만으로 여기서 타입 오류가 드러난다. 서버 enum은 이 feature 밖으로
+// 새지 않게 여기 가둔다(store-settings.contract 관례).
 // 날짜는 BE LocalDateTime(오프셋 없는 KST 벽시계, 예: 2026-08-11T10:00:00)이다. `+09:00`/`Z`를 붙이면
 // 역직렬화가 400/90001로 실패하거나(오프셋) 9시간 밀린다(Z).
+import type {
+  CategoryResponse,
+  GetSellerProductsParams,
+  GetSellerProductsSort,
+  GetSellerProductsStock,
+  InspectionStatus,
+  SaleStatus,
+  SellerProductOptionCombinationInput,
+  SellerProductOptionGroupInput,
+  SellerProductRegisterRequest,
+  SellerProductUpdateRequest,
+} from '@aechak/api'
 
-export type WireSaleStatus = 'ON_SALE' | 'OUT_OF_STOCK' | 'SUSPENDED' | 'ENDED'
-export type WireInspectionStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'
+// 생성물 이름을 그대로 쓰되, 화면 코드가 읽기 쉬운 FE 이름을 붙인다.
+export type WireSaleStatus = SaleStatus
+export type WireInspectionStatus = InspectionStatus
+export type CategoryNode = CategoryResponse
 
-// ─── POST /sellers/me/products (ProductRegisterRequest) ─────────────────────
+export type {
+  /** 셀러가 직접 지정할 수 있는 판매 상태 — ON_SALE·SUSPENDED뿐이다. */
+  SellerAssignableSaleStatus,
+  IssuePresignedUrlRequest,
+  PresignedUrlResponse,
+  /** 목록 카드 한 행. */
+  SellerProductSummary,
+  /** 옵션 재고 조회의 한 조합. `optionCombinationId`는 내부 숫자 PK다. */
+  SellerProductOptionCombination as SellerOptionCombination,
+} from '@aechak/api'
 
-export interface OptionGroupRequest {
-  name: string
-  values: string[]
-}
+// ─── POST /sellers/me/products ───────────────────────────────────────────────
+// 옵션 불변식(전부 400/40005): 조합 0건 금지 · 그룹명 중복 금지 · 옵션값 이름은 그룹을 넘어서도 중복
+// 금지 · 그룹에 없는 값 지목 금지 · 조합이 모든 그룹을 "적어도 하나씩" 덮어야 함(한 그룹에서 값을 둘
+// 이상 골라도 통과한다 — ProductOptions.kt:59가 distinct().size만 본다) · 같은 값 집합의 조합 중복 금지.
+// 등록에는 이미지 키 목록 안의 중복 검사가 없다(PUT에만 있다).
 
-export interface OptionCombinationRequest {
-  optionValues: string[]
-  additionalPrice: number
-  stockQuantity: number
-}
-
-export interface ProductRegisterRequest {
-  categoryId: number
-  productName: string
-  description: string | null
-  regularPrice: number
-  discountPrice: number | null
-  discountStartAt: string | null
-  discountEndAt: string | null
-  thumbnailImageKey: string
-  additionalImageKeys: string[]
-  detailImageKeys: string[]
-  /** 옵션 없는 상품은 null 또는 []. */
-  optionGroups: OptionGroupRequest[] | null
-  /** 필수. 옵션 없는 상품은 `[{ optionValues: [], additionalPrice: 0, stockQuantity }]` 한 행. */
-  optionCombinations: OptionCombinationRequest[]
-}
-
-export interface ProductRegisterResponse {
-  productId: string
-  saleStatus: WireSaleStatus
-  inspectionStatus: WireInspectionStatus
-  versionNo: number
-  createdAt: string
-}
+export type OptionGroupRequest = SellerProductOptionGroupInput
+export type OptionCombinationRequest = SellerProductOptionCombinationInput
+export type ProductRegisterRequest = SellerProductRegisterRequest
+export type { SellerProductRegisterData as ProductRegisterResponse } from '@aechak/api'
 
 // ─── PUT /sellers/me/products/{productId} ────────────────────────────────────
-// 옵션/재고/판매 상태는 바꾸지 않는다. 이미지 키 목록은 통째로 교체(빠진 키는 닫힘), 한 목록 안 중복은 90001.
+// 옵션/재고/판매 상태는 바꾸지 않는다. 이미지 키 목록은 통째로 교체(빠진 키는 삭제가 아니라 직전
+// 버전으로 닫힘)이고, 한 목록 안 중복 키는 400/90001이다(목록을 넘나드는 중복은 허용).
+// 함정: 소유 증명 집합이 대표 이미지 키 + 지금 열려 있는 이미지 행으로 한정된다 — 과거 수정으로 닫힌
+// 키나 다른 상품의 정식 키를 실으면 `tmp/` 접두가 아니어서 403/100002다.
+// 지금은 화면에서 호출하지 않는다: BE에 셀러 단건 조회(GET /sellers/me/products/{productId})가 없어
+// categoryId·description·할인 기간·추가/상세 이미지 키를 프리필할 수 없고, 부족한 프리필로 PUT하면
+// 전체 교체 규칙 때문에 기존 이미지와 할인 설정을 잃는다.
 
-export type ProductUpdateRequest = Omit<ProductRegisterRequest, 'optionGroups' | 'optionCombinations'>
-
-export interface ProductUpdateResponse {
-  productId: string
-  saleStatus: WireSaleStatus
-  updatedAt: string
-}
+export type ProductUpdateRequest = SellerProductUpdateRequest
+export type { SellerProductUpdateData as ProductUpdateResponse } from '@aechak/api'
 
 // ─── PATCH /sellers/me/products/{productId}/status ──────────────────────────
 // BE가 받는 값은 ON_SALE/SUSPENDED뿐이다(나머지는 400/90001). 현재 상태는 검사하지 않고, ON_SALE인데
-// 판매 가능한 재고가 없으면 응답이 바로 OUT_OF_STOCK이다.
+// 판매 가능한 재고가 없으면 같은 요청 안에서 동기로 파생돼 응답이 바로 OUT_OF_STOCK이다.
 
+/**
+ * 목업이 서버 역할을 할 때 받는 느슨한 모양 — 지정 불가 값(OUT_OF_STOCK·ENDED)도 받아 400/90001로
+ * 거절하는 BE 동작을 재현한다. 화면이 실제로 보내는 요청 타입은 생성물
+ * `SellerProductSaleStatusChangeRequest`(= `SellerAssignableSaleStatus`)다.
+ */
 export interface SaleStatusChangeRequest {
   saleStatus: WireSaleStatus
 }
 
-export interface SaleStatusChangeResponse {
-  productId: string
-  saleStatus: WireSaleStatus
-  updatedAt: string
-}
+export type { SellerProductSaleStatusChangeData as SaleStatusChangeResponse } from '@aechak/api'
 
 // ─── PATCH /sellers/me/products/{productId}/options/{combinationId} ─────────
 // 둘 중 하나는 필수. stockDelta는 0 금지, |delta| ≤ 1,000,000. 재고는 [0, Int.MAX]로 잘리고 실제 반영량이
-// appliedStockDelta로 온다. 응답에 판매 상태는 없다 — 자동 품절/복귀는 BE가 커밋 후 비동기로 한다.
+// appliedStockDelta로 온다(요청과 다를 수 있다). 응답에 판매 상태는 없다 — 자동 품절/복귀는 BE가 커밋
+// 뒤 비동기(@Async AFTER_COMMIT)로 하므로 응답만으로는 알 수 없고 목록을 다시 조회해야 한다.
 
 export const STOCK_DELTA_LIMIT = 1_000_000
 /** BE 재고는 Kotlin Int(int unsigned 컬럼). 넘으면 Jackson 역직렬화가 400/90001로 거절한다. */
 export const STOCK_MAX = 2_147_483_647
 
-export interface OptionCombinationChangeRequest {
-  stockDelta?: number
-  isActive?: boolean
-}
-
-export interface OptionCombinationChangeResponse {
-  combinationId: number
-  stockQuantity: number
-  appliedStockDelta: number
-  isActive: boolean
-  updatedAt: string
-}
+export type {
+  SellerOptionCombinationChangeRequest as OptionCombinationChangeRequest,
+  SellerOptionCombinationChangeData as OptionCombinationChangeResponse,
+} from '@aechak/api'
 
 // ─── GET /sellers/me/products/{productId}/options ───────────────────────────
+// 비활성 조합을 포함하고 재고를 마스킹 없이 준다. 여섯 EP 가운데 이것만 남의 상품에 403/40007이다.
 
-export interface SellerOptionCombination {
-  optionCombinationId: number
-  /** 옵션값을 요청 순서대로 ` / `로 이은 이름. 옵션 없는 상품은 `기본`. */
-  name: string
-  additionalPrice: number
-  stockQuantity: number
-  isActive: boolean
-}
+export type { SellerProductOptionsData as SellerProductOptionsResponse } from '@aechak/api'
 
-export interface SellerProductOptionsResponse {
-  optionCombinations: SellerOptionCombination[]
-}
+// ─── GET /sellers/me/products ───────────────────────────────────────────────
+// 커서가 아니라 오프셋 페이지네이션(page·size)이다. 배열 파라미터(saleStatus·inspectionStatus)는 공유
+// 클라이언트가 반복 파라미터(`?k=A&k=B`)로 직렬화한다.
+// 빈 값은 "미입력"이 아니라 형식 오류다 — `?stock=`·`?createdFrom=`도 400/90001이므로 값이 없는
+// 파라미터는 키째 빼서 보내야 한다(정규화는 products.queries의 `normalizeSearchParams`가 한다).
 
-// ─── GET /sellers/me/products (SellerProductSearchRequest) ──────────────────
-
-export type SellerProductSort = 'latest' | 'price_asc' | 'price_desc'
-export type SellerProductStockFilter = 'in_stock' | 'sold_out'
-
-export interface SellerProductSearchParams {
-  /** 상품명 부분 일치(대소문자 무시), 최대 100자. */
-  keyword?: string
-  /** 반복 파라미터(`?saleStatus=A&saleStatus=B`). */
-  saleStatus?: WireSaleStatus[]
-  inspectionStatus?: WireInspectionStatus[]
-  /** 어느 깊이든 활성 카테고리 id. 하위 카테고리 상품까지 포함한다. */
-  category?: number
-  /** YYYY-MM-DD, 양 끝 포함. */
-  createdFrom?: string
-  createdTo?: string
-  stock?: SellerProductStockFilter
-  sort?: SellerProductSort
-  page?: number
-  /** 1~100, 기본 20. */
-  size?: number
-}
+export type SellerProductSearchParams = GetSellerProductsParams
+export type SellerProductSort = GetSellerProductsSort
+export type SellerProductStockFilter = GetSellerProductsStock
+export type { SellerProductListData as SellerProductListResponse } from '@aechak/api'
 
 export const KEYWORD_MAX = 100
 export const DEFAULT_PAGE_SIZE = 20
-
-export interface SellerProductSummary {
-  productId: string
-  name: string
-  /** 저장 키(`products/<ULID>.<ext>`)이지 URL이 아니다. */
-  thumbnailImageKey: string | null
-  /** 소분류 이름만. */
-  categoryName: string
-  regularPrice: number
-  /** 지금 적용 중인 할인만. 시작 전/종료 후면 null. */
-  discountPrice: number | null
-  discountRate: number | null
-  saleStatus: WireSaleStatus
-  inspectionStatus: WireInspectionStatus
-  /** 판매 켜진 조합의 재고 합. */
-  totalStock: number
-  createdAt: string
-}
-
-export interface SellerProductListResponse {
-  products: SellerProductSummary[]
-  totalCount: number
-  page: number
-  size: number
-  totalPages: number
-  hasNext: boolean
-}
-
-// ─── GET /categories (api 호스트 — 셀러 호스트에는 없다) ─────────────────────
-
-export interface CategoryNode {
-  categoryId: number
-  name: string
-  iconUrl: string | null
-  sortOrder: number
-  children: CategoryNode[]
-}
 
 // ─── POST /files/presigned-url (api 호스트) ──────────────────────────────────
 // purpose=PRODUCT는 png/jpeg/webp만(그 외 400/100000). 받은 url에 같은 Content-Type으로 PUT(10분 유효)하고
@@ -175,16 +110,6 @@ export interface CategoryNode {
 // 등록/수정은 tmp 키를 `products/{같은 파일명}`으로 복사한다(같은 tmp 키 → 같은 저장 키). tmp/는 S3 수명주기로
 // 1일 뒤 지워지므로, 하루 지난 tmp 키를 보내면 404/100001이다. 임시저장(BE 없음)이 tmp 키를 들고 있는 것도
 // 같은 제약을 받는다 — 임시저장 API를 정할 때 이미지 키 보존 방식을 함께 정한다.
-
-export interface IssuePresignedUrlRequest {
-  purpose: 'PRODUCT'
-  contentType: string
-}
-
-export interface PresignedUrlResponse {
-  url: string
-  key: string
-}
 
 export const PRODUCT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
@@ -535,7 +460,15 @@ export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
 
 // BE errorCode → FE 문구. 서버 message는 -습니다 격식체라 띄우지 않는다(카피 규칙).
 // 90002(INVALID_CURSOR)는 셀러 상품 API가 보내지 않는다.
+// 인증 계열은 공유 클라이언트가 먼저 전역 처리한다 — 401은 refresh 재시도 뒤에도 실패하면
+// setOnAuthExpired가 로그인으로 보낸다(main.tsx가 등록하는 핸들러는 이것 하나다). 403/20006에서
+// 공유 클라이언트는 onOnboardingRequired?.()를 부르지만 셀러센터는 온보딩 화면이 없어 그 핸들러를
+// 등록하지 않으므로 아무 일도 일어나지 않는다 — 20006은 아래 문구가 유일한 안내다. 어느 쪽이든
+// promise는 reject되어 화면까지 내려오므로 전역 이동이 일어나기 전/실패할 때 보일 문구를 채운다.
 const ERROR_MESSAGE: Record<number, string> = {
+  20004: '로그인이 필요해요. 다시 로그인해 주세요.',
+  20005: '이용이 제한된 계정이에요. 고객센터에 문의해 주세요.',
+  20006: '구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.',
   40000: '상품을 찾을 수 없어요. 목록을 새로고침해 주세요.',
   40001: '가격을 확인해 주세요. 정가는 100원부터 1억 원까지, 할인가는 정가 이하로 입력할 수 있어요.',
   40002: '할인 기간을 확인해 주세요.',
@@ -548,6 +481,7 @@ const ERROR_MESSAGE: Record<number, string> = {
   40101: '선택한 카테고리를 쓸 수 없어요. 다시 선택해 주세요.',
   40200: '재고는 0 이상으로 입력해 주세요.',
   40201: '추가 금액은 0 이상으로 입력해 주세요.',
+  90000: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   90001: '입력한 내용을 다시 확인해 주세요.',
   90003: '다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해 주세요.',
   100000: 'JPG/PNG/WEBP 이미지만 올릴 수 있어요.',

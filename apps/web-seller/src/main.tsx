@@ -3,15 +3,19 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired } from '@aechak/api'
+import { configureApiHosts, setOnAuthExpired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
 applyCssVariables()
-// 서버 경로 접두(/api/v1)는 origin(env)과 분리된 서버 계약이다 — client.ts의 401 refresh가
-// 상대경로(/auth/web/refresh)를 쓰므로 접두가 빠지면 refresh가 엉뚱한 경로로 나간다(web-buyer 관례).
-axiosInstance.defaults.baseURL = `${import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080'}${API_PATH_PREFIX}`
+// 셀러센터는 두 호스트를 부른다 — 로그인·refresh·presigned 발급은 api 모듈(8080), 입점 신청과
+// 상품은 seller 모듈(8081)이다. 경로 접두(/api/v1)는 origin과 분리된 서버 계약이라
+// configureApiHosts가 붙이고, 요청별 호스트 선택도 그 안의 인터셉터가 경로 접두로 가른다.
+configureApiHosts({
+  apiOrigin: import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080',
+  sellerOrigin: import.meta.env['VITE_SELLER_API_BASE_URL'] ?? 'http://localhost:8081',
+})
 
 const router = createRouter({ routeTree })
 

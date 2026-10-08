@@ -1,23 +1,120 @@
 import axios from 'axios'
-import type { AxiosRequestConfig, AxiosResponse } from 'axios'
+import type { AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
     /** refresh 실패를 오류로 반환하되 소비 앱의 전역 로그인 이동은 실행하지 않는다. */
     suppressAuthExpiredRedirect?: boolean
+    /**
+     * 401 refresh 재시도를 1회로 묶는 내부 표식. WeakSet만으로는 제한되지 않는다 —
+     * axios는 request()마다 `mergeConfig(defaults, config)`로 새 config 객체를 만들어
+     * (`Axios.js:92` → `mergeConfig.js:26`의 `Object.create(null)`) 재시도의 두 번째 401이
+     * WeakSet에 없는 객체로 돌아오기 때문이다. mergeConfig는 모르는 키를 그대로 옮기므로
+     * (`mergeConfig.js:137`) 이 불리언은 재시도 뒤에도 살아남아 실제로 1회를 보장한다.
+     */
+    authRetried?: boolean
+    /**
+     * 이 요청을 기능 호스트 분기에서 빼고 반드시 api 모듈로 보낸다. 경로만으로는 "호출부가
+     * api를 콕 집었다"를 표현할 수 없어서(mergeConfig가 defaults의 baseURL을 늘 채우므로
+     * 명시 여부를 값으로 구분할 수 없다) 전용 표식을 둔다 — refresh가 이것을 쓴다.
+     */
+    forceApiHost?: boolean
   }
 }
 
 /** 서버 API 경로 접두 — 서버 계약이라 origin(env)과 분리해 상수로 고정한다. */
 export const API_PATH_PREFIX = '/api/v1'
 
+const withPrefix = (origin: string): string => `${origin.replace(/\/+$/, '')}${API_PATH_PREFIX}`
+
+// BE는 실행 모듈이 셋이고 각각 호스트가 다르다 — api(인증·카탈로그·주문), seller(셀러센터),
+// admin(어드민 콘솔). 인증 엔드포인트(/auth/*)는 api 모듈에만 있으므로 기본 호스트는 늘 api이고,
+// 기능 경로만 요청 단위로 호스트를 바꾼다. 인스턴스를 복제하지 않는 이유는 accessToken·
+// refreshPromise·전역 콜백이 이 모듈의 스코프 변수라서, 인스턴스를 늘리면 세션 상태가 갈리기 때문이다.
+let apiBaseURL = withPrefix('http://localhost:8080')
+let sellerBaseURL: string | null = null
+let adminBaseURL: string | null = null
+
+export interface ApiHostConfig {
+  /** 인증·구매자 API origin (`/api/v1` 없이). 예: `http://localhost:8080` */
+  apiOrigin: string
+  /** 셀러센터 API origin. web-seller만 설정한다. */
+  sellerOrigin?: string | undefined
+  /** 어드민 API origin. web-admin만 설정한다. */
+  adminOrigin?: string | undefined
+}
+
+/**
+ * 앱 부트스트랩에서 한 번 호출해 호스트를 확정한다. 기능 호스트를 넘기지 않은 앱은
+ * 경로 분기가 무동작이라 모든 요청이 api로 가므로, 기존 동작과 완전히 같다.
+ */
+export function configureApiHosts({ apiOrigin, sellerOrigin, adminOrigin }: ApiHostConfig): void {
+  apiBaseURL = withPrefix(apiOrigin)
+  sellerBaseURL = sellerOrigin == null || sellerOrigin === '' ? null : withPrefix(sellerOrigin)
+  adminBaseURL = adminOrigin == null || adminOrigin === '' ? null : withPrefix(adminOrigin)
+  axiosInstance.defaults.baseURL = apiBaseURL
+}
+
+/** 인증·로그인 리다이렉트 URL 조립처가 쓰는 api 호스트 base URL(접두 포함). */
+export function getApiBaseURL(): string {
+  return apiBaseURL
+}
+
 export const axiosInstance = axios.create({
-  baseURL: `http://localhost:8080${API_PATH_PREFIX}`, // origin은 각 앱 main에서 env로 덮는다
+  baseURL: apiBaseURL, // origin은 각 앱 main의 configureApiHosts가 덮는다
   withCredentials: true, // refresh가 httpOnly 쿠키로 오가므로 요청에 쿠키를 동봉한다
   headers: {
     'Content-Type': 'application/json',
   },
+  // 배열 쿼리는 서버가 반복 파라미터(`?k=A&k=B`)를 기대한다(OpenAPI `explode: true`).
+  // axios 기본값은 `k[]=A&k[]=B`라 BE 바인딩이 "지원하지 않는 값"으로 거절한다.
+  paramsSerializer: { indexes: null },
 })
+
+// 셀러센터·어드민 모듈이 소유한 경로. 접두 경계(`=== p` 또는 `p + '/'`)로 판정해
+// `/seller-applications-foo` 같은 다른 경로가 휩쓸리지 않게 한다.
+const SELLER_PATH_PREFIXES = ['/sellers', '/seller-applications'] as const
+const ADMIN_PATH_PREFIXES = ['/admin'] as const
+
+const under = (path: string, prefix: string): boolean =>
+  path === prefix || path.startsWith(`${prefix}/`)
+
+/** 기능 호스트를 쓰는 앱인지 — 아니면 호스트 분기가 전부 무동작이라 기존 단일 호스트 동작과 같다. */
+const hasFeatureHost = (): boolean => sellerBaseURL != null || adminBaseURL != null
+
+/** 상대 경로의 pathname만 돌려준다. 절대 URL·프로토콜 상대 URL은 호스트를 손대지 않는다. */
+function relativePathOf(url: string): string | null {
+  if (url.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(url)) return null
+  return url.split('?')[0]?.split('#')[0] ?? null
+}
+
+function routeToFeatureHost(config: InternalAxiosRequestConfig): void {
+  // api 호스트를 콕 집은 요청은 경로가 무엇이든 그대로 api로 보낸다. 기능 호스트를 쓰지 않는
+  // 앱(구매자 웹·모바일)에서는 baseURL을 손대지 않아야 한다 — 모바일은 configureApiHosts 없이
+  // defaults.baseURL을 직접 덮으므로, 여기서 apiBaseURL을 씌우면 엉뚱한 origin으로 나간다.
+  if (config.forceApiHost === true) {
+    if (hasFeatureHost()) config.baseURL = apiBaseURL
+    return
+  }
+  // 호출부가 api와 다른 호스트를 직접 지정했으면 그 선택을 존중한다. mergeConfig가 defaults의
+  // baseURL을 늘 채우므로 "api를 명시했는지"는 값으로 못 가린다 — 그 경우가 forceApiHost다.
+  if (config.baseURL !== apiBaseURL) return
+  const path = config.url == null ? null : relativePathOf(config.url)
+  if (path == null) return
+  // 인증은 api 모듈만 노출한다 — seller·admin에는 `/auth/*`가 아예 없다.
+  if (under(path, '/auth')) return
+  if (sellerBaseURL != null && SELLER_PATH_PREFIXES.some(prefix => under(path, prefix))) {
+    config.baseURL = sellerBaseURL
+    return
+  }
+  if (adminBaseURL != null && ADMIN_PATH_PREFIXES.some(prefix => under(path, prefix))) {
+    config.baseURL = adminBaseURL
+    // 어드민 API는 bearer 전용이라 쿠키를 읽지 않고, CORS 설정에 allowCredentials가 없다.
+    // credentials 모드로 보내면 서버가 Access-Control-Allow-Credentials를 주지 않아
+    // 브라우저가 정상 응답까지 버린다 — 이 경로만 credentials를 끈다.
+    config.withCredentials = false
+  }
+}
 
 // access token은 메모리에만 둔다(스토리지 저장 금지 — XSS 노출면 축소).
 // 새로고침으로 날아가면 아래 401 인터셉터의 refresh가 세션을 복원한다.
@@ -50,6 +147,7 @@ export function setOnOnboardingRequired(handler: (() => void) | null): void {
 }
 
 axiosInstance.interceptors.request.use(config => {
+  routeToFeatureHost(config)
   if (accessToken && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${accessToken}`
   }
@@ -68,7 +166,13 @@ let refreshPromise: Promise<string> | null = null
 function refreshAccessToken(): Promise<string> {
   if (!refreshPromise) {
     refreshPromise = axiosInstance
-      .post<WebTokenResponse>('/auth/web/refresh')
+      // refresh 쿠키는 api 모듈이 `Path=/api/v1/auth`로 심으므로 기능 호스트(seller·admin)로
+      // 나가면 그 경로가 없어 404다. 목적지를 표식으로 고정하고 credentials를 되살려,
+      // 호스트 분기와 어드민의 credentials 차단을 둘 다 비껴간다.
+      .post<WebTokenResponse>('/auth/web/refresh', undefined, {
+        forceApiHost: true,
+        withCredentials: true,
+      })
       .then(response => response.data.data.accessToken)
       .finally(() => {
         refreshPromise = null
@@ -107,9 +211,17 @@ axiosInstance.interceptors.response.use(
       return Promise.reject(error)
     }
     const config = error.config
-    if (!config || (config.url?.startsWith('/auth/') ?? false) || retriedRequests.has(config)) {
+    if (
+      !config ||
+      (config.url?.startsWith('/auth/') ?? false) ||
+      config.authRetried === true ||
+      retriedRequests.has(config)
+    ) {
       return Promise.reject(error)
     }
+    // 두 표식을 함께 세운다 — WeakSet은 같은 객체가 그대로 돌아오는 경로를, authRetried는
+    // mergeConfig로 새로 복제된 config가 돌아오는 경로를 각각 막는다.
+    config.authRetried = true
     retriedRequests.add(config)
     try {
       const newToken = await refreshAccessToken()

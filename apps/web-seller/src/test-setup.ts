@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { server } from './testing/msw/server'
+import { configureApiHosts } from '@aechak/api'
+import { API_ORIGIN, SELLER_ORIGIN, server } from './testing/msw/server'
+
+// 테스트는 main.tsx를 거치지 않으므로 호스트 구성을 여기서 실제 앱과 똑같이 세운다 —
+// 그러지 않으면 호스트 분기가 무동작이라 모든 요청이 api로 몰리고, 셀러 모듈로 가야 할
+// 요청이 잘못된 호스트로 나가도 테스트가 통과한다(실제 배포에서만 깨진다).
+configureApiHosts({ apiOrigin: API_ORIGIN, sellerOrigin: SELLER_ORIGIN })
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해한 no-op으로 스텁한다(라우트 렌더 테스트 공통, web-buyer 관례).

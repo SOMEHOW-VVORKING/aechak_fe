@@ -1,15 +1,27 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { axiosInstance } from '@aechak/api'
+import { API_PATH_PREFIX } from '@aechak/api'
+import { MOCK_CATEGORY_TREE } from '@/features/products/products.mock'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-buyer의 src/testing/msw 관례를
 // web-seller에 이식했다. 실제 HTTP 경로(URL·envelope·에러 계약)까지 검증하려고 모듈 모킹 대신
-// 네트워크 레벨에서 가로챈다. 테스트는 main.tsx를 안 거치므로 baseURL은 client.ts 기본값.
-const base = axiosInstance.defaults.baseURL ?? ''
-export const SELLER_APPLICATIONS_URL = `${base}/seller-applications`
-export const SELLER_APPLICATIONS_SUBMIT_URL = `${base}/seller-applications/submit`
-export const PRESIGNED_URL = `${base}/files/presigned-url`
-export const WEB_REFRESH_URL = `${base}/auth/web/refresh`
+// 네트워크 레벨에서 가로챈다.
+//
+// 호스트를 둘로 나눠 둔 이유: 셀러센터는 인증·presigned를 api 모듈에서, 입점 신청·상품을
+// seller 모듈에서 받는다. 두 호스트를 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가
+// 똑같이 받아 주어 실제 배포에서만 드러나는 호스트 오배치를 테스트가 놓친다. 두 상수는
+// test-setup.ts의 configureApiHosts 인자와 같은 값이어야 한다.
+export const API_ORIGIN = 'http://localhost:8080'
+export const SELLER_ORIGIN = 'http://localhost:8081'
+const apiBase = `${API_ORIGIN}${API_PATH_PREFIX}`
+const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
+
+export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
+export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
+export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
+export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
+export const CATEGORIES_URL = `${apiBase}/categories`
+export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
 
 // BE ApplicationResponse 모양의 서버 상태. null = 신청 이력 없음(GET 404/10100).
 export interface SellerApplicationWire {
@@ -33,6 +45,9 @@ export interface SellerApplicationWire {
 
 let application: SellerApplicationWire | null = null
 let applicationSeq = 0
+let presignedSeq = 0
+/** 발급한 key → 그때 보낸 contentType. S3 PUT 스텁이 서명 조건을 재현하려고 읽는다. */
+const presignedContentTypes = new Map<string, string>()
 
 export function makeApplicationWire(
   overrides: Partial<SellerApplicationWire> = {},
@@ -146,14 +161,38 @@ const sellerApplicationHandlers = [
     application = { ...application, status: 'SUBMITTED', submittedAt: '2026-08-13T11:00:00' }
     return new HttpResponse(null, { status: 204 })
   }),
-  // 서류 presigned 발급 + S3 PUT(절대 URL이라 baseURL 밖 — 따로 가로챈다).
+  // presigned 발급 + S3 PUT(절대 URL이라 baseURL 밖 — 따로 가로챈다). 용도별 prefix가 서버 계약이고
+  // 등록/수정의 승격 검증(`tmp/{userId}/products/` 아니면 400/100003)이 그 접두를 본다 — 여기서
+  // purpose를 무시하면 FE가 용도를 틀리게 보내도 테스트가 통과한다.
   http.post(PRESIGNED_URL, async ({ request }) => {
     const body = (await request.json()) as { purpose: string; contentType: string }
-    const key = `tmp/1/sellers/documents/fixture-${body.contentType.split('/')[1]}`
-    void body.purpose
+    const prefix = body.purpose === 'PRODUCT' ? 'products' : 'sellers/documents'
+    presignedSeq += 1
+    const key = `tmp/1/${prefix}/fixture-${presignedSeq}.${body.contentType.split('/')[1]}`
+    presignedContentTypes.set(key, body.contentType)
     return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
   }),
-  http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
+  // S3가 presigned 서명으로 거절하는 두 조건을 스텁에서 재현한다 — 무엇을 보내도 200을 주면
+  // products.upload/store-settings.upload의 핵심 주장("Authorization을 얹지 않는다 / Content-Type은
+  // 발급 때 보낸 값과 같다")이 아무 테스트에도 걸리지 않는다. 업로드를 axios 인스턴스로 바꿔
+  // bearer가 붙거나 Content-Type이 어긋나면 여기서 403으로 터진다.
+  http.put('https://fake-s3.local/*', ({ request }) => {
+    if (request.headers.get('Authorization')) {
+      return HttpResponse.json(
+        { message: 'presigned URL에 Authorization 헤더를 얹으면 서명 검증이 깨진다' },
+        { status: 403 },
+      )
+    }
+    const key = new URL(request.url).pathname.replace(/^\//, '')
+    const issued = presignedContentTypes.get(key)
+    if (issued !== undefined && request.headers.get('Content-Type') !== issued) {
+      return HttpResponse.json(
+        { message: `Content-Type이 발급값과 다르다(발급 ${issued})` },
+        { status: 403 },
+      )
+    }
+    return new HttpResponse(null, { status: 200 })
+  }),
   // 401 시나리오에서 refresh가 성공으로 새면 에러 테스트가 조용히 통과한다 — 기본은 401 고정
   // (web-buyer msw 관례).
   http.post(WEB_REFRESH_URL, () =>
@@ -161,5 +200,272 @@ const sellerApplicationHandlers = [
   ),
 ]
 
-export const handlers = [...sellerApplicationHandlers]
+
+// ─── 셀러 상품 (seller 호스트 /sellers/me/products) ───────────────────────────
+// 목록은 "FE가 무엇을 보냈는가"를 기록하고 시드한 페이지를 돌려준다 — 필터링은 BE 소관이고 FE의
+// 책임은 파라미터를 정확히 보내는 것이라, 테스트는 lastSellerProductsQuery()로 쿼리 문자열을 단언한다.
+// 쓰기는 상태를 바꿔 목록/옵션 재조회에 반영한다(등록 → 목록 맨 앞, 재고 → 총재고·판매 상태).
+
+export interface SellerProductSummaryWire {
+  productId: string
+  name: string
+  thumbnailImageKey: string | null
+  categoryName: string
+  regularPrice: number
+  discountPrice: number | null
+  discountRate: number | null
+  saleStatus: 'ON_SALE' | 'OUT_OF_STOCK' | 'SUSPENDED' | 'ENDED'
+  inspectionStatus: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'
+  totalStock: number
+  createdAt: string
+}
+
+export interface SellerOptionCombinationWire {
+  optionCombinationId: number
+  name: string
+  additionalPrice: number
+  stockQuantity: number
+  isActive: boolean
+}
+
+let sellerProducts: SellerProductSummaryWire[] = []
+let sellerProductOptions = new Map<string, SellerOptionCombinationWire[]>()
+let lastProductsQuery: string | null = null
+let lastRegisterBody: unknown = null
+let productIdSeq = 0
+let combinationIdSeq = 0
+
+export function makeSellerProductWire(
+  overrides: Partial<SellerProductSummaryWire> = {},
+): SellerProductSummaryWire {
+  productIdSeq += 1
+  return {
+    productId: `01JMSWPRODUCT${String(productIdSeq).padStart(13, '0')}`,
+    name: `목업 상품 ${productIdSeq}`,
+    thumbnailImageKey: null,
+    categoryName: '자동 급식기',
+    regularPrice: 30000,
+    discountPrice: null,
+    discountRate: null,
+    saleStatus: 'ON_SALE',
+    inspectionStatus: 'APPROVED',
+    totalStock: 10,
+    createdAt: '2026-10-07T10:00:00',
+    ...overrides,
+  }
+}
+
+export function makeSellerOptionCombinationWire(
+  overrides: Partial<SellerOptionCombinationWire> = {},
+): SellerOptionCombinationWire {
+  combinationIdSeq += 1
+  return {
+    optionCombinationId: combinationIdSeq,
+    name: '기본',
+    additionalPrice: 0,
+    stockQuantity: 10,
+    isActive: true,
+    ...overrides,
+  }
+}
+
+/**
+ * 테스트마다 상품 목록과 옵션 조합을 세운다. `options`를 주지 않은 상품은 총재고와 같은 재고를 가진
+ * `기본` 조합 하나로 채운다(옵션 없이 등록한 상품의 BE 응답 모양).
+ */
+export function seedSellerProducts(
+  rows: { product: SellerProductSummaryWire; options?: SellerOptionCombinationWire[] }[] = [],
+): void {
+  sellerProducts = rows.map(row => ({ ...row.product }))
+  sellerProductOptions = new Map(
+    rows.map(row => [
+      row.product.productId,
+      (row.options ?? [makeSellerOptionCombinationWire({ stockQuantity: row.product.totalStock })]).map(c => ({
+        ...c,
+      })),
+    ]),
+  )
+  lastProductsQuery = null
+  lastRegisterBody = null
+}
+
+/** 목록 핸들러가 받은 마지막 쿼리 문자열(`?` 제외). 빈 값 제거·반복 파라미터 단언에 쓴다. */
+export function lastSellerProductsQuery(): string | null {
+  return lastProductsQuery
+}
+
+/** 등록 핸들러가 받은 마지막 요청 본문 — 이미지 키·옵션 모양을 단언할 때 쓴다. */
+export function lastSellerProductRegisterBody(): unknown {
+  return lastRegisterBody
+}
+
+/** 핸들러가 반영한 현재 목록 — 테스트가 쓰기 결과를 읽을 때 쓴다. */
+export function currentSellerProducts(): SellerProductSummaryWire[] {
+  return sellerProducts.map(p => ({ ...p }))
+}
+
+const badRequest = (message: string) =>
+  HttpResponse.json({ errorCode: 90001, message }, { status: 400 })
+
+const productNotFound = () =>
+  HttpResponse.json({ errorCode: 40000, message: '상품을 찾을 수 없습니다.' }, { status: 404 })
+
+const activeStock = (productId: string) =>
+  (sellerProductOptions.get(productId) ?? []).reduce(
+    (sum, c) => sum + (c.isActive ? c.stockQuantity : 0),
+    0,
+  )
+
+/**
+ * Product.applyStockDerivedStatus — ON_SALE + 재고 없음 → OUT_OF_STOCK, OUT_OF_STOCK + 재고 있음 →
+ * ON_SALE. SUSPENDED·ENDED는 유지한다. BE는 상태 변경(동기)과 재고 변경(커밋 뒤 비동기) 두 곳에서
+ * 이것을 돌린다 — 핸들러는 테스트가 지연에 의존하지 않게 둘 다 즉시 반영한다.
+ */
+function applyStockDerivedStatus(product: SellerProductSummaryWire): void {
+  const stock = activeStock(product.productId)
+  product.totalStock = stock
+  if (product.saleStatus === 'ON_SALE' && stock === 0) product.saleStatus = 'OUT_OF_STOCK'
+  else if (product.saleStatus === 'OUT_OF_STOCK' && stock > 0) product.saleStatus = 'ON_SALE'
+}
+
+const sellerProductHandlers = [
+  http.get(SELLER_PRODUCTS_URL, ({ request }) => {
+    lastProductsQuery = new URL(request.url).search.replace(/^\?/, '')
+    const params = new URL(request.url).searchParams
+    // 빈 값은 BE가 미입력이 아니라 형식 오류로 거절한다 — 정규화가 새면 테스트가 여기서 터진다.
+    // BE가 실제로 거절하는 것은 stock·createdFrom·createdTo·saleStatus·inspectionStatus·sort이고
+    // keyword·category는 빈 값을 미입력으로 접는다. 이 스텁은 일부러 더 엄격하게 전부 거절한다 —
+    // FE는 어차피 빈 값을 키째 빼므로(캐시 키 통일) 그 규칙이 새는 순간을 여기서 잡는다.
+    for (const [key, value] of params.entries()) {
+      if (value === '') return badRequest(`${key}: 지원하지 않는 값입니다.`)
+    }
+    const size = Number(params.get('size') ?? 20)
+    const page = Number(params.get('page') ?? 0)
+    const totalCount = sellerProducts.length
+    const totalPages = Math.ceil(totalCount / size)
+    return HttpResponse.json({
+      data: {
+        products: sellerProducts.slice(page * size, (page + 1) * size),
+        totalCount,
+        page,
+        size,
+        totalPages,
+        hasNext: page + 1 < totalPages,
+      },
+    })
+  }),
+  // 등록 — 201. 재고와 무관하게 ON_SALE/APPROVED/versionNo 1이고, 목록 맨 앞에 꽂힌다(latest = id desc).
+  http.post(SELLER_PRODUCTS_URL, async ({ request }) => {
+    const body = (await request.json()) as {
+      productName: string
+      regularPrice: number
+      discountPrice?: number | null
+      optionGroups?: { name: string; values: string[] }[] | null
+      optionCombinations: { optionValues: string[]; additionalPrice: number; stockQuantity: number }[]
+    }
+    lastRegisterBody = body
+    const product = makeSellerProductWire({
+      name: body.productName,
+      regularPrice: body.regularPrice,
+      discountPrice: body.discountPrice ?? null,
+      saleStatus: 'ON_SALE',
+      inspectionStatus: 'APPROVED',
+      totalStock: body.optionCombinations.reduce((sum, c) => sum + c.stockQuantity, 0),
+    })
+    sellerProducts = [product, ...sellerProducts]
+    sellerProductOptions.set(
+      product.productId,
+      body.optionCombinations.map(c =>
+        makeSellerOptionCombinationWire({
+          // ProductService: 요청 순서대로 ` / `로 잇고, 빈 이름은 `기본`.
+          name: c.optionValues.join(' / ') || '기본',
+          additionalPrice: c.additionalPrice,
+          stockQuantity: c.stockQuantity,
+        }),
+      ),
+    )
+    return HttpResponse.json(
+      {
+        data: {
+          productId: product.productId,
+          saleStatus: product.saleStatus,
+          inspectionStatus: product.inspectionStatus,
+          versionNo: 1,
+          createdAt: product.createdAt,
+        },
+      },
+      { status: 201 },
+    )
+  }),
+  http.get(`${SELLER_PRODUCTS_URL}/:productId/options`, ({ params }) => {
+    const combinations = sellerProductOptions.get(params['productId'] as string)
+    if (!combinations) {
+      return HttpResponse.json(
+        { errorCode: 40007, message: '조회할 수 없는 상품입니다.' },
+        { status: 403 },
+      )
+    }
+    return HttpResponse.json({ data: { optionCombinations: combinations } })
+  }),
+  // 판매 상태 변경 — ON_SALE/SUSPENDED만 받고, 재고 파생 전이가 같은 요청 안에서 동기로 얹힌다.
+  http.patch(`${SELLER_PRODUCTS_URL}/:productId/status`, async ({ params, request }) => {
+    const product = sellerProducts.find(p => p.productId === params['productId'])
+    if (!product) return productNotFound()
+    const { saleStatus } = (await request.json()) as { saleStatus: string }
+    if (saleStatus !== 'ON_SALE' && saleStatus !== 'SUSPENDED') {
+      return badRequest('판매중과 판매중지만 지정할 수 있습니다.')
+    }
+    product.saleStatus = saleStatus
+    applyStockDerivedStatus(product)
+    return HttpResponse.json({
+      data: { productId: product.productId, saleStatus: product.saleStatus, updatedAt: '2026-10-07T11:00:00' },
+    })
+  }),
+  http.put(`${SELLER_PRODUCTS_URL}/:productId`, async ({ params, request }) => {
+    const product = sellerProducts.find(p => p.productId === params['productId'])
+    if (!product) return productNotFound()
+    const body = (await request.json()) as { productName: string; regularPrice: number }
+    product.name = body.productName
+    product.regularPrice = body.regularPrice
+    return HttpResponse.json({
+      data: { productId: product.productId, saleStatus: product.saleStatus, updatedAt: '2026-10-07T11:00:00' },
+    })
+  }),
+  // 옵션 재고·판매 여부 변경 — 결과 재고를 0 이상으로 자르고 실제 반영량만 돌려준다.
+  http.patch(`${SELLER_PRODUCTS_URL}/:productId/options/:combinationId`, async ({ params, request }) => {
+    const productId = params['productId'] as string
+    const product = sellerProducts.find(p => p.productId === productId)
+    const combinations = sellerProductOptions.get(productId)
+    if (!product || !combinations) return productNotFound()
+    const combination = combinations.find(
+      c => c.optionCombinationId === Number(params['combinationId']),
+    )
+    if (!combination) return productNotFound()
+    const body = (await request.json()) as { stockDelta?: number | null; isActive?: boolean | null }
+    if (body.stockDelta == null && body.isActive == null) {
+      return badRequest('재고 증감과 판매 여부 중 하나는 보내야 합니다.')
+    }
+    if (body.stockDelta != null && (body.stockDelta === 0 || Math.abs(body.stockDelta) > 1_000_000)) {
+      return badRequest('재고 증감은 0이 아닌 ±1000000 이내여야 합니다.')
+    }
+    const before = combination.stockQuantity
+    if (body.stockDelta != null) combination.stockQuantity = Math.max(before + body.stockDelta, 0)
+    if (body.isActive != null) combination.isActive = body.isActive
+    applyStockDerivedStatus(product)
+    return HttpResponse.json({
+      data: {
+        combinationId: combination.optionCombinationId,
+        stockQuantity: combination.stockQuantity,
+        appliedStockDelta: combination.stockQuantity - before,
+        isActive: combination.isActive,
+        updatedAt: '2026-10-07T11:00:00',
+      },
+    })
+  }),
+  // 카테고리 트리 — api 호스트다(셀러 모듈에는 이 컨트롤러가 없다). 목업 임시저장 시드와 id가 같아야
+  // 프리필이 맞으므로 products.mock의 트리를 그대로 쓴다.
+  http.get(CATEGORIES_URL, () => HttpResponse.json({ data: MOCK_CATEGORY_TREE })),
+]
+
+export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers]
 export const server = setupServer(...handlers)

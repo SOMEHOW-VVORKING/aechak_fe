@@ -1012,6 +1012,379 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /sellers/me/products:
+    get:
+      summary: "셀러 상품 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이며 커서가 아니다. 공개 카탈로그와 달리
+        노출 조건을 걸지 않아 미승인·판매중지 상품도 전부 보인다. 조회 권한은 ACTIVE·PAUSED·
+        WITHDRAWAL_REQUESTED 셀러이고 그 밖은 403 errorCode 40006. 형식 오류는 전부
+        400 errorCode 90001이고 message에 필드별 사유가 실린다 — 빈 값(?stock=)도 미입력이
+        아니라 형식 오류로 거절되므로 값이 없는 파라미터는 키째 빼서 보낼 것.
+      operationId: "getSellerProducts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: "상품명 부분 일치(대소문자 무시). trim 후 빈 값이면 미적용"
+        - name: saleStatus
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/SaleStatus"
+          description: >-
+            반복 파라미터로 보낸다(?saleStatus=A&saleStatus=B). 미지 값은 400 errorCode 90001
+            message "saleStatus: 지원하지 않는 값입니다."
+        - name: inspectionStatus
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/InspectionStatus"
+          description: "saleStatus와 같은 규칙. 미지 값은 400 errorCode 90001"
+        - name: category
+          in: query
+          schema:
+            type: integer
+            format: int64
+          description: "활성 카테고리면 깊이에 상관없이 하위 카테고리까지 포함해 조회한다"
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: "등록일 하한(yyyy-MM-dd). 형식 위반은 400 errorCode 90001"
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: >-
+            등록일 상한(yyyy-MM-dd). 서버가 [from 00:00, to+1일 00:00) 반개구간으로 바꿔
+            상한 날짜를 통째로 포함한다. from > to면 400 errorCode 90001
+        - name: stock
+          in: query
+          schema:
+            type: string
+            enum: [in_stock, sold_out]
+          description: >-
+            재고 있는 활성 조합의 존재 여부로 가른다 — 재고가 남아도 조합이 전부 비활성이면
+            sold_out에 걸린다. 소문자만 받는다
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [latest, price_asc, price_desc]
+            default: latest
+          description: "소문자만 받는다. 가격 정렬의 기준은 조회 시각의 할인 반영가다"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductListResponse"
+    post:
+      summary: "셀러 상품 등록"
+      description: >-
+        등록 직후 상태는 재고와 무관하게 항상 saleStatus=ON_SALE, inspectionStatus=APPROVED,
+        versionNo=1이다. 쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004.
+        카테고리는 활성 소분류(depth 3)만 받는다 — 중·대분류는 400 errorCode 40100,
+        없는 카테고리는 404 errorCode 40101. 가격 범위 위반은 400 errorCode 40001,
+        할인 기간 모순은 400 errorCode 40002, 이미지 장수 초과는 400 errorCode 40003,
+        옵션 불변식 위반은 400 errorCode 40005(message에 사유), 재고 음수는 400 errorCode 40200,
+        추가금 음수는 400 errorCode 40201. 이미지 키는 presigned로 받은 tmp 키를 싣는다 —
+        타인 키는 403 errorCode 100002, 용도 불일치는 400 errorCode 100003, 미업로드는 404 errorCode 100001.
+      operationId: "registerSellerProduct"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductRegisterRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductRegisterResponse"
+  /sellers/me/products/{productId}:
+    put:
+      summary: "셀러 상품 정보 수정"
+      description: >-
+        옵션은 이 경로로 바꾸지 않는다(옵션 재고는 별도 PATCH). 이미지 목록은 전체 교체이고,
+        빠진 행은 삭제되지 않고 직전 버전으로 닫힌다 — 순서만 바뀌면 행이 늘지 않고 정렬만 바뀐다.
+        등록에 없는 검증이 하나 더 있다: additionalImageKeys·detailImageKeys 각 목록 안의
+        키 중복을 400 errorCode 90001로 거절한다(두 목록을 넘나드는 중복은 허용).
+        소유 증명 집합이 대표 이미지 키와 현재 열린 이미지 행으로 한정되므로, 과거 수정으로
+        닫힌 키나 다른 상품의 정식 키를 실으면 403 errorCode 100002다.
+        남의 상품은 404 errorCode 40000으로 가린다.
+      operationId: "updateSellerProduct"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "상품 공개 식별자(ULID 26자). 내부 숫자 PK가 아니다"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductUpdateResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductUpdateRequest"
+  /sellers/me/products/{productId}/status:
+    patch:
+      summary: "셀러 상품 판매 상태 변경"
+      description: >-
+        셀러가 지정할 수 있는 값은 ON_SALE과 SUSPENDED뿐이다 — OUT_OF_STOCK·ENDED는
+        400 errorCode 90001 message "판매중과 판매중지만 지정할 수 있습니다."
+        현재 상태를 보지 않으므로 같은 값 재전송도 200이다. 재고 파생 전이가 같은 요청 안에서
+        동기로 얹히기 때문에, 재고 없이 ON_SALE을 보내면 응답이 그 자리에서 OUT_OF_STOCK이다
+        (재고가 없어도 SUSPENDED는 그대로 반영된다). 이 경로는 상품 버전을 남기지 않는다.
+      operationId: "changeSellerProductSaleStatus"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductSaleStatusChangeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductSaleStatusChangeResponse"
+  /sellers/me/products/{productId}/options:
+    get:
+      summary: "셀러 상품 옵션 조합 재고 조회"
+      description: >-
+        비활성 조합까지 포함하고 재고를 마스킹 없이 원값으로 준다. 정렬은 조합 id 오름차순이다.
+        옵션 없이 등록한 상품은 name이 "기본"인 1행으로 온다. 여섯 엔드포인트 가운데 이것만
+        남의 상품에 403 errorCode 40007을 주고(나머지 쓰기 경로는 404 errorCode 40000으로 가린다),
+        조회 권한은 ACTIVE·PAUSED·WITHDRAWAL_REQUESTED 셀러다(그 밖은 403 errorCode 40006).
+      operationId: "getSellerProductOptions"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductOptionsResponse"
+  /sellers/me/products/{productId}/options/{combinationId}:
+    patch:
+      summary: "셀러 상품 옵션 조합 재고·판매 여부 변경"
+      description: >-
+        stockDelta와 isActive 중 적어도 하나를 보내야 하고, 둘 다 없으면 400 errorCode 90001
+        message "재고 증감과 판매 여부 중 하나는 보내야 합니다." stockDelta는 0을 금지하고
+        ±1000000 이내여야 한다. 응답 appliedStockDelta는 요청과 다를 수 있다 — 서버가 결과 재고를
+        0 이상으로 자르고 실제 반영량만 돌려준다. isActive만 보내면 항상 0이다.
+        응답에 상품 saleStatus가 없고 재고 파생 전환이 커밋 뒤 비동기로 일어나므로,
+        품절 전환을 화면에 반영하려면 목록을 다시 조회해야 한다.
+      operationId: "changeSellerProductOptionCombination"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: combinationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: >-
+            옵션 조합의 내부 숫자 PK — 공개 식별자가 없으므로 옵션 조회 응답의
+            optionCombinationId를 그대로 쓴다. 숫자가 아니면 400 errorCode 90001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerOptionCombinationChangeRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerOptionCombinationChangeResponse"
+  /admin/seller-applications:
+    get:
+      summary: "어드민 셀러 심사 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(권한 없음은
+        403 errorCode 20011). 오프셋 페이지네이션이고 커서가 아니다. 정렬은 서버가
+        제출일 내림차순·id 내림차순으로 고정하며 제출 전(submittedAt=null) 건은 뒤로 밀린다.
+        status를 주지 않으면 DRAFT·CANCELLED까지 포함한 전체가 totalCount에 잡힌다.
+        미지 status는 400 errorCode 90001 message "status: 잘못된 값입니다."
+        page 음수는 0으로, size는 1~100으로 서버가 보정한다(거절하지 않는다).
+      operationId: "getAdminSellerApplications"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ApplicationStatus"
+          description: "대문자 enum 이름을 그대로 보낸다. 생략하면 전체"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminApplicationListResponse"
+  /admin/seller-applications/{applicationId}:
+    get:
+      summary: "어드민 셀러 심사 상세"
+      description: >-
+        사업자등록번호·대표자명·계좌번호를 마스킹 없이 평문으로 내려준다(계약) — 화면 표시용
+        마스킹은 클라이언트 책임이다. rejectionReason은 status가 REJECTED가 아니면 DB에 값이
+        남아 있어도 null로 온다(직전 반려 사유는 reviews 배열의 마지막 REJECTED 항목에만 남는다).
+        documents의 downloadUrl은 유효기간 5분짜리 presigned GET이므로, 상세 응답을 캐시해 두고
+        몇 분 뒤 서류를 열면 403이 된다 — 서류 열기는 상세를 다시 조회하는 흐름이어야 한다.
+        previousApplications는 같은 사업자등록번호의 과거 신청에서 자기 행을 뺀 id 내림차순이고,
+        사업자등록번호가 없으면 빈 배열이다(상태 필터가 없어 DRAFT도 섞인다).
+        없는 신청은 404 errorCode 10100.
+      operationId: "getAdminSellerApplicationDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminApplicationDetailResponse"
+  /admin/seller-applications/{applicationId}/approve:
+    post:
+      summary: "어드민 셀러 심사 승인"
+      description: >-
+        요청 본문·쿼리·멱등키 헤더가 없고 성공은 204 No Content(빈 바디)다 — data 봉투조차 없다.
+        한 트랜잭션에서 신청 승인 전이와 심사 이력 누적, 셀러 개점(스토어명은 상호명이 없으면
+        대표자명으로 접힌다), 정산계좌 검증 이관이 함께 일어난다.
+        승인·반려가 가능한 상태는 SUBMITTED와 REVIEWING뿐이고, 그 밖은 409 errorCode 10101이다.
+        동시 승인 두 건은 한쪽이 204, 다른 쪽이 409로 갈린다 — 낙관적 잠금 실패와 유니크 제약
+        충돌도 모두 10101로 번역되므로, 클라이언트는 409를 받으면 errorCode 10101·90003을 같이
+        "이미 처리되었거나 다른 운영자가 먼저 처리함"으로 다루고 목록을 다시 조회하면 된다.
+        없는 신청은 404 errorCode 10100.
+      operationId: "approveAdminSellerApplication"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content"
+  /admin/seller-applications/{applicationId}/reject:
+    post:
+      summary: "어드민 셀러 심사 반려"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 사유는 500자 이하만 형식 검증으로 걸리고(초과는
+        400 errorCode 90001 message "반려 사유는 500자 이하여야 합니다."), 공백·누락은 서버가
+        빈 문자열로 바꿔 도메인에 넘겨 400 errorCode 10102가 된다.
+        상태 가드가 사유 검사보다 먼저 실행되므로, 이미 결정된 신청에 빈 사유로 반려하면
+        400이 아니라 409 errorCode 10101이다 — 클라이언트 분기는 이 우선순위를 따라야 한다.
+        없는 신청은 404 errorCode 10100.
+      operationId: "rejectAdminSellerApplication"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectAdminSellerApplicationRequest"
+      responses:
+        "204":
+          description: "No Content"
 components:
   schemas:
     Species:
@@ -1092,7 +1465,7 @@ components:
           description: "낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다"
     UploadPurpose:
       type: string
-      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT, REVIEW_IMAGE]
+      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT, REVIEW_IMAGE, PRODUCT]
     IssuePresignedUrlRequest:
       type: object
       required: [purpose, contentType]
@@ -1102,8 +1475,9 @@ components:
         contentType:
           type: string
           description: >-
-            프로필 사진(USER_PROFILE/PET_PROFILE)은 image/png·image/jpeg·image/webp,
-            셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000
+            프로필 사진(USER_PROFILE/PET_PROFILE)과 상품 이미지(PRODUCT)는 image/png·image/jpeg·image/webp,
+            셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000.
+            발급받은 URL에 PUT할 때 Content-Type을 발급 때와 같게 보내야 한다(서명에 박혀 있다)
           example: "image/png"
     PresignedUrlResponse:
       type: object
@@ -2277,6 +2651,542 @@ components:
             createdAt:
               type: string
               description: "접수 시각 ISO-8601"
+    InspectionStatus:
+      type: string
+      enum: [DRAFT, PENDING, APPROVED, REJECTED]
+      description: >-
+        상품 심사 상태. 지금 서버는 등록 즉시 APPROVED를 매기고 DRAFT·PENDING·REJECTED로 가는
+        경로가 없다(심사 기능 확장 대비 정의만 존재)
+    SellerAssignableSaleStatus:
+      type: string
+      enum: [ON_SALE, SUSPENDED]
+      description: >-
+        셀러가 직접 지정할 수 있는 판매 상태. 품절은 재고에서 파생되고 판매종료는 도달 경로가
+        없어서 이 두 값만 받는다(그 밖은 400 errorCode 90001)
+    SellerProductOptionGroupInput:
+      type: object
+      required: [name, values]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          description: "옵션 그룹명(예: 중량). 비어 있으면 400 errorCode 90001"
+        values:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            maxLength: 100
+          description: "그룹에 속한 옵션값 이름. 비어 있으면 400 errorCode 90001"
+    SellerProductOptionCombinationInput:
+      type: object
+      required: [optionValues, additionalPrice, stockQuantity]
+      properties:
+        optionValues:
+          type: array
+          items:
+            type: string
+          description: >-
+            이 조합이 가리키는 옵션값 이름들. 옵션이 없는 상품은 빈 배열 한 행만 보내고
+            서버가 이름을 "기본"으로 붙인다
+        additionalPrice:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "추가금. 음수는 400 errorCode 40201"
+        stockQuantity:
+          type: integer
+          minimum: 0
+          description: "재고. 음수는 400 errorCode 40200"
+    SellerProductRegisterRequest:
+      type: object
+      required: [categoryId, productName, regularPrice, thumbnailImageKey, optionCombinations]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          description: "활성 소분류(depth 3)만. 중·대분류는 400 errorCode 40100, 없으면 404 errorCode 40101"
+        productName:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          description: "상품 설명. 길이 제약이 없다"
+        regularPrice:
+          type: integer
+          format: int64
+          minimum: 100
+          maximum: 100000000
+          description: "정가. 범위를 벗어나면 400 errorCode 40001"
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+          description: "할인가. 0 이상 정가 이하만. 벗어나면 400 errorCode 40001"
+        discountStartAt:
+          type: string
+          nullable: true
+          description: >-
+            할인 시작 시각(오프셋 없는 LocalDateTime). discountPrice가 있으면 필수이고,
+            discountPrice 없이 기간만 보내면 400 errorCode 40002
+        discountEndAt:
+          type: string
+          nullable: true
+          description: "할인 종료 시각. 비우면 무기한. 시작이 종료보다 늦으면 400 errorCode 40002"
+        thumbnailImageKey:
+          type: string
+          maxLength: 1024
+          description: "presigned로 받은 tmp 키"
+        additionalImageKeys:
+          type: array
+          nullable: true
+          maxItems: 9
+          items:
+            type: string
+            maxLength: 1024
+          description: "추가 이미지 키. 생략하면 빈 목록. 9장 초과는 400 errorCode 40003"
+        detailImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+          description: "상세 이미지 키. 20장 초과는 400 errorCode 40003"
+        optionGroups:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/SellerProductOptionGroupInput"
+          description: "옵션이 없는 상품은 생략한다"
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductOptionCombinationInput"
+          description: >-
+            조합은 비울 수 없다. 불변식 위반은 전부 400 errorCode 40005이고 message에 사유가 실린다 —
+            그룹명 중복 금지, 옵션값 이름은 그룹을 넘어서도 중복 금지, 그룹에 없는 값 지목 금지,
+            조합이 모든 그룹을 덮어야 함, 같은 값 집합의 조합 중복 금지
+    SellerProductRegisterData:
+      type: object
+      required: [productId, saleStatus, inspectionStatus, versionNo, createdAt]
+      properties:
+        productId:
+          type: string
+          description: "상품 공개 식별자(ULID 26자)"
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        versionNo:
+          type: integer
+        createdAt:
+          type: string
+          description: "오프셋 없는 LocalDateTime 직렬화"
+    SellerProductRegisterResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductRegisterData"
+    SellerProductUpdateRequest:
+      type: object
+      required: [categoryId, productName, regularPrice, thumbnailImageKey]
+      description: >-
+        등록 요청에서 옵션 두 필드를 뺀 모양이다. 이미지 목록은 전체 교체이고, 각 목록 안의
+        키 중복은 400 errorCode 90001로 거절한다(등록에는 없는 검증)
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        productName:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        regularPrice:
+          type: integer
+          format: int64
+          minimum: 100
+          maximum: 100000000
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountStartAt:
+          type: string
+          nullable: true
+        discountEndAt:
+          type: string
+          nullable: true
+        thumbnailImageKey:
+          type: string
+          maxLength: 1024
+        additionalImageKeys:
+          type: array
+          nullable: true
+          maxItems: 9
+          items:
+            type: string
+            maxLength: 1024
+        detailImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+    SellerProductUpdateData:
+      type: object
+      required: [productId, saleStatus, updatedAt]
+      properties:
+        productId:
+          type: string
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        updatedAt:
+          type: string
+    SellerProductUpdateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductUpdateData"
+    SellerProductSaleStatusChangeRequest:
+      type: object
+      required: [saleStatus]
+      properties:
+        saleStatus:
+          $ref: "#/components/schemas/SellerAssignableSaleStatus"
+    SellerProductSaleStatusChangeData:
+      type: object
+      required: [productId, saleStatus, updatedAt]
+      properties:
+        productId:
+          type: string
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+          description: >-
+            재고 파생 전이가 같은 요청 안에서 얹히므로, 재고 없이 ON_SALE을 보내면
+            여기로 OUT_OF_STOCK이 온다
+        updatedAt:
+          type: string
+    SellerProductSaleStatusChangeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductSaleStatusChangeData"
+    SellerOptionCombinationChangeRequest:
+      type: object
+      description: >-
+        stockDelta와 isActive 중 적어도 하나를 보내야 한다. 둘 다 없으면 400 errorCode 90001
+      properties:
+        stockDelta:
+          type: integer
+          nullable: true
+          minimum: -1000000
+          maximum: 1000000
+          description: "0은 금지. 범위 위반은 400 errorCode 90001"
+        isActive:
+          type: boolean
+          nullable: true
+    SellerOptionCombinationChangeData:
+      type: object
+      required: [combinationId, stockQuantity, appliedStockDelta, isActive, updatedAt]
+      properties:
+        combinationId:
+          type: integer
+          format: int64
+        stockQuantity:
+          type: integer
+          description: "반영 후 재고"
+        appliedStockDelta:
+          type: integer
+          description: >-
+            실제 반영된 증감. 서버가 결과 재고를 0 이상으로 자르므로 요청과 다를 수 있고,
+            isActive만 보냈을 때는 항상 0이다
+        isActive:
+          type: boolean
+        updatedAt:
+          type: string
+    SellerOptionCombinationChangeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerOptionCombinationChangeData"
+    SellerProductSummary:
+      type: object
+      required: [productId, name, thumbnailImageKey, categoryName, regularPrice, discountPrice, discountRate, saleStatus, inspectionStatus, totalStock, createdAt]
+      properties:
+        productId:
+          type: string
+          description: "상품 공개 식별자(ULID 26자)"
+        name:
+          type: string
+        thumbnailImageKey:
+          type: string
+          nullable: true
+          description: "저장 키이고 URL이 아니다 — 공개 URL은 미디어 base와 합쳐 조립한다"
+        categoryName:
+          type: string
+          description: "소분류 이름만 온다(상위 경로 없음)"
+        regularPrice:
+          type: integer
+          format: int64
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+          description: "조회 시각에 적용 중인 할인만 — 예약·종료된 할인은 null이다"
+        discountRate:
+          type: integer
+          nullable: true
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        totalStock:
+          type: integer
+          format: int64
+          description: "활성 조합의 재고 합. 조합이 전부 비활성이면 0"
+        createdAt:
+          type: string
+    SellerProductListData:
+      type: object
+      required: [products, totalCount, page, size, totalPages, hasNext]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductSummary"
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        size:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+    SellerProductListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductListData"
+    SellerProductOptionCombination:
+      type: object
+      required: [optionCombinationId, name, additionalPrice, stockQuantity, isActive]
+      properties:
+        optionCombinationId:
+          type: integer
+          format: int64
+          description: "내부 숫자 PK — 재고 변경 경로에 그대로 싣는다"
+        name:
+          type: string
+          description: '옵션값을 " / "로 이은 이름. 옵션 없는 상품은 "기본"'
+        additionalPrice:
+          type: integer
+          format: int64
+        stockQuantity:
+          type: integer
+        isActive:
+          type: boolean
+    SellerProductOptionsData:
+      type: object
+      required: [optionCombinations]
+      properties:
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductOptionCombination"
+    SellerProductOptionsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductOptionsData"
+    AdminApplicationSummary:
+      type: object
+      required: [applicationId, status, businessType, businessName, representativeName, submittedAt]
+      description: >-
+        목록 행. 사업자등록번호·전화번호는 목록 응답에 아예 없다(상세에만 사업자등록번호가 있다).
+        화면에 신청인 이름을 보일 때는 상호명이 없으면 대표자명으로 접는다 — 서버 승인 로직이
+        스토어명을 정할 때 쓰는 폴백과 같은 규칙이다
+      properties:
+        applicationId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        businessType:
+          $ref: "#/components/schemas/BusinessType"
+        businessName:
+          type: string
+          nullable: true
+        representativeName:
+          type: string
+          nullable: true
+        submittedAt:
+          type: string
+          nullable: true
+          description: "제출 시각(오프셋 없는 LocalDateTime). 제출 전이면 null"
+    AdminApplicationListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminApplicationSummary"
+        totalCount:
+          type: integer
+          format: int64
+          description: "status를 주지 않으면 DRAFT·CANCELLED까지 포함한 전체 건수다"
+    AdminApplicationListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminApplicationListData"
+    AdminApplicationDocument:
+      type: object
+      required: [documentType, uploadedAt, downloadUrl]
+      properties:
+        documentType:
+          type: string
+          description: "SellerDocumentType 값(서버가 문자열로 직렬화). 한국어 라벨은 응답에 없다"
+        uploadedAt:
+          type: string
+          description: "서류 행의 갱신 시각 — 교체하면 같은 행을 갱신하므로 최신 업로드 시각이다"
+        downloadUrl:
+          type: string
+          description: >-
+            S3 presigned GET이고 유효기간이 5분이다 — 캐시된 상세로 몇 분 뒤 열면 403이므로
+            서류 열기는 상세 재조회 흐름이어야 한다
+    AdminApplicationReview:
+      type: object
+      required: [decision, rejectionReason, reviewedAt]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+          description: "심사 결정. 실제로 적재되는 값은 승인·반려 둘뿐이다"
+        rejectionReason:
+          type: string
+          nullable: true
+        reviewedAt:
+          type: string
+    AdminPreviousApplication:
+      type: object
+      required: [applicationId, status, decidedAt]
+      properties:
+        applicationId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        decidedAt:
+          type: string
+          nullable: true
+    AdminApplicationDetail:
+      type: object
+      required: [applicationId, status, businessType, businessName, businessRegNo, corpRegNo, representativeName, telesalesNumber, bankCode, accountNumber, accountHolder, appliedAt, submittedAt, decidedAt, rejectionReason, documents, reviews, previousApplications]
+      description: >-
+        심사에 필요한 원본을 마스킹 없이 평문으로 준다(계약) — 화면 마스킹은 클라이언트 책임이다.
+        전화번호 필드는 없다(telesalesNumber는 통신판매업 신고번호이고 전화번호가 아니다)
+      properties:
+        applicationId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        businessType:
+          $ref: "#/components/schemas/BusinessType"
+        businessName:
+          type: string
+          nullable: true
+        businessRegNo:
+          type: string
+          nullable: true
+          description: "사업자등록번호 평문"
+        corpRegNo:
+          type: string
+          nullable: true
+          description: "법인등록번호 평문"
+        representativeName:
+          type: string
+          nullable: true
+          description: "대표자 실명 평문"
+        telesalesNumber:
+          type: string
+          nullable: true
+          description: "통신판매업 신고번호 — 전화번호가 아니다"
+        bankCode:
+          type: string
+          nullable: true
+        accountNumber:
+          type: string
+          nullable: true
+          description: "복호화된 계좌번호 평문(의도된 계약). 암호 열이 비어 있으면 null"
+        accountHolder:
+          type: string
+          nullable: true
+        appliedAt:
+          type: string
+          description: "신청서 생성 시각 — 목록에는 없는 필드다"
+        submittedAt:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+          description: >-
+            status가 REJECTED가 아니면 DB에 값이 있어도 null로 온다. 직전 반려 사유는
+            reviews의 마지막 REJECTED 항목에만 남는다
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminApplicationDocument"
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminApplicationReview"
+          description: "심사 이력, id 오름차순"
+        previousApplications:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPreviousApplication"
+          description: >-
+            같은 사업자등록번호의 과거 신청에서 자기 행을 뺀 id 내림차순. 사업자등록번호가
+            없으면 빈 배열이고, 상태 필터가 없어 DRAFT도 섞인다
+    AdminApplicationDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminApplicationDetail"
+    RejectAdminSellerApplicationRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: >-
+            반려 사유. 500자 초과는 요청 본문 검증 단계에서 걸려 핸들러에 닿기도 전에
+            400 errorCode 90001이 된다. 길이가 통과한 뒤 공백·누락이면 서버가 빈 문자열로 바꿔
+            400 errorCode 10102가 되는데, 이 검사는 상태 가드보다 뒤에 돌기 때문에 이미 결정된
+            신청에 빈 사유로 반려하면 400이 아니라 409 errorCode 10101이 앞선다
   securitySchemes:
     bearerAuth:
       type: http

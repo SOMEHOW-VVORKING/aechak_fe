@@ -1,62 +1,119 @@
 import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  changeSellerProductOptionCombination,
+  changeSellerProductSaleStatus,
+  getCategories,
+  getSellerProductOptions,
+  getSellerProducts,
+  registerSellerProduct,
+  updateSellerProduct,
+  type SellerAssignableSaleStatus,
+} from '@aechak/api'
 import type {
   OptionCombinationChangeRequest,
+  SellerProductListResponse,
   ProductDraftRequest,
   ProductRegisterRequest,
   ProductUpdateRequest,
   SellerProductSearchParams,
 } from './products.contract'
 import {
-  mockChangeOptionCombination,
-  mockChangeSaleStatus,
-  mockDeleteProduct,
   mockDeleteProductDraft,
-  mockFetchCategories,
   mockFetchProductDetail,
   mockFetchProductDraft,
   mockFetchProductDrafts,
-  mockFetchProductOptions,
-  mockFetchProducts,
-  mockMediaUrl,
-  mockRegisterProduct,
   mockSaveProductDraft,
-  mockUpdateProduct,
 } from './products.mock'
 
-// 목업 fetcher는 실 fetcher처럼 `{ data }`를 돌려주고 여기서 벗긴다(store-settings.queries 관례).
-// 실연동은 mock* 호출을 생성 fetcher로 바꾸면 된다.
+// 생성된 react-query 훅은 쓰지 않고 fetcher만 소비하고(breeds·store-settings 관례) 이 파일이 자체
+// useQuery/useMutation으로 감싼다. fetcher는 `{ data }` 한 겹(ApiResponse)을 돌려주므로 여기서 벗긴다.
+// 호스트는 공유 클라이언트가 경로 접두로 가른다 — `/sellers/**`는 seller 모듈(8081), `/categories`와
+// `/files/presigned-url`은 api 모듈(8080)이다.
 
 // 목록/옵션/상세/임시저장이 전부 이 접두를 공유한다 — 변경 후 접두 무효화 한 번으로 목록, 열린 재고
 // Drawer, 임시저장 수까지 갱신된다(main.tsx staleTime 60초라 무효화가 필수).
 export const PRODUCTS_QUERY_KEY = ['products'] as const
 
-export const useProducts = (params: SellerProductSearchParams) =>
-  useQuery({
-    queryKey: [...PRODUCTS_QUERY_KEY, 'list', params],
-    queryFn: () => mockFetchProducts(params).then(r => r.data),
+/**
+ * 화면 필터 상태 그대로의 목록 파라미터 — '전체'를 빈 문자열로, 미선택을 빈 배열로 들고 있어도 된다.
+ * 와이어 모양으로 좁히는 일은 화면이 아니라 `normalizeSearchParams`가 한 곳에서 책임진다.
+ */
+export type SellerProductSearchInput = {
+  [K in keyof SellerProductSearchParams]?: NonNullable<SellerProductSearchParams[K]> | ''
+}
+
+/**
+ * 빈 값 파라미터를 키째 빼고 문자열을 trim한다.
+ *
+ * BE는 값이 빈 파라미터를 "미입력"으로 보지 않고 형식 오류(400 errorCode 90001)로 거절한다 —
+ * `?stock=`·`?createdFrom=`·`?createdTo=`가 그렇고(SellerProductListIntegrationTest가 문구까지
+ * 고정한다) `?saleStatus=`·`?inspectionStatus=`·`?sort=`도 parseEnum/parseSort에서 같은 400이 된다.
+ * `keyword`(trim 후 빈 값은 null)와 `category`(Long? 빈 값은 null)만 예외지만 그 둘도 함께 뺀다 —
+ * `{ keyword: '' }`와 `{}`가 같은 요청이므로 캐시 키도 같아야 한다. 화면 필터는 '전체'를 빈 문자열로
+ * 들고 있으므로 그대로 넘기면 전 목록 조회가 400으로 깨진다. 숫자 0(`page=0`)과 `false`는 값이
+ * 있는 것이므로 남긴다.
+ *
+ * 배열(saleStatus·inspectionStatus)은 비면 키째 뺀다 — 공유 클라이언트의 `paramsSerializer`가 반복
+ * 파라미터로 직렬화하므로 값이 있는 배열은 그대로 넘기면 `?saleStatus=A&saleStatus=B`가 된다.
+ */
+export function normalizeSearchParams(params: SellerProductSearchInput): SellerProductSearchParams {
+  const normalized: Record<string, unknown> = {}
+  // 값 타입이 필드마다 다르므로 unknown으로 받아 모양으로 가른다(enum 배열 원소와 '' 비교가 안 된다).
+  for (const [key, value] of Object.entries(params) as [string, unknown][]) {
+    if (value == null) continue
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed !== '') normalized[key] = trimmed
+      continue
+    }
+    if (Array.isArray(value)) {
+      const kept = value.filter(item => item != null && item !== '')
+      if (kept.length > 0) normalized[key] = kept
+      continue
+    }
+    normalized[key] = value
+  }
+  return normalized as SellerProductSearchParams
+}
+
+export const useProducts = (params: SellerProductSearchInput) => {
+  // 정규화한 값으로 키를 만든다 — `{ keyword: '' }`와 `{}`가 같은 요청이므로 캐시도 같아야 한다.
+  const query = normalizeSearchParams(params)
+  // 제네릭을 명시한다 — `placeholderData: keepPreviousData`와 `queryFn`의 구조 분해(`{ signal }`)가
+  // 겹치면 추론이 TData에 keepPreviousData의 함수 타입까지 섞어 넣어 `data.totalPages`가 깨진다.
+  return useQuery<SellerProductListResponse>({
+    queryKey: [...PRODUCTS_QUERY_KEY, 'list', query],
+    queryFn: ({ signal }) => getSellerProducts(query, signal).then(r => r.data),
     // 필터/페이지를 바꾸는 동안 표가 비지 않게 이전 결과를 유지한다.
     placeholderData: keepPreviousData,
   })
+}
 
 export const useProductOptions = (productId: string | null | undefined) =>
   useQuery({
     queryKey: [...PRODUCTS_QUERY_KEY, 'options', productId],
-    queryFn: productId ? () => mockFetchProductOptions(productId).then(r => r.data) : skipToken,
+    queryFn: productId
+      ? ({ signal }) => getSellerProductOptions(productId, signal).then(r => r.data)
+      : skipToken,
   })
 
-// 카테고리는 어드민 마스터 데이터라 세션 중 바뀌지 않는다. 실서버는 api 호스트 GET /categories다
-// (셀러 호스트에 없음).
+// 카테고리는 어드민 마스터 데이터라 세션 중 바뀌지 않는다. 셀러 호스트에는 없어서 api 호스트로 나간다
+// (경로 분기가 `/categories`를 api로 보낸다).
 export const useProductCategories = () =>
   useQuery({
     queryKey: ['product-categories'],
-    queryFn: () => mockFetchCategories().then(r => r.data),
+    queryFn: ({ signal }) => getCategories(signal).then(r => r.data),
     staleTime: Infinity,
   })
 
-/** BE 목록/프리필은 저장 키만 준다. 공개 URL은 BE FileStorageAdapter와 같은 `${VITE_MEDIA_BASE_URL}/${key}`. */
+/**
+ * BE 목록/옵션 응답은 저장 키만 준다. 공개 URL은 BE FileStorageAdapter와 같은
+ * `${VITE_MEDIA_BASE_URL}/${key}`로 조립한다. base가 설정돼 있지 않으면 URL을 지어내지 않고 null을
+ * 돌려준다 — 화면은 썸네일 자리를 아이콘 플레이스홀더로 채운다.
+ */
 export function productImageUrl(key: string): string | null {
   const base = import.meta.env['VITE_MEDIA_BASE_URL']
-  return base ? `${base.replace(/\/$/, '')}/${key}` : mockMediaUrl(key)
+  return base ? `${base.replace(/\/$/, '')}/${key}` : null
 }
 
 function useProductsMutation<TVariables, TData>(mutationFn: (variables: TVariables) => Promise<{ data: TData }>) {
@@ -67,14 +124,20 @@ function useProductsMutation<TVariables, TData>(mutationFn: (variables: TVariabl
   })
 }
 
+/**
+ * PUT 배선 — 스펙에 등재된 fetcher이므로 queries 층까지는 이어 두되 화면에서 호출하지 않는다.
+ * BE에 셀러 단건 조회가 없어 수정 폼을 제대로 프리필할 수 없고, 이미지 목록이 전체 교체라 부족한
+ * 프리필로 PUT하면 기존 이미지와 할인 설정을 잃는다(routes/products/$productId/edit.tsx 참고).
+ */
 export const useUpdateProduct = () =>
   useProductsMutation(({ productId, body }: { productId: string; body: ProductUpdateRequest }) =>
-    mockUpdateProduct(productId, body),
+    updateSellerProduct(productId, body),
   )
 
 export const useChangeSaleStatus = () =>
-  useProductsMutation(({ productId, saleStatus }: { productId: string; saleStatus: 'ON_SALE' | 'SUSPENDED' }) =>
-    mockChangeSaleStatus(productId, { saleStatus }),
+  useProductsMutation(
+    ({ productId, saleStatus }: { productId: string; saleStatus: SellerAssignableSaleStatus }) =>
+      changeSellerProductSaleStatus(productId, { saleStatus }),
   )
 
 // 옵션 변경 뒤 자동 품절/복귀는 BE가 커밋 후 @Async 리스너로 한다(응답에 판매 상태 없음). 응답 직후
@@ -93,7 +156,7 @@ export const useChangeOptionCombination = () => {
       productId: string
       combinationId: number
       body: OptionCombinationChangeRequest
-    }) => mockChangeOptionCombination(productId, combinationId, body).then(r => r.data),
+    }) => changeSellerProductOptionCombination(productId, combinationId, body).then(r => r.data),
     onSuccess: () => {
       setTimeout(
         () => queryClient.invalidateQueries({ queryKey: [...PRODUCTS_QUERY_KEY, 'list'] }),
@@ -104,15 +167,27 @@ export const useChangeOptionCombination = () => {
   })
 }
 
-// ─── BE 엔드포인트 없음(목업 전용) — products.mock.ts의 같은 구역과 짝 ─────────────
+/**
+ * 등록. 이어쓰던 임시저장(BE 없음 — 목업)은 등록이 끝난 뒤 지운다. 등록 요청에는 임시저장 id를 실을
+ * 자리가 없어서 두 단계다.
+ */
+export const useRegisterProduct = () =>
+  useProductsMutation(async ({ body, draftId }: { body: ProductRegisterRequest; draftId?: string }) => {
+    const response = await registerSellerProduct(body)
+    if (draftId) await mockDeleteProductDraft(draftId)
+    return response
+  })
 
+// ─── BE 엔드포인트 없음(목업 전용) — products.mock.ts의 같은 구역과 짝 ─────────────
+// 아래 훅은 BE에 대응 API가 없어 목업으로만 동작한다. 운영 화면의 진입점은 막아 두었고(수정 화면·
+// 임시저장) 개발 검증과 폼 구현 보존을 위해 배선만 남긴다.
+
+/** 수정 폼 프리필. GET /sellers/me/products/{productId}가 생기면 이 훅만 바꿔 끼운다. */
 export const useProductDetail = (productId: string | null | undefined) =>
   useQuery({
     queryKey: [...PRODUCTS_QUERY_KEY, 'detail', productId],
     queryFn: productId ? () => mockFetchProductDetail(productId).then(r => r.data) : skipToken,
   })
-
-export const useDeleteProduct = () => useProductsMutation((productId: string) => mockDeleteProduct(productId))
 
 export const useProductDrafts = () =>
   useQuery({
@@ -132,11 +207,3 @@ export const useSaveProductDraft = () =>
   useProductsMutation(({ body, draftId }: { body: ProductDraftRequest; draftId?: string }) =>
     mockSaveProductDraft(body, draftId),
   )
-
-/** 등록(BE 있음) 뒤 이어쓰던 임시저장을 지운다(목업 전용 단계). 등록 본문은 BE DTO 그대로다. */
-export const useRegisterProduct = () =>
-  useProductsMutation(async ({ body, draftId }: { body: ProductRegisterRequest; draftId?: string }) => {
-    const response = await mockRegisterProduct(body)
-    if (draftId) await mockDeleteProductDraft(draftId)
-    return response
-  })

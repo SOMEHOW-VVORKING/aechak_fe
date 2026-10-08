@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Drawer, Input, Toggle } from '@aechak/design-system/web'
+import { Alert, Button, Drawer, EmptyState, Input, Skeleton, Toggle } from '@aechak/design-system/web'
 import { productErrorMessage, STOCK_DELTA_LIMIT } from '../products.contract'
 import { useChangeOptionCombination, useProductOptions } from '../products.queries'
 
@@ -13,7 +13,8 @@ interface InventoryDrawerProps {
 // 셀러가 적은 목표 재고와 지금 재고의 차이를 보낸다. 저장 후에도 열어 두고, 접두 무효화가 이 Drawer와
 // 목록 행(재고/판매 상태)을 함께 갱신한다.
 export function InventoryDrawer({ productId, onClose, onSaved }: InventoryDrawerProps) {
-  const { data } = useProductOptions(productId)
+  const options = useProductOptions(productId)
+  const { data } = options
   const change = useChangeOptionCombination()
   const [edits, setEdits] = useState<Record<number, string>>({})
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
@@ -75,7 +76,38 @@ export function InventoryDrawer({ productId, onClose, onSaved }: InventoryDrawer
 
   return (
     <Drawer open={productId !== null} onClose={onClose} title="옵션별 재고" width="lg">
-      {data && (
+      {/* 조회 실패·로딩을 삼키면 빈 Drawer가 "옵션이 없는 상품"처럼 보인다 — 행 단위 에러(rowErrors)와
+          같은 수준으로 조회 단계도 갈라서 보여 준다. 재조회 실패로 낡은 목록이 남는 경우도 있으므로
+          오류 안내는 목록을 가리지 않고 위에 얹는다. */}
+      {options.isLoading && (
+        <div role="status" aria-label="옵션을 불러오는 중" className="flex flex-col gap-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      )}
+      {options.isError && (
+        <Alert variant="error" className="mb-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="min-w-0 flex-1">{productErrorMessage(options.error)}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={options.isFetching}
+              onClick={() => void options.refetch()}
+            >
+              다시 시도
+            </Button>
+          </div>
+        </Alert>
+      )}
+      {data && data.optionCombinations.length === 0 && (
+        <EmptyState
+          title="등록된 옵션이 없어요"
+          description="옵션 없이 등록한 상품도 기본 조합 한 줄이 생겨요. 목록을 새로고침해 주세요."
+        />
+      )}
+      {data && data.optionCombinations.length > 0 && (
         <div className="flex flex-col gap-4">
           {data.optionCombinations.map(c => {
             const id = c.optionCombinationId

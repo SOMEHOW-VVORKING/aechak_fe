@@ -22,15 +22,20 @@ import {
   MAX_DETAIL_IMAGES,
   MAX_REGULAR_PRICE,
   MIN_REGULAR_PRICE,
-  PRODUCT_IMAGE_TYPES,
   validateProductForm,
   type CategoryNode,
   type ImageSlot,
   type ProductFormValues,
   type SellerOptionCombination,
 } from '../products.contract'
-import { mockUploadProductImage } from '../products.mock'
 import { useProductOptions } from '../products.queries'
+import {
+  isSupportedProductImage,
+  isWithinProductImageSizeLimit,
+  OVERSIZED_PRODUCT_IMAGE_MESSAGE,
+  UNSUPPORTED_PRODUCT_IMAGE_MESSAGE,
+  uploadProductImage,
+} from '../products.upload'
 import { FieldAnchor, FieldError, fieldA11y, fieldHelperId, tooltipId } from './FieldAnchor'
 import { OptionBuilder } from './OptionBuilder'
 
@@ -58,9 +63,6 @@ const IMAGE_FIELDS: { key: ImageFieldKey; label: string; max: number }[] = [
   { key: 'additionalImages', label: '추가 썸네일', max: MAX_ADDITIONAL_IMAGES },
   { key: 'detailImages', label: '상품 상세 이미지', max: MAX_DETAIL_IMAGES },
 ]
-
-// BE presign은 크기 제한이 없다 — 10MB는 FE UX 정책(store-settings.upload와 같은 값).
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 const SECTIONS = ['기본 정보', '카테고리', '가격/할인', '이미지/상세', '옵션/재고', '배송 정책']
 
@@ -145,8 +147,9 @@ export function ProductEditor({
   function handleAddImages(field: ImageFieldKey, max: number, files: File[]) {
     let message: string | undefined
     const accepted = files.filter(file => {
-      if (!PRODUCT_IMAGE_TYPES.includes(file.type)) message ??= 'JPG/PNG/WEBP 이미지만 올릴 수 있어요'
-      else if (file.size > MAX_IMAGE_BYTES) message ??= '이미지는 1장당 10MB까지 올릴 수 있어요'
+      // 형식/크기 판정과 문구는 업로드 모듈이 소유한다(발급 단계의 서버 계약과 한자리에 둔다).
+      if (!isSupportedProductImage(file)) message ??= UNSUPPORTED_PRODUCT_IMAGE_MESSAGE
+      else if (!isWithinProductImageSizeLimit(file)) message ??= OVERSIZED_PRODUCT_IMAGE_MESSAGE
       else return true
       return false
     })
@@ -179,7 +182,7 @@ export function ProductEditor({
     setUploading(true)
     try {
       // 일부만 실패해도 성공한 키는 슬롯에 남겨 재시도 때 다시 올리지 않는다.
-      const results = await Promise.allSettled(pending.map(slot => mockUploadProductImage(slot.file!)))
+      const results = await Promise.allSettled(pending.map(slot => uploadProductImage(slot.file!)))
       const keyById = new Map<string, string>()
       results.forEach((result, i) => {
         if (result.status === 'fulfilled') keyById.set(pending[i]!.id, result.value)
