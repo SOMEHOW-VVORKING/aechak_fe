@@ -32,7 +32,9 @@ export function pointsErrorMessage(error: unknown): string {
   const res = errorResponse(error)
   switch (res?.status) {
     // 403은 온보딩 미완료(20006)와 일반 접근 불가가 섞여 있어 errorCode까지 봐야 오안내를 막는다.
-    // 20006 자체는 인터셉터의 setOnOnboardingRequired가 전역으로 온보딩 화면으로 보낸다.
+    // 20006 자체는 packages/api `client.ts` 응답 인터셉터의 setOnOnboardingRequired가 전역으로
+    // 온보딩 화면(web-buyer `main.tsx`가 붙인 /onboarding/terms 이동)으로 보낸다. 그래도 promise는
+    // 그대로 reject되므로 이동 전 프레임에 쓸 문구가 여기 필요하다.
     case 403:
       return res.data?.errorCode === ONBOARDING_REQUIRED
         ? '온보딩을 먼저 완료해야 적립금을 확인할 수 있어요'

@@ -190,6 +190,9 @@ importers:
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0
+      msw:
+        specifier: ^2.4.9
+        version: 2.15.0(@types/node@26.1.0)(typescript@5.9.3)
       postcss:
         specifier: ^8.5.4
         version: 8.5.16
@@ -3357,6 +3360,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

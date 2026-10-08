@@ -27,8 +27,12 @@ import {
   type ProductFormValues,
   type SellerOptionCombination,
 } from '../products.contract'
-import { mockUploadProductImage } from '../products.mock'
 import { useProductOptions } from '../products.queries'
+import {
+  isWithinProductImageSizeLimit,
+  OVERSIZED_PRODUCT_IMAGE_MESSAGE,
+  uploadProductImage,
+} from '../products.upload'
 import { FieldAnchor, fieldA11y, fieldHelperId, tooltipId } from './FieldAnchor'
 import { OptionBuilder } from './OptionBuilder'
 
@@ -56,9 +60,6 @@ const IMAGE_FIELDS: { key: ImageFieldKey; label: string; max: number }[] = [
   { key: 'additionalImages', label: '추가 썸네일', max: MAX_ADDITIONAL_IMAGES },
   { key: 'detailImages', label: '상품 상세 이미지', max: MAX_DETAIL_IMAGES },
 ]
-
-// BE presign은 크기 제한이 없다 — 10MB는 FE UX 정책(store-settings.upload와 같은 값).
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 const SECTIONS = ['기본 정보', '카테고리', '가격/할인', '이미지/상세', '옵션/재고', '배송 정책']
 
@@ -136,14 +137,15 @@ export function ProductEditor({
   const showRate = values.discountPrice !== '' && regular > 0 && discount <= regular
 
   function handleAddImages(field: ImageFieldKey, max: number, files: File[]) {
-    // 형식은 BE presign이 100000으로 거절한다(uploadPending이 그 슬롯에 붙여 안내). 크기만 FE UX 정책이라 미리 거른다.
-    const accepted = files.filter(file => file.size <= MAX_IMAGE_BYTES)
+    // 형식은 BE presign이 100000으로 거절한다(uploadPending이 그 슬롯에 붙여 안내). 크기만 FE UX
+    // 정책이라 미리 거르고, 판정과 문구는 업로드 모듈이 소유한다(발급 단계의 서버 계약과 한자리).
+    const accepted = files.filter(isWithinProductImageSizeLimit)
     // 상한을 넘는 만큼은 여기서 잘라 BE(40003)까지 가지 않는다 — 잘라냈다는 안내도 그래서 FE 몫이다
     // (PhotoUpload는 max에 닿으면 추가 버튼만 숨겨 다중 선택 초과를 못 막는다).
     const room = max - values[field].length
     const message =
       accepted.length < files.length
-        ? '이미지는 1장당 10MB까지 올릴 수 있어요'
+        ? OVERSIZED_PRODUCT_IMAGE_MESSAGE
         : accepted.length > room
           ? `최대 ${max}장까지 올릴 수 있어요`
           : undefined
@@ -176,7 +178,7 @@ export function ProductEditor({
     setUploading(true)
     try {
       // 일부만 실패해도 성공한 키는 슬롯에 남겨 재시도 때 다시 올리지 않는다.
-      const results = await Promise.allSettled(pending.map(({ slot }) => mockUploadProductImage(slot.file!)))
+      const results = await Promise.allSettled(pending.map(({ slot }) => uploadProductImage(slot.file!)))
       const keyById = new Map<string, string>()
       // 거절된 슬롯(형식 100000 등)은 그 필드 아래에 사유를 붙이고 폼에서 뺀다 — 미리보기만 남겨 두면
       // 어느 장이 문제인지 모른 채 저장이 계속 막힌다.

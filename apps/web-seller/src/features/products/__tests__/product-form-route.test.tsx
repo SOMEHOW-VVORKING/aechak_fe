@@ -1,17 +1,22 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
+import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  mockFetchProductDrafts,
-  mockFetchProductOptions,
-  mockFetchProducts,
-  resetProductsMock,
-} from '../products.mock'
+  CATEGORIES_URL,
+  SELLER_PRODUCTS_URL,
+  currentSellerProducts,
+  lastSellerProductRegisterBody,
+  seedSellerProducts,
+  server,
+} from '@/testing/msw/server'
+import { MOCK_CATEGORY_TREE, mockFetchProductDrafts, resetProductsMock } from '../products.mock'
 import { routeTree } from '../../../routeTree.gen'
 
-// 목업 메모리 스토어만 쓴다 — MSW 핸들러를 안 두므로(onUnhandledRequest:'error') 네트워크 무호출도 함께 검증된다.
+// 등록은 실 API(POST /sellers/me/products)로 나가고 이미지는 presigned 발급 → S3 PUT을 실제로 탄다
+// (MSW가 둘 다 가로챈다). 임시저장만 BE에 없어 목업 메모리 스토어를 쓴다.
 function renderAt(path: string) {
   const router = createRouter({
     routeTree,
@@ -26,7 +31,6 @@ function renderAt(path: string) {
   return router
 }
 
-const listed = async () => (await mockFetchProducts()).data
 const drafts = async () => (await mockFetchProductDrafts()).data
 
 const png = (name = 'a.png') => new File(['png'], name, { type: 'image/png' })
@@ -48,8 +52,9 @@ async function fillRequired(user: UserEvent, name: string, { stock = true, thumb
   if (stock) await user.type(screen.getByLabelText('재고'), '10')
 }
 
-describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)', () => {
+describe('/products/new 등록 폼 (SCRUM-120)', () => {
   beforeEach(() => {
+    seedSellerProducts([])
     resetProductsMock()
   })
   afterEach(() => {
@@ -68,7 +73,8 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
     expect(screen.getByLabelText('상품명')).toHaveFocus()
     expect(screen.getByLabelText('상품명')).toHaveAccessibleDescription('상품명을 입력해 주세요')
     expect(screen.getByLabelText('정가')).toBeInvalid()
-    expect((await listed()).totalCount).toBe(7)
+    // 검증에서 막혔으므로 서버로 아무것도 나가지 않는다.
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
   it('[AC-SPRD-031] 상품명만 채우고 다시 등록하면 말풍선이 카테고리로 옮겨간다', async () => {
@@ -98,7 +104,7 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
     expect(screen.getByLabelText('대분류')).not.toHaveAttribute('aria-describedby')
   })
 
-  it('[AC-SPRD-032] 필수값을 채워 등록하면 목록 맨 앞에 판매중으로 나타나고 완료 토스트가 뜬다', async () => {
+  it('[AC-SPRD-032] 필수값을 채워 등록하면 presigned 키를 실어 POST하고 목록 맨 앞에 판매중으로 나타난다', async () => {
     const user = userEvent.setup()
     const router = renderAt('/products/new')
 
@@ -107,13 +113,21 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
 
     expect(await screen.findByText('상품을 등록했어요.')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/products')
+    // 이미지는 presigned가 준 tmp 키로 실려 나간다(도메인 API가 정식 위치로 승격한다).
+    const registered = lastSellerProductRegisterBody() as Record<string, unknown>
+    expect(registered['thumbnailImageKey']).toMatch(/^tmp\/1\/products\//)
+    expect(registered['optionGroups']).toBeNull()
+    expect(registered['optionCombinations']).toEqual([
+      { optionValues: [], additionalPrice: 0, stockQuantity: 10 },
+    ])
+
     const firstRow = (await screen.findByText('원목 스크래쳐 L')).closest('tr') as HTMLElement
     expect(screen.getAllByRole('row')[1]).toBe(firstRow)
     expect(within(firstRow).getByText('판매중')).toBeInTheDocument()
     expect(within(firstRow).getByText('검수 통과')).toBeInTheDocument()
   })
 
-  it('[AC-SPRD-033] 옵션 2개 그룹(2x2)은 조합 4행을 만들고 등록 후 상세에 4조합이 저장된다', async () => {
+  it('[AC-SPRD-033] 옵션 2개 그룹(2x2)은 조합 4행을 만들고 등록 후 옵션 조회에 4조합이 온다', async () => {
     const user = userEvent.setup()
     renderAt('/products/new')
 
@@ -133,12 +147,15 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
 
     await user.click(screen.getByRole('button', { name: '등록하기' }))
     await screen.findByText('상품을 등록했어요.')
-    await screen.findByText('하네스 세트')
 
-    const [created] = (await listed()).products
-    expect(created!.totalStock).toBe(12)
-    const { optionCombinations } = (await mockFetchProductOptions(created!.productId)).data
-    expect(optionCombinations.map(c => c.name)).toEqual(['화이트 / S', '화이트 / M', '블랙 / S', '블랙 / M'])
+    const row = (await screen.findByText('하네스 세트')).closest('tr') as HTMLElement
+    // 서버가 조합 이름을 요청 순서대로 ` / `로 잇는다 — 재고 Drawer(실 옵션 조회)로 확인한다.
+    await user.click(within(row).getByRole('button', { name: '하네스 세트 재고 12개 수정' }))
+    const drawer = screen.getByRole('dialog', { name: '옵션별 재고' })
+    const names = (await within(drawer).findAllByLabelText(/ 재고$/)).map(el =>
+      el.getAttribute('aria-label'),
+    )
+    expect(names).toEqual(['화이트 / S 재고', '화이트 / M 재고', '블랙 / S 재고', '블랙 / M 재고'])
   })
 
   it('[AC-SPRD-033c] 다른 옵션에 있는 옵션값은 BE가 40005로 거절하고 그 문구를 토스트로 보여준다', async () => {
@@ -156,7 +173,8 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
     await user.click(screen.getByRole('button', { name: '등록하기' }))
 
     expect(await screen.findByText('옵션 구성을 확인해 주세요.')).toBeInTheDocument()
-    expect((await listed()).totalCount).toBe(7)
+    // 거절됐으므로 서버 목록은 그대로다(시드는 빈 목록).
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
   it('[AC-SPRD-033d] 같은 옵션 안에서 같은 옵션값을 또 추가하면 칩은 하나만 남고 입력은 안내와 함께 남는다', async () => {
@@ -211,7 +229,7 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
     expect(
       await screen.findByText('가격을 확인해 주세요. 정가는 100원부터 1억 원까지, 할인가는 정가 이하로 입력할 수 있어요.'),
     ).toBeInTheDocument()
-    expect((await listed()).totalCount).toBe(7)
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
   it('[AC-SPRD-035] 10MB 초과는 거절하고, 대표 썸네일 1장이면 추가 버튼이 사라지며 삭제 시 미리보기 URL을 해제한다', async () => {
@@ -249,66 +267,129 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
     const group = screen.getByRole('group', { name: '대표 썸네일' })
     expect(await within(group).findByText('JPG/PNG/WEBP 이미지만 올릴 수 있어요.')).toBeInTheDocument()
     expect(fileInputOf('대표 썸네일')).not.toBeNull()
-    expect((await listed()).totalCount).toBe(7)
+    // 발급에서 막혔으므로 등록 POST 자체가 나가지 않는다.
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
-  it('[AC-SPRD-036] 임시저장하면 토스트와 함께 URL에 draftId가 붙고, 다시 저장해도 같은 임시저장을 덮어쓴다', async () => {
+  it('[AC-SPRD-045] 가격 범위 위반(400 errorCode 40001)을 서버가 거절하면 폼에 남아 안내한다', async () => {
     const user = userEvent.setup()
+    server.use(
+      http.post(SELLER_PRODUCTS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 40001, message: '상품 가격이 올바르지 않습니다.' },
+          { status: 400 },
+        ),
+      ),
+    )
     const router = renderAt('/products/new')
 
-    await user.type(await screen.findByLabelText('상품명'), '캣닢 쿠션')
-    await user.click(screen.getByRole('button', { name: '임시저장' }))
-
-    expect(await screen.findByText('임시저장했어요.')).toBeInTheDocument()
-    await waitFor(() => expect(router.state.location.search).toHaveProperty('draftId'))
-    const { draftId } = router.state.location.search as { draftId: string }
-    expect(await drafts()).toHaveLength(3)
-
-    await user.type(screen.getByLabelText('상품명'), ' 2개입')
-    await user.click(screen.getByRole('button', { name: '임시저장' }))
-    await waitFor(async () => expect((await drafts())[0]!.productName).toBe('캣닢 쿠션 2개입'))
-
-    const saved = await drafts()
-    expect(saved).toHaveLength(3)
-    expect(saved[0]!.productId).toBe(draftId)
-  })
-
-  it('[AC-SPRD-036b] 임시저장을 이어 등록하면 그 임시저장이 목록에서 빠진다', async () => {
-    const user = userEvent.setup()
-    renderAt('/products/new?draftId=01JMOCKDRAFT00000000000001')
-
-    expect(await screen.findByLabelText('상품명')).toHaveValue('강아지 하네스 S')
-    await user.upload(fileInputOf('대표 썸네일')!, png())
-    await user.type(screen.getByLabelText('재고'), '4')
+    await fillRequired(user, '가격 위반 상품')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
 
-    expect(await screen.findByText('상품을 등록했어요.')).toBeInTheDocument()
-    expect((await drafts()).map(d => d.productId)).not.toContain('01JMOCKDRAFT00000000000001')
+    expect(
+      await screen.findByText(
+        '가격을 확인해 주세요. 정가는 100원부터 1억 원까지, 할인가는 정가 이하로 입력할 수 있어요.',
+      ),
+    ).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/products/new')
   })
 
-  it('[AC-SPRD-037] 수정 화면은 기존 값을 채우고 옵션/재고는 읽기 전용이며, 정가를 바꿔 저장하면 목록 판매가가 바뀐다', async () => {
+  it('[AC-SPRD-046] 옵션 불변식 위반(400 errorCode 40005)도 폼에서 안내한다', async () => {
     const user = userEvent.setup()
-    const feeder = (await mockFetchProducts({ keyword: '급식기' })).data.products[0]!.productId
-    renderAt(`/products/${feeder}/edit`)
+    server.use(
+      http.post(SELLER_PRODUCTS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 40005, message: '조합이 모든 옵션 그룹을 포함하지 않습니다.' },
+          { status: 400 },
+        ),
+      ),
+    )
+    renderAt('/products/new')
 
-    expect(await screen.findByLabelText('상품명')).toHaveValue('고양이 자동 급식기 스마트 5L')
-    expect(screen.getByLabelText('대분류')).toHaveDisplayValue('고양이')
-    expect(screen.getByLabelText('중분류')).toHaveDisplayValue('식기/급수기')
-    expect(screen.getByLabelText('소분류')).toHaveDisplayValue('자동 급식기')
-    // PUT은 옵션/재고를 바꾸지 않아 입력 대신 현재 값과 재고 Drawer 안내만 보여준다.
-    expect(await screen.findByRole('cell', { name: '화이트' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '80' })).toBeInTheDocument()
-    expect(screen.getByText(/상품 목록의 재고 버튼에서/)).toBeInTheDocument()
-    expect(screen.queryByRole('switch', { name: '옵션 사용' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('화이트 재고')).not.toBeInTheDocument()
+    await fillRequired(user, '옵션 위반 상품')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
 
-    await user.clear(screen.getByLabelText('정가'))
-    await user.type(screen.getByLabelText('정가'), '70000')
-    await user.click(screen.getByRole('button', { name: '수정 완료' }))
+    expect(await screen.findByText('옵션 구성을 확인해 주세요.')).toBeInTheDocument()
+  })
 
-    expect(await screen.findByText('상품을 수정했어요.')).toBeInTheDocument()
-    const row = (await screen.findByText('고양이 자동 급식기 스마트 5L')).closest('tr') as HTMLElement
-    expect(within(row).getByText('70,000원')).toBeInTheDocument()
+  it('[AC-SPRD-047] 셀러 비활성(403 errorCode 40004)이면 등록이 안내 문구로 끝난다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(SELLER_PRODUCTS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 40004, message: '판매 활동이 가능한 셀러가 아닙니다.' },
+          { status: 403 },
+        ),
+      ),
+    )
+    renderAt('/products/new')
+
+    await fillRequired(user, '비활성 셀러 상품')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    expect(
+      await screen.findByText('판매 활동이 가능한 계정이 아니라 처리할 수 없어요.'),
+    ).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-048] 온보딩 미완(403 errorCode 20006)이면 구매자 앱 안내로 끝난다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(SELLER_PRODUCTS_URL, () =>
+        HttpResponse.json({ errorCode: 20006, message: '온보딩이 필요합니다.' }, { status: 403 }),
+      ),
+    )
+    renderAt('/products/new')
+
+    await fillRequired(user, '온보딩 미완 상품')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    expect(
+      await screen.findByText('구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.'),
+    ).toBeInTheDocument()
+  })
+
+  // 카테고리(api 호스트 GET /categories)는 목업 시절 실패할 수 없었고 실 API 전환으로 처음
+  // 도달 가능해졌다 — 연쇄 Select 3단이 전부 이 트리에서 나오므로 실패하면 등록이 전면 불가다.
+  it('[AC-SPRD-056] 카테고리 조회가 실패하면 백지 대신 사유와 재시도를 보여주고 다시 시도로 복구된다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(
+        CATEGORIES_URL,
+        () => HttpResponse.json({ errorCode: 90000, message: '서버 오류입니다.' }, { status: 500 }),
+        { once: true },
+      ),
+    )
+    renderAt('/products/new')
+
+    expect(await screen.findByText('카테고리를 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByLabelText('상품명')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByLabelText('상품명')).toBeInTheDocument()
+    expect(screen.queryByText('카테고리를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-057] 카테고리를 불러오는 동안에도 백지가 아니라 로딩을 보여준다', async () => {
+    let release = () => {}
+    const pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(CATEGORIES_URL, async () => {
+        await pending
+        return HttpResponse.json({ data: MOCK_CATEGORY_TREE })
+      }),
+    )
+    renderAt('/products/new')
+
+    // 라우터 마운트가 한 틱 뒤라 findBy로 기다린다 — 카테고리 응답은 아직 보류 상태다.
+    expect(await screen.findByRole('status', { name: '등록 양식을 불러오는 중' })).toBeInTheDocument()
+
+    release()
+    expect(await screen.findByLabelText('상품명')).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '등록 양식을 불러오는 중' })).not.toBeInTheDocument()
   })
 
   it('[AC-SPRD-038] 배송 정책은 셀러 정책 요약과 배송 정책 화면 링크로 보여준다', async () => {
@@ -316,5 +397,40 @@ describe('/products/new, /products/$productId/edit 등록/수정 폼 (SCRUM-120)
 
     expect(await screen.findByText(/기본 배송비 3,000원/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '배송 정책 수정' })).toHaveAttribute('href', '/shipping-policy')
+  })
+})
+
+// 임시저장은 BE에 없어 진입점(버튼·Drawer)을 숨겼다 — 이어쓰기 배선과 목업 구현만 남겨 두었으므로
+// 주소로 직접 들어오는 경로로 프리필·승격을 검증한다(서버가 생기면 이 테스트가 그대로 계약이 된다).
+describe('/products/new?draftId= 이어쓰기 (목업 전용 — BE 임시저장 없음)', () => {
+  beforeEach(() => {
+    seedSellerProducts([])
+    resetProductsMock()
+  })
+
+  it('[AC-SPRD-036] 임시저장을 이어 등록하면 프리필된 값으로 POST하고 그 임시저장이 빠진다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/new?draftId=01JMOCKDRAFT00000000000001')
+
+    expect(await screen.findByLabelText('상품명')).toHaveValue('강아지 하네스 S')
+    // 임시저장의 categoryId가 실 API(GET /categories) 트리에서 소분류까지 되살아난다.
+    expect(screen.getByLabelText('소분류')).toHaveDisplayValue('하네스')
+    await user.upload(fileInputOf('대표 썸네일')!, png())
+    await user.type(screen.getByLabelText('재고'), '4')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    expect(await screen.findByText('상품을 등록했어요.')).toBeInTheDocument()
+    // 목록 재조회가 끝난 뒤에 서버/목업 상태를 읽는다(뒤늦은 state 반영이 act 밖으로 새지 않게).
+    await screen.findByText('강아지 하네스 S')
+    expect(currentSellerProducts()[0]).toMatchObject({ name: '강아지 하네스 S' })
+    expect((await drafts()).map(d => d.productId)).not.toContain('01JMOCKDRAFT00000000000001')
+  })
+
+  it('[AC-SPRD-037] 상품 수정 화면은 서버 단건 조회가 없어 폼 대신 안내만 보여준다', async () => {
+    renderAt('/products/ANY_PRODUCT_ID/edit')
+
+    expect(await screen.findByText('상품 수정은 아직 준비 중이에요')).toBeInTheDocument()
+    expect(screen.queryByLabelText('상품명')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '수정 완료' })).not.toBeInTheDocument()
   })
 })

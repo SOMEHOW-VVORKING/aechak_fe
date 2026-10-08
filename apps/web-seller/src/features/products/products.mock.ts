@@ -131,7 +131,9 @@ const node = (categoryId: number, name: string, sortOrder: number, children: Cat
 })
 
 // id 규칙: 대분류 n, 중분류 n*100+i, 소분류 중분류*100+j. 깊이 3(소분류)만 상품에 붙일 수 있다.
-const CATEGORY_TREE: CategoryNode[] = LARGE_CATEGORIES.map((large, li) => {
+// MSW 핸들러(src/testing/msw/server.ts)가 GET /categories 응답으로 이 트리를 그대로 쓴다 — 목업
+// 임시저장 시드가 들고 있는 categoryId를 실 API 경로로 프리필할 때 양쪽 id가 같아야 한다.
+export const MOCK_CATEGORY_TREE: CategoryNode[] = LARGE_CATEGORIES.map((large, li) => {
   const largeId = li + 1
   return node(
     largeId,
@@ -147,15 +149,11 @@ const CATEGORY_TREE: CategoryNode[] = LARGE_CATEGORIES.map((large, li) => {
 
 function leafIdOf(label: string): number {
   const [large, middle, leaf] = label.split(' > ')
-  const found = CATEGORY_TREE.find(n => n.name === large)
+  const found = MOCK_CATEGORY_TREE.find(n => n.name === large)
     ?.children.find(n => n.name === middle)
     ?.children.find(n => n.name === leaf)
   if (!found) throw new Error(`unknown seed category: ${label}`)
   return found.categoryId
-}
-
-export function mockFetchCategories(): Promise<ApiResponse<CategoryNode[]>> {
-  return respond(() => structuredClone(CATEGORY_TREE))
 }
 
 // ─── 업로드 (POST /files/presigned-url — api 호스트 → S3 PUT) ──────────────────
@@ -165,8 +163,12 @@ const MOCK_USER_ID = 1
 const TMP_PREFIX = `tmp/${MOCK_USER_ID}/`
 const EXTENSION: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
 
-/** 메모리 S3. 키 → 미리보기 URL(업로드 blob 또는 시드 SVG). */
-const objects = new Map<string, string>()
+/**
+ * 메모리 S3 — 올라와 있는 키 집합이다. 승격 검증(100001/100002/100003)이 "이 키가 업로드됐는지"만
+ * 보므로 본문은 담지 않는다. 화면 미리보기는 업로드 전 objectURL로 만들고, 저장된 이미지의 공개
+ * URL은 products.queries의 productImageUrl이 `${VITE_MEDIA_BASE_URL}/${key}`로 조립한다.
+ */
+const objects = new Set<string>()
 let idSeq = 0
 // 외부 노출 id와 저장 키는 26자 ULID다. 목업은 순번으로 같은 길이만 맞춘다.
 const newUlid = () => `01JMOCK${String(++idSeq).padStart(19, '0')}`
@@ -182,15 +184,9 @@ export function mockUploadProductImage(file: File): Promise<string> {
       throw httpError(400, 100000, '지원하지 않는 파일 형식입니다.')
     }
     const key = `${TMP_PREFIX}products/${newUlid()}.${EXTENSION[request.contentType]}`
-    // ponytail: mock S3 keeps blob URLs until reload; real CDN URLs replace it
-    objects.set(key, URL.createObjectURL(file))
+    objects.add(key)
     return key
   }).then(response => response.data)
-}
-
-/** 목업 S3의 미리보기 URL. 실서버는 `${VITE_MEDIA_BASE_URL}/${key}`로 만든다(products.queries `productImageUrl`). */
-export function mockMediaUrl(key: string): string | null {
-  return objects.get(key) ?? null
 }
 
 // FileService.verify + FileStorageAdapter.promote: 남의 키 403/100002, 다른 용도 400/100003, 업로드 안 됨 404/100001.
@@ -211,7 +207,7 @@ function promote(keys: string[], kept: Set<string>): string[] {
   return keys.map(key => {
     if (kept.has(key)) return key
     const storedKey = `products/${key.split('/').pop()}`
-    objects.set(storedKey, objects.get(key)!)
+    objects.add(storedKey)
     return storedKey
   })
 }
@@ -236,10 +232,6 @@ interface MockProduct extends SellerProductDetail {
 const products: MockProduct[] = []
 let productSeq = 0
 let combinationSeq = 0
-
-const SEED_THUMBNAIL = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#E5E7EB"/></svg>',
-)}`
 
 interface ProductSeed {
   name: string
@@ -347,7 +339,7 @@ function seedProduct(seed: ProductSeed): MockProduct {
   const groups = seed.groups ?? []
   const valueSets = groups.length > 0 ? buildCombinations(groups, []).map(row => row.optionValues) : [[]]
   const thumbnailImageKey = `products/${newUlid()}.png`
-  objects.set(thumbnailImageKey, SEED_THUMBNAIL)
+  objects.add(thumbnailImageKey)
   const combinations = toCombinations(
     valueSets.map((optionValues, i) => ({
       optionValues,
@@ -415,6 +407,11 @@ function activeDiscountPrice(p: MockProduct, now: number): number | null {
 
 const isBlank = (value: string) => value.trim() === ''
 
+// 생성 타입에서 두 이미지 목록은 nullable이다(스펙 `nullable: true` — BE도 null을 빈 목록으로 본다).
+// 검증·개수 제한·승격이 `?? []`를 저마다 흩뿌리지 않도록 여기서 한 번만 좁힌다.
+const additionalKeys = (body: ProductUpdateRequest) => body.additionalImageKeys ?? []
+const detailKeys = (body: ProductUpdateRequest) => body.detailImageKeys ?? []
+
 /** @Valid(Bean Validation) + 본문 파싱 단계 — 전부 400/90001. */
 function checkUpdateBody(body: ProductUpdateRequest, rejectDuplicateKeys: boolean) {
   if (isBlank(body.productName) || body.productName.length > 255) throw invalid('productName')
@@ -423,7 +420,7 @@ function checkUpdateBody(body: ProductUpdateRequest, rejectDuplicateKeys: boolea
   if (body.discountPrice != null && !isLong(body.discountPrice)) throw invalid('요청 본문을 읽을 수 없습니다.')
   checkLocalDateTime(body.discountStartAt)
   checkLocalDateTime(body.discountEndAt)
-  for (const keys of [body.additionalImageKeys, body.detailImageKeys]) {
+  for (const keys of [additionalKeys(body), detailKeys(body)]) {
     if (keys.some(key => isBlank(key) || key.length > 1024)) throw invalid('imageKeys')
     // 등록은 중복을 거절하지 않는다. 수정만 한 목록 안 중복을 거절한다(두 목록 사이 중복은 허용).
     if (rejectDuplicateKeys && new Set(keys).size !== keys.length) throw invalid('imageKeys')
@@ -465,7 +462,7 @@ function checkOptions(groups: OptionGroupRequest[], combinations: ProductRegiste
 }
 
 function checkCategory(categoryId: number) {
-  const path = findCategoryPath(CATEGORY_TREE, categoryId)
+  const path = findCategoryPath(MOCK_CATEGORY_TREE, categoryId)
   if (!path) throw httpError(404, 40101, '카테고리를 찾을 수 없습니다.')
   if (path.length !== 3) throw httpError(400, 40100, '소분류 카테고리만 선택할 수 있습니다.')
 }
@@ -486,15 +483,15 @@ function checkPrice({ regularPrice, discountPrice, discountStartAt, discountEndA
 }
 
 function checkImageCounts(body: ProductUpdateRequest) {
-  if (body.additionalImageKeys.length > MAX_ADDITIONAL_IMAGES || body.detailImageKeys.length > MAX_DETAIL_IMAGES) {
+  if (additionalKeys(body).length > MAX_ADDITIONAL_IMAGES || detailKeys(body).length > MAX_DETAIL_IMAGES) {
     throw httpError(400, 40003, '이미지 개수가 올바르지 않습니다.')
   }
 }
 
 const allImageKeys = (body: ProductUpdateRequest) => [
   body.thumbnailImageKey,
-  ...body.additionalImageKeys,
-  ...body.detailImageKeys,
+  ...additionalKeys(body),
+  ...detailKeys(body),
 ]
 
 // ─── 상품 API (/sellers/me/products — 셀러 호스트) ─────────────────────────────
@@ -525,7 +522,7 @@ function checkListParams(params: SellerProductSearchParams) {
 
 function toSummary(p: MockProduct, now: number): SellerProductSummary {
   const discounted = activeDiscountPrice(p, now)
-  const path = findCategoryPath(CATEGORY_TREE, p.categoryId)!
+  const path = findCategoryPath(MOCK_CATEGORY_TREE, p.categoryId)!
   return {
     productId: p.productId,
     name: p.productName,
@@ -552,7 +549,7 @@ export function mockFetchProducts(
     const page = params.page ?? 0
     const size = params.size ?? DEFAULT_PAGE_SIZE
     const keyword = params.keyword?.trim().toLowerCase()
-    if (category !== undefined && !findCategoryPath(CATEGORY_TREE, category)) {
+    if (category !== undefined && !findCategoryPath(MOCK_CATEGORY_TREE, category)) {
       throw httpError(404, 40101, '카테고리를 찾을 수 없습니다.')
     }
     const now = Date.now()
@@ -564,7 +561,7 @@ export function mockFetchProducts(
         if (saleStatus.length > 0 && !saleStatus.includes(p.saleStatus)) return false
         if (inspectionStatus.length > 0 && !inspectionStatus.includes(p.inspectionStatus)) return false
         // 하위 트리 포함: 상품의 소분류 경로 어딘가에 그 id가 있으면 된다.
-        if (category !== undefined && !findCategoryPath(CATEGORY_TREE, p.categoryId)!.some(n => n.categoryId === category)) {
+        if (category !== undefined && !findCategoryPath(MOCK_CATEGORY_TREE, p.categoryId)!.some(n => n.categoryId === category)) {
           return false
         }
         const createdDate = p.createdAt.slice(0, 10)
@@ -626,7 +623,7 @@ export function mockRegisterProduct(body: ProductRegisterRequest): Promise<ApiRe
     }
 
     const [thumbnailImageKey, ...rest] = promote(allImageKeys(body), noKeptKeys)
-    const additionalCount = body.additionalImageKeys.length
+    const additionalCount = additionalKeys(body).length
     const product: MockProduct = {
       seq: ++productSeq,
       productId: newUlid(),
@@ -674,7 +671,7 @@ export function mockUpdateProduct(
     checkImageKeys(allImageKeys(body), kept)
 
     const [thumbnailImageKey, ...rest] = promote(allImageKeys(body), kept)
-    const additionalCount = body.additionalImageKeys.length
+    const additionalCount = additionalKeys(body).length
     Object.assign(product, {
       categoryId: body.categoryId,
       productName: body.productName,
@@ -739,8 +736,10 @@ export function mockChangeOptionCombination(
 }
 
 // ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 아래 기능은 origin/develop SellerProductController에 대응하는 API가 없다. 실연동 때 이 구역만 따로
-// 정한다: 단건 조회(수정 폼 프리필), 삭제, 임시저장.
+// 아래 기능은 origin/develop SellerProductController에 대응하는 API가 없다: 단건 조회(수정 폼 프리필)와
+// 임시저장. 운영 화면의 진입점은 막아 두었고(수정 버튼·임시저장 버튼·초안 Drawer) 서버가 생겼을 때
+// 그대로 이어 붙일 수 있게 구현과 테스트만 남긴다.
+// 삭제는 보존하지 않고 지웠다 — BE에 DELETE가 없고 판매 중지가 노출 제어를 담당하므로 생길 계획이 없다.
 
 /** 수정 폼 프리필 — BE에 셀러 단건 조회가 없다. PUT 본문에 필요한 값만 돌려준다. */
 export function mockFetchProductDetail(productId: string): Promise<ApiResponse<SellerProductDetail>> {
@@ -759,14 +758,6 @@ export function mockFetchProductDetail(productId: string): Promise<ApiResponse<S
       additionalImageKeys: p.additionalImageKeys,
       detailImageKeys: p.detailImageKeys,
     })
-  })
-}
-
-/** 삭제 — BE에 DELETE가 없다. 판매 이력 규칙(CRQ-PRD-05)과 에러 코드는 BE가 생길 때 정한다. */
-export function mockDeleteProduct(productId: string): Promise<ApiResponse<null>> {
-  return respond(() => {
-    products.splice(products.indexOf(findProduct(productId)), 1)
-    return null
   })
 }
 

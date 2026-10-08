@@ -692,3 +692,80 @@ Phase 2 wave 2 사전 커밋 감사(`fm/phase2-wave2-audit-r5t`)에서 확인했
    확인할 것 (시뮬레이터 없이도 가능한 최소 검증).
 
 ---
+
+## 셀러 상품·어드민 심사 실연동 (2026-10-08)
+
+목업이던 셀러 상품 6종과 어드민 심사 4종을 BE `develop` 계약으로 전환한 배치다. 전환 자체보다
+**전환이 새로 만든 실패 경로와 호스트 분기**가 이 절의 본론이다.
+
+### 호스트가 셋으로 갈린 뒤에 생긴 일
+
+BE 실행 모듈이 api·seller·admin 셋인데 FE는 단일 axios 인스턴스를 공유한다. 인스턴스를 복제하는
+안을 먼저 검토했다가 접었다 — `accessToken`·`refreshPromise`·`onAuthExpired`가 `client.ts`의 모듈
+스코프 변수라 복제하면 세션 상태가 갈리고, 그 상태를 공유하는 별도 저장소를 설계해야 한다. 그래서
+인스턴스는 하나로 두고 요청 인터셉터가 경로 접두로 `config.baseURL`만 바꾸는 쪽을 골랐다.
+
+그 과정에서 걸린 것 넷을 남긴다.
+
+1. **"호출부가 api 호스트를 명시했다"를 표현할 수 없다.** `mergeConfig`가 defaults의 `baseURL`을
+   늘 채우므로 인터셉터가 보는 `config.baseURL`은 명시했든 안 했든 값이 들어 있다. 기본값과 같은지로
+   가르면 "api를 콕 집은 요청"이 기능 호스트로 끌려간다. 전용 표식 `forceApiHost`를 둔 이유다.
+2. **`retriedRequests` WeakSet이 재시도를 막지 못하고 있었다.** axios는 `request()`마다
+   `mergeConfig(defaults, config)`로 새 config 객체를 만들어서(`Object.create(null)`) 재시도의 401이
+   WeakSet에 없는 객체로 돌아온다. "refresh는 성공하는데 원 요청은 계속 401"인 서버를 MSW로 세우고
+   가드를 떼어 보니 테스트가 5분이 지나도 끝나지 않았다 — 무한 루프다. mergeConfig가 모르는 키를
+   그대로 옮기는 성질을 이용해 `config.authRetried` 불리언으로 막았고 테스트로 고정했다.
+3. **모바일이 `configureApiHosts`를 쓰지 않는다.** `_layout.tsx`가 `defaults.baseURL`을 직접 덮으므로
+   refresh에 api 호스트를 무조건 명시하면 모바일이 엉뚱한 origin으로 나간다. 기능 호스트가 설정된
+   앱에서만 호스트를 고정하도록 조건을 걸어 모바일 동작을 그대로 뒀다.
+4. **MSW가 호스트를 합치고 있으면 오배치를 못 잡는다.** 테스트 base가 하나면 셀러 상품 요청이 api로
+   나가도 MSW가 똑같이 받아 준다. `API_ORIGIN`·`SELLER_ORIGIN`으로 나누고 `test-setup.ts`가
+   실제 앱과 같은 `configureApiHosts`를 부르게 바꿨다. E2E `page.route` 글롭에도 origin을 적었다.
+
+### 목업을 실 API로 바꾸면 실패 경로가 새로 생긴다
+
+목업 시절에는 조회가 실패할 수 없었다. 전환 뒤 세 화면이 실패를 빈 상태로 위장하고 있었다 —
+상품 목록은 403/40006을 "조건에 맞는 상품이 없어요"로, 등록 폼은 카테고리 조회 실패에 `return null`로
+영구 백지를, 재고 Drawer는 옵션 조회 실패를 빈 서랍으로 내보냈다. 실 API 전환 배치에서는 쿼리마다
+`isError`를 어디에 드러낼지 먼저 정하고 시작하는 편이 낫다.
+
+### BE에 대응이 없는 화면은 진입점을 막고 코드는 남겼다
+
+셀러 상품 수정 프리필(`GET /sellers/me/products/{productId}` 부재)·임시저장(BE에 개념 없음)·
+삭제(`DELETE` 없음)가 그렇다. 목록과 옵션 응답을 합쳐도 `categoryId`·`description`·할인 기간·
+이미지 키를 복원할 수 없고, **PUT이 이미지 목록을 전체 교체하므로 부족한 프리필로 저장하면 기존
+이미지와 할인 설정을 잃는다.** 그래서 수정 라우트는 안내만 띄우고 폼 구현은 같은 파일에 보존했다.
+삭제는 판매 중지가 노출 제어를 담당하므로 제거했다.
+
+어드민 쪽에서는 화면이 요구하던 세 필드가 서버에 아예 없었다 — 목록의 사업자번호(목록 응답에
+필드 자체가 없고 상세에만 평문으로 있다), 상세의 전화번호(`telesalesNumber`는 통신판매업 신고번호이지
+전화번호가 아니다), 내부 메모(저장할 엔드포인트가 없다). 셋 다 화면에서 뺐다.
+
+### 어드민 서류 열기 — presigned 5분 만료가 만든 함정 둘
+
+상세 응답의 `downloadUrl`은 유효기간 5분이라 캐시된 상세로 열면 403이다. 그래서 열기 직전에 상세를
+재조회하는데, 그 배선에서 둘이 걸렸다.
+
+- **react-query v5의 `refetch()`는 실패해도 reject하지 않는다.** `QueryObserverResult`로 resolve하고
+  `data`에 캐시된 직전 값이 그대로 남아서, 재조회가 실패하면 만료된 URL을 그대로 새 탭에 띄운다.
+  `refetch`가 `{ detail, isError }`를 돌려주게 바꿔 실패를 호출부가 보게 했다.
+- **`await` 뒤의 `window.open`은 팝업 차단에 걸린다.** 사용자 제스처와의 연결이 끊기기 때문이다.
+  클릭 안에서 빈 탭을 먼저 열고 재조회가 끝나면 `location.href`를 채우는 순서로 바꿨으며,
+  `noopener`를 세 번째 인자로 주면 핸들이 `null`로 와서 URL을 채울 수 없으므로 핸들을 받은 뒤
+  `opener`를 끊었다.
+
+### 어드민 앱에는 테스트 기반이 아예 없었다
+
+`vitest.config.ts`에 `exclude: e2e/**`가 없어서 첫 Playwright spec을 넣는 순간 vitest가 그것을
+집어삼켜 전체가 깨지는 상태였고, `msw` 의존성도 `src/testing/`도 없었으며 `test-setup.ts`는 한 줄이었다.
+E2E spec은 0개였다. 네 가지를 함께 세웠고, 어드민 E2E는 이 저장소 최초다.
+
+어드민 E2E 스텁에서 한 가지가 다르다 — **어드민 요청은 `withCredentials=false`로 나가므로 CORS 응답에
+`Access-Control-Allow-Credentials`를 넣으면 안 된다.** 넣으면 스텁이 실제 서버와 달라져서, BE가 그
+헤더를 주지 않는다는 사실(이 분기를 만든 이유 자체)을 테스트가 못 잡는다.
+
+### CI
+
+세 앱의 E2E가 모두 `ci.yml`의 `e2e` 잡에서 돈다. 그전에는 web-buyer만 돌았고 주석은 "web-seller/
+web-admin은 spec이 0개"라고 적고 있었는데, 셀러 spec 2개가 두 달 전에 들어온 뒤로 갱신되지 않아
+그동안 CI 보호 없이 방치돼 있었다.

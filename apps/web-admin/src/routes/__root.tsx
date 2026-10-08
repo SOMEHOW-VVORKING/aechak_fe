@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
@@ -24,8 +25,11 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
+import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
+
+const APPLICATIONS_NAV_KEY = '/sellers/applications'
 
 // Route paths mirror the Batch 9 + 9-EXT mapping (route-remap-v2-q8w report).
 // Only `/` exists today; the rest 404 until their Phase 2 routes land, which
@@ -37,10 +41,11 @@ const navGroups: NavGroup[] = [
     items: [
       { key: '/', label: '대시보드', icon: <LayoutDashboard className={iconClass} /> },
       {
-        key: '/sellers/applications',
+        // 배지 숫자는 아래 AdminShell이 서버 심사 대기 수로 채운다 — 상수 배지는 AGENTS.md가
+        // 금지한 장식 UI이고, 심사 화면이 같은 수를 실데이터로 띄우는 지금은 서로 모순된다.
+        key: APPLICATIONS_NAV_KEY,
         label: '셀러 입점 심사',
         icon: <ClipboardCheck className={iconClass} />,
-        badge: 4,
       },
       { key: '/sellers', label: '셀러 관리', icon: <Store className={iconClass} /> },
       { key: '/members', label: '일반 회원 관리', icon: <Users className={iconClass} /> },
@@ -66,7 +71,7 @@ const navGroups: NavGroup[] = [
   },
   {
     key: 'reports-inquiries',
-    label: '신고 · 문의',
+    label: '신고 / 문의',
     items: [
       { key: '/reports', label: '신고 제재 관리', icon: <Flag className={iconClass} />, badge: 9 },
       {
@@ -79,7 +84,7 @@ const navGroups: NavGroup[] = [
   },
   {
     key: 'orders-claims',
-    label: '주문 · 클레임',
+    label: '주문 / 클레임',
     items: [
       {
         key: '/orders/monitoring',
@@ -143,14 +148,30 @@ const navGroups: NavGroup[] = [
   },
 ]
 
+/**
+ * 입점 신청 배지만 서버 값으로 채운다. 같은 queryKey를 심사 화면도 쓰므로 조회가 중복되지 않고,
+ * 권한이 없거나 조회가 실패하면 null이 와서 배지 자체가 사라진다(틀린 숫자를 띄우지 않는다).
+ */
+function withPendingBadge(groups: NavGroup[], pendingCount: number | null): NavGroup[] {
+  if (pendingCount == null) return groups
+  return groups.map(group => ({
+    ...group,
+    items: group.items.map(item =>
+      item.key === APPLICATIONS_NAV_KEY ? { ...item, badge: pendingCount } : item,
+    ),
+  }))
+}
+
 function AdminShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const navigate = useNavigate()
+  const pendingCount = usePendingApplicationCount()
+  const groups = useMemo(() => withPendingBadge(navGroups, pendingCount), [pendingCount])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base">
       <SideNav
-        groups={navGroups}
+        groups={groups}
         activeKey={pathname}
         onSelect={key => navigate({ to: key })}
         header={

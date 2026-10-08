@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { API_PATH_PREFIX, axiosInstance, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
+import { configureApiHosts, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
@@ -12,7 +12,10 @@ import { routeTree } from './routeTree.gen'
 import './index.css'
 
 applyCssVariables()
-axiosInstance.defaults.baseURL = `${import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080'}${API_PATH_PREFIX}`
+// 경로 접두(/api/v1)는 origin(env)과 분리된 서버 계약이라 configureApiHosts가 붙인다 —
+// client.ts의 401 refresh가 상대경로(/auth/web/refresh)를 쓰므로 접두가 빠지면 엉뚱한 경로로 나간다.
+// 구매자 앱은 api 모듈만 부르므로 기능 호스트(seller·admin)는 넘기지 않는다.
+configureApiHosts({ apiOrigin: import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080' })
 
 const router = createRouter({ routeTree })
 

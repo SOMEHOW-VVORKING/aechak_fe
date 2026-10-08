@@ -102,11 +102,12 @@ export const UploadPurpose = {
   PET_PROFILE: 'PET_PROFILE',
   SELLER_DOCUMENT: 'SELLER_DOCUMENT',
   REVIEW_IMAGE: 'REVIEW_IMAGE',
+  PRODUCT: 'PRODUCT',
 } as const
 
 export interface IssuePresignedUrlRequest {
   purpose: UploadPurpose
-  /** 프로필 사진(USER_PROFILE/PET_PROFILE)은 image/png·image/jpeg·image/webp, 셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000 */
+  /** 프로필 사진(USER_PROFILE/PET_PROFILE)과 상품 이미지(PRODUCT)는 image/png·image/jpeg·image/webp, 셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000. 발급받은 URL에 PUT할 때 Content-Type을 발급 때와 같게 보내야 한다(서명에 박혀 있다) */
   contentType: string
 }
 
@@ -1043,6 +1044,408 @@ export interface SubmitInquiryResponse {
   data: SubmitInquiryResponseData
 }
 
+/**
+ * 상품 심사 상태. 지금 서버는 등록 즉시 APPROVED를 매기고 DRAFT·PENDING·REJECTED로 가는 경로가 없다(심사 기능 확장 대비 정의만 존재)
+ */
+export type InspectionStatus = (typeof InspectionStatus)[keyof typeof InspectionStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionStatus = {
+  DRAFT: 'DRAFT',
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const
+
+/**
+ * 셀러가 직접 지정할 수 있는 판매 상태. 품절은 재고에서 파생되고 판매종료는 도달 경로가 없어서 이 두 값만 받는다(그 밖은 400 errorCode 90001)
+ */
+export type SellerAssignableSaleStatus =
+  (typeof SellerAssignableSaleStatus)[keyof typeof SellerAssignableSaleStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerAssignableSaleStatus = {
+  ON_SALE: 'ON_SALE',
+  SUSPENDED: 'SUSPENDED',
+} as const
+
+export interface SellerProductOptionGroupInput {
+  /**
+   * 옵션 그룹명(예: 중량). 비어 있으면 400 errorCode 90001
+   * @maxLength 100
+   */
+  name: string
+  /**
+   * 그룹에 속한 옵션값 이름. 비어 있으면 400 errorCode 90001
+   * @minItems 1
+   */
+  values: string[]
+}
+
+export interface SellerProductOptionCombinationInput {
+  /** 이 조합이 가리키는 옵션값 이름들. 옵션이 없는 상품은 빈 배열 한 행만 보내고 서버가 이름을 "기본"으로 붙인다 */
+  optionValues: string[]
+  /**
+   * 추가금. 음수는 400 errorCode 40201
+   * @minimum 0
+   */
+  additionalPrice: number
+  /**
+   * 재고. 음수는 400 errorCode 40200
+   * @minimum 0
+   */
+  stockQuantity: number
+}
+
+export interface SellerProductRegisterRequest {
+  /** 활성 소분류(depth 3)만. 중·대분류는 400 errorCode 40100, 없으면 404 errorCode 40101 */
+  categoryId: number
+  /** @maxLength 255 */
+  productName: string
+  /**
+   * 상품 설명. 길이 제약이 없다
+   * @nullable
+   */
+  description?: string | null
+  /**
+   * 정가. 범위를 벗어나면 400 errorCode 40001
+   * @minimum 100
+   * @maximum 100000000
+   */
+  regularPrice: number
+  /**
+   * 할인가. 0 이상 정가 이하만. 벗어나면 400 errorCode 40001
+   * @nullable
+   */
+  discountPrice?: number | null
+  /**
+   * 할인 시작 시각(오프셋 없는 LocalDateTime). discountPrice가 있으면 필수이고, discountPrice 없이 기간만 보내면 400 errorCode 40002
+   * @nullable
+   */
+  discountStartAt?: string | null
+  /**
+   * 할인 종료 시각. 비우면 무기한. 시작이 종료보다 늦으면 400 errorCode 40002
+   * @nullable
+   */
+  discountEndAt?: string | null
+  /**
+   * presigned로 받은 tmp 키
+   * @maxLength 1024
+   */
+  thumbnailImageKey: string
+  /**
+   * 추가 이미지 키. 생략하면 빈 목록. 9장 초과는 400 errorCode 40003
+   * @maxItems 9
+   * @nullable
+   */
+  additionalImageKeys?: string[] | null
+  /**
+   * 상세 이미지 키. 20장 초과는 400 errorCode 40003
+   * @maxItems 20
+   * @nullable
+   */
+  detailImageKeys?: string[] | null
+  /**
+   * 옵션이 없는 상품은 생략한다
+   * @nullable
+   */
+  optionGroups?: SellerProductOptionGroupInput[] | null
+  /** 조합은 비울 수 없다. 불변식 위반은 전부 400 errorCode 40005이고 message에 사유가 실린다 — 그룹명 중복 금지, 옵션값 이름은 그룹을 넘어서도 중복 금지, 그룹에 없는 값 지목 금지, 조합이 모든 그룹을 덮어야 함, 같은 값 집합의 조합 중복 금지 */
+  optionCombinations: SellerProductOptionCombinationInput[]
+}
+
+export interface SellerProductRegisterData {
+  /** 상품 공개 식별자(ULID 26자) */
+  productId: string
+  saleStatus: SaleStatus
+  inspectionStatus: InspectionStatus
+  versionNo: number
+  /** 오프셋 없는 LocalDateTime 직렬화 */
+  createdAt: string
+}
+
+export interface SellerProductRegisterResponse {
+  data: SellerProductRegisterData
+}
+
+/**
+ * 등록 요청에서 옵션 두 필드를 뺀 모양이다. 이미지 목록은 전체 교체이고, 각 목록 안의 키 중복은 400 errorCode 90001로 거절한다(등록에는 없는 검증)
+ */
+export interface SellerProductUpdateRequest {
+  categoryId: number
+  /** @maxLength 255 */
+  productName: string
+  /** @nullable */
+  description?: string | null
+  /**
+   * @minimum 100
+   * @maximum 100000000
+   */
+  regularPrice: number
+  /** @nullable */
+  discountPrice?: number | null
+  /** @nullable */
+  discountStartAt?: string | null
+  /** @nullable */
+  discountEndAt?: string | null
+  /** @maxLength 1024 */
+  thumbnailImageKey: string
+  /**
+   * @maxItems 9
+   * @nullable
+   */
+  additionalImageKeys?: string[] | null
+  /**
+   * @maxItems 20
+   * @nullable
+   */
+  detailImageKeys?: string[] | null
+}
+
+export interface SellerProductUpdateData {
+  productId: string
+  saleStatus: SaleStatus
+  updatedAt: string
+}
+
+export interface SellerProductUpdateResponse {
+  data: SellerProductUpdateData
+}
+
+export interface SellerProductSaleStatusChangeRequest {
+  saleStatus: SellerAssignableSaleStatus
+}
+
+export interface SellerProductSaleStatusChangeData {
+  productId: string
+  /** 재고 파생 전이가 같은 요청 안에서 얹히므로, 재고 없이 ON_SALE을 보내면 여기로 OUT_OF_STOCK이 온다 */
+  saleStatus: SaleStatus
+  updatedAt: string
+}
+
+export interface SellerProductSaleStatusChangeResponse {
+  data: SellerProductSaleStatusChangeData
+}
+
+/**
+ * stockDelta와 isActive 중 적어도 하나를 보내야 한다. 둘 다 없으면 400 errorCode 90001
+ */
+export interface SellerOptionCombinationChangeRequest {
+  /**
+   * 0은 금지. 범위 위반은 400 errorCode 90001
+   * @minimum -1000000
+   * @maximum 1000000
+   * @nullable
+   */
+  stockDelta?: number | null
+  /** @nullable */
+  isActive?: boolean | null
+}
+
+export interface SellerOptionCombinationChangeData {
+  combinationId: number
+  /** 반영 후 재고 */
+  stockQuantity: number
+  /** 실제 반영된 증감. 서버가 결과 재고를 0 이상으로 자르므로 요청과 다를 수 있고, isActive만 보냈을 때는 항상 0이다 */
+  appliedStockDelta: number
+  isActive: boolean
+  updatedAt: string
+}
+
+export interface SellerOptionCombinationChangeResponse {
+  data: SellerOptionCombinationChangeData
+}
+
+export interface SellerProductSummary {
+  /** 상품 공개 식별자(ULID 26자) */
+  productId: string
+  name: string
+  /**
+   * 저장 키이고 URL이 아니다 — 공개 URL은 미디어 base와 합쳐 조립한다
+   * @nullable
+   */
+  thumbnailImageKey: string | null
+  /** 소분류 이름만 온다(상위 경로 없음) */
+  categoryName: string
+  regularPrice: number
+  /**
+   * 조회 시각에 적용 중인 할인만 — 예약·종료된 할인은 null이다
+   * @nullable
+   */
+  discountPrice: number | null
+  /** @nullable */
+  discountRate: number | null
+  saleStatus: SaleStatus
+  inspectionStatus: InspectionStatus
+  /** 활성 조합의 재고 합. 조합이 전부 비활성이면 0 */
+  totalStock: number
+  createdAt: string
+}
+
+export interface SellerProductListData {
+  products: SellerProductSummary[]
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerProductListResponse {
+  data: SellerProductListData
+}
+
+export interface SellerProductOptionCombination {
+  /** 내부 숫자 PK — 재고 변경 경로에 그대로 싣는다 */
+  optionCombinationId: number
+  /** 옵션값을 " / "로 이은 이름. 옵션 없는 상품은 "기본" */
+  name: string
+  additionalPrice: number
+  stockQuantity: number
+  isActive: boolean
+}
+
+export interface SellerProductOptionsData {
+  optionCombinations: SellerProductOptionCombination[]
+}
+
+export interface SellerProductOptionsResponse {
+  data: SellerProductOptionsData
+}
+
+/**
+ * 목록 행. 사업자등록번호·전화번호는 목록 응답에 아예 없다(상세에만 사업자등록번호가 있다). 화면에 신청인 이름을 보일 때는 상호명이 없으면 대표자명으로 접는다 — 서버 승인 로직이 스토어명을 정할 때 쓰는 폴백과 같은 규칙이다
+ */
+export interface AdminApplicationSummary {
+  applicationId: number
+  status: ApplicationStatus
+  businessType: BusinessType
+  /** @nullable */
+  businessName: string | null
+  /** @nullable */
+  representativeName: string | null
+  /**
+   * 제출 시각(오프셋 없는 LocalDateTime). 제출 전이면 null
+   * @nullable
+   */
+  submittedAt: string | null
+}
+
+export interface AdminApplicationListData {
+  items: AdminApplicationSummary[]
+  /** status를 주지 않으면 DRAFT·CANCELLED까지 포함한 전체 건수다 */
+  totalCount: number
+}
+
+export interface AdminApplicationListResponse {
+  data: AdminApplicationListData
+}
+
+export interface AdminApplicationDocument {
+  /** SellerDocumentType 값(서버가 문자열로 직렬화). 한국어 라벨은 응답에 없다 */
+  documentType: string
+  /** 서류 행의 갱신 시각 — 교체하면 같은 행을 갱신하므로 최신 업로드 시각이다 */
+  uploadedAt: string
+  /** S3 presigned GET이고 유효기간이 5분이다 — 캐시된 상세로 몇 분 뒤 열면 403이므로 서류 열기는 상세 재조회 흐름이어야 한다 */
+  downloadUrl: string
+}
+
+/**
+ * 심사 결정. 실제로 적재되는 값은 승인·반려 둘뿐이다
+ */
+export type AdminApplicationReviewDecision =
+  (typeof AdminApplicationReviewDecision)[keyof typeof AdminApplicationReviewDecision]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminApplicationReviewDecision = {
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const
+
+export interface AdminApplicationReview {
+  /** 심사 결정. 실제로 적재되는 값은 승인·반려 둘뿐이다 */
+  decision: AdminApplicationReviewDecision
+  /** @nullable */
+  rejectionReason: string | null
+  reviewedAt: string
+}
+
+export interface AdminPreviousApplication {
+  applicationId: number
+  status: ApplicationStatus
+  /** @nullable */
+  decidedAt: string | null
+}
+
+/**
+ * 심사에 필요한 원본을 마스킹 없이 평문으로 준다(계약) — 화면 마스킹은 클라이언트 책임이다. 전화번호 필드는 없다(telesalesNumber는 통신판매업 신고번호이고 전화번호가 아니다)
+ */
+export interface AdminApplicationDetail {
+  applicationId: number
+  status: ApplicationStatus
+  businessType: BusinessType
+  /** @nullable */
+  businessName: string | null
+  /**
+   * 사업자등록번호 평문
+   * @nullable
+   */
+  businessRegNo: string | null
+  /**
+   * 법인등록번호 평문
+   * @nullable
+   */
+  corpRegNo: string | null
+  /**
+   * 대표자 실명 평문
+   * @nullable
+   */
+  representativeName: string | null
+  /**
+   * 통신판매업 신고번호 — 전화번호가 아니다
+   * @nullable
+   */
+  telesalesNumber: string | null
+  /** @nullable */
+  bankCode: string | null
+  /**
+   * 복호화된 계좌번호 평문(의도된 계약). 암호 열이 비어 있으면 null
+   * @nullable
+   */
+  accountNumber: string | null
+  /** @nullable */
+  accountHolder: string | null
+  /** 신청서 생성 시각 — 목록에는 없는 필드다 */
+  appliedAt: string
+  /** @nullable */
+  submittedAt: string | null
+  /** @nullable */
+  decidedAt: string | null
+  /**
+   * status가 REJECTED가 아니면 DB에 값이 있어도 null로 온다. 직전 반려 사유는 reviews의 마지막 REJECTED 항목에만 남는다
+   * @nullable
+   */
+  rejectionReason: string | null
+  documents: AdminApplicationDocument[]
+  /** 심사 이력, id 오름차순 */
+  reviews: AdminApplicationReview[]
+  /** 같은 사업자등록번호의 과거 신청에서 자기 행을 뺀 id 내림차순. 사업자등록번호가 없으면 빈 배열이고, 상태 필터가 없어 DRAFT도 섞인다 */
+  previousApplications: AdminPreviousApplication[]
+}
+
+export interface AdminApplicationDetailResponse {
+  data: AdminApplicationDetail
+}
+
+export interface RejectAdminSellerApplicationRequest {
+  /**
+   * 반려 사유. 500자 초과는 요청 본문 검증 단계에서 걸려 핸들러에 닿기도 전에 400 errorCode 90001이 된다. 길이가 통과한 뒤 공백·누락이면 서버가 빈 문자열로 바꿔 400 errorCode 10102가 되는데, 이 검사는 상태 가드보다 뒤에 돌기 때문에 이미 결정된 신청에 빈 사유로 반려하면 400이 아니라 409 errorCode 10101이 앞선다
+   * @maxLength 500
+   * @nullable
+   */
+  reason?: string | null
+}
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -1155,6 +1558,88 @@ export type GetMyReviewsParams = {
 
 export type CheckNicknameParams = {
   nickname: string
+}
+
+export type GetSellerProductsParams = {
+  /**
+   * 상품명 부분 일치(대소문자 무시). trim 후 빈 값이면 미적용
+   * @maxLength 100
+   */
+  keyword?: string
+  /**
+   * 반복 파라미터로 보낸다(?saleStatus=A&saleStatus=B). 미지 값은 400 errorCode 90001 message "saleStatus: 지원하지 않는 값입니다."
+   */
+  saleStatus?: SaleStatus[]
+  /**
+   * saleStatus와 같은 규칙. 미지 값은 400 errorCode 90001
+   */
+  inspectionStatus?: InspectionStatus[]
+  /**
+   * 활성 카테고리면 깊이에 상관없이 하위 카테고리까지 포함해 조회한다
+   */
+  category?: number
+  /**
+   * 등록일 하한(yyyy-MM-dd). 형식 위반은 400 errorCode 90001
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  createdFrom?: string
+  /**
+   * 등록일 상한(yyyy-MM-dd). 서버가 [from 00:00, to+1일 00:00) 반개구간으로 바꿔 상한 날짜를 통째로 포함한다. from > to면 400 errorCode 90001
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  createdTo?: string
+  /**
+   * 재고 있는 활성 조합의 존재 여부로 가른다 — 재고가 남아도 조합이 전부 비활성이면 sold_out에 걸린다. 소문자만 받는다
+   */
+  stock?: GetSellerProductsStock
+  /**
+   * 소문자만 받는다. 가격 정렬의 기준은 조회 시각의 할인 반영가다
+   */
+  sort?: GetSellerProductsSort
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerProductsStock =
+  (typeof GetSellerProductsStock)[keyof typeof GetSellerProductsStock]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetSellerProductsStock = {
+  in_stock: 'in_stock',
+  sold_out: 'sold_out',
+} as const
+
+export type GetSellerProductsSort =
+  (typeof GetSellerProductsSort)[keyof typeof GetSellerProductsSort]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetSellerProductsSort = {
+  latest: 'latest',
+  price_asc: 'price_asc',
+  price_desc: 'price_desc',
+} as const
+
+export type GetAdminSellerApplicationsParams = {
+  /**
+   * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
+   */
+  status?: ApplicationStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
 }
 
 /**
@@ -6660,6 +7145,1396 @@ export const useSubmitSellerApplication = <TError = unknown, TContext = unknown>
   TContext
 > => {
   const mutationOptions = getSubmitSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이며 커서가 아니다. 공개 카탈로그와 달리 노출 조건을 걸지 않아 미승인·판매중지 상품도 전부 보인다. 조회 권한은 ACTIVE·PAUSED· WITHDRAWAL_REQUESTED 셀러이고 그 밖은 403 errorCode 40006. 형식 오류는 전부 400 errorCode 90001이고 message에 필드별 사유가 실린다 — 빈 값(?stock=)도 미입력이 아니라 형식 오류로 거절되므로 값이 없는 파라미터는 키째 빼서 보낼 것.
+ * @summary 셀러 상품 목록
+ */
+export const getSellerProducts = (params?: GetSellerProductsParams, signal?: AbortSignal) => {
+  return customInstance<SellerProductListResponse>({
+    url: `/sellers/me/products`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerProductsQueryKey = (params?: GetSellerProductsParams) => {
+  return [`/sellers/me/products`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProducts>>> = ({ signal }) =>
+    getSellerProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProducts>>
+>
+export type GetSellerProductsQueryError = unknown
+
+export function useGetSellerProducts<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProducts<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProducts<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 목록
+ */
+
+export function useGetSellerProducts<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProducts>>> = ({ signal }) =>
+    getSellerProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProducts>>
+>
+export type GetSellerProductsSuspenseQueryError = unknown
+
+export function useGetSellerProductsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerProductsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 목록
+ */
+
+export function useGetSellerProductsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProducts>>,
+  TError = unknown,
+>(
+  params?: GetSellerProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 등록 직후 상태는 재고와 무관하게 항상 saleStatus=ON_SALE, inspectionStatus=APPROVED, versionNo=1이다. 쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004. 카테고리는 활성 소분류(depth 3)만 받는다 — 중·대분류는 400 errorCode 40100, 없는 카테고리는 404 errorCode 40101. 가격 범위 위반은 400 errorCode 40001, 할인 기간 모순은 400 errorCode 40002, 이미지 장수 초과는 400 errorCode 40003, 옵션 불변식 위반은 400 errorCode 40005(message에 사유), 재고 음수는 400 errorCode 40200, 추가금 음수는 400 errorCode 40201. 이미지 키는 presigned로 받은 tmp 키를 싣는다 — 타인 키는 403 errorCode 100002, 용도 불일치는 400 errorCode 100003, 미업로드는 404 errorCode 100001.
+ * @summary 셀러 상품 등록
+ */
+export const registerSellerProduct = (
+  sellerProductRegisterRequest: SellerProductRegisterRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerProductRegisterResponse>({
+    url: `/sellers/me/products`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductRegisterRequest,
+    signal,
+  })
+}
+
+export const getRegisterSellerProductMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerSellerProduct>>,
+    TError,
+    { data: SellerProductRegisterRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerSellerProduct>>,
+  TError,
+  { data: SellerProductRegisterRequest },
+  TContext
+> => {
+  const mutationKey = ['registerSellerProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerSellerProduct>>,
+    { data: SellerProductRegisterRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return registerSellerProduct(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RegisterSellerProductMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerSellerProduct>>
+>
+export type RegisterSellerProductMutationBody = SellerProductRegisterRequest
+export type RegisterSellerProductMutationError = unknown
+
+/**
+ * @summary 셀러 상품 등록
+ */
+export const useRegisterSellerProduct = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof registerSellerProduct>>,
+      TError,
+      { data: SellerProductRegisterRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof registerSellerProduct>>,
+  TError,
+  { data: SellerProductRegisterRequest },
+  TContext
+> => {
+  const mutationOptions = getRegisterSellerProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 옵션은 이 경로로 바꾸지 않는다(옵션 재고는 별도 PATCH). 이미지 목록은 전체 교체이고, 빠진 행은 삭제되지 않고 직전 버전으로 닫힌다 — 순서만 바뀌면 행이 늘지 않고 정렬만 바뀐다. 등록에 없는 검증이 하나 더 있다: additionalImageKeys·detailImageKeys 각 목록 안의 키 중복을 400 errorCode 90001로 거절한다(두 목록을 넘나드는 중복은 허용). 소유 증명 집합이 대표 이미지 키와 현재 열린 이미지 행으로 한정되므로, 과거 수정으로 닫힌 키나 다른 상품의 정식 키를 실으면 403 errorCode 100002다. 남의 상품은 404 errorCode 40000으로 가린다.
+ * @summary 셀러 상품 정보 수정
+ */
+export const updateSellerProduct = (
+  productId: string,
+  sellerProductUpdateRequest: SellerProductUpdateRequest,
+) => {
+  return customInstance<SellerProductUpdateResponse>({
+    url: `/sellers/me/products/${productId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductUpdateRequest,
+  })
+}
+
+export const getUpdateSellerProductMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerProduct>>,
+    TError,
+    { productId: string; data: SellerProductUpdateRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerProduct>>,
+  TError,
+  { productId: string; data: SellerProductUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerProduct']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerProduct>>,
+    { productId: string; data: SellerProductUpdateRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return updateSellerProduct(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerProductMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerProduct>>
+>
+export type UpdateSellerProductMutationBody = SellerProductUpdateRequest
+export type UpdateSellerProductMutationError = unknown
+
+/**
+ * @summary 셀러 상품 정보 수정
+ */
+export const useUpdateSellerProduct = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerProduct>>,
+      TError,
+      { productId: string; data: SellerProductUpdateRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerProduct>>,
+  TError,
+  { productId: string; data: SellerProductUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerProductMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러가 지정할 수 있는 값은 ON_SALE과 SUSPENDED뿐이다 — OUT_OF_STOCK·ENDED는 400 errorCode 90001 message "판매중과 판매중지만 지정할 수 있습니다." 현재 상태를 보지 않으므로 같은 값 재전송도 200이다. 재고 파생 전이가 같은 요청 안에서 동기로 얹히기 때문에, 재고 없이 ON_SALE을 보내면 응답이 그 자리에서 OUT_OF_STOCK이다 (재고가 없어도 SUSPENDED는 그대로 반영된다). 이 경로는 상품 버전을 남기지 않는다.
+ * @summary 셀러 상품 판매 상태 변경
+ */
+export const changeSellerProductSaleStatus = (
+  productId: string,
+  sellerProductSaleStatusChangeRequest: SellerProductSaleStatusChangeRequest,
+) => {
+  return customInstance<SellerProductSaleStatusChangeResponse>({
+    url: `/sellers/me/products/${productId}/status`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductSaleStatusChangeRequest,
+  })
+}
+
+export const getChangeSellerProductSaleStatusMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeSellerProductSaleStatus>>,
+    TError,
+    { productId: string; data: SellerProductSaleStatusChangeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeSellerProductSaleStatus>>,
+  TError,
+  { productId: string; data: SellerProductSaleStatusChangeRequest },
+  TContext
+> => {
+  const mutationKey = ['changeSellerProductSaleStatus']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeSellerProductSaleStatus>>,
+    { productId: string; data: SellerProductSaleStatusChangeRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return changeSellerProductSaleStatus(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ChangeSellerProductSaleStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeSellerProductSaleStatus>>
+>
+export type ChangeSellerProductSaleStatusMutationBody = SellerProductSaleStatusChangeRequest
+export type ChangeSellerProductSaleStatusMutationError = unknown
+
+/**
+ * @summary 셀러 상품 판매 상태 변경
+ */
+export const useChangeSellerProductSaleStatus = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof changeSellerProductSaleStatus>>,
+      TError,
+      { productId: string; data: SellerProductSaleStatusChangeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof changeSellerProductSaleStatus>>,
+  TError,
+  { productId: string; data: SellerProductSaleStatusChangeRequest },
+  TContext
+> => {
+  const mutationOptions = getChangeSellerProductSaleStatusMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 비활성 조합까지 포함하고 재고를 마스킹 없이 원값으로 준다. 정렬은 조합 id 오름차순이다. 옵션 없이 등록한 상품은 name이 "기본"인 1행으로 온다. 여섯 엔드포인트 가운데 이것만 남의 상품에 403 errorCode 40007을 주고(나머지 쓰기 경로는 404 errorCode 40000으로 가린다), 조회 권한은 ACTIVE·PAUSED·WITHDRAWAL_REQUESTED 셀러다(그 밖은 403 errorCode 40006).
+ * @summary 셀러 상품 옵션 조합 재고 조회
+ */
+export const getSellerProductOptions = (productId: string, signal?: AbortSignal) => {
+  return customInstance<SellerProductOptionsResponse>({
+    url: `/sellers/me/products/${productId}/options`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerProductOptionsQueryKey = (productId?: string) => {
+  return [`/sellers/me/products/${productId}/options`] as const
+}
+
+export const getGetSellerProductOptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductOptionsQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductOptions>>> = ({
+    signal,
+  }) => getSellerProductOptions(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductOptions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductOptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductOptions>>
+>
+export type GetSellerProductOptionsQueryError = unknown
+
+export function useGetSellerProductOptions<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductOptions>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductOptions>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductOptions<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductOptions>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductOptions>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductOptions<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 옵션 조합 재고 조회
+ */
+
+export function useGetSellerProductOptions<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductOptionsQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerProductOptionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductOptionsQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductOptions>>> = ({
+    signal,
+  }) => getSellerProductOptions(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductOptions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductOptionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductOptions>>
+>
+export type GetSellerProductOptionsSuspenseQueryError = unknown
+
+export function useGetSellerProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 옵션 조합 재고 조회
+ */
+
+export function useGetSellerProductOptionsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductOptions>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductOptions>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductOptionsSuspenseQueryOptions(productId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * stockDelta와 isActive 중 적어도 하나를 보내야 하고, 둘 다 없으면 400 errorCode 90001 message "재고 증감과 판매 여부 중 하나는 보내야 합니다." stockDelta는 0을 금지하고 ±1000000 이내여야 한다. 응답 appliedStockDelta는 요청과 다를 수 있다 — 서버가 결과 재고를 0 이상으로 자르고 실제 반영량만 돌려준다. isActive만 보내면 항상 0이다. 응답에 상품 saleStatus가 없고 재고 파생 전환이 커밋 뒤 비동기로 일어나므로, 품절 전환을 화면에 반영하려면 목록을 다시 조회해야 한다.
+ * @summary 셀러 상품 옵션 조합 재고·판매 여부 변경
+ */
+export const changeSellerProductOptionCombination = (
+  productId: string,
+  combinationId: number,
+  sellerOptionCombinationChangeRequest: SellerOptionCombinationChangeRequest,
+) => {
+  return customInstance<SellerOptionCombinationChangeResponse>({
+    url: `/sellers/me/products/${productId}/options/${combinationId}`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerOptionCombinationChangeRequest,
+  })
+}
+
+export const getChangeSellerProductOptionCombinationMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeSellerProductOptionCombination>>,
+    TError,
+    { productId: string; combinationId: number; data: SellerOptionCombinationChangeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeSellerProductOptionCombination>>,
+  TError,
+  { productId: string; combinationId: number; data: SellerOptionCombinationChangeRequest },
+  TContext
+> => {
+  const mutationKey = ['changeSellerProductOptionCombination']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeSellerProductOptionCombination>>,
+    { productId: string; combinationId: number; data: SellerOptionCombinationChangeRequest }
+  > = props => {
+    const { productId, combinationId, data } = props ?? {}
+
+    return changeSellerProductOptionCombination(productId, combinationId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ChangeSellerProductOptionCombinationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeSellerProductOptionCombination>>
+>
+export type ChangeSellerProductOptionCombinationMutationBody = SellerOptionCombinationChangeRequest
+export type ChangeSellerProductOptionCombinationMutationError = unknown
+
+/**
+ * @summary 셀러 상품 옵션 조합 재고·판매 여부 변경
+ */
+export const useChangeSellerProductOptionCombination = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof changeSellerProductOptionCombination>>,
+      TError,
+      { productId: string; combinationId: number; data: SellerOptionCombinationChangeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof changeSellerProductOptionCombination>>,
+  TError,
+  { productId: string; combinationId: number; data: SellerOptionCombinationChangeRequest },
+  TContext
+> => {
+  const mutationOptions = getChangeSellerProductOptionCombinationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(권한 없음은 403 errorCode 20011). 오프셋 페이지네이션이고 커서가 아니다. 정렬은 서버가 제출일 내림차순·id 내림차순으로 고정하며 제출 전(submittedAt=null) 건은 뒤로 밀린다. status를 주지 않으면 DRAFT·CANCELLED까지 포함한 전체가 totalCount에 잡힌다. 미지 status는 400 errorCode 90001 message "status: 잘못된 값입니다." page 음수는 0으로, size는 1~100으로 서버가 보정한다(거절하지 않는다).
+ * @summary 어드민 셀러 심사 목록
+ */
+export const getAdminSellerApplications = (
+  params?: GetAdminSellerApplicationsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminApplicationListResponse>({
+    url: `/admin/seller-applications`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminSellerApplicationsQueryKey = (
+  params?: GetAdminSellerApplicationsParams,
+) => {
+  return [`/admin/seller-applications`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminSellerApplicationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerApplicationsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerApplications>>> = ({
+    signal,
+  }) => getAdminSellerApplications(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerApplications>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerApplicationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerApplications>>
+>
+export type GetAdminSellerApplicationsQueryError = unknown
+
+export function useGetAdminSellerApplications<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellerApplicationsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerApplications>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerApplications>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplications<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerApplications>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerApplications>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplications<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 셀러 심사 목록
+ */
+
+export function useGetAdminSellerApplications<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerApplicationsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellerApplicationsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerApplicationsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerApplications>>> = ({
+    signal,
+  }) => getAdminSellerApplications(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerApplications>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerApplicationsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerApplications>>
+>
+export type GetAdminSellerApplicationsSuspenseQueryError = unknown
+
+export function useGetAdminSellerApplicationsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellerApplicationsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 셀러 심사 목록
+ */
+
+export function useGetAdminSellerApplicationsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplications>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellerApplicationsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplications>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerApplicationsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 사업자등록번호·대표자명·계좌번호를 마스킹 없이 평문으로 내려준다(계약) — 화면 표시용 마스킹은 클라이언트 책임이다. rejectionReason은 status가 REJECTED가 아니면 DB에 값이 남아 있어도 null로 온다(직전 반려 사유는 reviews 배열의 마지막 REJECTED 항목에만 남는다). documents의 downloadUrl은 유효기간 5분짜리 presigned GET이므로, 상세 응답을 캐시해 두고 몇 분 뒤 서류를 열면 403이 된다 — 서류 열기는 상세를 다시 조회하는 흐름이어야 한다. previousApplications는 같은 사업자등록번호의 과거 신청에서 자기 행을 뺀 id 내림차순이고, 사업자등록번호가 없으면 빈 배열이다(상태 필터가 없어 DRAFT도 섞인다). 없는 신청은 404 errorCode 10100.
+ * @summary 어드민 셀러 심사 상세
+ */
+export const getAdminSellerApplicationDetail = (applicationId: number, signal?: AbortSignal) => {
+  return customInstance<AdminApplicationDetailResponse>({
+    url: `/admin/seller-applications/${applicationId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminSellerApplicationDetailQueryKey = (applicationId?: number) => {
+  return [`/admin/seller-applications/${applicationId}`] as const
+}
+
+export const getGetAdminSellerApplicationDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminSellerApplicationDetailQueryKey(applicationId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>> = ({
+    signal,
+  }) => getAdminSellerApplicationDetail(applicationId, signal)
+
+  return { queryKey, queryFn, enabled: !!applicationId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerApplicationDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>
+>
+export type GetAdminSellerApplicationDetailQueryError = unknown
+
+export function useGetAdminSellerApplicationDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 셀러 심사 상세
+ */
+
+export function useGetAdminSellerApplicationDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerApplicationDetailQueryOptions(applicationId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellerApplicationDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminSellerApplicationDetailQueryKey(applicationId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>> = ({
+    signal,
+  }) => getAdminSellerApplicationDetail(applicationId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerApplicationDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>
+>
+export type GetAdminSellerApplicationDetailSuspenseQueryError = unknown
+
+export function useGetAdminSellerApplicationDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerApplicationDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 셀러 심사 상세
+ */
+
+export function useGetAdminSellerApplicationDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+  TError = unknown,
+>(
+  applicationId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminSellerApplicationDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerApplicationDetailSuspenseQueryOptions(
+    applicationId,
+    options,
+  )
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 요청 본문·쿼리·멱등키 헤더가 없고 성공은 204 No Content(빈 바디)다 — data 봉투조차 없다. 한 트랜잭션에서 신청 승인 전이와 심사 이력 누적, 셀러 개점(스토어명은 상호명이 없으면 대표자명으로 접힌다), 정산계좌 검증 이관이 함께 일어난다. 승인·반려가 가능한 상태는 SUBMITTED와 REVIEWING뿐이고, 그 밖은 409 errorCode 10101이다. 동시 승인 두 건은 한쪽이 204, 다른 쪽이 409로 갈린다 — 낙관적 잠금 실패와 유니크 제약 충돌도 모두 10101로 번역되므로, 클라이언트는 409를 받으면 errorCode 10101·90003을 같이 "이미 처리되었거나 다른 운영자가 먼저 처리함"으로 다루고 목록을 다시 조회하면 된다. 없는 신청은 404 errorCode 10100.
+ * @summary 어드민 셀러 심사 승인
+ */
+export const approveAdminSellerApplication = (applicationId: number, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/admin/seller-applications/${applicationId}/approve`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getApproveAdminSellerApplicationMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveAdminSellerApplication>>,
+    TError,
+    { applicationId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveAdminSellerApplication>>,
+  TError,
+  { applicationId: number },
+  TContext
+> => {
+  const mutationKey = ['approveAdminSellerApplication']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveAdminSellerApplication>>,
+    { applicationId: number }
+  > = props => {
+    const { applicationId } = props ?? {}
+
+    return approveAdminSellerApplication(applicationId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ApproveAdminSellerApplicationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveAdminSellerApplication>>
+>
+
+export type ApproveAdminSellerApplicationMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 심사 승인
+ */
+export const useApproveAdminSellerApplication = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveAdminSellerApplication>>,
+      TError,
+      { applicationId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveAdminSellerApplication>>,
+  TError,
+  { applicationId: number },
+  TContext
+> => {
+  const mutationOptions = getApproveAdminSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 사유는 500자 이하만 형식 검증으로 걸리고(초과는 400 errorCode 90001 message "반려 사유는 500자 이하여야 합니다."), 공백·누락은 서버가 빈 문자열로 바꿔 도메인에 넘겨 400 errorCode 10102가 된다. 상태 가드가 사유 검사보다 먼저 실행되므로, 이미 결정된 신청에 빈 사유로 반려하면 400이 아니라 409 errorCode 10101이다 — 클라이언트 분기는 이 우선순위를 따라야 한다. 없는 신청은 404 errorCode 10100.
+ * @summary 어드민 셀러 심사 반려
+ */
+export const rejectAdminSellerApplication = (
+  applicationId: number,
+  rejectAdminSellerApplicationRequest: RejectAdminSellerApplicationRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/seller-applications/${applicationId}/reject`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: rejectAdminSellerApplicationRequest,
+    signal,
+  })
+}
+
+export const getRejectAdminSellerApplicationMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectAdminSellerApplication>>,
+    TError,
+    { applicationId: number; data: RejectAdminSellerApplicationRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectAdminSellerApplication>>,
+  TError,
+  { applicationId: number; data: RejectAdminSellerApplicationRequest },
+  TContext
+> => {
+  const mutationKey = ['rejectAdminSellerApplication']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectAdminSellerApplication>>,
+    { applicationId: number; data: RejectAdminSellerApplicationRequest }
+  > = props => {
+    const { applicationId, data } = props ?? {}
+
+    return rejectAdminSellerApplication(applicationId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RejectAdminSellerApplicationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectAdminSellerApplication>>
+>
+export type RejectAdminSellerApplicationMutationBody = RejectAdminSellerApplicationRequest
+export type RejectAdminSellerApplicationMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 심사 반려
+ */
+export const useRejectAdminSellerApplication = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectAdminSellerApplication>>,
+      TError,
+      { applicationId: number; data: RejectAdminSellerApplicationRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectAdminSellerApplication>>,
+  TError,
+  { applicationId: number; data: RejectAdminSellerApplicationRequest },
+  TContext
+> => {
+  const mutationOptions = getRejectAdminSellerApplicationMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
