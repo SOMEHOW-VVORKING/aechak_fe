@@ -35,9 +35,9 @@ export function pointsErrorMessage(error: unknown): string {
   const serverMessage = data?.message
   switch (status) {
     // 403은 온보딩 미완료(20006)와 일반 접근 불가가 섞여 있어 errorCode까지 봐야 오안내를 막는다.
-    // TODO(후속 PR): 20006 전역 처리기는 아직 미배선이다. 온보딩 미완료 유저가 /mypage·/checkout에
-    // 딥링크로 진입하면 잔액 조회가 20006으로 실패하지만 온보딩 화면으로 튕기지 않는다(허브 '—'·주문서 0).
-    // client.ts에 setOnAuthExpired와 같은 전역 콜백을 붙이기 전까지는 여기서 안내 문구로만 신호한다.
+    // 20006 전역 처리기는 이미 배선돼 있다 — packages/api `client.ts`의 응답 인터셉터가
+    // setOnOnboardingRequired 핸들러를 깨우고, web-buyer `main.tsx`가 /onboarding/terms 이동을
+    // 붙인다. 그래도 promise는 그대로 reject되므로 이동 전 프레임에 쓸 문구가 여기 필요하다.
     case 403:
       return data?.errorCode === ONBOARDING_REQUIRED
         ? '온보딩을 먼저 완료해야 적립금을 확인할 수 있어요'
