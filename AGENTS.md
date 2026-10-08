@@ -22,8 +22,12 @@ packages/
   config/         공유 eslint / tsconfig(base·react·react-native) / prettier / tailwind preset
   design-system/  디자인 토큰 단일 원본 → web CSS vars + Tailwind theme, native theme object
   domain/         순수 도메인 타입·로직 (UI 의존성 금지)
-  api/            Orval 생성 API 클라이언트 + axios 인스턴스
+  api/            Orval 생성 API 클라이언트 + axios 인스턴스(호스트 분기 포함)
 ```
+
+백엔드도 실행 모듈이 셋이라 호스트가 갈린다 — 로컬 기준 api 8080 / seller 8081 / admin 8082이고,
+dev는 `api-dev` · `seller-api-dev` · `admin-api-dev`.aechak.co.kr이다. 어느 앱이 어느 호스트를
+부르는지와 그 배선은 6절 "실 API 연동 규약"에 있다.
 
 ### 앱 셸 — 새 화면은 셸을 다시 만들지 말고 라우트 파일만 추가한다
 
@@ -127,7 +131,9 @@ pnpm test                   # 단위/컴포넌트 테스트 전체 통과
 pnpm openapi:generate:check # 생성 코드 ↔ OpenAPI 스펙 동기화
 ```
 
-`openapi:generate:check`는 `orval && git diff --exit-code src/generated`라 **생성물을 커밋하기 전에는 항상 실패한다** — 스펙 변경 배치는 재생성 결과를 커밋한 뒤에 돌릴 것.
+`openapi:generate:check`는 `orval && git diff --exit-code src/generated`라 **생성물을 커밋하기 전에는 항상 실패한다** — 스펙 변경 배치는 재생성 결과를 커밋한 뒤에 돌릴 것. 커밋 전에 동기화만 확인하려면 orval을 두 번 돌려 두 번째 결과가 같은지 보면 된다.
+
+**E2E는 CI가 세 앱을 모두 돌린다**(`ci.yml`의 `e2e` 잡). 로컬에서는 앱 디렉터리에서 `pnpm exec playwright test`로 돌리고, 포트가 앱마다 달라 순차 실행이면 충돌하지 않는다. spec을 더하거나 고쳤으면 제출 전에 해당 앱 E2E를 돌려 볼 것.
 
 ### 개발 명령어
 
@@ -188,7 +194,25 @@ cd packages/api && pnpm openapi:generate   # API 코드 생성
 
 ---
 
-## 6. web-buyer 공통 컨벤션
+## 6. 실 API 연동 규약 (전 앱 공통)
+
+breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·어드민 심사 연동도 같은 규약을 따른다.
+한동안 이 절이 web-buyer 섹션 아래 있었지만 세 웹앱이 전부 지키고 있어 전역으로 올렸다.
+
+1. **`packages/api/openapi/schema.yaml`은 손으로 유지**, 경로에 `/api/v1` 접두 넣지 말 것(axios baseURL이 붙임). nullable 객체 필드는 OpenAPI 3.0이라 `allOf: [$ref] + nullable: true`로 써야 orval이 `T | null`을 만든다. 스펙 변경 후 `pnpm --filter @aechak/api openapi:generate` → 생성물 통째 커밋.
+2. **생성된 react-query 훅이 아니라 fetcher만 소비**하고 feature `*.queries.ts`가 자체 `useQuery`/`useInfiniteQuery`로 감싼다(패키지 간 react-query 버전 표류 회피). 서버 enum/필드는 feature 안에 가둔다.
+3. **BE는 실행 모듈이 셋이고 호스트가 다르다** — api(인증·카탈로그·주문·presigned 발급), seller(입점 신청·셀러 상품), admin(어드민 심사). 각 앱 `main.tsx`가 `configureApiHosts({ apiOrigin, sellerOrigin?, adminOrigin? })`를 한 번 부르고, 공유 인터셉터가 **요청 경로 접두로** 호스트를 가른다(`/sellers`·`/seller-applications` → seller, `/admin` → admin, 나머지와 `/auth` → api). axios 인스턴스를 복제하지 않는 이유는 토큰·refresh Promise·전역 콜백이 `client.ts`의 모듈 스코프라 복제하면 세션 상태가 갈리기 때문이다. api 호스트를 콕 집어야 하면 `forceApiHost: true`를 쓴다(경로만으로는 "호출부가 api를 지정했다"를 표현할 수 없다 — mergeConfig가 defaults의 baseURL을 늘 채운다).
+4. **어드민 경로만 `withCredentials=false`로 나간다.** `boot/admin`의 CORS 설정에 `allowCredentials`가 없어(bearer 전용 설계) credentials 모드로 보내면 브라우저가 정상 응답까지 버린다. refresh는 쿠키가 필요하므로 `forceApiHost`로 api 모듈에 credentials와 함께 보낸다 — 어드민 모듈에는 `/auth/*` 자체가 없다.
+5. **401은 인터셉터가 refresh(공유 Promise로 스탬피드 방지, 재시도 시 헤더를 새 토큰으로 교체) → 실패하면 `setOnAuthExpired` 전역 콜백.** 재시도 1회 제한은 `config.authRetried` 불리언이 보장한다 — **WeakSet 표식만으로는 막히지 않는다.** axios가 `request()`마다 `mergeConfig`로 새 config 객체를 만들어(`Object.create(null)`) 재시도의 401이 WeakSet에 없는 객체로 돌아오기 때문이고, 그대로 두면 "refresh는 성공하는데 원 요청은 계속 401"인 서버에서 무한 루프가 된다. mergeConfig가 모르는 키를 그대로 옮기는 성질을 이용한 표식이다. 화면은 비인증 오류(네트워크/500)만 인라인 안내(재시도 버튼 없음, 하드코딩 폴백 부활 금지).
+6. **배열 쿼리는 반복 파라미터(`?k=A&k=B`)로 나간다** — 공유 인스턴스의 `paramsSerializer: { indexes: null }`이 담당하고, 스펙에는 `style: form` + `explode: true`로 쓴다. axios 기본값(`k[]=A`)으로 나가면 BE 바인딩이 "지원하지 않는 값"으로 400을 준다. **값이 빈 파라미터는 키째 빼서 보낼 것** — 서버가 `?stock=`·`?createdFrom=`을 미입력이 아니라 형식 오류로 거절하는 자리가 있다(정규화는 queries 층이 맡는다).
+7. **실 API 전환은 실패 경로를 새로 만든다.** 목업 시절에는 없던 403·404·5xx가 생기므로 목록·상세 조회의 `isError`를 반드시 화면에 드러낸다 — 빈 상태 문구로 떨어지면 "데이터 없음"과 "불러오지 못함"이 구분되지 않는다. 화면 전체가 한 쿼리에 의존하면(등록 폼의 카테고리 트리 등) 실패 시 `return null`로 백지를 만들지 말고 `EmptyState` + 재시도를 둔다.
+8. 테스트: MSW(v2)로 실 HTTP 경로 검증(`onUnhandledRequest:'error'`, refresh 기본 핸들러는 반드시 401). **두 호스트를 부르는 앱은 MSW URL도 호스트별로 나누고 `test-setup.ts`에서 `configureApiHosts`를 실제 앱과 같게 호출할 것** — 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가 똑같이 받아 주어 배포에서만 드러나는 호스트 오배치를 놓친다. `vitest.config.ts`에 `exclude: e2e/**` 필수(Playwright spec이 vitest에 삼켜짐). Playwright E2E는 `page.route` 스텁 + CORS 헤더(교차출처라 정확한 origin·OPTIONS 방어가 필요하고, `Allow-Credentials:true`는 credentials를 쓰는 호스트에만 — 어드민 스텁에 넣으면 실제와 달라진다). `page.route` 글롭에 origin까지 적어 호스트를 가를 것.
+9. **배송지 네이밍**: 화면/훅/타입/파일/폴더는 `deliveryAddress`/`DeliveryAddress` 접두, 와이어 JSON 필드(`addressId`/`baseAddress` 등)는 BE 계약 그대로. FE 라우트 URL은 `/addresses`, API 경로는 `/delivery-addresses`(혼동 금지).
+10. **BE에 대응 엔드포인트가 없는 화면은 운영 진입점을 막고 코드는 보존한다.** 목업 주석만 남기는 방식은 쓰지 않는다 — 저장되지 않는다는 사실을 운영자에게 알려 주지 못한다. 서버에 아예 없는 필드를 화면이 요구하고 있으면(지어낸 필드) 제거한다.
+
+---
+
+## 7. web-buyer 공통 컨벤션
 
 ### 모바일 레이아웃 파운데이션
 
@@ -204,16 +228,13 @@ cd packages/api && pnpm openapi:generate   # API 코드 생성
 - **단일 폼 저장 화면 패턴**: 폼 state는 라우트 소유 + `useEffect`의 `!form` 가드로 1회만 시드(재시딩하면 저장 직후 입력이 서버 왕복 사이 삭제되는 버그). 필드 변경은 하나의 `onChange:(patch)=>void`로 합침. 저장이 서버 파생 필드(status 등)를 바꾸면 `onSuccess:(updated)=>setForm(updated)`로 반드시 반영(안 하면 상태 전이 후에도 버튼이 안 잠김). 성공 피드백은 `Toast` + `invalidateQueries`.
 - 목록 레이아웃 넘침 가드는 CSS `truncate`/`line-clamp-2` + `min-w-0`가 정석(DS `ProductCard`는 이미 걸림, 건드리지 말 것). 글자수 하드캡이 자연스러운 자리(랭킹 행 등)만 `@/shared/truncate`의 `truncateText(text, maxChars)`.
 
-### 실 API 연동 규약 (breeds/상품/검색/리뷰가 깔아둔 파이프라인)
+### 실 API 연동 — web-buyer 전용 조항 (전 앱 공통 규약은 6절)
 
-1. **`packages/api/openapi/schema.yaml`은 손으로 유지**, 경로에 `/api/v1` 접두 넣지 말 것(axios baseURL이 붙임). nullable 객체 필드는 OpenAPI 3.0이라 `allOf: [$ref] + nullable: true`로 써야 orval이 `T | null`을 만든다. 스펙 변경 후 `pnpm --filter @aechak/api openapi:generate` → 생성물 통째 커밋.
-2. **생성된 react-query 훅이 아니라 fetcher만 소비**하고 feature `*.queries.ts`가 자체 `useQuery`/`useInfiniteQuery`로 감싼다(패키지 간 react-query 버전 표류 회피). 서버 enum/필드는 feature 안에 가둔다.
-3. **401은 인터셉터가 refresh(공유 Promise로 스탬피드 방지, 재시도 시 헤더를 새 토큰으로 교체) → 실패하면 `setOnAuthExpired` 전역 콜백이 `logout` + `/onboarding/login`.** 화면은 비인증 오류(네트워크/500)만 인라인 안내(재시도 버튼 없음, 하드코딩 폴백 부활 금지).
-4. **회원 전용 열람(JWT 필수) 진입점은 `useLoginGate().requireAuth(feature, action)`로 감싸** 비회원 401 강제 이탈을 막는다(로그인 BottomSheet만 열고 action 미실행). `auth.store`의 `loggedIn` 기본값은 `true`(기존 회원 흐름 전제, 새로고침 시 리셋되는 세션 mock).
-5. **실 API 화면은 목업 카탈로그 id를 `findMockProduct`(레지스트리 제외)로 네트워크 전에 걸러 목업을 반환**하고, 실 상품 첫 페이지 404는 목업 폴백이 아니라 `notFound`로(레지스트리에 등록된 실 상품을 가짜 데이터로 위장 금지).
-6. 테스트: MSW(v2)로 실 HTTP 경로 검증(`onUnhandledRequest:'error'`, refresh 기본 핸들러는 반드시 401). `vitest.config.ts`에 `exclude: e2e/**` 필수(Playwright spec이 vitest에 삼켜짐). Playwright E2E는 `page.route` 스텁 + CORS 헤더(교차출처 8080 + `withCredentials`라 정확한 origin·`Allow-Credentials:true`·OPTIONS 방어).
-7. cart 등 파생 로직(셀러 그룹핑/배송비)은 상품 데이터가 필요하므로 `shared/cart`가 아니라 `shared/catalog`에 두고, 두 shared가 공유하는 순수 키 함수는 `@aechak/domain`으로 옮긴다(shared→shared 금지 회피).
-8. **배송지 네이밍**: 화면/훅/타입/파일/폴더는 `deliveryAddress`/`DeliveryAddress` 접두, 와이어 JSON 필드(`addressId`/`baseAddress` 등)는 BE 계약 그대로. FE 라우트 URL은 `/addresses`, API 경로는 `/delivery-addresses`(혼동 금지).
+- **회원 전용 열람(JWT 필수) 진입점은 `useLoginGate().requireAuth(feature, action)`로 감싸** 비회원 401 강제 이탈을 막는다(로그인 BottomSheet만 열고 action 미실행). `auth.store`의 `loggedIn` 기본값은 `true`(기존 회원 흐름 전제, 새로고침 시 리셋되는 세션 mock).
+- **실 API 화면은 목업 카탈로그 id를 `findMockProduct`(레지스트리 제외)로 네트워크 전에 걸러 목업을 반환**하고, 실 상품 첫 페이지 404는 목업 폴백이 아니라 `notFound`로(레지스트리에 등록된 실 상품을 가짜 데이터로 위장 금지).
+- 세션 만료 시 전역 콜백은 `logout` + `/onboarding/login` 이동을 맡고, 온보딩 미완(403/20006)은 `setOnOnboardingRequired`가 `/onboarding/terms`로 보낸다. **이 두 핸들러를 등록하는 앱은 web-buyer뿐이다** — 셀러센터는 `setOnAuthExpired`만 걸고(온보딩 화면이 없다) 어드민은 온보딩 개념 자체가 없다. 20006을 "전역이 알아서 처리한다"고 전제한 주석을 다른 앱에 복사하지 말 것.
+- cart 등 파생 로직(셀러 그룹핑/배송비)은 상품 데이터가 필요하므로 `shared/cart`가 아니라 `shared/catalog`에 두고, 두 shared가 공유하는 순수 키 함수는 `@aechak/domain`으로 옮긴다(shared→shared 금지 회피).
+- **적립금 사용 한도와 최소 결제 금액은 서버 계약이다**(BE `OrderGroup`의 `MIN_POINT_USAGE`=1,000 · `MIN_PAYMENT_AMOUNT`=100). 적립금은 0원이거나 1,000원 이상이어야 하고 적립금을 뺀 뒤 100원은 남아야 한다 — 어기면 각각 400/50103, 422/50102, 422/50108이다. **입력 중에는 상한만 적용하고 하한은 입력이 끝난 뒤 한 번만 맞춘다** — 제어 입력에서 매 타이핑마다 하한으로 올리면 그 구간 밖 금액을 아예 입력할 수 없게 된다. 하한 미달은 올리지 말고 0으로 내린다(적립금은 사용자 자산이라 의도를 넘겨 쓰게 만들면 안 된다).
 
 ### 그 밖의 반복 규칙
 
@@ -226,6 +247,6 @@ cd packages/api && pnpm openapi:generate   # API 코드 생성
 
 ---
 
-## 7. 모바일(Expo) 앱
+## 8. 모바일(Expo) 앱
 
 mobile 앱은 대부분 superseded지만 손댈 일이 있으면 `docs/web-seller-admin-notes.md`의 "모바일 셋업" 절을 볼 것(PR 게이트가 Metro 번들링을 검증하지 않는 등 함정 다수). 핵심 하나: **`@types/react` 버전은 워크스페이스 전체(모든 앱 + design-system)에서 동일하게 맞출 것** — design-system이 raw `.ts`를 export해 버전이 어긋나면 `'X cannot be used as a JSX component'` 타입 에러가 난다(web 앱에도 해당).
