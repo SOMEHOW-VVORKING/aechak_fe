@@ -1,16 +1,19 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { UserX } from 'lucide-react'
 import {
   Alert,
   Button,
-  EmptyState,
+  Card,
   MobileScreen,
   Modal,
+  Skeleton,
   StatusPill,
 } from '@aechak/design-system/web'
+import { ActionBarFrame } from '@/shared/components/ActionBarFrame'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   WITHDRAWAL_CHECK_QUERY_KEY,
@@ -39,14 +42,12 @@ function WithdrawDone() {
   const navigate = useNavigate()
   return (
     <MobileScreen>
-      <div className="flex h-full items-center justify-center p-6">
-        <EmptyState
-          icon={<UserX className="size-8" />}
-          title="탈퇴가 완료됐어요"
-          description="그동안 애착을 이용해 주셔서 고마워요. 거래 기록은 관련 법령에 따라 보관돼요."
-          action={{ label: '홈으로', onClick: () => navigate({ to: '/', replace: true }) }}
-        />
-      </div>
+      <ScreenEmptyState
+        icon={<UserX className="size-8" />}
+        title="탈퇴가 완료됐어요"
+        description="그동안 애착을 이용해 주셔서 고마워요. 거래 기록은 관련 법령에 따라 보관돼요."
+        action={{ label: '홈으로', onClick: () => navigate({ to: '/', replace: true }) }}
+      />
     </MobileScreen>
   )
 }
@@ -84,8 +85,8 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
     return (
       <MobileScreen header={header}>
         <div className="flex flex-col gap-3.5 p-4">
-          <div className="h-32 animate-pulse rounded-card bg-surface-sunken" />
-          <div className="h-24 animate-pulse rounded-card bg-surface-sunken" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-24" />
         </div>
       </MobileScreen>
     )
@@ -95,12 +96,10 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
   if (check.isError) {
     return (
       <MobileScreen header={header}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="탈퇴 가능 여부를 확인하지 못했어요"
-            description={withdrawErrorMessage(check.error, '잠시 후 다시 시도해 주세요.')}
-          />
-        </div>
+        <ScreenEmptyState
+          title="탈퇴 가능 여부를 확인하지 못했어요"
+          description={withdrawErrorMessage(check.error, '잠시 후 다시 시도해 주세요.')}
+        />
       </MobileScreen>
     )
   }
@@ -111,11 +110,11 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
       <MobileScreen
         header={header}
         footer={
-          <BottomBar>
+          <ActionBarFrame>
             <Button variant="danger" size="lg" fullWidth disabled>
               탈퇴하기
             </Button>
-          </BottomBar>
+          </ActionBarFrame>
         }
       >
         <div className="flex flex-col gap-3.5 p-4">
@@ -135,54 +134,54 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
     <MobileScreen
       header={header}
       footer={
-        <BottomBar>
+        <ActionBarFrame>
           <Button variant="danger" size="lg" fullWidth onClick={() => setConfirmOpen(true)}>
             탈퇴하기
           </Button>
-        </BottomBar>
+        </ActionBarFrame>
       }
     >
       <div className="flex flex-col gap-3.5 p-4">
         <h1 className="text-subheading font-semibold text-text-primary">탈퇴하기 전에 확인해 주세요</h1>
 
-        {/* 삭제/비활성화 정보 */}
-        <div className="flex flex-col gap-2.5 rounded-card border border-border-subtle bg-surface-raised p-4">
-          <p className="text-label font-medium text-text-secondary">삭제 / 비활성화되는 정보</p>
+        <InfoCard title="삭제 / 비활성화되는 정보">
           {WITHDRAW_DELETED_INFO.map(info => (
-            <div key={info.label} className="flex items-center justify-between">
-              <span className="text-body-sm text-text-primary">{info.label}</span>
-              {info.note === '비활성화' ? (
+            <InfoRow
+              key={info.label}
+              label={info.label}
+              value={
+                info.note === '비활성화' ? (
+                  <StatusPill variant="muted" size="sm">
+                    {info.note}
+                  </StatusPill>
+                ) : (
+                  <span className="text-body-sm text-text-tertiary">{info.note}</span>
+                )
+              }
+            />
+          ))}
+        </InfoCard>
+
+        <InfoCard title="법령에 따라 보존되는 정보">
+          {WITHDRAW_RETAINED_INFO.map(info => (
+            <InfoRow
+              key={info.label}
+              label={info.label}
+              value={
                 <StatusPill variant="muted" size="sm">
                   {info.note}
                 </StatusPill>
-              ) : (
-                <span className="text-body-sm text-text-tertiary">{info.note}</span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* 법령 보존 정보 */}
-        <div className="flex flex-col gap-2.5 rounded-card border border-border-subtle bg-surface-raised p-4">
-          <p className="text-label font-medium text-text-secondary">법령에 따라 보존되는 정보</p>
-          {WITHDRAW_RETAINED_INFO.map(info => (
-            <div key={info.label} className="flex items-center justify-between">
-              <span className="text-body-sm text-text-primary">{info.label}</span>
-              <StatusPill variant="muted" size="sm">
-                {info.note}
-              </StatusPill>
-            </div>
+              }
+            />
           ))}
           <p className="text-caption text-text-tertiary">
             관련 법령에 따라 {WITHDRAW_RETENTION_YEARS}년간 보관 후 파기돼요.
           </p>
-        </div>
+        </InfoCard>
 
-        {/* 재가입 제한 */}
-        <div className="flex flex-col gap-2.5 rounded-card border border-border-subtle bg-surface-raised p-4">
-          <p className="text-label font-medium text-text-secondary">다시 가입할 때</p>
+        <InfoCard title="다시 가입할 때">
           <p className="text-body-sm text-text-primary">{WITHDRAW_REJOIN_NOTICE}</p>
-        </div>
+        </InfoCard>
       </div>
 
       {/* 최종 확인 Modal(5-D) — 확인 시에만 DELETE */}
@@ -205,14 +204,22 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
   )
 }
 
-// 하단 고정 바(BottomFixedAction은 primary 변형만 지원해 danger 버튼을 직접 배치하려고 별도 래퍼를 둔다).
-function BottomBar({ children }: { children: React.ReactNode }) {
+// 탈퇴 안내 정보 카드(소제목 + 행들).
+function InfoCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div
-      className="sticky bottom-0 z-sticky flex flex-none flex-col border-t border-border-subtle bg-surface-raised px-4 pt-3"
-      style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}
-    >
+    <Card className="flex flex-col gap-2.5 p-4">
+      <p className="text-label font-medium text-text-secondary">{title}</p>
       {children}
+    </Card>
+  )
+}
+
+// 라벨 + 우측 값(pill/텍스트) 한 행.
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-body-sm text-text-primary">{label}</span>
+      {value}
     </div>
   )
 }

@@ -445,11 +445,23 @@ export interface ReviewImageResponse {
   sortOrder: number
 }
 
+export type ReviewItemResponseRating =
+  (typeof ReviewItemResponseRating)[keyof typeof ReviewItemResponseRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReviewItemResponseRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
 export interface ReviewItemResponse {
   reviewId: number
   /** 요청자 본인이 쓴 리뷰인지. 수정/삭제 노출 대상 판별에 쓴다(SCRUM-210). */
   isMine: boolean
-  rating: number
+  rating: ReviewItemResponseRating
   content: string
   optionName: string
   authorNickname: string
@@ -517,11 +529,23 @@ export interface CreateReviewRequest {
   imageKeys?: string[]
 }
 
+export type CreateReviewResponseRating =
+  (typeof CreateReviewResponseRating)[keyof typeof CreateReviewResponseRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CreateReviewResponseRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
 export interface CreateReviewResponse {
   reviewId: number
   /** 서버 내부 상품 id(숫자). 화면이 쓰는 공개 ULID와 다르다. */
   productId: number
-  rating: number
+  rating: CreateReviewResponseRating
   content: string
   optionName: string
   /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-21T10:00:00) */
@@ -563,10 +587,22 @@ export const WrittenReviewItemResponseType = {
   WRITTEN: 'WRITTEN',
 } as const
 
+export type WrittenReviewItemResponseRating =
+  (typeof WrittenReviewItemResponseRating)[keyof typeof WrittenReviewItemResponseRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WrittenReviewItemResponseRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
 export interface WrittenReviewItemResponse {
   type: WrittenReviewItemResponseType
   reviewId: number
-  rating: number
+  rating: WrittenReviewItemResponseRating
   content: string
   reviewStatus: ReviewStatus
   optionName: string
@@ -792,8 +828,7 @@ export const SellerDocumentType = {
 } as const
 
 export interface SellerApplicationDocument {
-  /** SellerDocumentType 값(서버가 String으로 직렬화) */
-  documentType: string
+  documentType: SellerDocumentType
   /** 등록/교체 시각 — LocalDateTime 직렬화라 타임존 오프셋이 없다 */
   uploadedAt: string
 }

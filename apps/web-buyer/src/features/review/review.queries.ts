@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from 
 import {
   createReview,
   deleteReview as deleteReviewApi,
+  errorResponse,
   getMyReviews,
   getProductReviews,
   type MyReviewTab as ServerMyReviewTab,
@@ -77,14 +78,14 @@ interface ReviewPage {
 
 // 서버 리뷰 항목 -> 화면 뷰 모델(도메인 Review 형태). author/createdAt/images 필드명이 서버와 달라
 // 여기서 흡수한다(author=authorNickname, createdAt='YYYY.MM.DD', images=imageUrl 정렬 배열).
+// rating은 응답 스키마가 enum(1~5)이라 그대로 쓴다 — BE 도메인(Review.kt)이 그 밖의 값은 생성 시점에 거절한다.
 function toReviewItem(productId: string, r: ReviewItemResponse): ProductReviewItem {
-  const rating = Math.min(5, Math.max(1, Math.round(r.rating))) as 1 | 2 | 3 | 4 | 5
   return {
     id: `${SERVER_ID_PREFIX}${r.reviewId}`,
     productId,
     orderId: '',
     author: r.authorNickname,
-    rating,
+    rating: r.rating,
     content: r.content,
     images: [...r.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
     option: r.optionName,
@@ -103,7 +104,7 @@ function toDistribution(ratingDistribution: Record<string, number>, reviewCount:
 }
 
 function isNotFound(e: unknown): boolean {
-  return (e as { response?: { status?: number } } | null)?.response?.status === 404
+  return errorResponse(e)?.status === 404
 }
 
 const NOT_FOUND_PAGE: ReviewPage = {
@@ -271,14 +272,12 @@ function dropReviewFromPages(queryClient: QueryClient, queryKey: readonly unknow
     old => {
       // 상세 미리보기 쿼리는 같은 접두를 쓰지만 배열이라 pages가 없다 — 그건 무효화에 맡긴다.
       if (!old?.pages) return old
-      let removed = false
       const pages = old.pages.map(page => {
         const items = page.items.filter(item => item.id !== localId)
-        if (items.length === page.items.length) return page
-        removed = true
-        return { ...page, items }
+        return items.length === page.items.length ? page : { ...page, items }
       })
-      if (!removed) return old
+      // 어느 페이지에도 없었으면 참조를 그대로 둬 불필요한 리렌더를 막는다.
+      if (pages.every((page, i) => page === old.pages[i])) return old
       const [first, ...rest] = pages
       return {
         ...old,
@@ -336,11 +335,12 @@ export function useCreateReview() {
 }
 
 // 리뷰 작성·삭제 실패 문구. 401은 axios 인터셉터의 refresh + 전역 리다이렉트가 처리하므로 여기 오지 않는다.
-// 같은 status에 사유가 여러 개라 errorCode를 먼저 본다(onboarding.queries의 readErrorCode 패턴).
+// 같은 status에 사유가 여러 개라 errorCode로 분기한다. 사진 presign 거절(100000)도 작성 mutation 에러로
+// 올라오므로 여기서 함께 안내한다. 서버 message는 -습니다체라 그대로 쓰지 않는다.
 export function reviewErrorMessage(error: unknown): string {
-  const response = (error as { response?: { status?: number; data?: { errorCode?: number; message?: string } } })
-    ?.response
-  switch (response?.data?.errorCode) {
+  switch (errorResponse(error)?.data?.errorCode) {
+    case 100000:
+      return 'PNG, JPG, WEBP 형식만 올릴 수 있어요'
     case 110004:
       return '이미 리뷰를 쓴 주문이에요.'
     case 110005:
@@ -358,7 +358,7 @@ export function reviewErrorMessage(error: unknown): string {
     case 110000:
       return '이미 삭제된 리뷰예요.'
     default:
-      return response?.data?.message ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.'
   }
 }
 
@@ -433,7 +433,7 @@ function toWrittenReview(r: WrittenReviewItemResponse): MyWrittenReview {
     productId: r.productPublicId,
     orderId: '',
     author: '나',
-    rating: Math.min(5, Math.max(1, Math.round(r.rating))) as Review['rating'],
+    rating: r.rating,
     content: r.content,
     images: [...r.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => img.imageUrl),
     option: r.optionName,

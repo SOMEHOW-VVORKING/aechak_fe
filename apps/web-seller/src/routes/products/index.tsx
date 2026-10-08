@@ -12,11 +12,11 @@ import {
   SearchInput,
   Select,
   StatusPill,
-  Toast,
   Toggle,
   type Column,
   type StatusPillVariant,
 } from '@aechak/design-system/web'
+import { useToast } from '@/shared/hooks/useToast'
 import {
   INSPECTION_STATUS_LABEL,
   InventoryDrawer,
@@ -106,11 +106,6 @@ const SUSPEND_CONFIRM = {
   confirmLabel: '판매 중지',
 } as const
 
-interface ToastState {
-  message: string
-  variant: 'success' | 'error'
-}
-
 interface Filters {
   keyword: string
   category: string
@@ -140,6 +135,7 @@ const EMPTY_FILTERS: Filters = {
 // 한 곳에서 소유한다. 서버는 `?stock=`·`?createdFrom=`처럼 값이 빈 파라미터도 400/90001로 거절한다.
 function toParams(f: Filters): SellerProductSearchInput {
   return {
+    // keyword는 다듬지 않고 그대로 넘긴다 — BE가 trim하고 빈 값은 검색어 없음으로 본다.
     keyword: f.keyword,
     category: f.category ? Number(f.category) : '',
     saleStatus: f.saleStatus ? [f.saleStatus] : [],
@@ -169,9 +165,7 @@ function ProductsRoute() {
   const [suspendTarget, setSuspendTarget] = useState<SellerProductSummary | null>(null)
   const [inventoryProductId, setInventoryProductId] = useState<string | null>(null)
   // 등록/수정 완료 알림은 state로 옮기고 URL에서 바로 지운다 — URL에 남기면 다른 토스트가 닫힌 뒤 다시 뜬다.
-  const [toast, setToast] = useState<ToastState | null>(() =>
-    saved ? { message: SAVED_MESSAGE[saved], variant: 'success' } : null,
-  )
+  const toast = useToast(saved ? { message: SAVED_MESSAGE[saved], variant: 'success' } : null)
   useEffect(() => {
     if (saved) void navigate({ search: {}, replace: true })
   }, [saved, navigate])
@@ -193,7 +187,7 @@ function ProductsRoute() {
   // 필터를 바꾸면 첫 페이지로 돌아간다.
   const setFilter = (patch: Partial<Omit<Filters, 'page'>>) => setFilters(prev => ({ ...prev, ...patch, page: 0 }))
 
-  const showError = (error: unknown) => setToast({ message: productErrorMessage(error), variant: 'error' })
+  const showError = (error: unknown) => toast.show(productErrorMessage(error), 'error')
 
   function handleToggle(product: SellerProductSummary, next: boolean) {
     if (!next) {
@@ -205,16 +199,14 @@ function ProductsRoute() {
       { productId: product.productId, saleStatus: 'ON_SALE' },
       {
         onSuccess: res =>
-          setToast({
-            // BE는 판매 가능한 재고가 없으면 ON_SALE 요청에도 OUT_OF_STOCK을 돌려준다.
-            message: res.saleStatus === 'OUT_OF_STOCK' ? '재고가 없어 품절로 표시돼요.' : '판매를 다시 시작했어요.',
-            variant: 'success',
-          }),
+          // BE는 판매 가능한 재고가 없으면 ON_SALE 요청에도 OUT_OF_STOCK을 돌려준다.
+          toast.show(res.saleStatus === 'OUT_OF_STOCK' ? '재고가 없어 품절로 표시돼요.' : '판매를 다시 시작했어요.'),
         onError: showError,
       },
     )
   }
 
+  // 삭제 분기가 없어져 확인 Modal은 판매 중지 하나뿐이다(위 주석의 DELETE 부재).
   function handleConfirmSuspend() {
     if (!suspendTarget) return
     changeSaleStatus.mutate(
@@ -222,7 +214,7 @@ function ProductsRoute() {
       {
         onSuccess: () => {
           setSuspendTarget(null)
-          setToast({ message: '판매를 중지했어요.', variant: 'success' })
+          toast.show('판매를 중지했어요.')
         },
         onError: error => {
           setSuspendTarget(null)
@@ -241,7 +233,13 @@ function ProductsRoute() {
         return (
           <div className="flex items-center gap-3">
             {thumbnail ? (
-              <img src={thumbnail} alt="" className="size-9 flex-none rounded-md object-cover" />
+              <img
+                src={thumbnail}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="size-9 flex-none rounded-md object-cover"
+              />
             ) : (
               <span className="flex size-9 flex-none items-center justify-center rounded-md bg-surface-sunken text-icon">
                 <ImageIcon className="size-4" />
@@ -498,10 +496,11 @@ function ProductsRoute() {
         key={inventoryProductId ?? 'closed'}
         productId={inventoryProductId}
         onClose={() => setInventoryProductId(null)}
-        onSaved={message => setToast({ message, variant: 'success' })}
+        onSaved={message => toast.show(message)}
       />
 
-      {toast && <Toast open message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
+      {/* 임시저장 Drawer 진입점은 BE에 임시저장이 없어 뺐다(위 주석; 구현은 목업에 보존). */}
+      {toast.element}
     </div>
   )
 }

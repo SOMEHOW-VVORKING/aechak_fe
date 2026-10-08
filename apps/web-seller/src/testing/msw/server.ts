@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { API_PATH_PREFIX } from '@aechak/api'
+import { PRODUCT_IMAGE_TYPES } from '@/features/products/products.contract'
 import { MOCK_CATEGORY_TREE } from '@/features/products/products.mock'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-buyer의 src/testing/msw 관례를
@@ -158,6 +159,23 @@ const sellerApplicationHandlers = [
         { status: 409 },
       )
     }
+    // requireSubmittable 미러(공통 필수 정보만) — message 형식은 BE 그대로 격식체다.
+    const missingFields = (
+      [
+        ['대표자명', application.representativeName],
+        ['은행 코드', application.bankCode],
+        ['계좌번호', application.accountNumberMasked],
+        ['예금주', application.accountHolder],
+      ] as const
+    )
+      .filter(([, value]) => !value)
+      .map(([label]) => label)
+    if (missingFields.length > 0) {
+      return HttpResponse.json(
+        { errorCode: 10105, message: `필수 정보가 누락됐습니다: ${missingFields.join(', ')}` },
+        { status: 400 },
+      )
+    }
     application = { ...application, status: 'SUBMITTED', submittedAt: '2026-08-13T11:00:00' }
     return new HttpResponse(null, { status: 204 })
   }),
@@ -166,6 +184,15 @@ const sellerApplicationHandlers = [
   // purpose를 무시하면 FE가 용도를 틀리게 보내도 테스트가 통과한다.
   http.post(PRESIGNED_URL, async ({ request }) => {
     const body = (await request.json()) as { purpose: string; contentType: string }
+    // FileService: 용도별 허용 형식이 아니면 발급 단계에서 거절한다. FE는 이미지 형식을 미리 보지
+    // 않고 이 응답 문구로 안내하므로(ProductEditor.uploadPending), 여기서 무엇이든 발급해 주면
+    // 그 경로가 아무 테스트에도 걸리지 않는다.
+    if (body.purpose === 'PRODUCT' && !PRODUCT_IMAGE_TYPES.includes(body.contentType)) {
+      return HttpResponse.json(
+        { errorCode: 100000, message: '지원하지 않는 파일 형식입니다.' },
+        { status: 400 },
+      )
+    }
     const prefix = body.purpose === 'PRODUCT' ? 'products' : 'sellers/documents'
     presignedSeq += 1
     const key = `tmp/1/${prefix}/fixture-${presignedSeq}.${body.contentType.split('/')[1]}`
@@ -307,6 +334,56 @@ export function currentSellerProducts(): SellerProductSummaryWire[] {
 const badRequest = (message: string) =>
   HttpResponse.json({ errorCode: 90001, message }, { status: 400 })
 
+const errorAt = (status: number, errorCode: number, message: string) =>
+  HttpResponse.json({ errorCode, message }, { status })
+
+// Product.validatePricing / ProductOptions.of 미러. FE는 가격 범위와 그룹을 넘는 옵션값 중복을 미리
+// 보지 않고 이 응답 문구로 안내하므로(SCRUM-234의 중복 검증 제거), 그 경로는 이 스텁이 지킨다.
+const MIN_REGULAR_PRICE = 100
+const MAX_REGULAR_PRICE = 100_000_000
+
+interface ProductWriteBody {
+  productName: string
+  regularPrice: number
+  discountPrice?: number | null
+  discountStartAt?: string | null
+  discountEndAt?: string | null
+  optionGroups?: { name: string; values: string[] }[] | null
+  optionCombinations: { optionValues: string[]; additionalPrice: number; stockQuantity: number }[]
+}
+
+function priceViolation(body: ProductWriteBody): ReturnType<typeof errorAt> | null {
+  const price = () => errorAt(400, 40001, '상품 가격이 올바르지 않습니다.')
+  const period = () => errorAt(400, 40002, '할인 기간이 올바르지 않습니다.')
+  const { regularPrice, discountPrice, discountStartAt, discountEndAt } = body
+  if (regularPrice < MIN_REGULAR_PRICE || regularPrice > MAX_REGULAR_PRICE) return price()
+  if (discountPrice != null && (discountPrice < 0 || discountPrice > regularPrice)) return price()
+  if (discountPrice != null && !discountStartAt) return period()
+  if (discountPrice == null && (discountStartAt || discountEndAt)) return period()
+  if (discountStartAt && discountEndAt && discountStartAt > discountEndAt) return period()
+  return null
+}
+
+function optionViolation(body: ProductWriteBody): ReturnType<typeof errorAt> | null {
+  const fail = (message: string) => errorAt(400, 40005, message)
+  const groups = body.optionGroups ?? []
+  const combinations = body.optionCombinations
+  if (combinations.length === 0) return fail('옵션 조합이 비어 있습니다.')
+  if (new Set(groups.map(g => g.name)).size !== groups.length) return fail('옵션 그룹명이 중복됩니다.')
+  const allValues = groups.flatMap(g => g.values)
+  if (new Set(allValues).size !== allValues.length) return fail('옵션값이 중복됩니다.')
+  const groupOf = new Map(groups.flatMap((g, i) => g.values.map(v => [v, i] as const)))
+  for (const c of combinations) {
+    if (c.optionValues.some(v => !groupOf.has(v))) return fail('존재하지 않는 옵션값입니다.')
+    if (new Set(c.optionValues.map(v => groupOf.get(v))).size !== groups.length) {
+      return fail('조합이 모든 옵션 그룹을 포함하지 않습니다.')
+    }
+  }
+  const signatures = combinations.map(c => [...c.optionValues].sort().join('\u0000'))
+  if (new Set(signatures).size !== signatures.length) return fail('옵션 조합이 중복됩니다.')
+  return null
+}
+
 const productNotFound = () =>
   HttpResponse.json({ errorCode: 40000, message: '상품을 찾을 수 없습니다.' }, { status: 404 })
 
@@ -356,14 +433,11 @@ const sellerProductHandlers = [
   }),
   // 등록 — 201. 재고와 무관하게 ON_SALE/APPROVED/versionNo 1이고, 목록 맨 앞에 꽂힌다(latest = id desc).
   http.post(SELLER_PRODUCTS_URL, async ({ request }) => {
-    const body = (await request.json()) as {
-      productName: string
-      regularPrice: number
-      discountPrice?: number | null
-      optionGroups?: { name: string; values: string[] }[] | null
-      optionCombinations: { optionValues: string[]; additionalPrice: number; stockQuantity: number }[]
-    }
+    const body = (await request.json()) as ProductWriteBody
     lastRegisterBody = body
+    // 거절은 상태를 바꾸기 전에 — 테스트가 "폼에 남고 목록은 그대로"를 단언한다.
+    const rejected = priceViolation(body) ?? optionViolation(body)
+    if (rejected) return rejected
     const product = makeSellerProductWire({
       name: body.productName,
       regularPrice: body.regularPrice,

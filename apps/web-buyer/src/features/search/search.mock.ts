@@ -6,11 +6,16 @@ export interface ResultSortOption {
   label: string
 }
 
-export const RESULT_SORTS: ResultSortOption[] = [
-  { value: 'popular', label: '인기순' },
-  { value: 'price-asc', label: '낮은 가격순' },
-  { value: 'latest', label: '최신순' },
-]
+// 정렬 라벨의 단일 원본. 칩 라벨은 여기서 바로 읽고(find 폴백 없음), 시트 옵션 목록은 아래에서 파생한다.
+export const RESULT_SORT_LABELS: Record<ResultSort, string> = {
+  popular: '인기순',
+  'price-asc': '낮은 가격순',
+  latest: '최신순',
+}
+
+export const RESULT_SORTS: ResultSortOption[] = Object.entries(RESULT_SORT_LABELS).map(
+  ([value, label]) => ({ value: value as ResultSort, label }),
+)
 
 export const PRICE_MIN = 0
 // 가격 프리셋 UI의 열린 상한 sentinel. 이 값이면 API maxPrice를 생략해 20만원 초과도 포함한다.

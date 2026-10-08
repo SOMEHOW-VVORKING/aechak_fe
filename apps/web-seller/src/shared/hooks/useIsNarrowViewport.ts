@@ -8,9 +8,7 @@ const DEFAULT_BREAKPOINT_PX = 1024 // Tailwind `lg`
 // boolean breakpoint check.
 export function useIsNarrowViewport(breakpointPx: number = DEFAULT_BREAKPOINT_PX): boolean {
   const query = `(max-width: ${breakpointPx - 1}px)`
-  const [isNarrow, setIsNarrow] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
-  )
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia(query).matches)
 
   useEffect(() => {
     const mql = window.matchMedia(query)

@@ -381,6 +381,13 @@ const deliveryAddressHandlers = [
     }),
   ),
   http.post(DELIVERY_ADDRESSES_URL, async ({ request }) => {
+    // 서버 한도(DeliveryAddressService.MAX_ACTIVE_DELIVERY_ADDRESSES=10)를 재현한다 — 초과는 422/30500.
+    if (deliveryAddressRows.length >= 10) {
+      return HttpResponse.json(
+        { errorCode: 30500, message: '배송지는 최대 10개까지만 등록할 수 있습니다.' },
+        { status: 422 },
+      )
+    }
     const body = (await request.json()) as Partial<DeliveryAddressRow>
     deliveryAddressSeq += 1
     // 서버는 활성 배송지가 없을 때 첫 건을 기본으로 만든다. 응답 isDefault가 달라지므로 재현한다.

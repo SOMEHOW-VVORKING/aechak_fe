@@ -1,5 +1,4 @@
 import { issuePresignedUrl } from '@aechak/api'
-import { PRODUCT_IMAGE_TYPES } from './products.contract'
 
 // 상품 이미지 업로드 — presigned(purpose=PRODUCT) 발급 → S3 PUT → tmp key. 받은 키를 등록/수정
 // 본문(thumbnailImageKey·additionalImageKeys·detailImageKeys)에 실으면 도메인 API가 정식 위치로
@@ -9,19 +8,15 @@ import { PRODUCT_IMAGE_TYPES } from './products.contract'
 // 자격증명이고 Authorization 헤더를 얹으면 서명 검증이 깨진다. Content-Type도 발급 때 보낸 값과
 // 똑같아야 한다(서명에 박혀 있다). URL 유효시간이 10분이라 저장 직전에 업로드한다.
 
-/** 서버 허용 형식(PRODUCT): 이미지 3종. 그 밖은 발급 단계에서 400/100000. */
+// 허용 형식(PRODUCT: 이미지 3종 = PRODUCT_IMAGE_TYPES)은 FE가 미리 보지 않는다 — 발급 단계에서
+// 400/100000으로 거절되고 그 문구를 ProductEditor가 해당 이미지 필드 아래에 붙인다(검증 1원화).
 export const MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024
-
-export function isSupportedProductImage(file: File): boolean {
-  return PRODUCT_IMAGE_TYPES.includes(file.type)
-}
 
 /** 서버 계약에는 크기 상한이 없다(presigned에 content-length 조건을 걸지 않는다) — 10MB는 FE UX 정책. */
 export function isWithinProductImageSizeLimit(file: File): boolean {
   return file.size <= MAX_PRODUCT_IMAGE_BYTES
 }
 
-export const UNSUPPORTED_PRODUCT_IMAGE_MESSAGE = 'JPG/PNG/WEBP 이미지만 올릴 수 있어요'
 export const OVERSIZED_PRODUCT_IMAGE_MESSAGE = `이미지는 1장당 ${MAX_PRODUCT_IMAGE_BYTES / 1024 / 1024}MB까지 올릴 수 있어요`
 
 /** 이미지 한 장을 업로드하고 등록/수정 본문에 실을 tmp 키를 돌려준다. */

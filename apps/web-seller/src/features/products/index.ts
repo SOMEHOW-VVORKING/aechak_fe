@@ -38,3 +38,4 @@ export {
 } from './products.contract'
 export { InventoryDrawer } from './components/InventoryDrawer'
 export { ProductEditor } from './components/ProductEditor'
+export { ProductMissing } from './components/ProductMissing'

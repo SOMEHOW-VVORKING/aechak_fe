@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { likeProduct, unlikeProduct, type ProductSummaryResponse } from '@aechak/api'
+import { errorResponse, likeProduct, unlikeProduct, type ProductSummaryResponse } from '@aechak/api'
 import { findMockProduct } from './products'
 import { addWish, clearWished, hydrateWished, isWished, removeWish } from './wishlist.store'
 
@@ -9,7 +9,7 @@ import { addWish, clearWished, hydrateWished, isWished, removeWish } from './wis
 export const LIKED_PRODUCTS_QUERY_KEY = ['wishlist', 'liked-products'] as const
 
 function isUnauthorized(error: unknown): boolean {
-  return (error as { response?: { status?: number } } | null)?.response?.status === 401
+  return errorResponse(error)?.status === 401
 }
 
 // 상품별 "원하는 최종 찜 상태"와 그 세대(generation), 진행 중 여부.
@@ -77,8 +77,9 @@ async function reconcile(id: string): Promise<void> {
   running.add(id)
   const epoch = sessionEpoch
   try {
-    while (desiredState.has(id) && sessionEpoch === epoch) {
-      const want = desiredState.get(id) as boolean
+    while (sessionEpoch === epoch) {
+      const want = desiredState.get(id)
+      if (want === undefined) break
       const gen = generation.get(id)
       try {
         if (want) await likeProduct(id)

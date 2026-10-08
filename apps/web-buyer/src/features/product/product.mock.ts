@@ -23,8 +23,9 @@ export interface ProductReviewSummary {
   distribution?: [number, number, number, number, number]
 }
 
-// 도메인 `Product`를 상세 화면용으로 확장한 뷰모델(임의 병렬 타입 아님 — Product를 그대로 상속).
-export interface ProductDetail extends Product {
+// 공용 `CatalogProduct`(도메인 Product + 카탈로그 표시 필드)를 상세 화면용으로 확장한 뷰모델(임의 병렬 타입 아님).
+// 목업 빌더와 실 매퍼 모두 CatalogProduct에서 출발하므로 thumbnailUrl/storeName 등이 항상 채워져 있다.
+export interface ProductDetail extends CatalogProduct {
   images: string[]
   breadcrumb: string[]
   // 무료배송 여부는 shared/catalog의 isFreeShipping이 단일 원본(검색 무료배송 필터와 동일 규칙).
@@ -106,11 +107,11 @@ function sampleReviews(product: Product): ProductReviewEntry[] {
 }
 
 function buildDetail(base: CatalogProduct): ProductDetail {
-  const total = base.reviewCount ?? 0
+  const total = base.reviewCount
   return {
     ...base,
     images: [
-      base.thumbnailUrl ?? placeholderImage(30),
+      base.thumbnailUrl,
       placeholderImage(90),
       placeholderImage(170),
       placeholderImage(260),

@@ -73,14 +73,15 @@ describe('/payment/result', () => {
   it('[AC-PAYMENT-011] 결제 실패 화면은 성공 화면처럼 큰 결과 형태로 세로 중앙 정렬된다', async () => {
     // 실패(카드) — 작은 Alert 배너가 아니라 원형 아이콘 + 큰 제목 + 회색 서브텍스트(실패 사유)를
     // flex-1 영역에서 세로 중앙 정렬(items-center justify-center)해 성공 화면과 정렬 리듬을
-    // 맞춘다(L-5). 제목 텍스트로 앵커하고 감싼 콘텐츠 영역의 중앙 정렬 속성을 확인한다.
+    // 맞춘다(L-5). 제목 텍스트로 앵커하고(제목은 공용 ResultHero 블록 안에 있다) 그 블록을 감싼
+    // 콘텐츠 영역의 중앙 정렬 속성을 확인한다.
     const fail = renderAt(
       '/payment/result?source=buynow&buyNow=p-feeder-5l&option=기본&qty=1&method=card&amount=64000',
     )
     const title = await fail.findByText('결제에 실패했어요', {}, { timeout: 3000 })
     // 실패 사유가 서브텍스트로 함께 보인다(작은 Alert 배너가 아니라 큰 결과 형태).
     expect(fail.getByText('카드 한도를 확인한 뒤 다시 시도해 주세요.')).toBeInTheDocument()
-    const content = title.parentElement
+    const content = title.parentElement?.parentElement
     expect(content).toHaveClass('flex-1', 'flex-col', 'items-center', 'justify-center')
   })
 })

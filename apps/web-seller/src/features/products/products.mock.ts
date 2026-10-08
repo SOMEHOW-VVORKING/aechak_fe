@@ -6,8 +6,6 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_ADDITIONAL_IMAGES,
   MAX_DETAIL_IMAGES,
-  MAX_REGULAR_PRICE,
-  MIN_REGULAR_PRICE,
   PRODUCT_IMAGE_TYPES,
   STOCK_DELTA_LIMIT,
   STOCK_MAX,
@@ -93,7 +91,7 @@ function checkLocalDateTime(value: string | null | undefined) {
 /** java.time ISO 파서는 STRICT라 2026-02-30을 거절한다. Date.parse는 3월 2일로 넘기므로 되돌려 비교한다. */
 function isRealDate(yyyyMmDd: string): boolean {
   const [y, m, d] = yyyyMmDd.split('-').map(Number)
-  return new Date(Date.UTC(y!, m! - 1, d!)).toISOString().slice(0, 10) === yyyyMmDd
+  return new Date(Date.UTC(y!, m! - 1, d)).toISOString().slice(0, 10) === yyyyMmDd
 }
 
 // ─── 카테고리 (GET /categories — api 호스트) ─────────────────────────────────
@@ -407,7 +405,12 @@ function activeDiscountPrice(p: MockProduct, now: number): number | null {
 
 // ─── 등록/수정 검증 ───────────────────────────────────────────────────────────
 
-const isBlank = (value: unknown) => typeof value !== 'string' || value.trim() === ''
+const isBlank = (value: string) => value.trim() === ''
+
+// 생성 타입에서 두 이미지 목록은 nullable이다(스펙 `nullable: true` — BE도 null을 빈 목록으로 본다).
+// 검증·개수 제한·승격이 `?? []`를 저마다 흩뿌리지 않도록 여기서 한 번만 좁힌다.
+const additionalKeys = (body: ProductUpdateRequest) => body.additionalImageKeys ?? []
+const detailKeys = (body: ProductUpdateRequest) => body.detailImageKeys ?? []
 
 /** @Valid(Bean Validation) + 본문 파싱 단계 — 전부 400/90001. */
 function checkUpdateBody(body: ProductUpdateRequest, rejectDuplicateKeys: boolean) {
@@ -417,7 +420,7 @@ function checkUpdateBody(body: ProductUpdateRequest, rejectDuplicateKeys: boolea
   if (body.discountPrice != null && !isLong(body.discountPrice)) throw invalid('요청 본문을 읽을 수 없습니다.')
   checkLocalDateTime(body.discountStartAt)
   checkLocalDateTime(body.discountEndAt)
-  for (const keys of [body.additionalImageKeys ?? [], body.detailImageKeys ?? []]) {
+  for (const keys of [additionalKeys(body), detailKeys(body)]) {
     if (keys.some(key => isBlank(key) || key.length > 1024)) throw invalid('imageKeys')
     // 등록은 중복을 거절하지 않는다. 수정만 한 목록 안 중복을 거절한다(두 목록 사이 중복은 허용).
     if (rejectDuplicateKeys && new Set(keys).size !== keys.length) throw invalid('imageKeys')
@@ -434,7 +437,7 @@ function checkRegisterBody(body: ProductRegisterRequest) {
     }
   }
   for (const c of body.optionCombinations) {
-    if (!Array.isArray(c.optionValues) || !isLong(c.additionalPrice) || !isInt32(c.stockQuantity)) {
+    if (!isLong(c.additionalPrice) || !isInt32(c.stockQuantity)) {
       throw invalid('요청 본문을 읽을 수 없습니다.')
     }
   }
@@ -464,6 +467,10 @@ function checkCategory(categoryId: number) {
   if (path.length !== 3) throw httpError(400, 40100, '소분류 카테고리만 선택할 수 있습니다.')
 }
 
+// Product.REGULAR_PRICE_MIN/MAX — FE는 범위를 미리 보지 않고 40001 응답 문구로 안내한다.
+const MIN_REGULAR_PRICE = 100
+const MAX_REGULAR_PRICE = 100_000_000
+
 /** Product.validatePricing — 날짜가 과거/미래인지는 보지 않는다. */
 function checkPrice({ regularPrice, discountPrice, discountStartAt, discountEndAt }: ProductUpdateRequest) {
   const priceError = () => httpError(400, 40001, '상품 가격이 올바르지 않습니다.')
@@ -476,15 +483,15 @@ function checkPrice({ regularPrice, discountPrice, discountStartAt, discountEndA
 }
 
 function checkImageCounts(body: ProductUpdateRequest) {
-  if ((body.additionalImageKeys ?? []).length > MAX_ADDITIONAL_IMAGES || (body.detailImageKeys ?? []).length > MAX_DETAIL_IMAGES) {
+  if (additionalKeys(body).length > MAX_ADDITIONAL_IMAGES || detailKeys(body).length > MAX_DETAIL_IMAGES) {
     throw httpError(400, 40003, '이미지 개수가 올바르지 않습니다.')
   }
 }
 
 const allImageKeys = (body: ProductUpdateRequest) => [
   body.thumbnailImageKey,
-  ...(body.additionalImageKeys ?? []),
-  ...(body.detailImageKeys ?? []),
+  ...additionalKeys(body),
+  ...detailKeys(body),
 ]
 
 // ─── 상품 API (/sellers/me/products — 셀러 호스트) ─────────────────────────────
@@ -616,7 +623,7 @@ export function mockRegisterProduct(body: ProductRegisterRequest): Promise<ApiRe
     }
 
     const [thumbnailImageKey, ...rest] = promote(allImageKeys(body), noKeptKeys)
-    const additionalCount = (body.additionalImageKeys ?? []).length
+    const additionalCount = additionalKeys(body).length
     const product: MockProduct = {
       seq: ++productSeq,
       productId: newUlid(),
@@ -664,7 +671,7 @@ export function mockUpdateProduct(
     checkImageKeys(allImageKeys(body), kept)
 
     const [thumbnailImageKey, ...rest] = promote(allImageKeys(body), kept)
-    const additionalCount = (body.additionalImageKeys ?? []).length
+    const additionalCount = additionalKeys(body).length
     Object.assign(product, {
       categoryId: body.categoryId,
       productName: body.productName,
@@ -687,7 +694,6 @@ export function mockChangeSaleStatus(
   { saleStatus }: SaleStatusChangeRequest,
 ): Promise<ApiResponse<SaleStatusChangeResponse>> {
   return respond(() => {
-    if (!SALE_STATUSES.includes(saleStatus)) throw invalid('요청 본문을 읽을 수 없습니다.')
     if (saleStatus !== 'ON_SALE' && saleStatus !== 'SUSPENDED') {
       throw invalid('판매중과 판매중지만 지정할 수 있습니다.')
     }
@@ -709,7 +715,6 @@ export function mockChangeOptionCombination(
     if (stockDelta != null && (!isInt(stockDelta) || stockDelta === 0 || Math.abs(stockDelta) > STOCK_DELTA_LIMIT)) {
       throw invalid('재고 증감은 0이 아닌 ±1000000 이내여야 합니다.')
     }
-    if (isActive != null && typeof isActive !== 'boolean') throw invalid('요청 본문을 읽을 수 없습니다.')
     const product = findProduct(productId)
     const combination = product.combinations.find(c => c.optionCombinationId === combinationId)
     if (!combination) throw notFound()

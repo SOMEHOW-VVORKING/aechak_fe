@@ -2,15 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { Review } from '@aechak/domain'
 import {
-  EmptyState,
   MobileScreen,
   Modal,
-  RatingInput,
   ReviewCard,
   Skeleton,
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { FilterChip } from '@/shared/components/FilterChip'
+import { RatingDistribution } from '@/shared/components/RatingDistribution'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
@@ -22,6 +23,7 @@ import {
   type ProductReviewsView,
 } from '../review.queries'
 import { REVIEW_SORTS, type ReviewSort } from '../review.mock'
+import { LoadMoreButton } from './LoadMoreButton'
 import { MyReviewCard } from './MyReviewCard'
 
 // 상품 리뷰 목록(b4-st-3). 별점 분포 + 정렬(최신순/별점높은순) + 포토리뷰만 필터 + 리뷰 카드 목록.
@@ -58,31 +60,27 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
         // 단 정렬/포토 칩은 이 에러 화면에 없으므로(칩이 ReviewsBody 안에 있다) 위 주석이 말한
         // "칩을 되돌리면 캐시된 목록이 다시 뜬다"를 사용자가 실행할 수단이 없다 — 기본 필터가
         // 아닌 상태에서 실패했을 때만 기본으로 되돌리는 길을 준다(재시도가 아니라 상태 복원).
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="리뷰를 불러오지 못했어요"
-            description="네트워크 상태를 확인하고 잠시 후 다시 들어와 주세요."
-            action={
-              isDefaultFilter
-                ? undefined
-                : {
-                    label: '최신순으로 보기',
-                    onClick: () => {
-                      setSort('latest')
-                      setPhotoOnly(false)
-                    },
-                  }
-            }
-          />
-        </div>
+        <ScreenEmptyState
+          title="리뷰를 불러오지 못했어요"
+          description="네트워크 상태를 확인하고 잠시 후 다시 들어와 주세요."
+          action={
+            isDefaultFilter
+              ? undefined
+              : {
+                  label: '최신순으로 보기',
+                  onClick: () => {
+                    setSort('latest')
+                    setPhotoOnly(false)
+                  },
+                }
+          }
+        />
       ) : !data ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="상품을 찾을 수 없어요"
-            description="삭제되었거나 주소가 올바르지 않은 상품이에요."
-            action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="상품을 찾을 수 없어요"
+          description="삭제되었거나 주소가 올바르지 않은 상품이에요."
+          action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
+        />
       ) : (
         <ReviewsBody
           data={data}
@@ -149,52 +147,30 @@ function ReviewsBody({
   return (
     <div className="flex flex-col">
       {/* 평점 요약 */}
-      <div className="flex items-center gap-5 border-b border-border-subtle p-4">
-        <div className="flex flex-none flex-col items-center gap-1">
-          <span className="text-display font-bold leading-none text-text-primary">
-            {data.average.toFixed(1)}
-          </span>
-          <RatingInput value={data.average} readonly size={14} />
-          <span className="text-caption text-text-tertiary">{data.total.toLocaleString('ko-KR')}개</span>
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          {data.distribution.map((pct, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <span className="w-4 flex-none text-caption text-text-tertiary">{5 - i}</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunken">
-                <div className="h-full rounded-full bg-warning" style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <RatingDistribution
+        average={data.average}
+        total={data.total}
+        distribution={data.distribution}
+        className="gap-5 border-b border-border-subtle p-4"
+      />
 
       {/* 정렬 칩(최신순/별점높은순, 배타) + 포토리뷰만 토글(독립). 서버 계약대로 정렬과 필터를 분리한다. */}
       <div className="flex gap-2 px-4 py-3">
         <div className="flex gap-2" role="group" aria-label="리뷰 정렬">
-          {REVIEW_SORTS.map(option => {
-            const active = option.value === sort
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onSort(option.value)}
-                className={chipClass(active)}
-              >
-                {option.label}
-              </button>
-            )
-          })}
+          {REVIEW_SORTS.map(option => (
+            <FilterChip
+              key={option.value}
+              size="sm"
+              selected={option.value === sort}
+              onClick={() => onSort(option.value)}
+            >
+              {option.label}
+            </FilterChip>
+          ))}
         </div>
-        <button
-          type="button"
-          aria-pressed={photoOnly}
-          onClick={() => onPhotoOnlyChange(!photoOnly)}
-          className={chipClass(photoOnly)}
-        >
+        <FilterChip size="sm" selected={photoOnly} onClick={() => onPhotoOnlyChange(!photoOnly)}>
           포토리뷰만
-        </button>
+        </FilterChip>
       </div>
 
       {/* 정렬 칩 아래 두꺼운 sunken 구분 바는 제거했다 — 정렬 칩과 목록 사이 여백만 유지. */}
@@ -256,14 +232,7 @@ function ReviewsBody({
 
       {hasNextPage && (
         <div className="px-4 pb-4">
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={isFetchingNextPage}
-            className="h-11 w-full rounded-button border border-border bg-surface-base text-body-sm font-medium text-text-secondary transition-colors disabled:opacity-60"
-          >
-            {isFetchingNextPage ? '불러오는 중…' : '더보기'}
-          </button>
+          <LoadMoreButton onClick={onLoadMore} loading={isFetchingNextPage} />
         </div>
       )}
 
@@ -289,16 +258,6 @@ function ReviewsBody({
       />
     </div>
   )
-}
-
-// 정렬/필터 칩 공용 스타일 — 활성(brand subtle) / 비활성(중립) 두 상태.
-function chipClass(active: boolean): string {
-  return [
-    'h-8 rounded-chip border px-3 text-body-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
-    active
-      ? 'border-brand-border bg-brand-subtle font-semibold text-brand'
-      : 'border-border bg-surface-base text-text-secondary',
-  ].join(' ')
 }
 
 function ReviewsSkeleton() {

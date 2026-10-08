@@ -1963,6 +1963,8 @@ components:
           description: "요청자 본인이 쓴 리뷰인지. 수정/삭제 노출 대상 판별에 쓴다(SCRUM-210)."
         rating:
           type: integer
+          # BE Review 도메인이 1~5 밖은 생성 시점에 거절한다(Review.kt `rating !in 1..5`) — 응답도 같은 범위다.
+          enum: [1, 2, 3, 4, 5]
         content:
           type: string
         optionName:
@@ -2059,6 +2061,8 @@ components:
           description: "서버 내부 상품 id(숫자). 화면이 쓰는 공개 ULID와 다르다."
         rating:
           type: integer
+          # BE Review 도메인이 1~5 밖은 생성 시점에 거절한다(Review.kt `rating !in 1..5`) — 응답도 같은 범위다.
+          enum: [1, 2, 3, 4, 5]
         content:
           type: string
         optionName:
@@ -2096,6 +2100,8 @@ components:
           format: int64
         rating:
           type: integer
+          # BE Review 도메인이 1~5 밖은 생성 시점에 거절한다(Review.kt `rating !in 1..5`) — 응답도 같은 범위다.
+          enum: [1, 2, 3, 4, 5]
         content:
           type: string
         reviewStatus:
@@ -2411,8 +2417,7 @@ components:
       required: [documentType, uploadedAt]
       properties:
         documentType:
-          type: string
-          description: "SellerDocumentType 값(서버가 String으로 직렬화)"
+          $ref: "#/components/schemas/SellerDocumentType"
         uploadedAt:
           type: string
           description: "등록/교체 시각 — LocalDateTime 직렬화라 타임존 오프셋이 없다"

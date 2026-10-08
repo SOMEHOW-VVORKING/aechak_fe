@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { MSW_PHONE_CODE, currentAccount, seedAccount } from '../../../testing/msw/server'
+import { HttpResponse, http } from 'msw'
+import {
+  MSW_PHONE_CODE,
+  PHONE_VERIFICATIONS_CONFIRM_URL,
+  PHONE_VERIFICATIONS_URL,
+  currentAccount,
+  seedAccount,
+  server,
+} from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -89,7 +97,13 @@ describe('/mypage/verify (실서버 계약 — MSW)', () => {
     expect(screen.getByText(/남은 시간 \d+:\d{2}/)).toBeInTheDocument()
   })
 
-  it('[AC-VERIFY-006] 형식이 틀린 번호는 서버 호출 없이 인라인 오류를 보여준다', async () => {
+  it('[AC-VERIFY-006] 번호 형식은 서버가 판정한다 — 발송 400/90001을 인라인 해요체로 보여준다', async () => {
+    // 클라이언트 정규식은 없다(BE PhoneVerificationPatterns와 중복). BE @Valid 실패 모양 그대로 응답한다.
+    server.use(
+      http.post(PHONE_VERIFICATIONS_URL, () =>
+        HttpResponse.json({ errorCode: 90001, message: '휴대폰 번호 형식이 올바르지 않습니다.' }, { status: 400 }),
+      ),
+    )
     const user = userEvent.setup()
     renderAt('/mypage/verify')
 
@@ -98,5 +112,24 @@ describe('/mypage/verify (실서버 계약 — MSW)', () => {
 
     expect(await screen.findByText('휴대폰 번호 형식을 확인해 주세요.')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('6자리 숫자')).not.toBeInTheDocument()
+  })
+
+  it('[AC-VERIFY-007] 인증번호 형식은 서버가 판정한다 — 확인 400/90001은 인증번호 안내로 보여준다', async () => {
+    server.use(
+      http.post(PHONE_VERIFICATIONS_CONFIRM_URL, () =>
+        HttpResponse.json({ errorCode: 90001, message: '인증번호는 6자리 숫자입니다.' }, { status: 400 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+    // 자릿수 게이트가 없어 4자리로도 제출된다 — 서버가 거절하고 화면은 확인 단계 문구를 보여준다.
+    await user.type(await screen.findByPlaceholderText('6자리 숫자'), '1234')
+    await user.click(screen.getByRole('button', { name: '인증 완료' }))
+
+    expect(await screen.findByText('인증번호 6자리 숫자를 입력해 주세요.')).toBeInTheDocument()
+    expect(currentAccount().isPhoneVerified).toBe(false)
   })
 })

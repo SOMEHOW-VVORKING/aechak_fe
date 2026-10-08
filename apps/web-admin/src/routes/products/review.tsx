@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Ban, Check, Clock, EyeOff, ImageOff } from 'lucide-react'
 import {
@@ -8,7 +8,6 @@ import {
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
   StatusPill,
@@ -20,17 +19,22 @@ import type { ProductReviewItem, ProductReviewSaleStatus } from '@aechak/domain'
 import { useProductReviewItems } from '@/features/product-review'
 import { ActorTag } from '@/shared/components/ActorTag'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
+import { FilterSelect } from '@/shared/components/FilterSelect'
+import { MediaPlaceholder } from '@/shared/components/MediaPlaceholder'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/products/review')({
   component: ProductReviewPage,
 })
 
-const saleStatusMeta: Record<
-  ProductReviewSaleStatus,
-  { label: string; variant: 'success' | 'warning' | 'neutral' | 'error' }
-> = {
+const saleStatusMeta: Record<ProductReviewSaleStatus, StatusMeta> = {
   'on-sale': { label: '판매중', variant: 'success' },
   suspended: { label: '판매 중지', variant: 'warning' },
   'pending-review': { label: '검수 대기', variant: 'neutral' },
@@ -77,20 +81,21 @@ function ReviewCell({ item }: { item: ProductReviewItem }) {
   )
 }
 
+function BlindPill({ blindType }: { blindType: ProductReviewItem['blindType'] }) {
+  return (
+    <StatusPill variant="muted">
+      <EyeOff className="size-3" />
+      {blindType === 'auto' ? '자동 블라인드' : '블라인드'}
+    </StatusPill>
+  )
+}
+
 function makeReviewColumns(onOpenDetail: (row: ProductReviewItem) => void): Column<ProductReviewItem>[] {
   return [
     {
       key: 'name',
       label: '상품명',
-      render: row => (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(row)}
-          className="font-medium text-text-primary hover:text-brand hover:underline"
-        >
-          {row.name}
-        </button>
-      ),
+      render: row => <RowLinkButton onClick={() => onOpenDetail(row)}>{row.name}</RowLinkButton>,
     },
     { key: 'sellerName', label: '셀러' },
     { key: 'category', label: '카테고리' },
@@ -98,11 +103,7 @@ function makeReviewColumns(onOpenDetail: (row: ProductReviewItem) => void): Colu
       key: 'saleStatus',
       label: '판매 상태',
       align: 'center',
-      render: row => (
-        <StatusPill variant={saleStatusMeta[row.saleStatus].variant}>
-          {saleStatusMeta[row.saleStatus].label}
-        </StatusPill>
-      ),
+      render: row => <StatusMetaPill meta={saleStatusMeta[row.saleStatus]} />,
     },
     {
       key: 'reportCount',
@@ -120,13 +121,7 @@ function makeReviewColumns(onOpenDetail: (row: ProductReviewItem) => void): Colu
       key: 'isBlinded',
       label: '블라인드',
       align: 'center',
-      render: row =>
-        row.isBlinded ? (
-          <StatusPill variant="muted">
-            <EyeOff className="size-3" />
-            {row.blindType === 'auto' ? '자동 블라인드' : '블라인드'}
-          </StatusPill>
-        ) : null,
+      render: row => (row.isBlinded ? <BlindPill blindType={row.blindType} /> : null),
     },
     {
       key: 'registeredAt',
@@ -139,11 +134,8 @@ function makeReviewColumns(onOpenDetail: (row: ProductReviewItem) => void): Colu
 
 function ProductReviewPage() {
   const { data, isLoading } = useProductReviewItems()
-  const [rows, setRows] = useState<ProductReviewItem[] | null>(null)
-  useEffect(() => {
-    if (data && rows === null) setRows(data)
-  }, [data, rows])
-  const items = rows ?? []
+  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
+    useDetailList(data)
 
   const [saleStatusFilter, setSaleStatusFilter] = useState('all')
   const [aiReviewFilter, setAiReviewFilter] = useState('all')
@@ -162,36 +154,21 @@ function ProductReviewPage() {
     [items, saleStatusFilter, aiReviewFilter, categoryFilter, search],
   )
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find(row => row.id === selectedId) ?? null
-
   const [decision, setDecision] = useState('pass')
   const [processReason, setProcessReason] = useState('')
   const [sellerNotice, setSellerNotice] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
 
   function openDrawer(row: ProductReviewItem) {
-    setSelectedId(row.id)
+    select(row.id)
     setDecision(row.saleStatus === 'rejected' ? 'reject' : 'pass')
     setProcessReason(row.processReason ?? '')
     setSellerNotice(row.sellerNotice ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function closeDrawer() {
-    setSelectedId(null)
-    setConfirmOpen(false)
-  }
-
-  function updateSelected(patch: Partial<ProductReviewItem>) {
-    if (!selected) return
-    setRows(prev => (prev ?? []).map(row => (row.id === selected.id ? { ...row, ...patch } : row)))
-  }
-
-  function handlePass() {
-    updateSelected({
+  function handlePass(target: ProductReviewItem) {
+    patchRow(target.id, {
       saleStatus: 'on-sale',
       reviewStatus: 'passed',
       reviewActor: 'admin',
@@ -202,8 +179,8 @@ function ProductReviewPage() {
     closeDrawer()
   }
 
-  function handleKeepBlinded() {
-    updateSelected({
+  function handleKeepBlinded(target: ProductReviewItem) {
+    patchRow(target.id, {
       isBlinded: true,
       blindType: 'manual',
       reviewActor: 'admin',
@@ -215,15 +192,15 @@ function ProductReviewPage() {
     closeDrawer()
   }
 
-  function handleConfirmStopSale() {
-    updateSelected({
+  function handleConfirmStopSale(target: ProductReviewItem) {
+    patchRow(target.id, {
       saleStatus: 'suspended',
       reviewActor: 'admin',
       processReason,
       sellerNotice,
       internalMemo,
     })
-    setToast(`'${selected?.name}' 판매를 중지했어요.`)
+    setToast(`'${target.name}' 판매를 중지했어요.`)
     closeDrawer()
   }
 
@@ -233,21 +210,12 @@ function ProductReviewPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="상품 검수 관리" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        셀러 등록 상품 · 신고 상품 · 블라인드 상품을 검수합니다.
-      </p>
+      <PageIntro title="상품 검수 관리" description="셀러 등록 상품 · 신고 상품 · 블라인드 상품을 검수합니다." />
 
       <FilterBar className="mb-3.5">
-        <div className="w-40">
-          <Select options={saleStatusFilterOptions} value={saleStatusFilter} onChange={setSaleStatusFilter} />
-        </div>
-        <div className="w-40">
-          <Select options={aiReviewFilterOptions} value={aiReviewFilter} onChange={setAiReviewFilter} />
-        </div>
-        <div className="w-40">
-          <Select options={categoryFilterOptions} value={categoryFilter} onChange={setCategoryFilter} />
-        </div>
+        <FilterSelect options={saleStatusFilterOptions} value={saleStatusFilter} onChange={setSaleStatusFilter} />
+        <FilterSelect options={aiReviewFilterOptions} value={aiReviewFilter} onChange={setAiReviewFilter} />
+        <FilterSelect options={categoryFilterOptions} value={categoryFilter} onChange={setCategoryFilter} />
         <SearchInput value={search} onChange={setSearch} placeholder="상품명 · 셀러 검색" className="w-64" />
       </FilterBar>
 
@@ -260,13 +228,31 @@ function ProductReviewPage() {
         emptyLabel="조건에 맞는 상품이 없습니다."
       />
 
-      <Drawer open={selected !== null} onClose={closeDrawer} title="상품 검수 상세" width="lg">
+      <Drawer open={selected !== undefined} onClose={closeDrawer} title="상품 검수 상세" width="lg">
         {selected && (
-          <div className="space-y-5">
+          <DetailDrawerBody
+            actions={
+              <>
+                <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => handlePass(selected)}>
+                  검수 통과
+                </Button>
+                <Button
+                  variant="secondary"
+                  leftIcon={<EyeOff className="size-4" />}
+                  onClick={() => handleKeepBlinded(selected)}
+                >
+                  블라인드 유지
+                </Button>
+                <Button variant="danger" leftIcon={<Ban className="size-4" />} onClick={() => setConfirmOpen(true)}>
+                  판매 중지
+                </Button>
+              </>
+            }
+          >
             <div className="flex gap-3">
-              <div className="flex size-[72px] flex-none items-center justify-center rounded-md bg-surface-sunken text-icon-muted">
+              <MediaPlaceholder className="size-[72px] flex-none">
                 <ImageOff className="size-6" />
-              </div>
+              </MediaPlaceholder>
               <div className="min-w-0 space-y-1.5">
                 <p className="font-semibold text-text-primary">{selected.name}</p>
                 <p className="text-caption text-text-tertiary">
@@ -274,12 +260,7 @@ function ProductReviewPage() {
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {selected.reviewActor && <ActorTag actor={selected.reviewActor} />}
-                  {selected.isBlinded && (
-                    <StatusPill variant="muted">
-                      <EyeOff className="size-3" />
-                      {selected.blindType === 'auto' ? '자동 블라인드' : '블라인드'}
-                    </StatusPill>
-                  )}
+                  {selected.isBlinded && <BlindPill blindType={selected.blindType} />}
                 </div>
               </div>
             </div>
@@ -330,46 +311,28 @@ function ProductReviewPage() {
                 placeholder="내부 공유용 메모를 입력하세요."
               />
             </DetailField>
-
-            <div className="flex gap-2 border-t border-border-subtle pt-4">
-              <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={handlePass}>
-                검수 통과
-              </Button>
-              <Button
-                variant="secondary"
-                leftIcon={<EyeOff className="size-4" />}
-                onClick={handleKeepBlinded}
-              >
-                블라인드 유지
-              </Button>
-              <Button
-                variant="danger"
-                leftIcon={<Ban className="size-4" />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                판매 중지
-              </Button>
-            </div>
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title="상품을 판매 중지할까요?"
-        description="판매 중지 시 즉시 노출이 중단되고 셀러에게 통보돼요. 처리 내역은 액션 로그에 기록돼요."
-        confirmLabel="판매 중지"
-        confirmVariant="danger"
-        onConfirm={handleConfirmStopSale}
-      >
-        <SummaryGrid
-          items={[
-            { label: '대상 상품', value: selected?.name ?? '' },
-            { label: '사유', value: processReasonLabel },
-          ]}
-        />
-      </Modal>
+      {selected && (
+        <Modal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title="상품을 판매 중지할까요?"
+          description="판매 중지 시 즉시 노출이 중단되고 셀러에게 통보돼요. 처리 내역은 액션 로그에 기록돼요."
+          confirmLabel="판매 중지"
+          confirmVariant="danger"
+          onConfirm={() => handleConfirmStopSale(selected)}
+        >
+          <SummaryGrid
+            items={[
+              { label: '대상 상품', value: selected.name },
+              { label: '사유', value: processReasonLabel },
+            ]}
+          />
+        </Modal>
+      )}
 
       {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
     </div>

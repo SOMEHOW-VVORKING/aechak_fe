@@ -4,7 +4,7 @@ import { Apple, Globe, Info, MessageCircle } from 'lucide-react'
 import { WEB_LOGIN_PROVIDERS, type SocialProvider } from '../auth.session'
 
 interface LoginFormProps {
-  onSocialLogin?: (provider: SocialProvider) => void
+  onSocialLogin: (provider: SocialProvider) => void
   /** 리다이렉트 중인 provider — 해당 버튼에 로딩, 나머지는 비활성. */
   redirecting?: SocialProvider | null
   /** 로그인 실패 복귀(?error=) 인라인 안내. */
@@ -41,7 +41,7 @@ export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: L
               leftIcon={icon}
               loading={redirecting === provider}
               disabled={!supported || redirecting !== null}
-              onClick={() => onSocialLogin?.(provider)}
+              onClick={() => onSocialLogin(provider)}
             >
               {supported ? label : `${label} (준비 중)`}
             </Button>

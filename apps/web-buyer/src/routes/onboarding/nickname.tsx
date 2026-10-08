@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CheckCircle2 } from 'lucide-react'
+import { errorResponse } from '@aechak/api'
 import { Alert, BottomFixedAction, Input, MobileScreen } from '@aechak/design-system/web'
 import {
   NICKNAME_MAX_LENGTH,
   OnboardingHeader,
-  isValidNicknameFormat,
   onboardingErrorMessage,
-  readErrorCode,
   useNicknameAvailability,
   useSetNickname,
 } from '@/features/onboarding'
@@ -32,25 +31,25 @@ function NicknameSetupRoute() {
     return () => clearTimeout(timer)
   }, [nickname])
 
-  // 형식은 서버 규칙(NFC + 정규식)으로 사전 판정한다. 통과할 때만 중복 확인이 서버로 나간다.
-  const isValidFormat = isValidNicknameFormat(nickname)
-  const { data: isAvailable, isFetching } = useNicknameAvailability(debounced)
+  // 형식(30002)과 가용 여부는 중복 확인 응답이 함께 알려준다 — 클라이언트 정규식 없이 서버 판정을 그대로 보여준다.
+  const { data: isAvailable, error: checkError, isFetching } = useNicknameAvailability(debounced)
 
-  const isChecking = isValidFormat && (debounced !== nickname || isFetching)
-  const canSubmit = isValidFormat && !isChecking && isAvailable === true && !submit.isPending
+  const isChecking = nickname !== '' && (debounced !== nickname || isFetching)
+  const canSubmit = nickname !== '' && !isChecking && isAvailable === true && !submit.isPending
 
   let state: 'default' | 'error' | 'success' = 'default'
   let helperText: string | undefined
-  if (nickname.length > 0 && !isValidFormat) {
-    // 형식 위반은 서버 호출 없이 즉시 인라인으로 안내한다.
-    state = 'error'
-    helperText = '2~12자의 한글, 영문, 숫자로 입력해 주세요'
+  if (nickname === '') {
+    // 입력 전에는 안내 없음(디바운스 전 값에 대한 이전 판정이 남아 보이지 않게).
   } else if (isChecking) {
     helperText = '중복 확인 중...'
-  } else if (isValidFormat && isAvailable === true) {
+  } else if (checkError) {
+    state = 'error'
+    helperText = onboardingErrorMessage(checkError)
+  } else if (isAvailable === true) {
     state = 'success'
     helperText = '사용할 수 있는 닉네임이에요'
-  } else if (isValidFormat && isAvailable === false) {
+  } else if (isAvailable === false) {
     state = 'error'
     helperText = '이미 사용 중인 닉네임이에요'
   }
@@ -70,7 +69,7 @@ function NicknameSetupRoute() {
         }
       },
       onError: error => {
-        const { errorCode } = readErrorCode(error)
+        const errorCode = errorResponse(error)?.data?.errorCode
         // 필수 동의 미완(30300): 약관 화면으로 되돌린다.
         if (errorCode === 30300) {
           navigate({ to: '/onboarding/terms' })
@@ -140,7 +139,7 @@ function NicknameSetupRoute() {
       <Input
         label="닉네임 *"
         value={nickname}
-        onChange={e => setNickname(e.target.value.slice(0, NICKNAME_MAX_LENGTH))}
+        onChange={e => setNickname(e.target.value)}
         maxLength={NICKNAME_MAX_LENGTH}
         state={state}
         helperText={helperText}

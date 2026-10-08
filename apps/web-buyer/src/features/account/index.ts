@@ -5,8 +5,6 @@ export {
   NICKNAME_MAX,
   BIO_MAX,
   OTP_LENGTH,
-  validateNickname,
-  isValidPhoneNumber,
   WITHDRAW_DELETED_INFO,
   WITHDRAW_RETAINED_INFO,
   WITHDRAW_RETENTION_YEARS,

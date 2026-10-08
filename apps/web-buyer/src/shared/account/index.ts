@@ -11,10 +11,9 @@ export {
   useUpdateProfile,
 } from './account.queries'
 export {
-  isSupportedAvatar,
+  avatarUploadErrorMessage,
   isWithinAvatarSizeLimit,
   uploadAvatar,
   MAX_AVATAR_BYTES,
   OVERSIZED_AVATAR_MESSAGE,
-  UNSUPPORTED_AVATAR_MESSAGE,
 } from './account.upload'

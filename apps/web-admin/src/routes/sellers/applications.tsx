@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Ban,
-  Briefcase,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  FileEdit,
-  Loader,
-  User,
-  XCircle,
-} from 'lucide-react'
+import { Ban, Check, ChevronLeft, ChevronRight, Clock, FileEdit, Loader, XCircle } from 'lucide-react'
 import {
   Alert,
   Button,
@@ -19,10 +8,8 @@ import {
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
-  StatusPill,
   Textarea,
   Toast,
 } from '@aechak/design-system/web'
@@ -49,12 +36,18 @@ import {
   type ApplicationDecision,
   type ApplicationRowView,
   type RejectionReasonDraft,
-  type SellerType,
 } from '@/features/seller-applications'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { SellerTypePill, sellerTypeLabel } from '@/shared/components/SellerTypePill'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
 
 export const Route = createFileRoute('/sellers/applications')({
@@ -62,15 +55,9 @@ export const Route = createFileRoute('/sellers/applications')({
 })
 
 // BE ApplicationStatus 1:1. reviewing/cancelled는 서버에 전이 코드가 없어 생기지 않는 값이지만
-// 응답에 실릴 수 있으니 표시용으로는 6값을 다 채운다 — 필터 탭은 STATUS_FILTER_VALUES만 쓴다.
-const statusMeta: Record<
-  SellerApplicationStatus,
-  {
-    label: string
-    variant: 'neutral' | 'info' | 'success' | 'error' | 'warning' | 'muted'
-    icon: typeof Clock
-  }
-> = {
+// 응답에 실릴 수 있으니 표시용으로는 6값을 다 채운다 — 필터 탭은 STATUS_FILTER_VALUES만 쓴다
+// (draft는 셀러가 작성 중인 신청서로 실제 목록에 실리므로 필터에 남는다).
+const statusMeta: Record<SellerApplicationStatus, StatusMeta> = {
   draft: { label: '작성 중', variant: 'muted', icon: FileEdit },
   submitted: { label: '심사 대기', variant: 'neutral', icon: Clock },
   reviewing: { label: '심사 중', variant: 'info', icon: Loader },
@@ -118,20 +105,6 @@ const typeFilterOptions = [
   { value: 'individual', label: '개인' },
 ]
 
-function SellerTypePill({ sellerType }: { sellerType: SellerType }) {
-  return sellerType === 'business' ? (
-    <StatusPill variant="neutral">
-      <Briefcase className="size-3" />
-      사업자
-    </StatusPill>
-  ) : (
-    <StatusPill variant="info">
-      <User className="size-3" />
-      개인
-    </StatusPill>
-  )
-}
-
 // 목록에 사업자번호 컬럼이 없는 이유: 목록 응답(AdminApplicationSummary)에 사업자등록번호가
 // 아예 없다. 행마다 상세를 부르지 않으면 채울 수 없는 값이라 컬럼과 번호 검색 조건을 뺐고,
 // 사업자등록번호는 상세 Drawer에서 평문을 마스킹해 보여 준다.
@@ -143,13 +116,7 @@ function makeApplicationColumns(
       key: 'applicantName',
       label: '신청자',
       render: row => (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(row)}
-          className="font-medium text-text-primary hover:text-brand hover:underline"
-        >
-          {row.applicantName}
-        </button>
+        <RowLinkButton onClick={() => onOpenDetail(row)}>{row.applicantName}</RowLinkButton>
       ),
     },
     {
@@ -162,16 +129,7 @@ function makeApplicationColumns(
       key: 'status',
       label: '심사 상태',
       align: 'center',
-      render: row => {
-        const meta = statusMeta[row.status]
-        const Icon = meta.icon
-        return (
-          <StatusPill variant={meta.variant}>
-            <Icon className="size-3" />
-            {meta.label}
-          </StatusPill>
-        )
-      },
+      render: row => <StatusMetaPill meta={statusMeta[row.status]} />,
     },
     {
       // 값이 submittedAt이므로 라벨도 '제출일'이다 — 상세 Drawer가 appliedAt을 '신청일'로
@@ -224,6 +182,12 @@ function SellerApplicationsPage() {
     setPage(0)
   }
 
+  // 공용 useDetailList를 쓰지 않는 이유: 그 훅은 `selected`를 목록 행에서 id로 찾고 결정 결과를
+  // 로컬 edits로 덮어쓴다(처리 API가 없던 시절의 패턴, 훅 주석에도 "실제 mutation이 붙으면
+  // invalidateQueries로 바꾼다"고 적혀 있다). 이 화면은 결정이 204 + 무효화로 반영되므로,
+  // 재조회로 행이 현재 페이지·필터에서 빠지는 순간 `selected`가 undefined가 되어 Drawer가
+  // 닫힌다 — 409 안내를 띄운 채 바뀐 상태를 보여 주는 동작이 바로 그 경로에서 깨진다.
+  // 그래서 선택 상태는 목록과 무관하게 여기서 들고, 상세는 별도 쿼리로 받는다.
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedRow, setSelectedRow] = useState<ApplicationRowView | null>(null)
   const detailQuery = useSellerApplicationDetail(selectedId)
@@ -338,29 +302,26 @@ function SellerApplicationsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="셀러 입점 심사" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        입점 신청을 확인하고 승인 / 반려를 처리해요.
-      </p>
+      <PageIntro
+        title="셀러 입점 심사"
+        description="입점 신청을 확인하고 승인 / 반려를 처리해요."
+      />
 
       <div className="mb-3.5 flex items-center justify-between gap-4">
         <FilterBar>
-          <div className="w-40">
-            <Select
-              aria-label="심사 상태 필터"
-              options={statusFilterOptions}
-              value={statusFilter}
-              onChange={changeStatusFilter}
-            />
-          </div>
-          <div className="w-36">
-            <Select
-              aria-label="판매자 유형 필터"
-              options={typeFilterOptions}
-              value={typeFilter}
-              onChange={setTypeFilter}
-            />
-          </div>
+          <FilterSelect
+            aria-label="심사 상태 필터"
+            options={statusFilterOptions}
+            value={statusFilter}
+            onChange={changeStatusFilter}
+          />
+          <FilterSelect
+            narrow
+            aria-label="판매자 유형 필터"
+            options={typeFilterOptions}
+            value={typeFilter}
+            onChange={setTypeFilter}
+          />
           <SearchInput
             value={search}
             onChange={setSearch}
@@ -443,28 +404,42 @@ function SellerApplicationsPage() {
         )}
 
         {detail && (
-          <div className="space-y-5">
-            <p className="-mt-2 text-body-sm text-text-tertiary">
-              {detail.applicantName} / {detail.sellerType === 'business' ? '사업자 셀러' : '개인 셀러'}
-            </p>
-
+          <DetailDrawerBody
+            subtitle={`${detail.applicantName} / ${sellerTypeLabel(detail.sellerType)}`}
+            // DetailDrawerBody는 하단 액션 바를 늘 그린다 — 결정 불가 상태에서 actions를 비우면
+            // 빈 구분선만 남으므로, 버튼이 섰을 자리에 '왜 처리할 수 없는지'를 대신 놓는다.
+            // (AC-SELLER-APP-010: 결정 불가 상태에서 '제출' 버튼은 아예 없어야 한다.)
+            actions={
+              decidable ? (
+                <Button
+                  variant="primary"
+                  leftIcon={<Check className="size-4" />}
+                  disabled={submitDisabled}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  제출
+                </Button>
+              ) : (
+                <p className="text-body-sm text-text-tertiary">
+                  {statusMeta[detail.status].label} 상태라 승인 / 반려를 처리할 수 없어요. 심사는
+                  심사 대기 상태에서만 할 수 있어요.
+                </p>
+              )
+            }
+          >
             {decisionError && <Alert variant="warning">{decisionError}</Alert>}
             {documentError && <Alert variant="error">{documentError}</Alert>}
 
             <DrawerSummaryCard
               pills={
                 <>
-                  <SellerTypePill sellerType={detail.sellerType} />
-                  <StatusPill variant={statusMeta[detail.status].variant}>
-                    {(() => {
-                      const Icon = statusMeta[detail.status].icon
-                      return <Icon className="size-3" />
-                    })()}
-                    {statusMeta[detail.status].label}
-                  </StatusPill>
+                  <SellerTypePill sellerType={detail.sellerType} long />
+                  <StatusMetaPill meta={statusMeta[detail.status]} />
                 </>
               }
             >
+              {/* 연락처 칸이 없는 이유: 상세 응답(AdminApplicationDetailResponse)에 전화번호가
+                  없다. 목록에도 없어 어느 화면에서도 만들어 낼 수 없는 값이라 칸째로 뺐다. */}
               <SummaryGrid
                 items={[
                   { label: '대표자', value: detail.representativeNameMasked ?? '—' },
@@ -480,6 +455,9 @@ function SellerApplicationsPage() {
                 <p className="text-body-sm text-text-tertiary">제출된 서류가 없어요.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
+                  {/* 서류 타일은 공용 MediaPlaceholder를 쓰지 않는다 — 저쪽은 비대화형 <div>
+                      자리표시자이고, 이 타일은 presigned URL을 여는 실제 버튼이라 역할(button)과
+                      접근 가능한 이름이 필요하다. 색·모서리 토큰은 같은 값으로 맞춰 둔다. */}
                   {/* 콜백 파라미터를 document로 지으면 전역 document를 가린다 — doc으로 쓴다. */}
                   {detail.documents.map(doc => {
                     const Icon = doc.icon
@@ -492,9 +470,9 @@ function SellerApplicationsPage() {
                         type="button"
                         onClick={() => openDocument(doc.documentType)}
                         aria-label={`${doc.label} 열기`}
-                        className="flex h-[72px] w-[104px] flex-col items-center justify-center gap-1 rounded-md border border-border-subtle bg-surface-sunken px-2 text-center hover:bg-surface-hover"
+                        className="flex h-[72px] w-[104px] flex-col items-center justify-center gap-1 rounded-md border border-border-subtle bg-surface-sunken px-2 text-center text-icon-muted hover:bg-surface-hover"
                       >
-                        <Icon className="size-4 text-icon-muted" />
+                        <Icon className="size-4" />
                         <span className="break-keep text-caption leading-tight text-text-tertiary">
                           {doc.label}
                         </span>
@@ -510,24 +488,19 @@ function SellerApplicationsPage() {
 
             {/* BE 심사 결정은 승인/반려 2종이다 — 보완 요청은 별도 상태가 아니라 반려(사유 통보)
                 후 신청자가 재제출하는 플로우로 흡수됐다(ApplicationStatus 1:1 정리). */}
-            <DetailField label="심사 결과">
-              {decidable ? (
+            {decidable && (
+              <DetailField label="심사 결과">
                 <DecisionRadioGroup
                   name="application-decision"
                   value={decision}
-                  onChange={value => setDecision(value as ApplicationDecision)}
+                  onChange={setDecision}
                   options={[
                     { value: 'approve', label: '승인', caption: '입점 승인 후 셀러 어드민 활성화' },
                     { value: 'reject', label: '반려', caption: '신청 반려 / 사유 통보 후 재제출 유도' },
                   ]}
                 />
-              ) : (
-                <p className="text-body-sm text-text-tertiary">
-                  {statusMeta[detail.status].label} 상태라 승인 / 반려를 처리할 수 없어요. 심사는
-                  심사 대기 상태에서만 할 수 있어요.
-                </p>
-              )}
-            </DetailField>
+              </DetailField>
+            )}
 
             {decision === 'reject' && decidable && (
               <DetailField label="반려 사유">
@@ -557,6 +530,10 @@ function SellerApplicationsPage() {
               </DetailField>
             )}
 
+            {/* 내부 메모 칸이 없는 이유: 어드민 심사 API에 내부 메모를 읽을 필드도 저장할
+                엔드포인트도 없다. 입력만 받아 두면 새로고침에 조용히 사라지는 칸이 되므로,
+                계약이 생길 때 되살린다. */}
+
             <DetailField label="심사 이력">
               {/* 서버는 status가 REJECTED가 아니면 rejectionReason을 null로 내리므로, 승인으로
                   끝난 신청의 과거 반려 사유는 reviews[]가 유일한 보관처다 — 이력 줄에 함께 보여
@@ -567,20 +544,7 @@ function SellerApplicationsPage() {
                 emptyLabel="아직 심사 이력이 없어요."
               />
             </DetailField>
-
-            {decidable && (
-              <div className="flex gap-2 border-t border-border-subtle pt-4">
-                <Button
-                  variant="primary"
-                  leftIcon={<Check className="size-4" />}
-                  disabled={submitDisabled}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  제출
-                </Button>
-              </div>
-            )}
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 

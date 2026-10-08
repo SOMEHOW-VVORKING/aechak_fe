@@ -1,14 +1,11 @@
 import type { ShippingPolicy } from '@aechak/domain'
 import { Checkbox, FormSection, Input, NumberInput, Select } from '@aechak/design-system/web'
+import { Field } from '@/shared/components/Field'
 import { AVG_DISPATCH_DAY_OPTIONS, COURIER_OPTIONS } from '../shipping-policy.queries'
 
 interface ShippingPolicyFormProps {
   value: ShippingPolicy
   onChange: (patch: Partial<ShippingPolicy>) => void
-}
-
-function FieldLabel({ children }: { children: string }) {
-  return <span className="text-label font-medium text-text-primary">{children}</span>
 }
 
 function MoneyField({
@@ -23,13 +20,12 @@ function MoneyField({
   disabled?: boolean
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <FieldLabel>{label}</FieldLabel>
+    <Field label={label}>
       <div className="flex items-center gap-2">
         <NumberInput value={value} onChange={onChange} min={0} step={500} disabled={disabled} />
         <span className="text-body-sm text-text-tertiary">원</span>
       </div>
-    </div>
+    </Field>
   )
 }
 
@@ -60,21 +56,22 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
             value={value.originAddress}
             onChange={e => onChange({ originAddress: e.target.value })}
           />
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <FieldLabel>반품지 주소</FieldLabel>
+          <Field
+            label="반품지 주소"
+            trailing={
               <Checkbox
                 label="출고지와 동일"
                 checked={value.sameAsOrigin}
                 onChange={sameAsOrigin => onChange({ sameAsOrigin })}
               />
-            </div>
+            }
+          >
             <Input
               value={value.sameAsOrigin ? value.originAddress : value.returnAddress}
               disabled={value.sameAsOrigin}
               onChange={e => onChange({ returnAddress: e.target.value })}
             />
-          </div>
+          </Field>
           <MoneyField
             label="제주 추가 배송비"
             value={value.jejuExtraFee}

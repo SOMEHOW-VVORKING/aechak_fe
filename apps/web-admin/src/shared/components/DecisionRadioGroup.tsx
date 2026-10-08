@@ -1,16 +1,16 @@
 import { Radio } from '@aechak/design-system/web'
 
-export interface DecisionOption {
-  value: string
+export interface DecisionOption<V extends string = string> {
+  value: V
   label: string
   caption?: string
 }
 
-interface DecisionRadioGroupProps {
+interface DecisionRadioGroupProps<V extends string> {
   name: string
-  options: DecisionOption[]
-  value: string
-  onChange: (value: string) => void
+  options: DecisionOption<V>[]
+  value: V
+  onChange: (value: V) => void
 }
 
 /**
@@ -18,8 +18,14 @@ interface DecisionRadioGroupProps {
  * "결정 옵션 + 부제목" 패턴. Radio 자체가 <label>로 렌더링되므로(디자인
  * 시스템), 바깥 행을 또 <label>로 감싸면 Checkbox와 같은 중첩 라벨
  * 토글 상쇄 버그가 날 수 있어 <div onClick>으로만 감쌌다.
+ * 값 타입은 호출부의 결정 유니온(V)을 그대로 통과시켜 setState에 바로 넘길 수 있다.
  */
-export function DecisionRadioGroup({ name, options, value, onChange }: DecisionRadioGroupProps) {
+export function DecisionRadioGroup<V extends string>({
+  name,
+  options,
+  value,
+  onChange,
+}: DecisionRadioGroupProps<V>) {
   return (
     <div className="space-y-2">
       {options.map(option => {

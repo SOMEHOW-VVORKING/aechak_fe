@@ -33,16 +33,15 @@ export function generateOrderNo(): string {
 export function processPayment(input: {
   amount: number
   method: PaymentMethod
-  // 결제 화면이 인스턴스당 한 번 만든 주문번호. 없으면(직접 호출 등) 즉석에서 유일 번호를 만든다.
-  orderNo?: string
+  /** 결제 화면이 인스턴스당 한 번 만든 주문번호(generateOrderNo). 결제 결과와 주문 생성이 같은 번호를 쓴다. */
+  orderNo: string
 }): Promise<PaymentResult> {
   const fail = willPaymentFail(input.method)
-  const orderNo = input.orderNo ?? generateOrderNo()
   return new Promise(resolve => {
     setTimeout(() => {
       resolve({
         ok: !fail,
-        orderNo,
+        orderNo: input.orderNo,
         amount: input.amount,
         method: input.method,
         failReason: fail ? '카드 한도를 확인한 뒤 다시 시도해 주세요.' : undefined,

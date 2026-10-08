@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { EmptyState, PageHeader, Skeleton, Toast } from '@aechak/design-system/web'
+import { PageHeader, Skeleton } from '@aechak/design-system/web'
+import { useToast } from '@/shared/hooks/useToast'
 import {
   ProductEditor,
+  ProductMissing,
   emptyProductForm,
   productErrorMessage,
   productImageUrl,
@@ -30,11 +32,6 @@ export const Route = createFileRoute('/products/new')({
   component: ProductNewRoute,
 })
 
-interface ToastState {
-  message: string
-  variant: 'success' | 'error'
-}
-
 function ProductNewRoute() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -44,26 +41,24 @@ function ProductNewRoute() {
   const categories = categoriesQuery.data
   const draft = useProductDraft(initialDraftId)
   const register = useRegisterProduct()
-  const [toast, setToast] = useState<ToastState | null>(null)
+  const toast = useToast()
 
-  const showError = (error: unknown) => setToast({ message: productErrorMessage(error), variant: 'error' })
+  const showError = (error: unknown) => toast.show(productErrorMessage(error), 'error')
 
   // 승격 후 임시저장 재조회가 404여도 이미 받은 data가 남아 있으면 에디터를 유지한다.
   if (initialDraftId && !draft.data && draft.isError) {
     return (
-      <div className="p-6">
-        <PageHeader title="상품 등록" />
-        <EmptyState
-          title="임시저장한 상품을 찾을 수 없어요"
-          action={{
-            label: '새로 등록하기',
-            onClick: () => {
-              setInitialDraftId(undefined)
-              navigate({ search: {}, replace: true })
-            },
-          }}
-        />
-      </div>
+      <ProductMissing
+        title="상품 등록"
+        message="임시저장한 상품을 찾을 수 없어요"
+        action={{
+          label: '새로 등록하기',
+          onClick: () => {
+            setInitialDraftId(undefined)
+            navigate({ search: {}, replace: true })
+          },
+        }}
+      />
     )
   }
   // 카테고리 조회(api 호스트 GET /categories)가 실패하면 등록이 전면 불가다 — 연쇄 Select 3단이
@@ -71,14 +66,12 @@ function ProductNewRoute() {
   // 돌려 오류 문구도 로딩 표시도 없는 백지였고, staleTime: Infinity라 자동 재조회도 없었다).
   if (!categories && categoriesQuery.isError) {
     return (
-      <div className="p-6">
-        <PageHeader title="상품 등록" />
-        <EmptyState
-          title="카테고리를 불러오지 못했어요"
-          description="상품을 등록하려면 카테고리가 필요해요. 잠시 후 다시 시도해 주세요."
-          action={{ label: '다시 시도', onClick: () => void categoriesQuery.refetch() }}
-        />
-      </div>
+      <ProductMissing
+        title="상품 등록"
+        message="카테고리를 불러오지 못했어요"
+        description="상품을 등록하려면 카테고리가 필요해요. 잠시 후 다시 시도해 주세요."
+        action={{ label: '다시 시도', onClick: () => void categoriesQuery.refetch() }}
+      />
     )
   }
   if (!categories || (initialDraftId && !draft.data)) {
@@ -96,6 +89,7 @@ function ProductNewRoute() {
 
   return (
     <>
+      {/* 임시저장 버튼(onSaveDraft·draftSaving)은 위 주석대로 넘기지 않는다 — BE에 임시저장이 없다. */}
       <ProductEditor
         mode="create"
         initial={
@@ -114,7 +108,7 @@ function ProductNewRoute() {
           )
         }
       />
-      {toast && <Toast open message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
+      {toast.element}
     </>
   )
 }

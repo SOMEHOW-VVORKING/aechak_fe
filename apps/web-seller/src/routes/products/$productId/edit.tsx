@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { EmptyState, PageHeader, Toast } from '@aechak/design-system/web'
+import { useToast } from '@/shared/hooks/useToast'
 import {
   ProductEditor,
+  ProductMissing,
   productErrorMessage,
   productImageUrl,
   toFormValues,
@@ -34,14 +34,12 @@ function ProductEditRoute() {
   const navigate = useNavigate()
   if (!SERVER_PRODUCT_DETAIL_AVAILABLE) {
     return (
-      <div className="p-6">
-        <PageHeader title="상품 수정" />
-        <EmptyState
-          title="상품 수정은 아직 준비 중이에요"
-          description="지금은 재고와 판매 상태만 바꿀 수 있어요. 수정 기능은 준비가 끝나면 열어 둘게요."
-          action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
-        />
-      </div>
+      <ProductMissing
+        title="상품 수정"
+        message="상품 수정은 아직 준비 중이에요"
+        description="지금은 재고와 판매 상태만 바꿀 수 있어요. 수정 기능은 준비가 끝나면 열어 둘게요."
+        action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
+      />
     )
   }
   return <ProductEditForm />
@@ -52,19 +50,18 @@ function ProductEditForm() {
   const { productId } = Route.useParams()
   const navigate = useNavigate()
   const { data: categories } = useProductCategories()
+  // 프리필용 단건 조회는 BE에 없어 목업으로만 동작한다(products.mock `BE 엔드포인트 없음` 구역).
   const detail = useProductDetail(productId)
   const updateProduct = useUpdateProduct()
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const toast = useToast()
 
   if (!detail.data && detail.isError) {
     return (
-      <div className="p-6">
-        <PageHeader title="상품 수정" />
-        <EmptyState
-          title="상품을 찾을 수 없어요"
-          action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
-        />
-      </div>
+      <ProductMissing
+        title="상품 수정"
+        message="상품을 찾을 수 없어요"
+        action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
+      />
     )
   }
   if (!categories || !detail.data) return null
@@ -84,12 +81,12 @@ function ProductEditForm() {
             { productId, body: toUpdateRequest(values) },
             {
               onSuccess: () => void navigate({ to: '/products', search: { saved: 'updated' }, replace: true }),
-              onError: error => setErrorMessage(productErrorMessage(error)),
+              onError: error => toast.show(productErrorMessage(error), 'error'),
             },
           )
         }
       />
-      {errorMessage && <Toast open variant="error" message={errorMessage} onClose={() => setErrorMessage(null)} />}
+      {toast.element}
     </>
   )
 }

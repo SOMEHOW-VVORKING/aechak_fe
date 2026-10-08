@@ -226,6 +226,7 @@ describe('/ (홈 GET /home 실연동)', () => {
     await user.click(await screen.findByRole('button', { name: '마켓에서 더 보기' }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/market'))
-    expect(screen.queryByText('이런 상품은 어때요?')).not.toBeInTheDocument()
+    // 라우트 코드 스플리팅으로 /market 청크를 받는 동안 홈 DOM이 잠시 남는다.
+    await waitFor(() => expect(screen.queryByText('이런 상품은 어때요?')).not.toBeInTheDocument())
   })
 })

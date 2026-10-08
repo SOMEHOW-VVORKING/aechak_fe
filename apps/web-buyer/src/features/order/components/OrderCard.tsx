@@ -1,7 +1,9 @@
-import { ChevronRight, Image as ImageIcon } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import type { BuyerOrder } from '@aechak/domain'
-import { Button, StatusPill } from '@aechak/design-system/web'
+import { Button, Card, StatusPill } from '@aechak/design-system/web'
+import { Divider } from '@/shared/components/Divider'
 import { formatKRW } from '@/shared/formatKRW'
+import { ProductThumbnail } from '@/shared/catalog'
 import {
   ORDER_STATUS_LABEL,
   ORDER_STATUS_VARIANT,
@@ -22,9 +24,10 @@ export function OrderCard({ order, onOpen, onWriteReview }: OrderCardProps) {
   const first = order.groups[0]?.items[0]
   const extraCount = orderItemCount(order) - 1
   const reviewable = order.status === 'delivered' || order.status === 'confirmed'
+  const cancelled = order.status === 'cancelled'
 
   return (
-    <div className="flex flex-col gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
+    <Card className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
         <span className="text-caption text-text-tertiary">
           {shortDate(order.orderedAt)} 주문 / <span className="tabular-nums">{order.id}</span>
@@ -34,7 +37,7 @@ export function OrderCard({ order, onOpen, onWriteReview }: OrderCardProps) {
         </StatusPill>
       </div>
 
-      <div className="h-px bg-border-subtle" />
+      <Divider />
 
       <button
         type="button"
@@ -42,27 +45,9 @@ export function OrderCard({ order, onOpen, onWriteReview }: OrderCardProps) {
         className="flex items-center gap-3 text-left"
         aria-label={`${orderTitle(order)} 주문 상세 보기`}
       >
-        <div
-          className={[
-            'size-14 flex-none overflow-hidden rounded-image bg-surface-sunken',
-            order.status === 'cancelled' ? 'opacity-50' : '',
-          ].join(' ')}
-        >
-          {first?.thumbnailUrl ? (
-            <img src={first.thumbnailUrl} alt="" className="size-full object-cover" />
-          ) : (
-            <div className="flex size-full items-center justify-center text-icon-muted">
-              <ImageIcon className="size-6" />
-            </div>
-          )}
-        </div>
+        <ProductThumbnail src={first?.thumbnailUrl} className="size-14" dimmed={cancelled} />
         <div className="min-w-0 flex-1">
-          <p
-            className={[
-              'line-clamp-2 text-body-sm',
-              order.status === 'cancelled' ? 'text-text-secondary' : 'text-text-primary',
-            ].join(' ')}
-          >
+          <p className={['line-clamp-2 text-body-sm', cancelled ? 'text-text-secondary' : 'text-text-primary'].join(' ')}>
             {orderTitle(order)}
           </p>
           <p className="mt-0.5 text-caption text-text-tertiary">
@@ -71,12 +56,7 @@ export function OrderCard({ order, onOpen, onWriteReview }: OrderCardProps) {
           </p>
         </div>
         <div className="flex flex-none flex-col items-end gap-1">
-          <span
-            className={[
-              'text-price-sm font-semibold',
-              order.status === 'cancelled' ? 'text-text-tertiary' : 'text-text-price',
-            ].join(' ')}
-          >
+          <span className={['text-price-sm font-semibold', cancelled ? 'text-text-tertiary' : 'text-text-price'].join(' ')}>
             {formatKRW(order.paidAmount)}
           </span>
           <ChevronRight className="size-4 text-icon-muted" />
@@ -88,9 +68,9 @@ export function OrderCard({ order, onOpen, onWriteReview }: OrderCardProps) {
           리뷰 쓰기
         </Button>
       )}
-      {order.status === 'cancelled' && order.refundedAt && (
+      {cancelled && order.refundedAt && (
         <p className="text-caption text-text-tertiary">환불 {shortDate(order.refundedAt)} 완료</p>
       )}
-    </div>
+    </Card>
   )
 }

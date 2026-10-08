@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 import type { SellerApplicationStatus } from '@aechak/domain'
 import type { SellerDocumentType } from '@aechak/api'
-import { Alert, Button, EmptyState, PageHeader, StatusPill, Toast } from '@aechak/design-system/web'
+import { Alert, Button, EmptyState, PageHeader, Skeleton, StatusPill } from '@aechak/design-system/web'
 import type { StatusPillVariant } from '@aechak/design-system/web'
+import { useToast } from '@/shared/hooks/useToast'
 import {
   DOCUMENT_LABEL,
   DocumentSection,
@@ -24,7 +25,7 @@ import {
   isSupportedDocument,
   isValidBusinessRegNo,
   isWithinDocumentSizeLimit,
-  missingRequirements,
+  missingDocuments,
   OVERSIZED_DOCUMENT_MESSAGE,
   sellerApplicationErrorMessage,
   UNSUPPORTED_DOCUMENT_MESSAGE,
@@ -41,9 +42,8 @@ export const Route = createFileRoute('/store-settings/')({
 })
 
 function formatAppliedAt(appliedAt: string) {
-  // BE LocalDateTime('2026-08-13T14:32:10') / 날짜 문자열 모두에서 MM.DD만 뽑는다.
-  const [datePart] = appliedAt.split('T')
-  const [, month, day] = (datePart ?? '').split('-')
+  // BE LocalDateTime('2026-08-13T14:32:10')에서 MM.DD만 뽑는다.
+  const [, month, day] = appliedAt.slice(0, 10).split('-')
   return month && day ? `${month}.${day}` : appliedAt
 }
 
@@ -150,7 +150,7 @@ function StoreSettingsRoute() {
   const [documentError, setDocumentError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const toast = useToast()
   const seededRef = useRef(false)
 
   // 서버 값(또는 '신청 없음' = 빈 폼)으로 한 번만 시드 — 저장 성공으로 캐시가 갱신돼도
@@ -170,7 +170,7 @@ function StoreSettingsRoute() {
     setActionError(null)
   }
 
-  function handleDocumentSelect(type: string, file: File) {
+  function handleDocumentSelect(type: SellerDocumentType, file: File) {
     if (!isSupportedDocument(file)) {
       setDocumentError(UNSUPPORTED_DOCUMENT_MESSAGE)
       return
@@ -180,7 +180,7 @@ function StoreSettingsRoute() {
       return
     }
     setDocumentError(null)
-    setPendingDocs(prev => ({ ...prev, [type as SellerDocumentType]: file }))
+    setPendingDocs(prev => ({ ...prev, [type]: file }))
   }
 
   // 저장 전 로컬 가드. 계좌번호는 응답이 마스킹뿐 + 저장이 전체 덮어쓰기라, 서버에 저장된
@@ -230,7 +230,7 @@ function StoreSettingsRoute() {
         onSuccess: () => {
           setPendingDocs({})
           if (onSaved) onSaved()
-          else setToastMessage('저장했어요.')
+          else toast.show('저장했어요.')
         },
         onError: error => setActionError(sellerApplicationErrorMessage(error)),
       },
@@ -242,7 +242,7 @@ function StoreSettingsRoute() {
   function handleSubmit() {
     void performSave(() => {
       submitApplication.mutate({
-        onSuccess: () => setToastMessage('제출했어요. 심사 결과를 알림으로 알려드릴게요.'),
+        onSuccess: () => toast.show('제출했어요. 심사 결과를 알림으로 알려드릴게요.'),
         onError: error => setActionError(sellerApplicationErrorMessage(error)),
       })
     })
@@ -251,8 +251,8 @@ function StoreSettingsRoute() {
   if (isLoading || (!isError && application === undefined)) {
     return (
       <div className="flex flex-col gap-4 p-6">
-        <div className="h-10 w-64 animate-pulse rounded-card bg-surface-sunken" />
-        <div className="h-40 animate-pulse rounded-card bg-surface-sunken" />
+        <Skeleton variant="rect" className="h-10 w-64" />
+        <Skeleton variant="rect" className="h-40" />
       </div>
     )
   }
@@ -279,9 +279,7 @@ function StoreSettingsRoute() {
   // 올린 서류는 서버에 유지되고 제출 시점 유형 기준으로 재평가된다(BE 계약).
   const uploadedByType = new Map((application?.documents ?? []).map(doc => [doc.key, doc]))
   const requiredTypes = REQUIRED_DOCUMENTS[form.legalType]
-  const extraUploaded = [...uploadedByType.keys()].filter(
-    type => !(requiredTypes as string[]).includes(type),
-  )
+  const extraUploaded = [...uploadedByType.keys()].filter(type => !requiredTypes.includes(type))
   const documentRows: DocumentRowModel[] = [
     ...requiredTypes.map(type => ({
       type,
@@ -295,12 +293,13 @@ function StoreSettingsRoute() {
       label: uploadedByType.get(type)?.label ?? type,
       required: false,
       uploadedAt: uploadedByType.get(type)?.uploadedAt,
-      pendingFileName: pendingDocs[type as SellerDocumentType]?.name,
+      pendingFileName: pendingDocs[type]?.name,
     })),
   ]
 
   const providedTypes = new Set<string>([...uploadedByType.keys(), ...Object.keys(pendingDocs)])
-  const missing = missingRequirements(form, providedTypes)
+  // 필수 정보 부족은 서버가 10105로 알려 준다 — 서류만 미리 막는다(b14-st-3 §8).
+  const missing = missingDocuments(form.legalType, providedTypes)
 
   const holdingNotice =
     status === 'submitted' || status === 'reviewing'
@@ -426,9 +425,7 @@ function StoreSettingsRoute() {
         </>
       )}
 
-      {toastMessage && (
-        <Toast open onClose={() => setToastMessage(null)} message={toastMessage} variant="success" />
-      )}
+      {toast.element}
     </div>
   )
 }

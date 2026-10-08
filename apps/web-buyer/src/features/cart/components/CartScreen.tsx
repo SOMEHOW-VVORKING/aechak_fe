@@ -1,14 +1,17 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Image as ImageIcon, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import {
   BottomFixedAction,
+  Card,
   Checkbox,
-  EmptyState,
   MobileScreen,
   NumberInput,
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { PriceRow } from '@/shared/components/PriceRow'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
 import {
@@ -18,7 +21,7 @@ import {
   setCartQuantity,
   setCartSelected,
 } from '@/shared/cart'
-import type { CartLineView, CartSellerGroup } from '@/shared/catalog'
+import { ProductThumbnail, type CartLineView, type CartSellerGroup } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useCartView } from '../cart.queries'
 
@@ -70,13 +73,11 @@ export function CartScreen() {
       }
     >
       {view.isEmpty ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="장바구니가 비어 있어요"
-            description="마음에 드는 상품을 담아보세요."
-            action={{ label: '쇼핑하러 가기', onClick: () => navigate({ to: '/market' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="장바구니가 비어 있어요"
+          description="마음에 드는 상품을 담아보세요."
+          action={{ label: '쇼핑하러 가기', onClick: () => navigate({ to: '/market' }) }}
+        />
       ) : (
         <div className="flex flex-col gap-3 p-4">
           {/* 전체 선택 + 선택 삭제 */}
@@ -102,19 +103,19 @@ export function CartScreen() {
           ))}
 
           {/* 결제 요약 */}
-          <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
-            <SummaryRow label="상품금액" value={formatKRW(view.itemsTotal)} />
-            <SummaryRow
+          <Card className="flex flex-col gap-2 p-4">
+            <PriceRow label="상품금액" value={formatKRW(view.itemsTotal)} />
+            <PriceRow
               label="배송비"
               value={view.shippingTotal === 0 ? '무료' : formatKRW(view.shippingTotal)}
               valueClass={view.shippingTotal === 0 ? 'text-success-fg' : 'text-text-primary'}
             />
-            <div className="my-0.5 h-px bg-border-subtle" />
+            <Divider className="my-0.5" />
             <div className="flex items-baseline justify-between">
               <span className="text-subheading font-semibold text-text-primary">결제예정금액</span>
               <span className="text-price-lg font-bold text-text-price">{formatKRW(view.grandTotal)}</span>
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
@@ -131,7 +132,7 @@ function SellerGroupCard({ group }: { group: CartSellerGroup }) {
   const disabled = groupSelectableKeys.length === 0
 
   return (
-    <div className="overflow-hidden rounded-card border border-border-subtle bg-surface-raised">
+    <Card className="overflow-hidden">
       {/* 셀러 헤더 */}
       <div className="flex items-center gap-2 border-b border-border-subtle px-3.5 py-3">
         <Checkbox
@@ -150,7 +151,7 @@ function SellerGroupCard({ group }: { group: CartSellerGroup }) {
       {group.lines.map(line => (
         <CartLineRow key={line.key} line={line} />
       ))}
-    </div>
+    </Card>
   )
 }
 
@@ -165,19 +166,7 @@ function CartLineRow({ line }: { line: CartLineView }) {
           onChange={checked => setCartSelected(line.key, checked)}
         />
       </div>
-      <div className="size-16 flex-none overflow-hidden rounded-image bg-surface-sunken">
-        {product.thumbnailUrl ? (
-          <img
-            src={product.thumbnailUrl}
-            alt=""
-            className={['size-full object-cover', line.soldOut ? 'opacity-50' : ''].join(' ')}
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center text-icon-muted">
-            <ImageIcon className="size-6" />
-          </div>
-        )}
-      </div>
+      <ProductThumbnail src={product.thumbnailUrl} className="size-16" dimmed={line.soldOut} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p
@@ -223,23 +212,6 @@ function CartLineRow({ line }: { line: CartLineView }) {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function SummaryRow({
-  label,
-  value,
-  valueClass = 'text-text-primary',
-}: {
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <div className="flex items-center justify-between text-body-sm">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`tabular-nums ${valueClass}`}>{value}</span>
     </div>
   )
 }

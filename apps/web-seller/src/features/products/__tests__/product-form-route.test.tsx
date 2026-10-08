@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -42,13 +42,13 @@ const fileInputOf = (groupName: string) =>
     .queryByRole('button', { name: /\d+\/\d+/ })
     ?.querySelector<HTMLInputElement>('input[type=file]') ?? null
 
-async function fillRequired(user: UserEvent, name: string, { stock = true } = {}) {
+async function fillRequired(user: UserEvent, name: string, { stock = true, thumbnail = png() } = {}) {
   await user.type(await screen.findByLabelText('상품명'), name)
   await user.selectOptions(screen.getByLabelText('대분류'), '고양이')
   await user.selectOptions(screen.getByLabelText('중분류'), '식기/급수기')
   await user.selectOptions(screen.getByLabelText('소분류'), '자동 급식기')
   await user.type(screen.getByLabelText('정가'), '30000')
-  await user.upload(fileInputOf('대표 썸네일')!, png())
+  await user.upload(fileInputOf('대표 썸네일')!, thumbnail)
   if (stock) await user.type(screen.getByLabelText('재고'), '10')
 }
 
@@ -158,16 +158,41 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     expect(names).toEqual(['화이트 / S 재고', '화이트 / M 재고', '블랙 / S 재고', '블랙 / M 재고'])
   })
 
-  it('[AC-SPRD-033c] 다른 옵션에 있는 옵션값은 추가하지 않는다(BE 40005)', async () => {
+  it('[AC-SPRD-033c] 다른 옵션에 있는 옵션값은 BE가 40005로 거절하고 그 문구를 토스트로 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/new')
+
+    await fillRequired(user, '하네스 세트', { stock: false })
+    await user.click(screen.getByRole('switch', { name: '옵션 사용' }))
+    await user.type(screen.getByLabelText('옵션명 1'), '색상')
+    await user.type(screen.getByLabelText('옵션값 1 입력'), '블랙{Enter}')
+    await user.click(screen.getByRole('button', { name: '옵션 추가' }))
+    await user.type(screen.getByLabelText('옵션명 2'), '사이즈')
+    await user.type(screen.getByLabelText('옵션값 2 입력'), '블랙{Enter}')
+    await user.type(screen.getByLabelText('블랙 / 블랙 재고'), '1')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    expect(await screen.findByText('옵션 구성을 확인해 주세요.')).toBeInTheDocument()
+    // 거절됐으므로 서버 목록은 그대로다(시드는 빈 목록).
+    expect(currentSellerProducts()).toHaveLength(0)
+  })
+
+  it('[AC-SPRD-033d] 같은 옵션 안에서 같은 옵션값을 또 추가하면 칩은 하나만 남고 입력은 안내와 함께 남는다', async () => {
     const user = userEvent.setup()
     renderAt('/products/new')
 
     await user.click(await screen.findByRole('switch', { name: '옵션 사용' }))
-    await user.type(screen.getByLabelText('옵션값 1 입력'), '블랙{Enter}')
-    await user.click(screen.getByRole('button', { name: '옵션 추가' }))
-    await user.type(screen.getByLabelText('옵션값 2 입력'), '블랙{Enter}')
+    await user.type(screen.getByLabelText('옵션값 1 입력'), '블랙{Enter}블랙{Enter}')
 
+    // 칩(삭제 버튼) 1개 + 조합 행 1개. 조용히 버리지 않고 입력을 남긴 채 안내한다(반응 없는 UI 금지).
+    expect(screen.getAllByRole('button', { name: '삭제' })).toHaveLength(1)
+    expect(screen.getAllByLabelText(/ 재고$/)).toHaveLength(1)
+    expect(screen.getByLabelText('옵션값 1 입력')).toHaveValue('블랙')
     expect(screen.getByText('이미 있는 옵션값이에요')).toBeInTheDocument()
+
+    // 입력을 고치면 안내가 사라진다.
+    await user.type(screen.getByLabelText('옵션값 1 입력'), '2')
+    expect(screen.queryByText('이미 있는 옵션값이에요')).not.toBeInTheDocument()
   })
 
   it('[AC-SPRD-033b] 빈 옵션 그룹을 추가했다 지워도 조합별로 입력한 재고가 남는다', async () => {
@@ -186,32 +211,33 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     expect(screen.getByLabelText('화이트 재고')).toHaveValue('7')
   })
 
-  it('[AC-SPRD-034] 할인을 켜면 할인율을 보여주고, 할인가가 정가보다 크면 오류를 띄운다', async () => {
+  it('[AC-SPRD-034] 할인을 켜면 할인율을 보여주고, 할인가가 정가보다 크면 BE가 40001로 거절한 문구를 토스트로 보여준다', async () => {
     const user = userEvent.setup()
     renderAt('/products/new')
 
-    await user.type(await screen.findByLabelText('정가'), '15000')
+    await fillRequired(user, '캣닢 쿠션')
     await user.click(screen.getByRole('switch', { name: '할인 설정' }))
-    await user.type(screen.getByLabelText('할인가'), '12500')
-    expect(screen.getByText('할인율 17%')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('할인가'), '25500')
+    expect(screen.getByText('할인율 15%')).toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('할인가'))
-    await user.type(screen.getByLabelText('할인가'), '20000')
+    await user.type(screen.getByLabelText('할인가'), '40000')
+    expect(screen.queryByText(/할인율/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('할인 시작일'), { target: { value: '2026-10-01' } })
     await user.click(screen.getByRole('button', { name: '등록하기' }))
 
-    expect(screen.getByText('할인가는 정가보다 클 수 없어요')).toBeInTheDocument()
-    expect(screen.queryByText(/할인율/)).not.toBeInTheDocument()
+    expect(
+      await screen.findByText('가격을 확인해 주세요. 정가는 100원부터 1억 원까지, 할인가는 정가 이하로 입력할 수 있어요.'),
+    ).toBeInTheDocument()
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
-  it('[AC-SPRD-035] GIF/10MB 초과는 거절하고, 대표 썸네일 1장이면 추가 버튼이 사라지며 삭제 시 미리보기 URL을 해제한다', async () => {
+  it('[AC-SPRD-035] 10MB 초과는 거절하고, 대표 썸네일 1장이면 추가 버튼이 사라지며 삭제 시 미리보기 URL을 해제한다', async () => {
     const user = userEvent.setup()
     const createSpy = vi.spyOn(URL, 'createObjectURL')
     const revokeSpy = vi.spyOn(URL, 'revokeObjectURL')
     renderAt('/products/new')
     await screen.findByRole('group', { name: '대표 썸네일' })
-
-    await user.upload(fileInputOf('대표 썸네일')!, new File(['gif'], 'a.gif', { type: 'image/gif' }))
-    expect(screen.getByText('JPG/PNG/WEBP 이미지만 올릴 수 있어요')).toBeInTheDocument()
 
     const huge = png('huge.png')
     Object.defineProperty(huge, 'size', { value: 11 * 1024 * 1024 })
@@ -227,6 +253,22 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     await user.click(within(group).getByRole('button', { name: '사진 삭제' }))
     expect(revokeSpy).toHaveBeenCalledWith(previewUrl)
     expect(fileInputOf('대표 썸네일')).not.toBeNull()
+  })
+
+  it('[AC-SPRD-035b] 형식이 맞지 않는 이미지는 BE presign이 100000으로 거절하고 그 슬롯을 비우며 필드 아래에 문구를 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/new')
+
+    await fillRequired(user, '원목 스크래쳐 L', { thumbnail: new File(['gif'], 'a.gif', { type: 'image/gif' }) })
+    expect(fileInputOf('대표 썸네일')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    // 거절 사유는 그 필드 아래에 뜨고, 실패한 슬롯은 폼에서 빠져 추가 버튼이 다시 보인다.
+    const group = screen.getByRole('group', { name: '대표 썸네일' })
+    expect(await within(group).findByText('JPG/PNG/WEBP 이미지만 올릴 수 있어요.')).toBeInTheDocument()
+    expect(fileInputOf('대표 썸네일')).not.toBeNull()
+    // 발급에서 막혔으므로 등록 POST 자체가 나가지 않는다.
+    expect(currentSellerProducts()).toHaveLength(0)
   })
 
   it('[AC-SPRD-045] 가격 범위 위반(400 errorCode 40001)을 서버가 거절하면 폼에 남아 안내한다', async () => {

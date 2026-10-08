@@ -3,6 +3,7 @@ export {
   axiosInstance,
   configureApiHosts,
   customInstance,
+  errorResponse,
   getAccessToken,
   getApiBaseURL,
   restoreSession,
@@ -10,5 +11,5 @@ export {
   setOnAuthExpired,
   setOnOnboardingRequired,
 } from './client'
-export type { ApiHostConfig } from './client'
+export type { ApiHostConfig, ErrorBody } from './client'
 export * from './generated/api'

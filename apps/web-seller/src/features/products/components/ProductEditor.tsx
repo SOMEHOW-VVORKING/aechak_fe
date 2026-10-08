@@ -11,17 +11,16 @@ import {
   PhotoUpload,
   Select,
   Textarea,
-  Toast,
   Toggle,
   type Column,
 } from '@aechak/design-system/web'
+import { FieldError } from '@/shared/components/Field'
 import {
   discountRate,
   fieldDomId,
   MAX_ADDITIONAL_IMAGES,
   MAX_DETAIL_IMAGES,
-  MAX_REGULAR_PRICE,
-  MIN_REGULAR_PRICE,
+  productErrorMessage,
   validateProductForm,
   type CategoryNode,
   type ImageSlot,
@@ -30,13 +29,11 @@ import {
 } from '../products.contract'
 import { useProductOptions } from '../products.queries'
 import {
-  isSupportedProductImage,
   isWithinProductImageSizeLimit,
   OVERSIZED_PRODUCT_IMAGE_MESSAGE,
-  UNSUPPORTED_PRODUCT_IMAGE_MESSAGE,
   uploadProductImage,
 } from '../products.upload'
-import { FieldAnchor, FieldError, fieldA11y, fieldHelperId, tooltipId } from './FieldAnchor'
+import { FieldAnchor, fieldA11y, fieldHelperId, tooltipId } from './FieldAnchor'
 import { OptionBuilder } from './OptionBuilder'
 
 interface ProductEditorProps {
@@ -95,7 +92,6 @@ export function ProductEditor({
   const [tooltipKey, setTooltipKey] = useState<string | null>(null)
   const [imageErrors, setImageErrors] = useState<Partial<Record<ImageFieldKey, string>>>({})
   const [uploading, setUploading] = useState(false)
-  const [uploadFailed, setUploadFailed] = useState(false)
 
   // 이 화면이 만든 미리보기 objectURL만 모은다(프리필 슬롯은 서버 URL이라 제외). 언마운트 때 전부 해제.
   const objectUrls = useRef(new Set<string>())
@@ -114,7 +110,7 @@ export function ProductEditor({
 
   const tipFor = (key: string) => (tooltipKey === key ? errors[key] : undefined)
   const a11y = (key: string) => fieldA11y(key, errors, tooltipKey)
-  const errorState = (key: string) => (errors[key] ? 'error' : 'default') as 'error' | 'default'
+  const errorState = (key: string) => (errors[key] ? 'error' : 'default')
 
   function update(patch: Partial<ProductFormValues>) {
     setValues(prev => ({ ...prev, ...patch }))
@@ -137,24 +133,22 @@ export function ProductEditor({
 
   const regular = Number(values.regularPrice)
   const discount = Number(values.discountPrice)
-  const showRate =
-    values.regularPrice !== '' &&
-    values.discountPrice !== '' &&
-    regular >= MIN_REGULAR_PRICE &&
-    regular <= MAX_REGULAR_PRICE &&
-    discount <= regular
+  // 0 나눗셈과 음수 할인율만 막는다 — 가격 범위는 저장 때 BE가 40001로 알려 준다.
+  const showRate = values.discountPrice !== '' && regular > 0 && discount <= regular
 
   function handleAddImages(field: ImageFieldKey, max: number, files: File[]) {
-    let message: string | undefined
-    const accepted = files.filter(file => {
-      // 형식/크기 판정과 문구는 업로드 모듈이 소유한다(발급 단계의 서버 계약과 한자리에 둔다).
-      if (!isSupportedProductImage(file)) message ??= UNSUPPORTED_PRODUCT_IMAGE_MESSAGE
-      else if (!isWithinProductImageSizeLimit(file)) message ??= OVERSIZED_PRODUCT_IMAGE_MESSAGE
-      else return true
-      return false
-    })
+    // 형식은 BE presign이 100000으로 거절한다(uploadPending이 그 슬롯에 붙여 안내). 크기만 FE UX
+    // 정책이라 미리 거르고, 판정과 문구는 업로드 모듈이 소유한다(발급 단계의 서버 계약과 한자리).
+    const accepted = files.filter(isWithinProductImageSizeLimit)
+    // 상한을 넘는 만큼은 여기서 잘라 BE(40003)까지 가지 않는다 — 잘라냈다는 안내도 그래서 FE 몫이다
+    // (PhotoUpload는 max에 닿으면 추가 버튼만 숨겨 다중 선택 초과를 못 막는다).
     const room = max - values[field].length
-    if (accepted.length > room) message ??= `최대 ${max}장까지 올릴 수 있어요`
+    const message =
+      accepted.length < files.length
+        ? OVERSIZED_PRODUCT_IMAGE_MESSAGE
+        : accepted.length > room
+          ? `최대 ${max}장까지 올릴 수 있어요`
+          : undefined
     setImageErrors(prev => ({ ...prev, [field]: message }))
     const slots: ImageSlot[] = accepted.slice(0, room).map(file => {
       const previewUrl = URL.createObjectURL(file)
@@ -177,26 +171,42 @@ export function ProductEditor({
   // presigned URL이 10분짜리라 저장 직전에 올린다(store-settings.upload 관례). 받은 키는 슬롯에
   // 다시 써 두어 재시도 때 같은 파일을 또 올리지 않는다.
   async function uploadPending(v: ProductFormValues): Promise<ProductFormValues | null> {
-    const pending = IMAGE_FIELDS.flatMap(({ key }) => v[key].filter(slot => slot.file && !slot.imageKey))
+    const pending = IMAGE_FIELDS.flatMap(({ key }) =>
+      v[key].filter(slot => slot.file && !slot.imageKey).map(slot => ({ field: key, slot })),
+    )
     if (pending.length === 0) return v
     setUploading(true)
     try {
       // 일부만 실패해도 성공한 키는 슬롯에 남겨 재시도 때 다시 올리지 않는다.
-      const results = await Promise.allSettled(pending.map(slot => uploadProductImage(slot.file!)))
+      const results = await Promise.allSettled(pending.map(({ slot }) => uploadProductImage(slot.file!)))
       const keyById = new Map<string, string>()
+      // 거절된 슬롯(형식 100000 등)은 그 필드 아래에 사유를 붙이고 폼에서 뺀다 — 미리보기만 남겨 두면
+      // 어느 장이 문제인지 모른 채 저장이 계속 막힌다.
+      const failedIds = new Set<string>()
+      const failedMessages: Partial<Record<ImageFieldKey, string>> = {}
       results.forEach((result, i) => {
-        if (result.status === 'fulfilled') keyById.set(pending[i]!.id, result.value)
+        const { field, slot } = pending[i]!
+        if (result.status === 'fulfilled') {
+          keyById.set(slot.id, result.value)
+          return
+        }
+        failedIds.add(slot.id)
+        failedMessages[field] ??= productErrorMessage(result.reason)
+        URL.revokeObjectURL(slot.previewUrl)
+        objectUrls.current.delete(slot.previewUrl)
       })
       const withKeys = (slots: ImageSlot[]) =>
-        slots.map(slot => (keyById.has(slot.id) ? { ...slot, imageKey: keyById.get(slot.id)! } : slot))
+        slots
+          .filter(slot => !failedIds.has(slot.id))
+          .map(slot => (keyById.has(slot.id) ? { ...slot, imageKey: keyById.get(slot.id)! } : slot))
       setValues(prev => ({
         ...prev,
         thumbnail: withKeys(prev.thumbnail),
         additionalImages: withKeys(prev.additionalImages),
         detailImages: withKeys(prev.detailImages),
       }))
-      if (keyById.size < pending.length) {
-        setUploadFailed(true)
+      if (failedIds.size > 0) {
+        setImageErrors(prev => ({ ...prev, ...failedMessages }))
         return null
       }
       return {
@@ -451,15 +461,6 @@ export function ProductEditor({
           </Section>
         </fieldset>
       </div>
-
-      {uploadFailed && (
-        <Toast
-          open
-          variant="error"
-          message="이미지를 올리지 못했어요. 다시 시도해 주세요."
-          onClose={() => setUploadFailed(false)}
-        />
-      )}
     </div>
   )
 }

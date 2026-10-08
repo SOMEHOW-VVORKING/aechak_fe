@@ -4,11 +4,12 @@ import {
   Alert,
   BottomFixedAction,
   Button,
-  EmptyState,
   Input,
   MobileScreen,
+  Skeleton,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { useMe } from '@/shared/account'
 import {
@@ -16,7 +17,7 @@ import {
   useConfirmPhoneCode,
   useSendPhoneCode,
 } from '../account.queries'
-import { OTP_LENGTH, isValidPhoneNumber } from '../account.mock'
+import { OTP_LENGTH } from '../account.mock'
 
 // 남은 초를 'M:SS'로 그린다(만료 카운트다운 표시용).
 function formatSeconds(total: number): string {
@@ -29,16 +30,17 @@ function formatSeconds(total: number): string {
 // 실서버 연동 — 인증 여부의 진실 원본은 GET /users/me(isPhoneVerified)이고, 발송/확인은
 // POST /users/me/phone/verifications(/confirm)다. 재발송 쿨다운·만료 타이머는 발송 응답의
 // resendCooldownSeconds/expiresInSeconds가 원천(수치 하드코딩 금지 — 서버 계약).
+// 번호 형식(@Pattern)·인증번호 형식(6자리 숫자)은 서버가 90001로 판정하고 화면은 그 문구를 인라인으로 보여준다.
 export function VerifyScreen() {
-  const { account, isLoading, isError, refetch } = useMe()
+  const { account, isError, refetch } = useMe()
   const sendCode = useSendPhoneCode()
   const confirmCode = useConfirmPhoneCode()
 
   const [phone, setPhone] = useState('')
   const [sent, setSent] = useState(false)
   const [code, setCode] = useState('')
-  const [phoneError, setPhoneError] = useState<string | null>(null)
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const [phoneError, setPhoneError] = useState<string>()
+  const [codeError, setCodeError] = useState<string>()
   // 발송 응답의 초를 절대 시각(deadline)으로 바꿔 들고, 1초 틱으로 남은 시간을 파생한다.
   const [resendDeadline, setResendDeadline] = useState<number | null>(null)
   const [expireDeadline, setExpireDeadline] = useState<number | null>(null)
@@ -57,19 +59,16 @@ export function VerifyScreen() {
   const resendLeft = secondsLeft(resendDeadline)
   const expireLeft = secondsLeft(expireDeadline)
 
+  // BE(SendPhoneCodeRequest/ConfirmPhoneCodeRequest)는 @Pattern만 보고 trim하지 않는다 — 자동완성·붙여넣기로
+  // 섞인 앞뒤 공백은 여기서 걷어낸다(형식 판정은 그대로 서버 몫).
   const handleSend = () => {
-    const normalized = phone.trim()
-    if (!isValidPhoneNumber(normalized)) {
-      setPhoneError('휴대폰 번호 형식을 확인해 주세요.')
-      return
-    }
-    setPhoneError(null)
-    sendCode.mutate(normalized, {
+    setPhoneError(undefined)
+    sendCode.mutate(phone.trim(), {
       onSuccess: issued => {
         const issuedAt = Date.now()
         setSent(true)
         setCode('')
-        setCodeError(null)
+        setCodeError(undefined)
         setNow(issuedAt)
         setResendDeadline(issuedAt + issued.resendCooldownSeconds * 1000)
         setExpireDeadline(issuedAt + issued.expiresInSeconds * 1000)
@@ -83,40 +82,38 @@ export function VerifyScreen() {
       { phoneNumber: phone.trim(), code },
       {
         // 성공은 계정 캐시 갱신(useConfirmPhoneCode)으로 9-B 분기가 스스로 렌더된다.
-        onError: err => setCodeError(phoneVerificationErrorMessage(err)),
+        onError: err => setCodeError(phoneVerificationErrorMessage(err, 'confirm')),
       },
     )
   }
 
   const header = <BackAppBar onBack={goBack} title="본인 인증" />
 
-  if (isLoading || (!account && !isError)) {
+  if (isError) {
     return (
       <MobileScreen header={header}>
-        <div className="flex flex-col gap-5 p-4">
-          <div className="h-14 animate-pulse rounded-input bg-surface-sunken" />
-          <div className="h-10 animate-pulse rounded-input bg-surface-sunken" />
-        </div>
+        <ScreenEmptyState
+          title="인증 정보를 불러오지 못했어요"
+          description="잠시 후 다시 시도해주세요."
+          action={{ label: '다시 시도', onClick: () => void refetch() }}
+        />
       </MobileScreen>
     )
   }
 
-  if (isError) {
+  if (!account) {
     return (
       <MobileScreen header={header}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="인증 정보를 불러오지 못했어요"
-            description="잠시 후 다시 시도해주세요."
-            action={{ label: '다시 시도', onClick: () => void refetch() }}
-          />
+        <div className="flex flex-col gap-5 p-4">
+          <Skeleton className="h-14 rounded-input" />
+          <Skeleton className="h-10 rounded-input" />
         </div>
       </MobileScreen>
     )
   }
 
   // ── 9-B 인증 완료 ──
-  if (account?.verification === 'verified') {
+  if (account.verification === 'verified') {
     return (
       <MobileScreen
         header={header}
@@ -147,7 +144,7 @@ export function VerifyScreen() {
           primary={{
             label: '인증 완료',
             onClick: handleVerify,
-            disabled: !sent || code.length !== OTP_LENGTH,
+            disabled: !sent,
             loading: confirmCode.isPending,
           }}
         />
@@ -172,11 +169,11 @@ export function VerifyScreen() {
                 inputMode="tel"
                 onChange={e => {
                   setPhone(e.target.value)
-                  setPhoneError(null)
+                  setPhoneError(undefined)
                 }}
                 placeholder="010-0000-0000"
                 state={phoneError ? 'error' : 'default'}
-                helperText={phoneError ?? undefined}
+                helperText={phoneError}
               />
             </div>
             <Button
@@ -184,7 +181,7 @@ export function VerifyScreen() {
               size="md"
               onClick={handleSend}
               loading={sendCode.isPending}
-              disabled={phone.trim() === '' || resendLeft > 0}
+              disabled={resendLeft > 0}
               className="flex-none"
             >
               {sent ? (resendLeft > 0 ? `재전송 (${resendLeft}초)` : '재전송') : '인증번호 받기'}
@@ -192,16 +189,18 @@ export function VerifyScreen() {
           </div>
         </div>
 
-        {/* 인증번호 입력(발송 후 노출). 만료 전엔 남은 시간을, 만료 후엔 재전송 유도를 보여준다. */}
+        {/* 인증번호 입력(발송 후 노출). 만료 전엔 남은 시간을, 만료 후엔 재전송 유도를 보여준다.
+            자릿수·숫자 여부는 네이티브 제약(maxLength·pattern)으로 돕고 최종 판정은 서버(90001)다. */}
         {sent && (
           <Input
             label="인증번호"
             value={code}
             inputMode="numeric"
+            pattern="\d*"
             maxLength={OTP_LENGTH}
             onChange={e => {
-              setCode(e.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH))
-              setCodeError(null)
+              setCode(e.target.value)
+              setCodeError(undefined)
             }}
             placeholder={`${OTP_LENGTH}자리 숫자`}
             state={codeError ? 'error' : 'default'}

@@ -1,16 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Ban,
-  Briefcase,
-  CheckCircle,
-  LogOut,
-  Minus,
-  Pause,
-  Save,
-  User,
-  Wallet,
-} from 'lucide-react'
+import { Ban, CheckCircle, LogOut, Minus, Pause, Save, Wallet } from 'lucide-react'
 import {
   Alert,
   Button,
@@ -18,7 +8,6 @@ import {
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
   StatusPill,
@@ -28,19 +17,24 @@ import {
 import type { Column } from '@aechak/design-system/web'
 import type { SellerAccount, SellerOperatingStatus } from '@aechak/domain'
 import { useSellerAccounts } from '@/features/sellers'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { SellerTypePill, sellerTypeLabel } from '@/shared/components/SellerTypePill'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/sellers/')({
   component: SellersPage,
 })
 
-const operatingStatusMeta: Record<
-  SellerOperatingStatus,
-  { label: string; variant: 'success' | 'danger' | 'muted'; icon: typeof CheckCircle }
-> = {
+const operatingStatusMeta: Record<SellerOperatingStatus, StatusMeta> = {
   active: { label: '영업중', variant: 'success', icon: CheckCircle },
   suspended: { label: '판매정지', variant: 'danger', icon: Ban },
   'on-hold': { label: '휴업', variant: 'muted', icon: Pause },
@@ -75,42 +69,20 @@ function makeSellerColumns(onOpenDetail: (row: SellerAccount) => void): Column<S
     {
       key: 'shopName',
       label: '셀러명',
-      render: row => (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(row)}
-          className="font-medium text-text-primary hover:text-brand hover:underline"
-        >
-          {row.shopName}
-        </button>
-      ),
+      render: row => <RowLinkButton onClick={() => onOpenDetail(row)}>{row.shopName}</RowLinkButton>,
     },
     { key: 'representativeNameMasked', label: '대표자' },
     {
       key: 'sellerType',
       label: '유형',
       align: 'center',
-      render: row => (
-        <StatusPill variant={row.sellerType === 'business' ? 'neutral' : 'info'}>
-          {row.sellerType === 'business' ? <Briefcase className="size-3" /> : <User className="size-3" />}
-          {row.sellerType === 'business' ? '사업자' : '개인'}
-        </StatusPill>
-      ),
+      render: row => <SellerTypePill sellerType={row.sellerType} />,
     },
     {
       key: 'operatingStatus',
       label: '영업 상태',
       align: 'center',
-      render: row => {
-        const meta = operatingStatusMeta[row.operatingStatus]
-        const Icon = meta.icon
-        return (
-          <StatusPill variant={meta.variant}>
-            <Icon className="size-3" />
-            {meta.label}
-          </StatusPill>
-        )
-      },
+      render: row => <StatusMetaPill meta={operatingStatusMeta[row.operatingStatus]} />,
     },
     {
       key: 'productCount',
@@ -158,11 +130,8 @@ function makeSellerColumns(onOpenDetail: (row: SellerAccount) => void): Column<S
 
 function SellersPage() {
   const { data, isLoading } = useSellerAccounts()
-  const [rows, setRows] = useState<SellerAccount[] | null>(null)
-  useEffect(() => {
-    if (data && rows === null) setRows(data)
-  }, [data, rows])
-  const items = rows ?? []
+  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
+    useDetailList(data)
 
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -179,44 +148,25 @@ function SellersPage() {
     [items, statusFilter, typeFilter, search],
   )
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find(row => row.id === selectedId) ?? null
-  const SelectedStatusIcon = selected ? operatingStatusMeta[selected.operatingStatus].icon : null
-
   const [suspensionReason, setSuspensionReason] = useState('')
   const [suspensionPeriod, setSuspensionPeriod] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
 
   function openDrawer(row: SellerAccount) {
-    setSelectedId(row.id)
+    select(row.id)
     setSuspensionReason(row.suspensionReason ?? '')
     setSuspensionPeriod(row.suspensionPeriod ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function closeDrawer() {
-    setSelectedId(null)
-    setConfirmOpen(false)
-  }
-
-  function handleSaveMemo() {
-    if (!selected) return
-    setRows(prev => (prev ?? []).map(row => (row.id === selected.id ? { ...row, internalMemo } : row)))
+  function handleSaveMemo(target: SellerAccount) {
+    patchRow(target.id, { internalMemo })
     setToast('메모를 저장했어요.')
   }
 
-  function handleConfirmSuspend() {
-    if (!selected) return
-    setRows(prev =>
-      (prev ?? []).map(row =>
-        row.id === selected.id
-          ? { ...row, operatingStatus: 'suspended', suspensionReason, suspensionPeriod, internalMemo }
-          : row,
-      ),
-    )
-    setToast(`'${selected.shopName}'을 판매정지했어요.`)
+  function handleConfirmSuspend(target: SellerAccount) {
+    patchRow(target.id, { operatingStatus: 'suspended', suspensionReason, suspensionPeriod, internalMemo })
+    setToast(`'${target.shopName}'을 판매정지했어요.`)
     closeDrawer()
   }
 
@@ -228,18 +178,11 @@ function SellersPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="셀러 관리" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다.
-      </p>
+      <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다." />
 
       <FilterBar className="mb-3.5">
-        <div className="w-40">
-          <Select options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
-        </div>
-        <div className="w-36">
-          <Select options={typeFilterOptions} value={typeFilter} onChange={setTypeFilter} />
-        </div>
+        <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
+        <FilterSelect narrow options={typeFilterOptions} value={typeFilter} onChange={setTypeFilter} />
         <SearchInput value={search} onChange={setSearch} placeholder="셀러명 검색" className="w-64" />
       </FilterBar>
 
@@ -252,28 +195,35 @@ function SellersPage() {
         emptyLabel="조건에 맞는 셀러가 없습니다."
       />
 
-      <Drawer open={selected !== null} onClose={closeDrawer} title="셀러 상세" width="lg">
+      <Drawer open={selected !== undefined} onClose={closeDrawer} title="셀러 상세" width="lg">
         {selected && (
-          <div className="space-y-5">
-            <p className="-mt-2 text-body-sm text-text-tertiary">
-              {selected.shopName} · {selected.sellerType === 'business' ? '사업자 셀러' : '개인 셀러'}
-            </p>
-
+          <DetailDrawerBody
+            subtitle={`${selected.shopName} · ${sellerTypeLabel(selected.sellerType)}`}
+            actions={
+              <>
+                <Button
+                  variant="danger"
+                  leftIcon={<Ban className="size-4" />}
+                  disabled={!suspensionReason || !suspensionPeriod}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  판매정지
+                </Button>
+                <Button
+                  variant="secondary"
+                  leftIcon={<Save className="size-4" />}
+                  onClick={() => handleSaveMemo(selected)}
+                >
+                  저장
+                </Button>
+              </>
+            }
+          >
             <DrawerSummaryCard
               pills={
                 <>
-                  <StatusPill variant={operatingStatusMeta[selected.operatingStatus].variant}>
-                    {SelectedStatusIcon && <SelectedStatusIcon className="size-3" />}
-                    {operatingStatusMeta[selected.operatingStatus].label}
-                  </StatusPill>
-                  <StatusPill variant={selected.sellerType === 'business' ? 'neutral' : 'info'}>
-                    {selected.sellerType === 'business' ? (
-                      <Briefcase className="size-3" />
-                    ) : (
-                      <User className="size-3" />
-                    )}
-                    {selected.sellerType === 'business' ? '사업자' : '개인'}
-                  </StatusPill>
+                  <StatusMetaPill meta={operatingStatusMeta[selected.operatingStatus]} />
+                  <SellerTypePill sellerType={selected.sellerType} />
                 </>
               }
             >
@@ -322,40 +272,28 @@ function SellersPage() {
             <Alert variant="warning">
               판매정지는 진행 중 주문 처리 후 적용돼요. 미정산 금액이 있으면 정산 보류로 전환돼요.
             </Alert>
-
-            <div className="flex gap-2 border-t border-border-subtle pt-4">
-              <Button
-                variant="danger"
-                leftIcon={<Ban className="size-4" />}
-                disabled={!suspensionReason || !suspensionPeriod}
-                onClick={() => setConfirmOpen(true)}
-              >
-                판매정지
-              </Button>
-              <Button variant="secondary" leftIcon={<Save className="size-4" />} onClick={handleSaveMemo}>
-                저장
-              </Button>
-            </div>
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title={`'${selected?.shopName ?? ''}'을 판매정지할까요?`}
-        description={`진행 중 주문은 처리 후 노출이 중단되고, 신규 판매가 즉시 막혀요. 정지 기간 ${suspensionPeriodLabel} 동안 셀러는 상품을 등록할 수 없어요.`}
-        confirmLabel="판매정지"
-        confirmVariant="danger"
-        onConfirm={handleConfirmSuspend}
-      >
-        <SummaryGrid
-          items={[
-            { label: '사유', value: suspensionReasonLabel },
-            { label: '기간', value: suspensionPeriodLabel },
-          ]}
-        />
-      </Modal>
+      {selected && (
+        <Modal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title={`'${selected.shopName}'을 판매정지할까요?`}
+          description={`진행 중 주문은 처리 후 노출이 중단되고, 신규 판매가 즉시 막혀요. 정지 기간 ${suspensionPeriodLabel} 동안 셀러는 상품을 등록할 수 없어요.`}
+          confirmLabel="판매정지"
+          confirmVariant="danger"
+          onConfirm={() => handleConfirmSuspend(selected)}
+        >
+          <SummaryGrid
+            items={[
+              { label: '사유', value: suspensionReasonLabel },
+              { label: '기간', value: suspensionPeriodLabel },
+            ]}
+          />
+        </Modal>
+      )}
 
       {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
     </div>

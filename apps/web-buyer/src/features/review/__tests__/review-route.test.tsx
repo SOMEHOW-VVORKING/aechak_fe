@@ -466,6 +466,26 @@ describe('리뷰 라우트', () => {
     expect(called).toBe(0)
   })
 
+  it('[AC-REVIEW-WRITE-004] 공백만 쓴 본문은 등록할 수 없고 앞뒤 공백은 잘라서 저장한다', async () => {
+    renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+    const user = userEvent.setup()
+    await screen.findByText('상품은 만족하셨나요?')
+    const stars = screen.getAllByRole('radio')
+    await user.click(stars[stars.length - 1]!)
+    // BE @Size는 공백 10자도 통과시키므로 화면이 잘라낸 본문으로 최소 길이를 본다.
+    await user.type(screen.getByRole('textbox'), '          ')
+    expect(screen.getByRole('button', { name: '리뷰 등록' })).toBeDisabled()
+
+    await user.clear(screen.getByRole('textbox'))
+    await user.type(screen.getByRole('textbox'), '  산책할 때 아주 잘 쓰고 있어요  ')
+    await user.click(screen.getByRole('button', { name: '리뷰 등록' }))
+    await waitFor(() =>
+      expect(getReviews().find(r => r.id === 'rv-20260703-0098-p-leash-5m')?.content).toBe(
+        '산책할 때 아주 잘 쓰고 있어요',
+      ),
+    )
+  })
+
   it('[AC-REVIEW-WRITE-003] 이미 리뷰를 쓴 주문(409)은 화면에 사유를 안내한다', async () => {
     seedServerOrder()
     server.use(

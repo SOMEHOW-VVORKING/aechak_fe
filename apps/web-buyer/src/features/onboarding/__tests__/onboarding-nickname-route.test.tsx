@@ -47,34 +47,42 @@ describe('/onboarding/nickname', () => {
   })
   afterEach(() => setAccessToken(null))
 
-  // 형식 위반 3종(1자·자모·이모지)은 모두 서버 호출 없이 인라인 형식 에러로 끝나야 한다.
-  // 이모지는 maxLength slice(서로게이트 쌍)와도 겹치는 입력이라 정규식 공유만 믿지 않고 함께 검증한다.
+  // 형식 위반 3종(1자·자모·이모지)은 클라이언트 정규식 없이 중복 확인 GET의 30002로 판정돼 인라인 형식
+  // 에러로 끝나야 한다(제출은 잠김). 서버 규칙은 MSW 핸들러(NICKNAME_PATTERN)가 재현한다.
   it.each([
     ['한 글자', 'a'],
     ['자모', 'ㄱㄴ'],
     ['이모지', '😀😀'],
   ])(
-    '[AC-ONBOARD-009] 형식 위반(%s)은 서버 호출 없이 인라인 형식 에러만 낸다',
+    '[AC-ONBOARD-009] 형식 위반(%s)은 중복 확인 응답 30002를 인라인 형식 에러로 보여주고 제출을 막는다',
     async (_label, value) => {
       const user = userEvent.setup()
-      let checkCalls = 0
-      server.use(
-        http.get(NICKNAME_CHECK_URL, () => {
-          checkCalls += 1
-          return HttpResponse.json({ data: { available: true } })
-        }),
-      )
       renderNicknameRoute()
 
       await user.type(await screen.findByLabelText(/닉네임/), value)
-      // 디바운스(400ms)를 넉넉히 넘겨도 중복확인 요청이 나가지 않아야 한다.
-      await new Promise(resolve => setTimeout(resolve, 700))
 
-      expect(screen.getByText('2~12자의 한글, 영문, 숫자로 입력해 주세요')).toBeInTheDocument()
-      expect(checkCalls).toBe(0)
+      expect(
+        await screen.findByText('2~12자의 한글, 영문, 숫자로 입력해 주세요', {}, { timeout: 3000 }),
+      ).toBeInTheDocument()
       expect(screen.getByRole('button', { name: '애착 시작하기' })).toBeDisabled()
     },
   )
+
+  it('[AC-ONBOARD-014] 빈 입력은 중복 확인을 호출하지 않는다', async () => {
+    let checkCalls = 0
+    server.use(
+      http.get(NICKNAME_CHECK_URL, () => {
+        checkCalls += 1
+        return HttpResponse.json({ data: { available: true } })
+      }),
+    )
+    renderNicknameRoute()
+
+    await screen.findByLabelText(/닉네임/)
+    // 디바운스(400ms)를 넉넉히 넘겨도 빈 값으로는 요청이 나가지 않아야 한다.
+    await new Promise(resolve => setTimeout(resolve, 700))
+    expect(checkCalls).toBe(0)
+  })
 
   it('[AC-ONBOARD-010] 가용 닉네임을 제출하면 완료 화면이 뜨고 CTA로 홈에 들어간다', async () => {
     const user = userEvent.setup()

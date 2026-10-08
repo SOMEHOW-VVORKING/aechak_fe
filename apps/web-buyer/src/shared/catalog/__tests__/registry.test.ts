@@ -15,7 +15,8 @@ function realProduct(id: string): CatalogProduct {
     inspectionStatus: 'approved',
     createdAt: '',
     storeName: '리얼상점',
-    thumbnailUrl: undefined,
+    thumbnailUrl: 'https://cdn.example/real.png',
+    reviewCount: 0,
     isSoldOut: false,
     mainCategory: 'all',
   }

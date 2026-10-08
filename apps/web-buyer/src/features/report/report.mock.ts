@@ -33,7 +33,7 @@ export function getReportTargetMock(productId: string): ReportTarget | null {
   return {
     productId: product.id,
     name: product.name,
-    storeName: product.storeName ?? '',
+    storeName: product.storeName,
     price: product.price,
     thumbnailUrl: product.thumbnailUrl,
   }

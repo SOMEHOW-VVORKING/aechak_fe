@@ -71,9 +71,11 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
 
     expect(await screen.findByText('통장 사본이 흐려요.')).toBeInTheDocument()
 
-    // 계좌번호는 응답이 마스킹뿐이라 재입력해야 저장/제출이 열린다(소거 방지 가드).
+    // 계좌번호는 응답이 마스킹뿐이라 재입력해야 저장/제출이 열린다(소거 방지 가드). 서류는 갖춰져 버튼은
+    // 열려 있고, 누르면 입력 helper 외에 가드 Alert가 하나 더 뜬다.
     await user.click(screen.getByRole('button', { name: '재제출하기' }))
-    expect(await screen.findByText(/계좌번호는 저장할 때마다 다시 입력/)).toBeInTheDocument()
+    expect(await screen.findAllByText(/계좌번호는 저장할 때마다 다시 입력/)).toHaveLength(2)
+    expect(currentSellerApplication()?.status).toBe('REJECTED')
 
     await user.type(screen.getByLabelText('계좌번호'), '110123456789')
     await user.click(screen.getByRole('button', { name: '재제출하기' }))
@@ -81,6 +83,28 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     // 저장(reopen → DRAFT) → 제출(204) 체인이 끝나면 심사 대기 화면으로 넘어간다.
     expect(await screen.findByText('심사 대기 중이에요')).toBeInTheDocument()
     expect(currentSellerApplication()?.status).toBe('SUBMITTED')
+  })
+
+  it('[AC-STORE-ROUTE-007] 필수 정보가 비어 있으면 서버(10105)가 거절하고 부족 항목을 인라인으로 보여준다', async () => {
+    seedSellerApplication(
+      makeApplicationWire({
+        documents: [
+          { documentType: 'ID_CARD', uploadedAt: '2026-08-01T09:10:00' },
+          { documentType: 'BANKBOOK_COPY', uploadedAt: '2026-08-01T09:11:00' },
+        ],
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    // 서류만 갖추면 제출 버튼은 열린다 — 필수 정보는 클라이언트가 미리 보지 않는다.
+    const submit = await screen.findByRole('button', { name: '제출하기' })
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+
+    expect(await screen.findByText('제출 전 필요: 대표자명, 은행 코드, 계좌번호, 예금주')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    expect(currentSellerApplication()?.status).toBe('DRAFT')
   })
 
   it('[AC-STORE-ROUTE-004] 심사 중(SUBMITTED)은 폼 없이 홀딩 뷰만 보여준다', async () => {
