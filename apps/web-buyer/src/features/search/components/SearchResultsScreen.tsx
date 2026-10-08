@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronDown, SearchX, SlidersHorizontal, Star } from 'lucide-react'
 import {
@@ -11,18 +11,23 @@ import {
 } from '@aechak/design-system/web'
 import type { CategoryResponse } from '@aechak/api'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { FilterChip } from '@/shared/components/FilterChip'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate, useIsLoggedIn } from '@/shared/auth'
 import { useSearchCategories, useSearchResults } from '../search.queries'
 import {
   DEFAULT_FILTERS,
+  RESULT_SORT_LABELS,
   RESULT_SORTS,
   activeFilterCount,
   FALLBACK_SUGGESTIONS,
   type ResultSort,
   type SearchFilters,
 } from '../search.mock'
+import { KeywordChip } from './KeywordChip'
+import { OptionSheet } from './OptionSheet'
 
 interface PricePreset {
   label: string
@@ -82,7 +87,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
     navigate({ to: '/search/results', search: { q: trimmed } })
   }
 
-  const sortLabel = RESULT_SORTS.find(s => s.value === sort)?.label ?? '인기순'
+  const sortLabel = RESULT_SORT_LABELS[sort]
   const filterCount = activeFilterCount(filters)
   const priceActive =
     filters.minPrice !== DEFAULT_FILTERS.minPrice || filters.maxPrice !== DEFAULT_FILTERS.maxPrice
@@ -131,35 +136,31 @@ export function SearchResultsScreen({ query }: { query: string }) {
           </button>
           {/* 품절 제외는 기본 ON(활성)이라, 스크롤해야 보이는 맨 끝이 아니라 필터 버튼 바로 뒤에 둬
               기본 활성 상태가 처음부터 보이게 한다(폭이 430px를 넘으면 뒤쪽 별점 칩이 대신 스크롤됨). */}
-          <FilterChipButton
+          <FilterChip
             selected={filters.excludeSoldOut}
             onClick={() => patchFilters({ excludeSoldOut: !filters.excludeSoldOut })}
           >
             품절 제외
             {filters.excludeSoldOut && <Check className="size-3.5" />}
-          </FilterChipButton>
-          <FilterChipButton
+          </FilterChip>
+          <FilterChip
             selected={filters.freeShippingOnly}
             onClick={() => patchFilters({ freeShippingOnly: !filters.freeShippingOnly })}
           >
             무료배송
             {filters.freeShippingOnly && <Check className="size-3.5" />}
-          </FilterChipButton>
+          </FilterChip>
           {/* 가격은 즉시 토글이 아니라 가격대 전용 시트를 연다(무료배송/별점과 달리 선택지가 여러 개라서). */}
-          <FilterChipButton
-            selected={priceActive}
-            expanded={priceOpen}
-            onClick={() => setPriceOpen(true)}
-          >
+          <FilterChip selected={priceActive} expanded={priceOpen} onClick={() => setPriceOpen(true)}>
             {priceChipLabel}
             <ChevronDown className="size-3.5" />
-          </FilterChipButton>
-          <FilterChipButton
+          </FilterChip>
+          <FilterChip
             selected={filters.minRating >= 4}
             onClick={() => patchFilters({ minRating: filters.minRating >= 4 ? 0 : 4 })}
           >
             별점 4↑
-          </FilterChipButton>
+          </FilterChip>
         </div>
 
         {/* 결과 헤더 */}
@@ -187,15 +188,14 @@ export function SearchResultsScreen({ query }: { query: string }) {
         {/* 결과 그리드 / 빈 상태 */}
         <div className="px-4">
           {isError && !data ? (
-            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다.
-            <div className="flex flex-col items-center gap-4 py-16 text-center">
+            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다. DS EmptyState는 action 버튼이 size=sm 고정이라
+            // 목업의 md 버튼을 못 만든다 — 레이아웃만 미러링한다(아래 무결과 블록과 같은 사정).
+            <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
                 <SearchX className="size-7" />
               </div>
               <div className="space-y-1">
-                <p className="text-body font-medium text-text-primary">
-                  검색 결과를 불러오지 못했어요
-                </p>
+                <p className="text-body font-medium text-text-primary">검색 결과를 불러오지 못했어요</p>
                 <p className="text-body-sm text-text-tertiary">
                   네트워크 상태를 확인하고 다시 시도해 주세요.
                 </p>
@@ -236,14 +236,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {FALLBACK_SUGGESTIONS.map(keyword => (
-                    <button
-                      key={keyword}
-                      type="button"
-                      onClick={() => research(keyword)}
-                      className="inline-flex h-8 items-center rounded-chip bg-surface-sunken px-3.5 text-body-sm text-text-secondary"
-                    >
-                      {keyword}
-                    </button>
+                    <KeywordChip key={keyword} keyword={keyword} onClick={() => research(keyword)} />
                   ))}
                 </div>
               </div>
@@ -259,7 +252,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
                     <Star className="size-3 flex-none text-warning" fill="currentColor" />
                     <span className="text-caption">
                       {product.rating.toFixed(1)} (
-                      {(product.reviewCount ?? 0).toLocaleString('ko-KR')})
+                      {product.reviewCount.toLocaleString('ko-KR')})
                     </span>
                   </div>
                 ) : null
@@ -295,56 +288,34 @@ export function SearchResultsScreen({ query }: { query: string }) {
         }}
       />
 
-      <BottomSheet open={sortOpen} onClose={() => setSortOpen(false)} title="정렬">
-        <div className="flex flex-col">
-          {RESULT_SORTS.map(option => {
-            const selected = option.value === sort
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setSort(option.value)
-                  setSortOpen(false)
-                }}
-                className={[
-                  'flex h-12 items-center justify-between text-body',
-                  selected ? 'font-semibold text-brand' : 'text-text-primary',
-                ].join(' ')}
-              >
-                {option.label}
-                {selected && <Check className="size-4 text-brand" />}
-              </button>
-            )
-          })}
-        </div>
-      </BottomSheet>
+      <OptionSheet
+        open={sortOpen}
+        onClose={() => setSortOpen(false)}
+        title="정렬"
+        options={RESULT_SORTS.map(option => ({
+          label: option.label,
+          selected: option.value === sort,
+          onSelect: () => {
+            setSort(option.value)
+            setSortOpen(false)
+          },
+        }))}
+      />
 
       {/* 가격대 전용 시트 — 가격 칩에서 열림(정렬 시트와 동일하게 선택 즉시 적용 후 닫힘). */}
-      <BottomSheet open={priceOpen} onClose={() => setPriceOpen(false)} title="가격대">
-        <div className="flex flex-col">
-          {PRICE_PRESETS.map(preset => {
-            const selected = preset.min === filters.minPrice && preset.max === filters.maxPrice
-            return (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => {
-                  patchFilters({ minPrice: preset.min, maxPrice: preset.max })
-                  setPriceOpen(false)
-                }}
-                className={[
-                  'flex h-12 items-center justify-between text-body',
-                  selected ? 'font-semibold text-brand' : 'text-text-primary',
-                ].join(' ')}
-              >
-                {preset.label}
-                {selected && <Check className="size-4 text-brand" />}
-              </button>
-            )
-          })}
-        </div>
-      </BottomSheet>
+      <OptionSheet
+        open={priceOpen}
+        onClose={() => setPriceOpen(false)}
+        title="가격대"
+        options={PRICE_PRESETS.map(preset => ({
+          label: preset.label,
+          selected: preset.min === filters.minPrice && preset.max === filters.maxPrice,
+          onSelect: () => {
+            patchFilters({ minPrice: preset.min, maxPrice: preset.max })
+            setPriceOpen(false)
+          },
+        }))}
+      />
 
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} />
     </MobileScreen>
@@ -388,32 +359,29 @@ function FilterSheet({
               <span className="text-label font-semibold text-text-primary">카테고리</span>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <FilterChipButton
-                    selected={draft.category == null}
-                    onClick={() => patch({ category: null })}
-                  >
+                  <FilterChip selected={draft.category == null} onClick={() => patch({ category: null })}>
                     전체
-                  </FilterChipButton>
+                  </FilterChip>
                 </div>
                 {categories.map(major => (
                   <div key={major.categoryId} className="flex flex-col gap-1.5">
                     <span className="text-caption text-text-tertiary">{major.name}</span>
                     <div className="flex flex-wrap gap-2">
                       {major.children.map(sub => (
-                        <FilterChipButton
+                        <FilterChip
                           key={sub.categoryId}
                           selected={draft.category === sub.categoryId}
                           onClick={() => patch({ category: sub.categoryId })}
                         >
                           {sub.name}
-                        </FilterChipButton>
+                        </FilterChip>
                       ))}
                     </div>
                   </div>
                 ))}
               </div>
             </section>
-            <div className="h-px bg-border-subtle" />
+            <Divider />
           </>
         )}
 
@@ -421,22 +389,19 @@ function FilterSheet({
         <section className="flex flex-col gap-2.5">
           <span className="text-label font-semibold text-text-primary">가격대</span>
           <div className="flex flex-wrap gap-2">
-            {PRICE_PRESETS.map(preset => {
-              const selected = activePricePreset?.label === preset.label
-              return (
-                <FilterChipButton
-                  key={preset.label}
-                  selected={selected}
-                  onClick={() => patch({ minPrice: preset.min, maxPrice: preset.max })}
-                >
-                  {preset.label}
-                </FilterChipButton>
-              )
-            })}
+            {PRICE_PRESETS.map(preset => (
+              <FilterChip
+                key={preset.label}
+                selected={activePricePreset?.label === preset.label}
+                onClick={() => patch({ minPrice: preset.min, maxPrice: preset.max })}
+              >
+                {preset.label}
+              </FilterChip>
+            ))}
           </div>
         </section>
 
-        <div className="h-px bg-border-subtle" />
+        <Divider />
 
         {/* 무료배송 / 품절 제외 */}
         <div className="flex flex-col gap-3">
@@ -452,20 +417,20 @@ function FilterSheet({
           />
         </div>
 
-        <div className="h-px bg-border-subtle" />
+        <Divider />
 
         {/* 최소 평점 */}
         <section className="flex flex-col gap-2.5">
           <span className="text-label font-semibold text-text-primary">최소 평점</span>
           <div className="flex flex-wrap gap-2">
             {RATING_PRESETS.map(preset => (
-              <FilterChipButton
+              <FilterChip
                 key={preset.label}
                 selected={draft.minRating === preset.value}
                 onClick={() => patch({ minRating: preset.value })}
               >
                 {preset.label}
-              </FilterChipButton>
+              </FilterChip>
             ))}
           </div>
         </section>
@@ -480,36 +445,5 @@ function FilterSheet({
         </div>
       </div>
     </BottomSheet>
-  )
-}
-
-function FilterChipButton({
-  selected,
-  onClick,
-  children,
-  expanded,
-}: {
-  selected: boolean
-  onClick: () => void
-  children: ReactNode
-  /** 시트를 여는 칩이면 열림 상태를 준다 — 토글 칩은 aria-pressed만, 시트 칩은 haspopup/expanded까지. */
-  expanded?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
-      aria-haspopup={expanded === undefined ? undefined : 'dialog'}
-      aria-expanded={expanded}
-      className={[
-        'inline-flex h-9 flex-none items-center gap-1 rounded-chip border px-3.5 text-body-sm transition-colors',
-        selected
-          ? 'border-brand-border bg-brand-subtle font-semibold text-brand'
-          : 'border-border bg-surface-base text-text-secondary',
-      ].join(' ')}
-    >
-      {children}
-    </button>
   )
 }

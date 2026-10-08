@@ -50,12 +50,12 @@ export function ImageLightbox({ src, onClose, alt = '' }: ImageLightboxProps) {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
-      if (!items.length) {
+      const first = items[0]
+      const last = items.at(-1)
+      if (!first || !last) {
         e.preventDefault()
         return
       }
-      const first = items[0]!
-      const last = items[items.length - 1]!
       if (e.shiftKey) {
         if (document.activeElement === first) {
           e.preventDefault()

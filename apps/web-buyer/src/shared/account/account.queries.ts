@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getMe, updateProfile, type UpdateProfileRequest, type UserMe } from '@aechak/api'
+import { errorResponse, getMe, updateProfile, type UpdateProfileRequest, type UserMe } from '@aechak/api'
 import type { BuyerAccount } from '@aechak/domain'
 
 // 마이 허브 프로필 카드·프로필 수정 화면을 실제 백엔드(GET /users/me · PUT /users/me/profile)에 붙이는 얇은 어댑터.
@@ -35,9 +35,8 @@ export function toBuyerAccount(res: UserMe): BuyerAccount {
 // 403/20006(ONBOARDING_REQUIRED) 여부. PENDING 유저가 ACTIVE 전용 경로(프로필 수정 PUT 등)를
 // 부르면 온다 — 인라인 문구로 막다른 길을 만들지 말고 온보딩 약관 화면으로 보내야 한다.
 export function isOnboardingRequired(error: unknown): boolean {
-  const response = (error as { response?: { status?: number; data?: { errorCode?: number } } })
-    ?.response
-  return response?.status === 403 && response?.data?.errorCode === ONBOARDING_REQUIRED
+  const res = errorResponse(error)
+  return res?.status === 403 && res.data?.errorCode === ONBOARDING_REQUIRED
 }
 
 /** 내 정보 조회. 프로필 카드·수정 화면의 초기값 소스. */
@@ -77,27 +76,23 @@ export function useUpdateProfile() {
 }
 
 // 에러 문구는 HTTP status로 고르고, 같은 status에 여러 사유가 있으면 errorCode까지 본다.
-// axios 타입을 안 끌어오려고 duck-typing.
+// 서버 message는 -습니다체라 그대로 쓰지 않는다.
 export function accountErrorMessage(error: unknown): string {
-  const status = (error as { response?: { status?: number } })?.response?.status
-  const data = (error as { response?: { data?: { message?: string; errorCode?: number } } })?.response
-    ?.data
-  const serverMessage = data?.message
-  switch (status) {
+  const res = errorResponse(error)
+  const errorCode = res?.data?.errorCode
+  switch (res?.status) {
     case 400:
-      return data?.errorCode === INVALID_NICKNAME
-        ? '닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요'
-        : (serverMessage ?? '입력한 정보를 다시 확인해주세요')
+      return errorCode === INVALID_NICKNAME
+        ? '닉네임은 완성형 한글/영문/숫자 2~12자로 입력해 주세요'
+        : '입력한 정보를 다시 확인해주세요'
     case 403:
-      return data?.errorCode === ONBOARDING_REQUIRED
-        ? '온보딩을 먼저 완료해 주세요'
-        : (serverMessage ?? '접근 권한이 없어요')
+      return errorCode === ONBOARDING_REQUIRED ? '온보딩을 먼저 완료해 주세요' : '접근 권한이 없어요'
     case 409:
-      if (data?.errorCode === DUPLICATE_NICKNAME) return '이미 사용 중인 닉네임이에요'
-      if (data?.errorCode === CONCURRENT_MODIFICATION)
+      if (errorCode === DUPLICATE_NICKNAME) return '이미 사용 중인 닉네임이에요'
+      if (errorCode === CONCURRENT_MODIFICATION)
         return '다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해주세요'
-      return serverMessage ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
     default:
-      return serverMessage ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
   }
 }

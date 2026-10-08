@@ -128,15 +128,13 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
 
   return (
     <div className="flex flex-col pb-6">
-      <div className="sticky top-0 z-10 bg-surface-base">
-        <MarketAppBar
-          title="마켓"
-          onSearch={() => navigate({ to: '/search' })}
-          onCart={() => navigate({ to: '/cart' })}
-          cartCount={cartCount}
-          hasNotification
-        />
-      </div>
+      <MarketAppBar
+        title="마켓"
+        onSearch={() => navigate({ to: '/search' })}
+        onCart={() => navigate({ to: '/cart' })}
+        cartCount={cartCount}
+        hasNotification
+      />
 
       {/* 대분류 칩 — [전체] + 트리 depth-1. 트리 로딩 중엔 칩 스켈레톤을 보여 "카테고리 없음"과 구분한다.
           트리 실패 시엔 전체만 남고 상품 목록은 독립적으로 그대로 뜬다. */}

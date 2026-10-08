@@ -1,11 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { EmptyState, ProductCard, Skeleton, StatusPill } from '@aechak/design-system/web'
+import { EmptyState, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { MarketAppBar } from '@/shared/components/MarketAppBar'
 import { formatKRW } from '@/shared/formatKRW'
 import { truncateText } from '@/shared/truncate'
 import { useCartCount } from '@/shared/cart'
-import { registerProducts, toggleWishlist, useWishedIds, type CatalogProduct } from '@/shared/catalog'
+import { ProductCarousel, ProductThumbnail, registerProducts, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
 import { useHomeFeed } from '../home.queries'
 
@@ -27,25 +27,15 @@ export function HomeScreen() {
     navigate({ to: '/products/$productId', params: { productId: product.id } })
   }
 
-  // 추천 캐러셀 하트 — 반드시 비회원 로그인 게이트를 거친 뒤에만 토글한다(ProductGrid의 wishGuard와
-  // 동일 목적: 게이트 우회 버그 재발 방지). 게이트 없는 bare toggleWishlist 호출 금지.
-  const toggleWishGated = (product: CatalogProduct) =>
-    requireAuth('wish', () => {
-      registerProducts([product])
-      toggleWishlist(product.id)
-    })
-
   return (
     <div className="flex flex-col pb-6">
-      <div className="sticky top-0 z-10 bg-surface-base">
-        <MarketAppBar
-          title="애착"
-          onSearch={() => navigate({ to: '/search' })}
-          onCart={() => navigate({ to: '/cart' })}
-          cartCount={cartCount}
-          hasNotification
-        />
-      </div>
+      <MarketAppBar
+        title="애착"
+        onSearch={() => navigate({ to: '/search' })}
+        onCart={() => navigate({ to: '/cart' })}
+        cartCount={cartCount}
+        hasNotification
+      />
 
       {isError ? (
         // 비인증 오류(네트워크/500 등)는 인라인 안내만 한다(401은 인터셉터, 403/20006은 전역 온보딩 유도).
@@ -62,7 +52,8 @@ export function HomeScreen() {
           <RecommendedSection
             products={data.recommended}
             onSelect={goProduct}
-            onWishToggle={toggleWishGated}
+            // 추천 캐러셀 하트 — 반드시 비회원 로그인 게이트를 거친 뒤에만 토글한다(ProductGrid와 같은 wishGuard).
+            wishGuard={proceed => requireAuth('wish', proceed)}
           />
           <RankingSection
             ranking={data.ranking}
@@ -77,19 +68,16 @@ export function HomeScreen() {
   )
 }
 
-// 추천 상품 가로 캐러셀 — ProductGrid(2열 고정)는 못 쓰므로 ProductCard를 가로 스크롤 스트립으로
-// 직접 배치한다. 각 카드 고정 폭(~152px). 하트는 상위에서 게이트로 감싼 onWishToggle을 받는다.
+// 추천 상품 가로 캐러셀 — 공용 ProductCarousel(찜/레지스트리/게이트 배선은 ProductGrid와 공유).
 function RecommendedSection({
   products,
   onSelect,
-  onWishToggle,
+  wishGuard,
 }: {
   products: CatalogProduct[]
   onSelect: (product: CatalogProduct) => void
-  onWishToggle: (product: CatalogProduct) => void
+  wishGuard: (proceed: () => void) => void
 }) {
-  const wished = useWishedIds()
-
   if (products.length === 0) return null
 
   return (
@@ -97,23 +85,7 @@ function RecommendedSection({
       <h2 className="mb-2.5 px-4 text-subheading font-semibold text-text-primary">
         이런 상품은 어때요?
       </h2>
-      <div className="flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {products.map(product => (
-          <div key={product.id} className="w-[152px] flex-none">
-            <ProductCard
-              image={product.thumbnailUrl ?? ''}
-              storeName={product.storeName}
-              name={product.name}
-              price={product.price}
-              originalPrice={product.originalPrice}
-              isSold={product.isSoldOut}
-              onClick={product.isSoldOut ? undefined : () => onSelect(product)}
-              wished={wished.has(product.id)}
-              onWishToggle={() => onWishToggle(product)}
-            />
-          </div>
-        ))}
-      </div>
+      <ProductCarousel products={products} onSelect={onSelect} wishGuard={wishGuard} className="px-4" />
     </section>
   )
 }
@@ -188,13 +160,7 @@ function RankingRow({
       >
         {rank}
       </span>
-      <div className="size-[52px] flex-none overflow-hidden rounded-image bg-surface-sunken">
-        <img
-          src={product.thumbnailUrl ?? ''}
-          alt=""
-          className={['size-full object-cover', sold ? 'opacity-50' : ''].join(' ')}
-        />
-      </div>
+      <ProductThumbnail src={product.thumbnailUrl} dimmed={sold} />
       {/* min-w-0 + truncate가 폭 기준 1줄 말줄임의 정석 가드. 그 위에 글자수 하드 캡(truncateText)을
           더해 아주 긴 이름도 결정적으로 짧게 자른다. */}
       <div className="min-w-0 flex-1">

@@ -12,7 +12,7 @@ export {
   emptyFormValue,
   formValueFrom,
   isValidBusinessRegNo,
-  missingRequirements,
+  missingDocuments,
   sellerApplicationErrorMessage,
 } from './store-settings.contract'
 export type { SaveDraftInput, SellerApplicationFormValue } from './store-settings.contract'

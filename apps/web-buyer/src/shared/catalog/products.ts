@@ -9,6 +9,13 @@ import { getRegistered } from './registry'
 // 그대로 반영된다(찜 상태는 wishlist.store가 별도 관리).
 export interface CatalogProduct extends Product {
   mainCategory: MainCategory
+  // 도메인 Product에선 optional인 표시 필드지만 카탈로그를 만드는 세 빌더(목업 make·요약 매퍼·상세 매퍼)가
+  // 항상 채우므로 여기서 필수로 조인다 — 소비 측의 `?? ''`/`?? 0` 폴백을 없애기 위함. rating은 서버
+  // averageRating이 nullable이라 그대로 둔다.
+  storeName: string
+  thumbnailUrl: string
+  reviewCount: number
+  isSoldOut: boolean
   /**
    * 상세 진입 가능 여부(서버 `ProductSummaryResponse.isViewable`). 목업 상품에는 대응 소스가 없어
    * optional이고 `undefined`는 진입 가능으로 읽는다 — 소비 측은 `isViewable === false`로 판정할 것.

@@ -1,6 +1,7 @@
 import type { Claim } from '@aechak/domain'
 import { Modal } from '@aechak/design-system/web'
 import { useConfirmRefund } from '../claims.queries'
+import { ClaimSummaryBox } from './ClaimSummaryBox'
 
 interface RefundConfirmModalProps {
   claim: Claim | null
@@ -23,12 +24,7 @@ export function RefundConfirmModal({ claim, onClose }: RefundConfirmModalProps) 
       loading={confirmRefund.isPending}
       onConfirm={() => confirmRefund.mutate(claim.id, { onSuccess: onClose })}
     >
-      <div className="flex flex-col gap-2 rounded-md bg-surface-sunken px-3.5 py-3">
-        <div className="flex items-center justify-between text-body-sm">
-          <span className="text-text-secondary">환불 금액</span>
-          <span className="font-semibold tabular-nums text-text-primary">{claim.amount.toLocaleString()}원</span>
-        </div>
-      </div>
+      <ClaimSummaryBox rows={[{ label: '환불 금액', value: `${claim.amount.toLocaleString()}원`, mono: true }]} />
     </Modal>
   )
 }

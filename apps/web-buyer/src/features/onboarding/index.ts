@@ -7,11 +7,7 @@ export {
   useSubmitConsents,
   useNicknameAvailability,
   useSetNickname,
-  normalizeNickname,
-  isValidNicknameFormat,
   onboardingErrorMessage,
-  readErrorCode,
-  NICKNAME_MIN_LENGTH,
   NICKNAME_MAX_LENGTH,
 } from './onboarding.queries'
 export type { SocialProvider, OnboardingTerm, ConsentInput } from './onboarding.queries'

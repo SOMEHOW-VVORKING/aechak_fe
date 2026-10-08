@@ -287,8 +287,6 @@ export type ProductFormErrors = Record<string, string>
 
 export const MAX_ADDITIONAL_IMAGES = 9
 export const MAX_DETAIL_IMAGES = 20
-export const MIN_REGULAR_PRICE = 100
-export const MAX_REGULAR_PRICE = 100_000_000
 
 export function emptyProductForm(): ProductFormValues {
   return {
@@ -396,52 +394,38 @@ export function toFormValues(
 
 const isBlank = (value: string) => value.trim() === ''
 
-/** `withOptions=false`는 수정 화면 — PUT이 옵션/재고를 받지 않아 검증하지 않는다. */
+/**
+ * 필수값 누락만 본다 — CRQ-PRD-02(첫 누락 필드로 스크롤 + 안내 말풍선)에 필요한 최소치다. 가격 범위, 할인 기간,
+ * 옵션 중복, 숫자 상한 같은 규칙은 BE가 errorCode로 거절하고 productErrorMessage가 문구를 맡는다.
+ * 숫자/날짜 칸은 입력 단계에서 digitsOnly/yyyy-mm-dd로 정규화돼 공백이 못 들어오므로 `''`만 본다.
+ * `withOptions=false`는 수정 화면 — PUT이 옵션/재고를 받지 않아 검증하지 않는다.
+ */
 export function validateProductForm(v: ProductFormValues, withOptions = true): ProductFormErrors {
   const errors: ProductFormErrors = {}
   if (isBlank(v.productName)) errors['productName'] = '상품명을 입력해 주세요'
   if (v.categoryIds[2] == null) errors['categoryId'] = '소분류까지 선택해 주세요'
-
-  const regular = Number(v.regularPrice)
-  const regularValid = !isBlank(v.regularPrice) && regular >= MIN_REGULAR_PRICE && regular <= MAX_REGULAR_PRICE
-  if (isBlank(v.regularPrice)) errors['regularPrice'] = '정가를 입력해 주세요'
-  else if (!regularValid) errors['regularPrice'] = '정가는 100원부터 1억 원까지 입력할 수 있어요'
-
+  if (v.regularPrice === '') errors['regularPrice'] = '정가를 입력해 주세요'
   if (v.discountEnabled) {
-    if (isBlank(v.discountPrice)) errors['discountPrice'] = '할인가를 입력해 주세요'
-    else if (regularValid && Number(v.discountPrice) > regular)
-      errors['discountPrice'] = '할인가는 정가보다 클 수 없어요'
-    if (isBlank(v.discountStartDate)) errors['discountStartDate'] = '할인 시작일을 선택해 주세요'
-    // yyyy-mm-dd는 문자열 비교가 곧 날짜 비교다.
-    if (v.discountEndDate && v.discountStartDate && v.discountEndDate < v.discountStartDate)
-      errors['discountEndDate'] = '종료일은 시작일보다 앞설 수 없어요'
+    if (v.discountPrice === '') errors['discountPrice'] = '할인가를 입력해 주세요'
+    if (v.discountStartDate === '') errors['discountStartDate'] = '할인 시작일을 선택해 주세요'
   }
-
   if (v.thumbnail.length !== 1) errors['thumbnail'] = '대표 썸네일을 1장 올려 주세요'
   if (!withOptions) return errors
 
-  const stockError = (value: string) =>
-    isBlank(value) ? '재고를 입력해 주세요' : Number(value) > STOCK_MAX ? '재고가 너무 커요' : undefined
   if (!v.optionEnabled) {
-    const message = stockError(v.defaultStock)
-    if (message) errors['defaultStock'] = message
+    if (v.defaultStock === '') errors['defaultStock'] = '재고를 입력해 주세요'
   } else {
-    const seenNames = new Set<string>()
     v.optionGroups.forEach((group, i) => {
-      const name = group.name.trim()
-      if (!name) errors[`optionGroup-${i}-name`] = '옵션명을 입력해 주세요'
-      else if (seenNames.has(name)) errors[`optionGroup-${i}-name`] = '같은 옵션명이 있어요'
-      seenNames.add(name)
+      if (isBlank(group.name)) errors[`optionGroup-${i}-name`] = '옵션명을 입력해 주세요'
       if (group.values.length === 0) errors[`optionGroup-${i}-values`] = '옵션값을 1개 이상 추가해 주세요'
     })
     v.combinations.forEach((row, j) => {
-      if (isBlank(row.additionalPrice)) errors[`combination-${j}-additionalPrice`] = '추가 금액을 입력해 주세요'
-      // BE는 Long이지만 JS가 정확히 보낼 수 있는 정수는 2^53 미만까지다.
+      if (row.additionalPrice === '') errors[`combination-${j}-additionalPrice`] = '추가 금액을 입력해 주세요'
+      // 서버 규칙이 아니라 전송 손실 방지다. 2^53 이상은 Number()가 다른 값으로 바꿔 보내고 BE는 음수만 거절한다.
       else if (!Number.isSafeInteger(Number(row.additionalPrice))) {
         errors[`combination-${j}-additionalPrice`] = '추가 금액이 너무 커요'
       }
-      const message = stockError(row.stockQuantity)
-      if (message) errors[`combination-${j}-stockQuantity`] = message
+      if (row.stockQuantity === '') errors[`combination-${j}-stockQuantity`] = '재고를 입력해 주세요'
     })
   }
   return errors
@@ -492,9 +476,10 @@ export function toRegisterRequest(v: ProductFormValues): ProductRegisterRequest 
   }
 }
 
-const parseDigits = (value: string): number | undefined => (/^\d+$/.test(value) ? Number(value) : undefined)
+// 입력이 digitsOnly로 정규화돼 있어 빈 칸과 숫자만 구분하면 된다.
+const parseDigits = (value: string): number | undefined => (value === '' ? undefined : Number(value))
 
-/** 임시저장(목업 전용) — 필수 검증 없이 비었거나 숫자가 아닌 필드는 뺀다. */
+/** 임시저장(목업 전용) — 필수 검증 없이 비운 칸만 뺀다. */
 export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
   const body: ProductDraftRequest = {}
   if (!isBlank(v.productName)) body.productName = v.productName.trim()
@@ -558,6 +543,6 @@ const ERROR_MESSAGE: Record<number, string> = {
 
 // axios 타입을 안 끌어오려고 duck-typing(store-settings 관례). 에러 본문은 `{ errorCode, message }`.
 export function productErrorMessage(error: unknown): string {
-  const code = (error as { response?: { data?: { errorCode?: number } } })?.response?.data?.errorCode
+  const code = (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
   return (code !== undefined && ERROR_MESSAGE[code]) || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
 }

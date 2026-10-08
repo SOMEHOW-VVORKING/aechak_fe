@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
-import { BottomSheet, Button, ProductCard } from '@aechak/design-system/web'
-import type { CatalogProduct } from '@/shared/catalog'
+import { BottomSheet, Button, Card } from '@aechak/design-system/web'
+import { ProductCarousel, ProductThumbnail } from '@/shared/catalog'
 import { useCartItems } from '@/shared/cart'
 import { useProductDetail } from '../product.queries'
 import { getCartRecommendations } from '../recommendation.mock'
@@ -34,14 +34,8 @@ export function AddedToCartSheet({
       <div className="flex flex-col gap-4">
         {/* (a) 방금 담은 상품 요약 행 */}
         {data && (
-          <div className="flex items-center gap-3 rounded-card border border-border-subtle bg-surface-raised p-3">
-            <div className="size-14 flex-none overflow-hidden rounded-image bg-surface-sunken">
-              <img
-                src={data.thumbnailUrl ?? data.images[0]}
-                alt=""
-                className="size-full object-cover"
-              />
-            </div>
+          <Card className="flex items-center gap-3 p-3">
+            <ProductThumbnail src={data.thumbnailUrl} className="size-14" />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <p className="truncate text-body-sm font-medium text-text-primary">{data.name}</p>
               {line && (
@@ -50,15 +44,16 @@ export function AddedToCartSheet({
                 </p>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
-        {/* (b) 함께 보면 좋은 상품 — 섹션 헤더 + 가로 스크롤 캐러셀(HomeScreen RecommendedSection 참고) */}
+        {/* (b) 함께 보면 좋은 상품 — 섹션 헤더 + 가로 스크롤 캐러셀(홈 추천 섹션과 같은 ProductCarousel, 하트 없음) */}
         {recommended.length > 0 && (
           <section className="flex flex-col gap-2.5">
             <h3 className="text-subheading font-semibold text-text-primary">함께 보면 좋은 상품</h3>
-            <RecommendedCarousel
+            <ProductCarousel
               products={recommended}
+              showWish={false}
               onSelect={product =>
                 navigate({ to: '/products/$productId', params: { productId: product.id } })
               }
@@ -77,30 +72,5 @@ export function AddedToCartSheet({
         </div>
       </div>
     </BottomSheet>
-  )
-}
-
-function RecommendedCarousel({
-  products,
-  onSelect,
-}: {
-  products: CatalogProduct[]
-  onSelect: (product: CatalogProduct) => void
-}) {
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {products.map(product => (
-        <div key={product.id} className="w-[152px] flex-none">
-          <ProductCard
-            image={product.thumbnailUrl ?? ''}
-            storeName={product.storeName}
-            name={product.name}
-            price={product.price}
-            originalPrice={product.originalPrice}
-            onClick={() => onSelect(product)}
-          />
-        </div>
-      ))}
-    </div>
   )
 }

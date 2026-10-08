@@ -14,6 +14,12 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
+// axios 에러 모양(isAxiosError 플래그 + response)만 흉내 낸 최소 객체.
+const err = (status: number, data?: { errorCode?: number; message?: string }) => ({
+  isAxiosError: true,
+  response: { status, data },
+})
+
 describe('usePointBalance', () => {
   beforeEach(() => {
     seedPointBalance(0)
@@ -40,12 +46,12 @@ describe('usePointBalance', () => {
 
 describe('pointsErrorMessage', () => {
   it('[AC-POINT-ERR-001] HTTP status를 사용자 문구로 매핑한다', () => {
-    expect(pointsErrorMessage({ response: { status: 403 } })).toBe('적립금을 확인할 권한이 없어요')
-    expect(pointsErrorMessage({ response: { status: 404 } })).toBe('적립금 정보를 찾을 수 없어요')
-    // 403이라도 서버 message가 있으면 그걸 우선한다.
-    expect(pointsErrorMessage({ response: { status: 403, data: { message: '접근 불가' } } })).toBe('접근 불가')
+    expect(pointsErrorMessage(err(403))).toBe('적립금을 확인할 권한이 없어요')
+    expect(pointsErrorMessage(err(404))).toBe('적립금 정보를 찾을 수 없어요')
+    // 서버 message(-습니다체)는 그대로 쓰지 않는다.
+    expect(pointsErrorMessage(err(403, { message: '접근 불가합니다.' }))).toBe('적립금을 확인할 권한이 없어요')
     // 403 중 온보딩 미완료(20006)는 errorCode로 구분해 온보딩 안내로 분기한다.
-    expect(pointsErrorMessage({ response: { status: 403, data: { errorCode: 20006 } } })).toBe(
+    expect(pointsErrorMessage(err(403, { errorCode: 20006 }))).toBe(
       '온보딩을 먼저 완료해야 적립금을 확인할 수 있어요',
     )
     // status 미상(네트워크 오류 등)은 기본 문구로 폴백한다.

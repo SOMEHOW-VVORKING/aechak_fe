@@ -1,15 +1,16 @@
 import { Bot, UserCog } from 'lucide-react'
+import { Tag } from './Tag'
 
 export function ActorTag({ actor }: { actor: 'ai' | 'admin' }) {
   return actor === 'ai' ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-info-surface px-2 py-0.5 text-caption font-medium text-info-fg">
+    <Tag tone="info">
       <Bot className="size-3" />
       AI 자동
-    </span>
+    </Tag>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-brand-subtle px-2 py-0.5 text-caption font-medium text-brand">
+    <Tag tone="brand">
       <UserCog className="size-3" />
       관리자
-    </span>
+    </Tag>
   )
 }

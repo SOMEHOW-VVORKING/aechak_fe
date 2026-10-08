@@ -50,7 +50,7 @@ export function mapProductDetail(res: ProductDetailResponse): ProductDetail {
   const price = base.price
   const images = res.images.length
     ? [...res.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => mediaUrl(img.storageKey))
-    : [base.thumbnailUrl ?? mediaUrl(res.representativeImageKey)]
+    : [base.thumbnailUrl]
   const categoryNames = [...res.categories].sort((a, b) => a.depth - b.depth).map(c => c.name)
   return {
     ...base,
@@ -124,11 +124,11 @@ export function mockOptionsFromDetail(detail: ProductDetail): ProductOptionsView
 
 // 서버 리뷰 항목 -> 상세 미리보기 엔트리. 상세 응답에는 리뷰 목록이 없어(집계만) 리뷰 목록 API의
 // 첫 페이지를 따로 불러 이 형태로 옮긴다. 리뷰 목록 화면(features/review)에도 비슷한 매핑이 있지만
-// feature 간 직접 import가 금지라 각자 자기 뷰모델로 옮긴다.
+// feature 간 직접 import가 금지라 각자 자기 뷰모델로 옮긴다. rating은 응답 스키마가 enum(1~5)이라 그대로 쓴다.
 export function mapReviewPreview(items: ReviewItemResponse[]): ProductReviewEntry[] {
   return items.map(r => ({
     author: r.authorNickname,
-    rating: Math.min(5, Math.max(1, Math.round(r.rating))) as ProductReviewEntry['rating'],
+    rating: r.rating,
     // ISO 'YYYY-MM-DD...' -> 'YYYY.MM.DD'
     date: r.createdAt.slice(0, 10).replace(/-/g, '.'),
     content: r.content,

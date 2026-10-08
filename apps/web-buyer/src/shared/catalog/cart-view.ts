@@ -73,7 +73,7 @@ export interface CartView {
 function resolveLine(item: CartItem): CartLineView | null {
   const product = findProduct(item.productId)
   if (!product) return null
-  const soldOut = product.isSoldOut ?? false
+  const soldOut = product.isSoldOut
   const additionalPrice = item.additionalPrice ?? 0
   return {
     key: cartLineKey(item.productId, item.option),
@@ -98,28 +98,24 @@ export function buildCartView(items: readonly CartItem[]): CartView {
     .map(resolveLine)
     .filter((l): l is CartLineView => l !== null)
 
-  // 셀러별 그룹(첫 등장 순서 유지).
-  const order: string[] = []
-  const byseller = new Map<string, CartLineView[]>()
+  // 셀러별 그룹. Map이 삽입 순서를 보존하므로 첫 등장 순서가 그대로 그룹 순서다.
+  const bySeller = new Map<string, { storeName: string; lines: CartLineView[] }>()
   for (const line of lines) {
-    const sid = line.product.sellerId
-    if (!byseller.has(sid)) {
-      byseller.set(sid, [])
-      order.push(sid)
-    }
-    byseller.get(sid)!.push(line)
+    const { sellerId, storeName } = line.product
+    let group = bySeller.get(sellerId)
+    if (!group) bySeller.set(sellerId, (group = { storeName, lines: [] }))
+    group.lines.push(line)
   }
 
-  const groups: CartSellerGroup[] = order.map(sid => {
-    const groupLines = byseller.get(sid)!
+  const groups: CartSellerGroup[] = [...bySeller].map(([sellerId, { storeName, lines: groupLines }]) => {
     // 주문 대상(선택 + 품절 아님)만 합계·배송비 계산에 넣는다 — 품절은 체크돼도 금액에서 제외.
     const orderableSelected = groupLines.filter(l => l.selected && l.orderable)
     const selectedSubtotal = orderableSelected.reduce((sum, l) => sum + l.lineTotal, 0)
     const hasSelected = orderableSelected.length > 0
     const freeShipping = isFreeShipping({ price: selectedSubtotal })
     return {
-      sellerId: sid,
-      storeName: groupLines[0]?.product.storeName ?? '',
+      sellerId,
+      storeName,
       lines: groupLines,
       selectedSubtotal,
       // 주문 대상 선택 항목이 없는 셀러는 배송비를 매기지 않는다.

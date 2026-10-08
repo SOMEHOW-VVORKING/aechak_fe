@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkWithdrawal,
   confirmPhoneCode,
+  errorResponse,
   sendPhoneCode,
   setAccessToken,
   withdraw,
@@ -73,11 +74,10 @@ export function useConfirmPhoneCode() {
 }
 
 // 인증 에러는 errorCode로 분기한다 — 30009(만료)/30010(횟수 초과)은 재발송으로만 복구되므로
-// 문구가 재전송을 유도해야 한다. axios 타입을 안 끌어오려고 duck-typing.
-export function phoneVerificationErrorMessage(error: unknown): string {
-  const data = (error as { response?: { data?: { errorCode?: number; message?: string } } })
-    ?.response?.data
-  switch (data?.errorCode) {
+// 문구가 재전송을 유도해야 한다. 90001(@Valid 실패)은 단계마다 뜻이 다르다 — 발송은 번호 형식이고,
+// 확인은 번호가 발송 때 이미 통과했으니 인증번호 형식(6자리 숫자)이다. 서버 message는 -습니다체라 쓰지 않는다.
+export function phoneVerificationErrorMessage(error: unknown, step: 'send' | 'confirm' = 'send'): string {
+  switch (errorResponse(error)?.data?.errorCode) {
     case SMS_CODE_INVALID:
       return '인증번호가 올바르지 않아요.'
     case SMS_RESEND_COOLDOWN:
@@ -91,9 +91,11 @@ export function phoneVerificationErrorMessage(error: unknown): string {
     case SMS_ATTEMPTS_EXCEEDED:
       return '입력 횟수를 초과했어요. 인증번호를 재전송해 주세요.'
     case INVALID_REQUEST:
-      return '휴대폰 번호 형식을 확인해 주세요.'
+      return step === 'confirm'
+        ? '인증번호 6자리 숫자를 입력해 주세요.'
+        : '휴대폰 번호 형식을 확인해 주세요.'
     default:
-      return data?.message ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
   }
 }
 
@@ -132,14 +134,14 @@ export function useWithdraw() {
 }
 
 export function isWithdrawalBlockedError(error: unknown): boolean {
-  return errorCodeOf(error) === WITHDRAWAL_BLOCKED
+  return errorResponse(error)?.data?.errorCode === WITHDRAWAL_BLOCKED
 }
 
 export function withdrawErrorMessage(
   error: unknown,
   fallback = '탈퇴를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.',
 ): string {
-  switch (errorCodeOf(error)) {
+  switch (errorResponse(error)?.data?.errorCode) {
     case WITHDRAWAL_BLOCKED:
       return '정리되지 않은 거래가 있어 탈퇴할 수 없어요.'
     case ALREADY_WITHDRAWN:
@@ -149,8 +151,4 @@ export function withdrawErrorMessage(
     default:
       return fallback
   }
-}
-
-function errorCodeOf(error: unknown): number | undefined {
-  return (error as { response?: { data?: { errorCode?: number } } })?.response?.data?.errorCode
 }

@@ -5,7 +5,7 @@ import {
   Avatar,
   BottomSheet,
   Button,
-  EmptyState,
+  Card,
   MobileScreen,
   NumberInput,
   RatingInput,
@@ -17,6 +17,9 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { RatingDistribution } from '@/shared/components/RatingDistribution'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
@@ -136,21 +139,17 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
         <DetailSkeleton />
       ) : isError ? (
         // 네트워크/서버(500 등) 오류는 not-found가 아니라 재시도 가능한 실패로 구분한다.
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="상품 정보를 불러오지 못했어요"
-            description="네트워크 상태를 확인하고 다시 시도해 주세요."
-            action={{ label: '다시 시도', onClick: () => void refetch() }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="상품 정보를 불러오지 못했어요"
+          description="네트워크 상태를 확인하고 다시 시도해 주세요."
+          action={{ label: '다시 시도', onClick: () => void refetch() }}
+        />
       ) : !data ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="상품을 찾을 수 없어요"
-            description="삭제되었거나 주소가 올바르지 않은 상품이에요."
-            action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="상품을 찾을 수 없어요"
+          description="삭제되었거나 주소가 올바르지 않은 상품이에요."
+          action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
+        />
       ) : (
         <div className="flex flex-col pb-4">
           <ImageCarousel images={data.images} sold={data.isSoldOut} />
@@ -207,7 +206,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               </span>
             </div>
 
-            <div className="h-px bg-border-subtle" />
+            <Divider />
 
             {/* 리뷰 요약 */}
             <div className="flex flex-col gap-3">
@@ -243,9 +242,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                   {reviewPreview.isError ? (
                     // 던지기만 하고 받지 않으면 요약("리뷰 128") 아래가 그냥 비어 리뷰가 없는 것처럼
                     // 보인다 — 비인증 실패는 재시도 버튼 대신 안내만 두고 전체보기로 유도한다.
-                    <p className="rounded-card border border-border-subtle bg-surface-raised px-4 py-5 text-center text-body-sm text-text-secondary">
+                    <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
                       리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.
-                    </p>
+                    </Card>
                   ) : reviewPreview.isPending && previewReviews.length === 0 ? (
                     <div className="flex flex-col gap-3">
                       {[0, 1, 2].map(i => (
@@ -254,33 +253,37 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                     </div>
                   ) : (
                   <div className="flex flex-col gap-3">
-                    {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => (
-                      <ReviewCard
-                        key={`${review.author}-${i}`}
-                        author={review.author}
-                        rating={review.rating}
-                        date={review.date}
-                        content={review.content}
-                        images={review.images}
-                        onImageClick={
-                          review.images && review.images.length > 0
-                            ? index => setLightboxSrc(review.images![index] ?? null)
-                            : undefined
-                        }
-                      />
-                    ))}
+                    {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => {
+                      // 클로저 안에서는 좁히기가 풀리므로 배열을 먼저 받아 둔다.
+                      const images = review.images
+                      return (
+                        <ReviewCard
+                          key={`${review.author}-${i}`}
+                          author={review.author}
+                          rating={review.rating}
+                          date={review.date}
+                          content={review.content}
+                          images={images}
+                          onImageClick={
+                            images && images.length > 0
+                              ? index => setLightboxSrc(images[index] ?? null)
+                              : undefined
+                          }
+                        />
+                      )
+                    })}
                   </div>
                   )}
                 </>
               ) : (
-                <div className="flex flex-col items-center gap-1.5 rounded-card border border-border-subtle bg-surface-raised px-4 py-6 text-center">
+                <Card className="flex flex-col items-center gap-1.5 px-4 py-6 text-center">
                   <p className="text-body-sm text-text-secondary">아직 등록된 리뷰가 없어요</p>
                   <p className="text-caption text-text-tertiary">첫 리뷰를 기다리고 있어요</p>
-                </div>
+                </Card>
               )}
             </div>
 
-            <div className="h-px bg-border-subtle" />
+            <Divider />
 
             {/* 상품 정보 */}
             <div className="flex flex-col gap-3">
@@ -295,14 +298,14 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               {/* 사양표는 실 API 소스가 없어 실 상품에선 비어 온다 — 목업 사양을 실데이터로 위장하지
                   않으려고 값이 있을 때만 렌더한다. */}
               {data.specs.length > 0 && (
-                <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+                <Card className="flex flex-col gap-2 p-4">
                   {data.specs.map(spec => (
                     <div key={spec.label} className="flex items-start justify-between gap-4 text-body-sm">
                       <span className="flex-none text-text-tertiary">{spec.label}</span>
                       <span className="text-right text-text-primary">{spec.value}</span>
                     </div>
                   ))}
-                </div>
+                </Card>
               )}
             </div>
 
@@ -396,7 +399,7 @@ function ReviewSummaryCard({ summary }: { summary: ProductDetail['reviewSummary'
   // 가운데 정렬한다(0% 막대 위장 방지 + 왼쪽 쏠림 방지).
   if (!summary.distribution) {
     return (
-      <div className="flex items-center justify-center gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
+      <Card className="flex items-center justify-center gap-3 p-4">
         <span className="text-title font-bold leading-none text-text-primary">
           {summary.average.toFixed(1)}
         </span>
@@ -406,29 +409,19 @@ function ReviewSummaryCard({ summary }: { summary: ProductDetail['reviewSummary'
             리뷰 {summary.total.toLocaleString('ko-KR')}개
           </span>
         </div>
-      </div>
+      </Card>
     )
   }
   return (
-    <div className="flex items-center gap-4 rounded-card border border-border-subtle bg-surface-raised p-4">
-      <div className="flex flex-none flex-col items-center gap-1">
-        <span className="text-display font-bold leading-none text-text-primary">
-          {summary.average.toFixed(1)}
-        </span>
-        <RatingInput value={summary.average} readonly size={14} />
-        <span className="text-caption text-text-tertiary">{summary.total.toLocaleString('ko-KR')}개</span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        {summary.distribution.map((pct, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="w-5 flex-none text-caption text-text-tertiary">{5 - i}★</span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunken">
-              <div className="h-full rounded-full bg-warning" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <Card className="p-4">
+      <RatingDistribution
+        average={summary.average}
+        total={summary.total}
+        distribution={summary.distribution}
+        starSuffix
+        className="gap-4"
+      />
+    </Card>
   )
 }
 
@@ -448,6 +441,8 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
             <img
               src={src}
               alt=""
+              loading={i === 0 ? 'eager' : 'lazy'}
+              decoding="async"
               className={['size-full object-cover', sold ? 'opacity-50' : ''].join(' ')}
             />
           </div>
@@ -613,7 +608,7 @@ function OptionSheet({
         {choice.remainingStock != null && (
           <p className="text-right text-caption text-text-tertiary">재고 {choice.remainingStock}개</p>
         )}
-        <div className="h-px bg-border-subtle" />
+        <Divider />
         <div className="flex items-center justify-between">
           <span className="text-body text-text-secondary">총 {qty}개</span>
           <span className="text-price-lg font-bold text-text-price">{formatKRW(total)}</span>

@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { getAccessToken, restoreSession } from '@aechak/api'
+import { errorResponse, getAccessToken, restoreSession } from '@aechak/api'
 import { HomeScreen } from '@/features/home'
 import { getIsLoggedIn, logout } from '@/shared/auth'
 
@@ -17,7 +17,7 @@ export const Route = createFileRoute('/_tabs/')({
     } catch (error) {
       // refresh 401(쿠키 없음/만료 20002, 재사용 20003) = 세션 없음 → 로그인.
       // 네트워크/5xx는 세션 유무를 모르니 화면에 맡긴다(/home 결과에 따라 인라인 오류나 전역 401 처리).
-      if ((error as { response?: { status?: number } } | null)?.response?.status === 401) {
+      if (errorResponse(error)?.status === 401) {
         logout()
         throw redirect({ to: '/onboarding/login', replace: true })
       }

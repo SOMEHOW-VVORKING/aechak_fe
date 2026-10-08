@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Cat, Dog, PawPrint, Plus, Star } from 'lucide-react'
+import { Cat, Dog, PawPrint, Star } from 'lucide-react'
 import type { PetProfile } from '@aechak/domain'
-import { Button, EmptyState, MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
+import { Button, Card, MobileScreen, Modal, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { DashedAddButton } from '@/shared/components/DashedAddButton'
+import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { petErrorMessage, usePetList, useRemovePet, useSetDefaultPet } from '@/shared/pet'
 import { formatPetMeta } from '../pet.mock'
@@ -39,8 +42,8 @@ export function PetListScreen() {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
         <div className="flex flex-col gap-3.5 p-4">
-          <div className="h-[52px] animate-pulse rounded-card bg-surface-sunken" />
-          <div className="h-[52px] animate-pulse rounded-card bg-surface-sunken" />
+          <Skeleton className="h-[52px]" />
+          <Skeleton className="h-[52px]" />
         </div>
       </MobileScreen>
     )
@@ -49,14 +52,12 @@ export function PetListScreen() {
   if (isError) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            icon={<PawPrint className="size-8" />}
-            title="목록을 불러오지 못했어요"
-            description="잠시 후 다시 시도해주세요."
-            action={{ label: '다시 시도', onClick: () => void refetch() }}
-          />
-        </div>
+        <ScreenEmptyState
+          icon={<PawPrint className="size-8" />}
+          title="목록을 불러오지 못했어요"
+          description="잠시 후 다시 시도해주세요."
+          action={{ label: '다시 시도', onClick: () => void refetch() }}
+        />
       </MobileScreen>
     )
   }
@@ -69,14 +70,12 @@ export function PetListScreen() {
         </p>
       )}
       {pets.length === 0 ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            icon={<PawPrint className="size-8" />}
-            title="등록된 반려동물이 없어요"
-            description="우리 아이 정보를 등록하고 관리해 보세요."
-            action={{ label: '반려동물 추가', onClick: () => navigate({ to: '/mypage/pets/new' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          icon={<PawPrint className="size-8" />}
+          title="등록된 반려동물이 없어요"
+          description="우리 아이 정보를 등록하고 관리해 보세요."
+          action={{ label: '반려동물 추가', onClick: () => navigate({ to: '/mypage/pets/new' }) }}
+        />
       ) : (
         <div className="flex flex-col gap-3.5 p-4">
           {pets.map(pet => (
@@ -94,14 +93,11 @@ export function PetListScreen() {
             />
           ))}
 
-          <button
-            type="button"
+          <DashedAddButton
+            label="반려동물 추가"
             onClick={() => navigate({ to: '/mypage/pets/new' })}
-            className="flex h-[52px] items-center justify-center gap-1.5 rounded-card border border-dashed border-border-strong bg-surface-sunken text-body-sm text-text-secondary"
-          >
-            <Plus className="size-[18px]" />
-            반려동물 추가
-          </button>
+            className="h-[52px]"
+          />
         </div>
       )}
 
@@ -146,11 +142,11 @@ function PetCard({
   const SpeciesIcon = SPECIES_ICON[pet.species]
 
   return (
-    <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+    <Card className="p-4">
       <div className="flex items-start gap-3.5">
         <span className="flex size-[52px] flex-none items-center justify-center overflow-hidden rounded-full bg-surface-sunken text-icon-muted">
           {pet.photoUrl ? (
-            <img src={pet.photoUrl} alt="" className="size-full object-cover" />
+            <img src={pet.photoUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
           ) : (
             <SpeciesIcon className="size-6" />
           )}
@@ -167,20 +163,13 @@ function PetCard({
           </div>
           <p className="mt-1 text-caption text-text-tertiary">{formatPetMeta(pet)}</p>
         </div>
-        <span className="flex flex-none items-center gap-3 text-caption">
-          <button type="button" onClick={onEdit} className="text-text-tertiary">
-            수정
-          </button>
-          <button type="button" onClick={onDelete} className="text-error-fg">
-            삭제
-          </button>
-        </span>
+        <EditDeleteActions onEdit={onEdit} onDelete={onDelete} />
       </div>
       {!pet.isDefault && (
         <Button variant="secondary" size="sm" fullWidth onClick={onSetDefault} className="mt-3">
           대표 펫으로 지정
         </Button>
       )}
-    </div>
+    </Card>
   )
 }

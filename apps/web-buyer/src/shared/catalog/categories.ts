@@ -8,13 +8,18 @@ export interface MainCategoryOption {
   label: string
 }
 
-export const MAIN_CATEGORIES: MainCategoryOption[] = [
-  { value: 'all', label: '전체' },
-  { value: 'dog', label: '강아지' },
-  { value: 'cat', label: '고양이' },
-  { value: 'common', label: '공통' },
-  { value: 'brand', label: '브랜드관' },
-]
+// 대분류 라벨의 단일 원본. 칩 목록은 여기서 파생하고, 라벨 조회는 find 폴백 없이 바로 읽는다.
+export const MAIN_CATEGORY_LABELS: Record<MainCategory, string> = {
+  all: '전체',
+  dog: '강아지',
+  cat: '고양이',
+  common: '공통',
+  brand: '브랜드관',
+}
+
+export const MAIN_CATEGORIES: MainCategoryOption[] = Object.entries(MAIN_CATEGORY_LABELS).map(
+  ([value, label]) => ({ value: value as MainCategory, label }),
+)
 
 // 중분류(서브 카테고리) — 'all'(전체)을 맨 앞에 두고 10종.
 export const SUB_CATEGORIES: string[] = [
@@ -46,5 +51,5 @@ export const CATALOG_SORTS: CatalogSortOption[] = [
 ]
 
 export function mainCategoryLabel(value: MainCategory): string {
-  return MAIN_CATEGORIES.find(c => c.value === value)?.label ?? '전체'
+  return MAIN_CATEGORY_LABELS[value]
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Drawer, Input, Toggle } from '@aechak/design-system/web'
-import { productErrorMessage, STOCK_DELTA_LIMIT } from '../products.contract'
+import { productErrorMessage } from '../products.contract'
 import { useChangeOptionCombination, useProductOptions } from '../products.queries'
 
 interface InventoryDrawerProps {
@@ -36,13 +36,9 @@ export function InventoryDrawer({ productId, onClose, onSaved }: InventoryDrawer
   function handleSaveStock(id: number, current: number) {
     if (!productId) return
     const target = Number(edits[id])
-    const stockDelta = target - current
-    if (Math.abs(stockDelta) > STOCK_DELTA_LIMIT) {
-      setRowError(id, '한 번에 100만 개까지 늘리거나 줄일 수 있어요')
-      return
-    }
+    // 증감 한도(±1,000,000)는 BE가 90001로 거절하고 onError가 행 오류로 띄운다.
     change.mutate(
-      { productId, combinationId: id, body: { stockDelta } },
+      { productId, combinationId: id, body: { stockDelta: target - current } },
       {
         onSuccess: res => {
           setEdits(prev => {

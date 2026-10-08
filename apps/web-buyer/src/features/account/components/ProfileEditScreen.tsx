@@ -5,38 +5,39 @@ import {
   Alert,
   BottomFixedAction,
   Button,
-  EmptyState,
   Input,
   MobileScreen,
+  Skeleton,
   StatusPill,
   Textarea,
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   accountErrorMessage,
+  avatarUploadErrorMessage,
   isOnboardingRequired,
-  isSupportedAvatar,
   isWithinAvatarSizeLimit,
   OVERSIZED_AVATAR_MESSAGE,
-  UNSUPPORTED_AVATAR_MESSAGE,
   uploadAvatar,
   useMe,
   useUpdateProfile,
 } from '@/shared/account'
-import { placeholderImage } from '@/shared/catalog'
-import { BIO_MAX, NICKNAME_MAX, validateNickname } from '../account.mock'
+import { BIO_MAX, NICKNAME_MAX } from '../account.mock'
 
 // 저장 성공 토스트를 잠깐 보여준 뒤 뒤로 가기까지의 시간. 내비게이션은 이 타이머로만 돌린다.
 const PROFILE_SAVED_TOAST_MS = 1500
 
 // 프로필 수정(b10-st-2). 닉네임/자기소개/아바타 편집. 초기값·저장은 실서버(GET /users/me · PUT /users/me/profile).
+// 닉네임 형식(30002)·중복(30001)은 서버가 저장 시점에 판정하고 화면은 그 문구를 Alert로 보여준다 — 클라이언트 정규식 없음.
+// 글자수 카운터(기획 b10-st-2의 4/12)와 maxLength만 남긴다.
 // 아바타는 저장 시점에 presigned(USER_PROFILE) 업로드로 tmp 키를 만들고, 안 바꾸면 조회에서 받은 기존 키를 그대로 되돌려 보낸다.
 // 휴대폰 본인 인증 표시도 서버(isPhoneVerified·마스킹 phoneNumber)가 진실 원본이다 — 인증 화면과 같은 캐시를 읽는다.
 export function ProfileEditScreen() {
   const navigate = useNavigate()
-  const { account, isLoading, isError, refetch } = useMe()
+  const { account, isError, refetch } = useMe()
   const updateProfile = useUpdateProfile()
   const goBack = useSafeBack({ to: '/mypage' })
 
@@ -79,33 +80,25 @@ export function ProfileEditScreen() {
   // useCallback으로 안정화해 입력 중 리렌더가 토스트 타이머를 되감지 않게 한다. 내비게이션은 아래 자체 타이머로만 돈다.
   const handleToastClose = useCallback(() => setToastOpen(false), [])
 
-  const nicknameCheck = validateNickname(nickname)
-  const showNicknameMsg = nickname.trim().length > 0
-
   const onPickPhoto = () => fileRef.current?.click()
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadError(null)
-    if (!isSupportedAvatar(file)) {
-      setUploadError(UNSUPPORTED_AVATAR_MESSAGE)
-      return
-    }
+    // presigned PUT은 S3 직행이라 서버가 크기를 못 막는다 — 발급 전에 여기서 걸러 안내한다(형식은 서버 몫).
     if (!isWithinAvatarSizeLimit(file)) {
       setUploadError(OVERSIZED_AVATAR_MESSAGE)
       return
     }
     // 이전 프리뷰 URL을 먼저 정리하고 새 프리뷰를 만든다. 업로드는 저장 시점에 한 번만 한다.
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-    const canObjectUrl = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-    const url = canObjectUrl ? URL.createObjectURL(file) : placeholderImage(120)
-    previewUrlRef.current = canObjectUrl ? url : null
+    const url = URL.createObjectURL(file)
+    previewUrlRef.current = url
     setAvatarUrl(url)
     setPendingFile(file)
   }
 
   const handleSave = async () => {
-    if (!nicknameCheck.ok) return
     setSaveError(null)
     // 안 바꿨으면 기존 키를 유지, 새로 골랐으면 저장 시점에 업로드해 tmp 키로 교체.
     let keyToSubmit = imageKey
@@ -115,17 +108,17 @@ export function ProfileEditScreen() {
         keyToSubmit = await uploadAvatar(pendingFile)
       } catch (err) {
         setIsUploading(false)
-        setSaveError(err instanceof Error ? err.message : '사진 업로드에 실패했어요')
+        setSaveError(avatarUploadErrorMessage(err))
         return
       }
       setIsUploading(false)
     }
-    const trimmedBio = bio.trim()
     updateProfile.mutate(
       {
-        // 세 필드 항상 전송(전체 교체). 자기소개가 비면 null로 지운다.
-        nickname: nickname.trim().normalize('NFC'),
-        bio: trimmedBio.length > 0 ? trimmedBio : null,
+        // 세 필드 항상 전송(전체 교체). 닉네임은 입력 그대로(서버가 trim·NFC 정규화·형식 판정).
+        // 자기소개는 BE가 @Size만 보고 그대로 저장하므로(trim 없음) 공백만 있으면 비운 것으로 보고 null로 지운다.
+        nickname,
+        bio: bio.trim() || null,
         profileImageKey: keyToSubmit,
       },
       {
@@ -152,35 +145,33 @@ export function ProfileEditScreen() {
 
   const goBackHeader = <BackAppBar onBack={goBack} title="프로필 수정" />
 
-  if (isLoading || (!account && !isError)) {
+  if (isError) {
     return (
       <MobileScreen header={goBackHeader}>
-        <div className="flex flex-col gap-6 p-4">
-          <div className="mx-auto size-[88px] animate-pulse rounded-full bg-surface-sunken" />
-          <div className="h-10 animate-pulse rounded-input bg-surface-sunken" />
-          <div className="h-24 animate-pulse rounded-input bg-surface-sunken" />
-        </div>
+        <ScreenEmptyState
+          title="프로필을 불러오지 못했어요"
+          description="잠시 후 다시 시도해주세요."
+          action={{ label: '다시 시도', onClick: () => void refetch() }}
+        />
       </MobileScreen>
     )
   }
 
-  if (isError) {
+  if (!account) {
     return (
       <MobileScreen header={goBackHeader}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="프로필을 불러오지 못했어요"
-            description="잠시 후 다시 시도해주세요."
-            action={{ label: '다시 시도', onClick: () => void refetch() }}
-          />
+        <div className="flex flex-col gap-6 p-4">
+          <Skeleton variant="circle" className="mx-auto size-[88px]" />
+          <Skeleton className="h-10 rounded-input" />
+          <Skeleton className="h-24 rounded-input" />
         </div>
       </MobileScreen>
     )
   }
 
   // 서버가 마스킹해 내려주는 번호(인증 전 null)를 그대로 표시한다 — 클라이언트 마스킹 없음.
-  const verified = account?.verification === 'verified'
-  const maskedPhone = account?.phone ? account.phone : '아직 인증된 번호가 없어요'
+  const verified = account.verification === 'verified'
+  const maskedPhone = account.phone || '아직 인증된 번호가 없어요'
 
   return (
     <MobileScreen
@@ -190,7 +181,6 @@ export function ProfileEditScreen() {
           primary={{
             label: '저장',
             onClick: () => void handleSave(),
-            disabled: !nicknameCheck.ok,
             loading: saving,
           }}
         />
@@ -230,7 +220,14 @@ export function ProfileEditScreen() {
               {uploadError}
             </p>
           )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+          {/* accept는 서버 허용 형식(UploadPurpose.USER_PROFILE)과 같다 — 선택기에서 먼저 거르고 최종 판정은 presign 서버(100000). */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={onFileChange}
+          />
         </div>
 
         {/* 닉네임 */}
@@ -248,8 +245,6 @@ export function ProfileEditScreen() {
             value={nickname}
             maxLength={NICKNAME_MAX}
             onChange={e => setNickname(e.target.value)}
-            state={showNicknameMsg ? (nicknameCheck.ok ? 'success' : 'error') : 'default'}
-            helperText={showNicknameMsg ? nicknameCheck.message : undefined}
             placeholder="닉네임을 입력해 주세요"
           />
         </div>
@@ -258,7 +253,7 @@ export function ProfileEditScreen() {
         <Textarea
           label="자기소개"
           value={bio}
-          onChange={v => setBio(v.slice(0, BIO_MAX))}
+          onChange={setBio}
           maxLength={BIO_MAX}
           rows={4}
           helperText="프로필에 표시돼요."

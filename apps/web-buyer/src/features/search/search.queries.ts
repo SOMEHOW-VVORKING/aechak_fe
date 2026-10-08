@@ -123,7 +123,7 @@ async function fetchSearchPage(
   const epoch = currentSessionEpoch()
   const response = await searchProducts(
     {
-      keyword: query.trim(),
+      keyword: query,
       sort: SORT_PARAM[sort],
       minPrice: filters.minPrice > 0 ? filters.minPrice : undefined,
       maxPrice: filters.maxPrice < PRICE_MAX ? filters.maxPrice : undefined,
@@ -153,7 +153,7 @@ function selectSearchResults(data: { pages: SearchPage[] }): SearchResult {
 export const useSearchResults = (query: string, filters: SearchFilters, sort: ResultSort) => {
   const queryClient = useQueryClient()
   return useInfiniteQuery({
-    queryKey: ['search', 'results', query.trim(), filters, sort],
+    queryKey: ['search', 'results', query, filters, sort],
     queryFn: async ({ pageParam, signal }) => {
       const page = await fetchSearchPage(query, filters, sort, pageParam, signal)
       if (pageParam === undefined) void queryClient.invalidateQueries({ queryKey: landingKey })
@@ -162,6 +162,7 @@ export const useSearchResults = (query: string, filters: SearchFilters, sort: Re
     initialPageParam: undefined as string | undefined,
     getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
     select: selectSearchResults,
-    enabled: query.trim().length > 0,
+    // 검색어는 라우트(validateSearch)가 이미 trim해 넘긴다. 빈 검색어는 서버(@NotBlankUnicode)보다 앞서 호출하지 않는다.
+    enabled: query !== '',
   })
 }

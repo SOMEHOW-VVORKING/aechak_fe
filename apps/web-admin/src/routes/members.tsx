@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, Ban, Check, CheckCircle, MessageCircle, Minus, Package, PauseCircle, UserX } from 'lucide-react'
 import {
@@ -7,7 +7,6 @@ import {
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
   StatusPill,
@@ -18,23 +17,23 @@ import type { Column } from '@aechak/design-system/web'
 import type { MemberAccount, MemberAccountStatus } from '@aechak/domain'
 import { useMemberAccounts } from '@/features/members'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/members')({
   component: MembersPage,
 })
 
-const statusMeta: Record<
-  MemberAccountStatus,
-  {
-    label: string
-    variant: 'success' | 'warning' | 'error' | 'danger' | 'muted'
-    icon: typeof CheckCircle
-  }
-> = {
+const statusMeta: Record<MemberAccountStatus, StatusMeta> = {
   normal: { label: '정상', variant: 'success', icon: CheckCircle },
   restricted: { label: '이용 제한', variant: 'warning', icon: AlertTriangle },
   suspended: { label: '임시 정지', variant: 'error', icon: PauseCircle },
@@ -101,13 +100,9 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
       key: 'id',
       label: '회원 ID',
       render: row => (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(row)}
-          className="font-medium tabular-nums text-text-primary hover:text-brand hover:underline"
-        >
+        <RowLinkButton numeric onClick={() => onOpenDetail(row)}>
           {row.id}
-        </button>
+        </RowLinkButton>
       ),
     },
     { key: 'nickname', label: '닉네임' },
@@ -127,16 +122,7 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
       key: 'accountStatus',
       label: '계정 상태',
       align: 'center',
-      render: row => {
-        const meta = statusMeta[row.accountStatus]
-        const Icon = meta.icon
-        return (
-          <StatusPill variant={meta.variant}>
-            <Icon className="size-3" />
-            {meta.label}
-          </StatusPill>
-        )
-      },
+      render: row => <StatusMetaPill meta={statusMeta[row.accountStatus]} />,
     },
     {
       key: 'hasActiveOrder',
@@ -159,11 +145,8 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
 
 function MembersPage() {
   const { data, isLoading } = useMemberAccounts()
-  const [rows, setRows] = useState<MemberAccount[] | null>(null)
-  useEffect(() => {
-    if (data && rows === null) setRows(data)
-  }, [data, rows])
-  const items = rows ?? []
+  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
+    useDetailList(data)
 
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -178,41 +161,23 @@ function MembersPage() {
     [items, statusFilter, search],
   )
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find(row => row.id === selectedId) ?? null
-  const SelectedStatusIcon = selected ? statusMeta[selected.accountStatus].icon : null
-
   const [decision, setDecision] = useState<MemberAccountStatus>('normal')
   const [sanctionReason, setSanctionReason] = useState('')
   const [sanctionPeriod, setSanctionPeriod] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
 
   function openDrawer(row: MemberAccount) {
-    setSelectedId(row.id)
+    select(row.id)
     setDecision(row.accountStatus)
     setSanctionReason(row.sanctionReason ?? '')
     setSanctionPeriod(row.sanctionPeriod ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function closeDrawer() {
-    setSelectedId(null)
-    setConfirmOpen(false)
-  }
-
-  function applyStatus(nextStatus: MemberAccountStatus) {
-    if (!selected) return
-    setRows(prev =>
-      (prev ?? []).map(row =>
-        row.id === selected.id
-          ? { ...row, accountStatus: nextStatus, sanctionReason, sanctionPeriod, internalMemo }
-          : row,
-      ),
-    )
+  function applyStatus(target: MemberAccount, nextStatus: MemberAccountStatus) {
+    patchRow(target.id, { accountStatus: nextStatus, sanctionReason, sanctionPeriod, internalMemo })
     setToast(
-      nextStatus === 'banned' ? `'${selected.nickname}' 계정을 영구 정지했어요.` : '계정 상태를 변경했어요.',
+      nextStatus === 'banned' ? `'${target.nickname}' 계정을 영구 정지했어요.` : '계정 상태를 변경했어요.',
     )
     closeDrawer()
   }
@@ -223,15 +188,13 @@ function MembersPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="일반 회원 관리" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다.
-      </p>
+      <PageIntro
+        title="일반 회원 관리"
+        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다."
+      />
 
       <FilterBar className="mb-3.5">
-        <div className="w-40">
-          <Select options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
-        </div>
+        <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
         <SearchInput value={search} onChange={setSearch} placeholder="회원 ID · 닉네임 검색" className="w-64" />
       </FilterBar>
 
@@ -244,20 +207,20 @@ function MembersPage() {
         emptyLabel="조건에 맞는 회원이 없습니다."
       />
 
-      <Drawer open={selected !== null} onClose={closeDrawer} title="회원 상세" width="lg">
+      <Drawer open={selected !== undefined} onClose={closeDrawer} title="회원 상세" width="lg">
         {selected && (
-          <div className="space-y-5">
-            <p className="-mt-2 text-body-sm text-text-tertiary">
-              {selected.id} · {selected.nickname}
-            </p>
-
+          <DetailDrawerBody
+            subtitle={`${selected.id} · ${selected.nickname}`}
+            actions={
+              <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
+                제출
+              </Button>
+            }
+          >
             <DrawerSummaryCard
               pills={
                 <>
-                  <StatusPill variant={statusMeta[selected.accountStatus].variant}>
-                    {SelectedStatusIcon && <SelectedStatusIcon className="size-3" />}
-                    {statusMeta[selected.accountStatus].label}
-                  </StatusPill>
+                  <StatusMetaPill meta={statusMeta[selected.accountStatus]} />
                   <StatusPill variant="neutral">
                     <MessageCircle className="size-3" />
                     {selected.joinChannel}
@@ -283,7 +246,7 @@ function MembersPage() {
               <DecisionRadioGroup
                 name="member-status"
                 value={decision}
-                onChange={value => setDecision(value as MemberAccountStatus)}
+                onChange={setDecision}
                 options={[
                   { value: 'normal', label: '정상' },
                   { value: 'restricted', label: '이용 제한', caption: '일부 기능 제한' },
@@ -320,36 +283,28 @@ function MembersPage() {
                 placeholder="내부 공유용 메모를 입력하세요."
               />
             </DetailField>
-
-            <div className="flex gap-2 border-t border-border-subtle pt-4">
-              <Button
-                variant="primary"
-                leftIcon={<Check className="size-4" />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                제출
-              </Button>
-            </div>
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title={decisionModalMeta[decision].title}
-        description={decisionModalMeta[decision].description}
-        confirmLabel={decisionModalMeta[decision].confirmLabel}
-        confirmVariant={decisionModalMeta[decision].confirmVariant}
-        onConfirm={() => applyStatus(decision)}
-      >
-        <SummaryGrid
-          items={[
-            { label: '대상', value: selected ? `${selected.nickname} (${selected.id})` : '' },
-            { label: '사유', value: sanctionReasonLabel },
-          ]}
-        />
-      </Modal>
+      {selected && (
+        <Modal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title={decisionModalMeta[decision].title}
+          description={decisionModalMeta[decision].description}
+          confirmLabel={decisionModalMeta[decision].confirmLabel}
+          confirmVariant={decisionModalMeta[decision].confirmVariant}
+          onConfirm={() => applyStatus(selected, decision)}
+        >
+          <SummaryGrid
+            items={[
+              { label: '대상', value: `${selected.nickname} (${selected.id})` },
+              { label: '사유', value: sanctionReasonLabel },
+            ]}
+          />
+        </Modal>
+      )}
 
       {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
     </div>

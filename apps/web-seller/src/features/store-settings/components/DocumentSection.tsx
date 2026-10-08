@@ -1,9 +1,11 @@
+import type { SellerDocumentType } from '@aechak/api'
 import { FormSection } from '@aechak/design-system/web'
+import { FieldError } from '@/shared/components/Field'
 import { DocumentRow, type DocumentRowModel } from './DocumentRow'
 
 interface DocumentSectionProps {
   documents: DocumentRowModel[]
-  onSelect: (type: string, file: File) => void
+  onSelect: (type: SellerDocumentType, file: File) => void
   step: number
   /** 파일 형식/크기 가드 실패 안내. */
   errorMessage?: string | null
@@ -17,11 +19,7 @@ export function DocumentSection({ documents, onSelect, step, errorMessage }: Doc
           <DocumentRow key={document.type} document={document} onSelect={onSelect} />
         ))}
       </div>
-      {errorMessage && (
-        <p role="alert" className="text-caption text-error-fg">
-          {errorMessage}
-        </p>
-      )}
+      {errorMessage && <FieldError>{errorMessage}</FieldError>}
     </FormSection>
   )
 }

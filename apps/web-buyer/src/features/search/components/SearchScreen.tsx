@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Clock, X } from 'lucide-react'
-import { MobileScreen, SearchInput } from '@aechak/design-system/web'
+import { Card, MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useIsLoggedIn } from '@/shared/auth'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -10,6 +10,7 @@ import {
   useDeleteRecentKeyword,
   useSearchLanding,
 } from '../search.queries'
+import { KeywordChip } from './KeywordChip'
 
 // 검색 입력/최근 검색어(b3-st-2). 로그인 사용자는 서버의 최근·추천 검색어를 조회하고,
 // 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다.
@@ -89,12 +90,12 @@ export function SearchScreen() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2 rounded-card border border-border-subtle bg-surface-raised px-4 py-6">
+            <Card className="flex flex-col items-center gap-2 px-4 py-6">
               <Clock className="size-6 text-icon-muted" />
               <span className="text-body-sm text-text-tertiary">
                 최근 검색한 상품이 여기에 표시돼요
               </span>
-            </div>
+            </Card>
           )}
         </section>
 
@@ -103,14 +104,7 @@ export function SearchScreen() {
           <span className="text-label font-semibold text-text-primary">추천 검색어</span>
           <div className="flex flex-wrap gap-2">
             {(data?.suggestedKeywords ?? []).map(keyword => (
-              <button
-                key={keyword}
-                type="button"
-                onClick={() => submit(keyword)}
-                className="inline-flex h-8 items-center rounded-chip bg-surface-sunken px-3.5 text-body-sm text-text-secondary"
-              >
-                {keyword}
-              </button>
+              <KeywordChip key={keyword} keyword={keyword} onClick={() => submit(keyword)} />
             ))}
           </div>
         </section>

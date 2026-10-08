@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { Button, Chip, DataTable, Input, Toggle, type Column } from '@aechak/design-system/web'
+import { Field, FieldError } from '@/shared/components/Field'
 import {
   buildCombinations,
   type CombinationRow,
@@ -8,7 +9,7 @@ import {
   type ProductFormErrors,
   type ProductFormValues,
 } from '../products.contract'
-import { FieldAnchor, FieldError, fieldA11y, fieldHelperId } from './FieldAnchor'
+import { FieldAnchor, fieldA11y, fieldHelperId } from './FieldAnchor'
 
 type OptionValue = Pick<ProductFormValues, 'optionEnabled' | 'optionGroups' | 'combinations' | 'defaultStock'>
 
@@ -26,6 +27,7 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
 // 목업의 옵션 사용 토글 하나로 단일/조합 옵션을 함께 다룬다 — 둘은 그룹 수만 다르다.
 export function OptionBuilder({ value, errors, tooltipKey, onChange }: OptionBuilderProps) {
   const [valueInputs, setValueInputs] = useState<Record<number, string>>({})
+  // 같은 그룹 안 중복을 거른 그룹 index — 조용히 버리면 추가가 됐는지 알 수 없어 한 줄 안내한다.
   const [duplicateGroup, setDuplicateGroup] = useState<number | null>(null)
   const { optionEnabled, optionGroups, combinations } = value
 
@@ -51,8 +53,9 @@ export function OptionBuilder({ value, errors, tooltipKey, onChange }: OptionBui
   function addValue(index: number) {
     const text = (valueInputs[index] ?? '').trim()
     if (!text) return
-    // BE ProductOptions는 옵션값 이름이 그룹을 넘어서도 겹치면 40005로 거절한다.
-    if (optionGroups.some(g => g.values.includes(text))) {
+    // 같은 그룹 안 중복은 칩 목록이 집합(React key=값)이라 FE가 먼저 거르고 입력을 남겨 알린다.
+    // 그룹을 넘는 중복은 BE가 40005로 알려 준다.
+    if (optionGroups.some((g, i) => i === index && g.values.includes(text))) {
       setDuplicateGroup(index)
       return
     }
@@ -173,8 +176,7 @@ export function OptionBuilder({ value, errors, tooltipKey, onChange }: OptionBui
                   </div>
                   <div className="flex-1">
                     <FieldAnchor fieldKey={valuesKey} tip={tipFor(valuesKey)}>
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-label font-medium text-text-primary">옵션값</span>
+                      <Field label="옵션값">
                         <div className="flex gap-2">
                           <div className="flex-1">
                             <Input
@@ -207,7 +209,7 @@ export function OptionBuilder({ value, errors, tooltipKey, onChange }: OptionBui
                             {duplicateGroup === i ? '이미 있는 옵션값이에요' : errors[valuesKey]}
                           </FieldError>
                         )}
-                      </div>
+                      </Field>
                     </FieldAnchor>
                   </div>
                   {/* 마지막 그룹은 지우지 않고 옵션 사용을 끈다(그룹 0개로 켜진 상태를 만들지 않음). */}

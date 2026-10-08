@@ -13,7 +13,8 @@ import {
   Star,
   UserX,
 } from 'lucide-react'
-import { Avatar, EmptyState, ListItem, StatusPill } from '@aechak/design-system/web'
+import { Avatar, Card, EmptyState, ListItem, Skeleton, StatusPill } from '@aechak/design-system/web'
+import { MarketAppBar } from '@/shared/components/MarketAppBar'
 import { useMe } from '@/shared/account'
 import { usePointBalance } from '@/shared/points'
 import { formatKRW } from '@/shared/formatKRW'
@@ -28,7 +29,7 @@ export function MyPageHubScreen() {
 
   // GET /users/me는 PENDING도 200(화이트리스트)이라 허브가 온보딩 미완료 유저를 여기서 잡는다.
   // 빈 닉네임·빈 이메일의 퇴화된 프로필 카드를 보여주지 않고 온보딩 약관 화면으로 보낸다.
-  const isPendingOnboarding = account?.isPendingOnboarding ?? false
+  const isPendingOnboarding = account?.isPendingOnboarding === true
   useEffect(() => {
     if (isPendingOnboarding) navigate({ to: '/onboarding/terms', replace: true })
   }, [isPendingOnboarding, navigate])
@@ -83,9 +84,9 @@ export function MyPageHubScreen() {
 
   return (
     <div className="flex flex-col pb-6">
-      <div className="sticky top-0 z-10 bg-surface-base">
-        <div className="flex h-14 items-center justify-between px-4">
-          <span className="text-heading font-bold tracking-tight text-text-primary">마이</span>
+      <MarketAppBar
+        title="마이"
+        actions={
           <button
             type="button"
             onClick={() => navigate({ to: '/settings' })}
@@ -94,28 +95,24 @@ export function MyPageHubScreen() {
           >
             <Settings className="size-[22px]" />
           </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex flex-col gap-3 p-4">
         {/* 프로필 요약 → 프로필 수정. 데이터는 GET /users/me. 로딩은 스켈레톤, 실패는 재시도 EmptyState.
             PENDING이면 위 effect가 온보딩으로 보내므로 그 사이 퇴화된 카드 대신 스켈레톤만 보여준다. */}
         {isLoading || isPendingOnboarding ? (
-          <div className="h-[88px] animate-pulse rounded-card bg-surface-sunken" />
+          <Skeleton className="h-[88px]" />
         ) : isError || !account ? (
-          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+          <Card className="p-4">
             <EmptyState
               title="프로필을 불러오지 못했어요"
               description="잠시 후 다시 시도해주세요."
               action={{ label: '다시 시도', onClick: () => void refetch() }}
             />
-          </div>
+          </Card>
         ) : (
-          <button
-            type="button"
-            onClick={() => navigate({ to: '/mypage/profile' })}
-            className="flex items-center gap-3.5 rounded-card border border-border-subtle bg-surface-raised p-4 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
-          >
+          <Card onClick={() => navigate({ to: '/mypage/profile' })} className="flex items-center gap-3.5 p-4">
             <Avatar name={account.nickname} src={account.avatarUrl} size="xl" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -134,12 +131,12 @@ export function MyPageHubScreen() {
               <p className="mt-0.5 truncate text-caption text-text-tertiary">{account.email}</p>
             </div>
             <ChevronRight className="size-5 flex-none text-icon-muted" />
-          </button>
+          </Card>
         )}
 
         {/* 적립금 — 내역 화면이 없어 이동 없는 표시 전용 행(onClick 없이 ListItem이 비인터랙티브
             div로 렌더). 금액은 서버 잔액이며 로딩·실패 시 '—'. 메뉴 그룹과 같은 카드 스타일. */}
-        <div className="overflow-hidden rounded-card border border-border-subtle bg-surface-raised">
+        <Card className="overflow-hidden">
           <ListItem
             leading={<Coins className="size-[22px]" />}
             title="적립금"
@@ -148,15 +145,12 @@ export function MyPageHubScreen() {
             }
             className="px-4"
           />
-        </div>
+        </Card>
 
         {/* 메뉴 그룹 — hover 배경이 행 전체 폭을 덮도록 px-4를 컨테이너가 아니라 ListItem에 준다
             (컨테이너 px-4면 hover가 좌우 16px 안쪽만 칠해짐). 구분선만 mx-4로 안쪽에 유지. */}
         {MYPAGE_MENU_GROUPS.map((group, gi) => (
-          <div
-            key={gi}
-            className="overflow-hidden rounded-card border border-border-subtle bg-surface-raised"
-          >
+          <Card key={gi} className="overflow-hidden">
             {group.items.map((item, i) => (
               <div key={item.key}>
                 {i > 0 && <div className="mx-4 border-t border-border-subtle" />}
@@ -169,7 +163,7 @@ export function MyPageHubScreen() {
                 />
               </div>
             ))}
-          </div>
+          </Card>
         ))}
       </div>
     </div>

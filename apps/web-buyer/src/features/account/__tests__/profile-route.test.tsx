@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -11,6 +11,7 @@ import {
   seedTakenNicknames,
   server,
   USER_ME_URL,
+  USER_PROFILE_URL,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -102,27 +103,35 @@ describe('/mypage/profile 실서버 연동', () => {
     expect(currentAccount().nickname).toBe('코코집사')
   })
 
-  it('[AC-PROFILE-007] 닉네임 형식 위반이면 저장 버튼이 막히고 인라인 안내만 뜬다(서버 호출 없음)', async () => {
+  it('[AC-PROFILE-007] 닉네임 형식은 서버가 판정한다 — 400/30002를 인라인 해요체로 보여주고 폼을 유지한다', async () => {
+    // 클라이언트 정규식은 없다(BE UserProfile.NICKNAME_PATTERN과 중복). BE INVALID_NICKNAME 모양 그대로 응답한다.
     seedAccount({ nickname: '코코집사' })
+    server.use(
+      http.put(USER_PROFILE_URL, () =>
+        HttpResponse.json({ errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' }, { status: 400 }),
+      ),
+    )
     const user = userEvent.setup()
     renderAt('/mypage/profile')
 
     const nick = await screen.findByDisplayValue('코코집사')
     await user.clear(nick)
-    await user.type(nick, '가') // 2자 미만 → 형식 위반
+    await user.type(nick, '가') // 2자 미만 → 서버가 거절
+    const save = screen.getByRole('button', { name: '저장' })
+    expect(save).toBeEnabled()
+    await user.click(save)
 
-    expect(await screen.findByText('닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+    expect(await screen.findByText('닉네임은 완성형 한글/영문/숫자 2~12자로 입력해 주세요')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('가')).toBeInTheDocument()
+    expect(currentAccount().nickname).toBe('코코집사')
   })
 
-  it('[AC-PROFILE-008] 자기소개는 150자를 넘겨 입력해도 클라에서 잘린다', async () => {
+  it('[AC-PROFILE-008] 자기소개 150자 상한은 네이티브 maxLength로만 건다(서버 @Size와 중복 slice 없음)', async () => {
     seedAccount({ nickname: '코코집사', bio: '' })
     renderAt('/mypage/profile')
 
-    const bio = (await screen.findByLabelText('자기소개')) as HTMLTextAreaElement
-    fireEvent.change(bio, { target: { value: 'a'.repeat(151) } })
-
-    expect(bio.value).toHaveLength(150)
+    const bio = await screen.findByLabelText('자기소개')
+    expect(bio).toHaveAttribute('maxlength', '150')
   })
 
   it('[AC-PROFILE-009] 저장 성공 시 성공 토스트를 띄우고 서버에 반영된다', async () => {

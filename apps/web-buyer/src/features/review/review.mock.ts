@@ -21,9 +21,11 @@ export type ReviewValidation =
   | { ok: false; reason: 'rating' | 'too-short' | 'prohibited'; message: string }
 
 // 등록 가능 여부(별점 필수 + 최소 글자 + 금칙어 검사). 등록 버튼 활성/에러 메시지의 단일 원본.
+// 최소 글자 안내는 기획 b4-st-2(글자수 안내)가 요구하는 클라이언트 UX라 남긴다. 호출부가 앞뒤 공백을
+// 잘라 넘긴다(서버 @Size는 공백만 있는 본문도 통과시킨다).
 export function validateReview(rating: number, content: string): ReviewValidation {
   if (rating < 1) return { ok: false, reason: 'rating', message: '별점을 선택해 주세요.' }
-  if (content.trim().length < MIN_REVIEW_LENGTH) {
+  if (content.length < MIN_REVIEW_LENGTH) {
     return {
       ok: false,
       reason: 'too-short',
@@ -105,7 +107,7 @@ const REVIEW_TEMPLATES: Template[] = [
 export function getProductReviewData(productId: string): ProductReviewData | null {
   const product = findProduct(productId)
   if (!product) return null
-  const total = product.reviewCount ?? 0
+  const total = product.reviewCount
   const average = product.rating ?? 0
   const count = total > 0 ? Math.min(REVIEW_TEMPLATES.length, 6) : 0
   const reviews: Review[] = REVIEW_TEMPLATES.slice(0, count).map((t, i) => ({
@@ -123,7 +125,7 @@ export function getProductReviewData(productId: string): ProductReviewData | nul
   return {
     productId,
     name: product.name,
-    storeName: product.storeName ?? '',
+    storeName: product.storeName,
     average,
     total,
     distribution: total > 0 ? distributionFor(average) : [0, 0, 0, 0, 0],

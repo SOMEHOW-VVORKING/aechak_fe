@@ -1,5 +1,6 @@
 import type { SellerLegalType } from '@aechak/domain'
 import { FormSection, Input, SegmentedControl, Select } from '@aechak/design-system/web'
+import { Field } from '@/shared/components/Field'
 import { BANK_OPTIONS, LEGAL_TYPE_OPTIONS } from '../store-settings.queries'
 import type { SellerApplicationFormValue } from '../store-settings.contract'
 
@@ -8,14 +9,6 @@ interface StoreSettingsFormProps {
   onChange: (patch: Partial<SellerApplicationFormValue>) => void
   /** 서버에 저장된 계좌의 마스킹 표시(있으면 재입력 안내를 붙인다 — 응답에 평문이 없다). */
   accountNumberMasked?: string
-}
-
-function RequiredLabel({ children }: { children: string }) {
-  return (
-    <span className="text-label font-medium text-text-primary">
-      {children} <span className="text-error-fg">*</span>
-    </span>
-  )
 }
 
 // 입점 신청 폼 — 필드 구성은 BE SaveDraftRequest와 1:1이다(휴대폰/이메일/주소는 BE 계약에
@@ -31,52 +24,47 @@ export function StoreSettingsForm({ value, onChange, accountNumberMasked }: Stor
   return (
     <div className="flex flex-col gap-4">
       <FormSection title="판매자 유형" step={1} stepStatus="done">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-text-primary">셀러 유형</span>
+        <Field label="셀러 유형">
           <SegmentedControl
             options={LEGAL_TYPE_OPTIONS}
             value={value.legalType}
             onChange={handleLegalTypeChange}
             className="max-w-[520px]"
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <RequiredLabel>대표자명</RequiredLabel>
+        </Field>
+        <Field label="대표자명" required>
           <Input
             value={value.representativeName}
             onChange={e => onChange({ representativeName: e.target.value })}
           />
-        </div>
+        </Field>
       </FormSection>
 
       {isBusiness && (
         <FormSection title="사업자 정보" step={2} stepStatus="done">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <RequiredLabel>상호명</RequiredLabel>
+            <Field label="상호명" required>
               <Input
                 value={value.businessName}
                 onChange={e => onChange({ businessName: e.target.value })}
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <RequiredLabel>사업자등록번호</RequiredLabel>
+            </Field>
+            <Field label="사업자등록번호" required>
               <Input
                 value={value.businessRegNo}
                 onChange={e => onChange({ businessRegNo: e.target.value })}
                 placeholder="000-00-00000"
                 className="tabular-nums"
               />
-            </div>
+            </Field>
             {isCorporate && (
-              <div className="flex flex-col gap-1.5">
-                <RequiredLabel>법인등록번호</RequiredLabel>
+              <Field label="법인등록번호" required>
                 <Input
                   value={value.corpRegNo}
                   onChange={e => onChange({ corpRegNo: e.target.value })}
                   className="tabular-nums"
                 />
-              </div>
+              </Field>
             )}
             <Input
               label="통신판매업 신고번호"

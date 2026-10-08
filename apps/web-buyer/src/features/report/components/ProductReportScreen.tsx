@@ -1,19 +1,21 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import type { ProductReportReason } from '@aechak/domain'
 import {
   BottomFixedAction,
-  EmptyState,
   MobileScreen,
-  Radio,
   Skeleton,
   StatusPill,
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { RadioList } from '@/shared/components/RadioList'
+import { ResultHero } from '@/shared/components/ResultHero'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { formatKRW } from '@/shared/formatKRW'
 import { useSafeBack } from '@/shared/useSafeBack'
+import { ProductThumbnail } from '@/shared/catalog'
 import {
   MAX_REPORT_DETAIL_LENGTH,
   PRODUCT_REPORT_REASONS,
@@ -55,13 +57,11 @@ export function ProductReportScreen({ productId }: { productId: string }) {
   if (!target) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="상품 신고" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="상품을 찾을 수 없어요"
-            description="삭제되었거나 주소가 올바르지 않은 상품이에요."
-            action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="상품을 찾을 수 없어요"
+          description="삭제되었거나 주소가 올바르지 않은 상품이에요."
+          action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
+        />
       </MobileScreen>
     )
   }
@@ -71,15 +71,13 @@ export function ProductReportScreen({ productId }: { productId: string }) {
     return (
       <MobileScreen footer={<BottomFixedAction primary={{ label: '확인', onClick: goBack }} />}>
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-          <span className="flex size-16 items-center justify-center rounded-full bg-success-surface text-success-fg">
-            <CheckCircle2 className="size-10" />
-          </span>
-          <p className="text-title font-bold text-text-primary">신고가 접수됐어요</p>
-          <p className="text-body-sm leading-relaxed text-text-secondary">
-            검수 후 정책에 따라 조치할게요.
-            <br />
-            신고자 정보는 공개되지 않으니 안심하세요.
-          </p>
+          <ResultHero tone="success" icon={<CheckCircle2 className="size-10" />} title="신고가 접수됐어요">
+            <p className="text-body-sm leading-relaxed text-text-secondary">
+              검수 후 정책에 따라 조치할게요.
+              <br />
+              신고자 정보는 공개되지 않으니 안심하세요.
+            </p>
+          </ResultHero>
         </div>
       </MobileScreen>
     )
@@ -112,13 +110,7 @@ export function ProductReportScreen({ productId }: { productId: string }) {
       <div className="flex flex-col gap-4 p-4">
         {/* 신고 대상 컨텍스트 카드 */}
         <div className="flex items-center gap-2.5 rounded-card bg-surface-sunken p-3">
-          <div className="flex size-11 flex-none items-center justify-center overflow-hidden rounded-image bg-surface-raised text-icon-muted">
-            {target.thumbnailUrl ? (
-              <img src={target.thumbnailUrl} alt="" className="size-full object-cover" />
-            ) : (
-              <ImageIcon className="size-5" />
-            )}
-          </div>
+          <ProductThumbnail src={target.thumbnailUrl} className="size-11" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-label text-text-primary">{target.name}</p>
             <p className="truncate text-caption text-text-tertiary">
@@ -137,21 +129,8 @@ export function ProductReportScreen({ productId }: { productId: string }) {
           </p>
         </div>
 
-        {/* 사유 라디오 5종 — 주문 취소 화면과 동일한 테두리 없는 촘촘한 행 디자인(gap-0.5 + min-h-10).
-            라디오는 자체 label이라 바깥을 또 label로 감싸지 않고 div로만 감싼다. */}
-        <div className="flex flex-col gap-0.5">
-          {PRODUCT_REPORT_REASONS.map(r => (
-            <div key={r.value} className="flex min-h-10 items-center">
-              <Radio
-                name="report-reason"
-                value={r.value}
-                checked={reason === r.value}
-                onChange={() => setReason(r.value)}
-                label={r.label}
-              />
-            </div>
-          ))}
-        </div>
+        {/* 사유 라디오 5종 — 주문 취소 화면과 같은 RadioList. */}
+        <RadioList name="report-reason" options={PRODUCT_REPORT_REASONS} value={reason} onChange={setReason} />
 
         {/* 상세 내용(선택) */}
         <div className="flex flex-col gap-1.5">

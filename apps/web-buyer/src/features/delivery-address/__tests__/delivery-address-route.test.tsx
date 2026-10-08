@@ -3,8 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { HttpResponse, http } from 'msw'
 import type { DaumPostcodeData } from '../daum-postcode'
-import { seedDeliveryAddresses, type DeliveryAddressRow } from '../../../testing/msw/server'
+import {
+  DELIVERY_ADDRESSES_URL,
+  seedDeliveryAddresses,
+  server,
+  type DeliveryAddressRow,
+} from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 // 배송지는 @aechak/api fetcher로 서버에서 온다(훅 아님 — AGENTS.md breeds 절 컨벤션).
@@ -60,6 +66,22 @@ class MockPostcode {
     })
     container.appendChild(btn)
   }
+}
+
+type User = ReturnType<typeof userEvent.setup>
+
+/** 우편번호 검색 시트(Daum 목)에서 후보 주소를 골라 우편번호/기본 주소를 채운다. */
+async function searchAddress(user: User) {
+  await user.click(screen.getByRole('button', { name: /우편번호 검색/ }))
+  await user.click(await screen.findByRole('button', { name: /판교역로 235/ }))
+}
+
+/** 화면 검증을 모두 통과하는 새 배송지 입력. */
+async function fillValidForm(user: User) {
+  await user.type(screen.getByLabelText('받는 사람'), '홍길동')
+  await user.type(screen.getByLabelText('휴대폰 번호'), '010-1111-2222')
+  await searchAddress(user)
+  await user.type(screen.getByPlaceholderText('상세 주소를 입력해주세요'), '4층')
 }
 
 /** 라벨 텍스트가 든 카드 엘리먼트 — 배지가 어느 카드에 붙었는지 보려면 카드 단위로 좁혀야 한다. */
@@ -130,22 +152,99 @@ describe('/addresses', () => {
     expect(await screen.findByText('학교')).toBeInTheDocument()
   })
 
-  it('[AC-ADDR-ROUTE-004] 휴대폰 번호는 숫자/하이픈만 허용하고 형식이 틀리면 에러를 표시한다', async () => {
+  it('[AC-ADDR-ROUTE-004] 휴대폰 번호는 구분자를 걷어 숫자만 남기고, 형식이 틀리면 저장을 막고 벗어난 뒤 에러를 표시한다', async () => {
     const user = userEvent.setup()
     renderAt('/addresses')
     await screen.findByText('코코집사')
 
     await user.click(screen.getByRole('button', { name: '배송지 추가' }))
+    await user.type(screen.getByLabelText('받는 사람'), '홍길동')
+    await searchAddress(user)
+    await user.type(screen.getByPlaceholderText('상세 주소를 입력해주세요'), '4층')
+
+    // 구분자(하이픈 등)는 서버 정규화(normalizeContactNumber)와 같은 규칙으로 걷힌다.
     const phone = screen.getByLabelText('휴대폰 번호')
-
-    // 비숫자 입력(영문/한글/기호)은 걸러져 숫자·하이픈만 남는다
-    await user.type(phone, '010-abc가나!!')
-    expect(phone).toHaveValue('010-')
-
-    // 자릿수가 모자란 잘못된 번호면 에러 안내가 뜬다
-    await user.type(phone, '99')
-    expect(screen.getByText('숫자로 된 휴대폰 번호를 입력해주세요')).toBeInTheDocument()
+    await user.type(phone, '010-99')
+    expect(phone).toHaveValue('01099')
+    // 자릿수가 모자라면 pattern 판정(BE DeliveryAddressPatterns)으로 저장을 바로 막는다.
+    // 안내는 처음 입력하는 도중에는 띄우지 않고 칸을 벗어난 뒤에 띄운다.
     expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+    expect(screen.queryByText('휴대폰 번호 형식을 확인해주세요. 예: 01012345678')).not.toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByText('휴대폰 번호 형식을 확인해주세요. 예: 01012345678')).toBeInTheDocument()
+    expect(phone).toHaveAccessibleDescription('휴대폰 번호 형식을 확인해주세요. 예: 01012345678')
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+
+    // 휴대폰 접두가 아닌 번호(지역번호)도 형식 오류다.
+    await user.clear(phone)
+    await user.type(phone, '02-1234-5678')
+    expect(screen.getByText('휴대폰 번호 형식을 확인해주세요. 예: 01012345678')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+
+    await user.clear(phone)
+    await user.type(phone, '010-9999-8888')
+    expect(phone).toHaveValue('01099998888')
+    expect(screen.queryByText('휴대폰 번호 형식을 확인해주세요. 예: 01012345678')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeEnabled()
+  })
+
+  it('[AC-ADDR-ROUTE-012] 필수 칸을 비운 채(공백만 포함) 벗어나면 필드 아래 안내가 뜨고 저장이 잠긴다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    await user.click(screen.getByRole('button', { name: '배송지 추가' }))
+    // 손대지 않은 폼에는 오류가 없고 저장만 잠겨 있다.
+    expect(screen.queryByText('받는 사람 이름을 입력해주세요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+
+    await user.type(screen.getByLabelText('받는 사람'), '   ')
+    await user.tab() // 받는 사람 → 휴대폰 번호
+    expect(await screen.findByText('받는 사람 이름을 입력해주세요')).toBeInTheDocument()
+    // 안내는 보조기기에도 그 칸의 오류로 전달된다(aria-invalid + aria-describedby).
+    expect(screen.getByLabelText('받는 사람')).toBeInvalid()
+    expect(screen.getByLabelText('받는 사람')).toHaveAccessibleDescription('받는 사람 이름을 입력해주세요')
+    await user.tab() // 휴대폰 번호를 비운 채 벗어남
+    expect(await screen.findByText('휴대폰 번호를 입력해주세요')).toBeInTheDocument()
+    expect(screen.getByLabelText('휴대폰 번호')).toHaveAccessibleDescription('휴대폰 번호를 입력해주세요')
+
+    const detail = screen.getByPlaceholderText('상세 주소를 입력해주세요')
+    await user.click(detail)
+    await user.tab()
+    expect(await screen.findByText('상세 주소를 입력해주세요')).toBeInTheDocument()
+    expect(detail).toHaveAccessibleDescription('상세 주소를 입력해주세요')
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+  })
+
+  it('[AC-ADDR-ROUTE-014] 입력 길이 상한은 BE 계약(AddDeliveryAddressRequest @Size)대로 maxlength 속성으로 걸린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    await user.click(screen.getByRole('button', { name: '배송지 추가' }))
+    expect(screen.getByLabelText(/배송지 이름/)).toHaveAttribute('maxlength', '100')
+    expect(screen.getByLabelText('받는 사람')).toHaveAttribute('maxlength', '50')
+    expect(screen.getByPlaceholderText('상세 주소를 입력해주세요')).toHaveAttribute('maxlength', '512')
+    expect(screen.getByLabelText('배송 요청사항')).toHaveAttribute('maxlength', '255')
+  })
+
+  it('[AC-ADDR-ROUTE-013] 화면 검증을 통과했는데 서버가 400/90001로 거절하면 한 문장 토스트를 띄우고 폼을 유지한다', async () => {
+    server.use(
+      http.post(DELIVERY_ADDRESSES_URL, () =>
+        HttpResponse.json({ errorCode: 90001, message: '연락처 형식이 올바르지 않습니다.' }, { status: 400 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/addresses')
+    await screen.findByText('코코집사')
+
+    await user.click(screen.getByRole('button', { name: '배송지 추가' }))
+    await fillValidForm(user)
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    // 서버 message 문구가 아니라 status/errorCode로 고른 문구다.
+    expect(await screen.findByRole('alert')).toHaveTextContent('입력한 배송지 정보를 다시 확인해주세요')
+    expect(screen.getByLabelText('받는 사람')).toHaveValue('홍길동')
   })
 
   it('[AC-ADDR-ROUTE-003] 삭제는 확인 Modal을 거쳐 목록에서 제거한다', async () => {
@@ -245,9 +344,10 @@ describe('/addresses', () => {
     expect(screen.queryByText('첫 배송지는 기본 배송지로 지정돼요')).toBeNull()
   })
 
-  it('[AC-ADDR-ROUTE-005] 배송지가 최대치(10개)면 "배송지 추가" 버튼이 비활성화된다', async () => {
-    // 시드 2건 + 8건 = 10건(MAX_DELIVERY_ADDRESSES). 서버도 초과를 422/30120으로 막지만
-    // 여기서 보는 건 도달 시 UI가 진입 자체를 막는 클라이언트 게이트다.
+  it('[AC-ADDR-ROUTE-005] 배송지가 최대치(10개)면 안내만 보여주고, 초과 등록은 서버 422/30500 문구로 알린다', async () => {
+    // 시드 2건 + 8건 = 10건(MAX_DELIVERY_ADDRESSES). 한도는 서버가 판정한다(클라이언트 게이트 없음) —
+    // 화면은 기획의 '최대 10개 안내'와 n/10 카운터만 두고, 서버 거절 문구를 토스트로 보여준다.
+    const user = userEvent.setup()
     seedDeliveryAddresses([
       ...SEED,
       ...Array.from({ length: 8 }, (_, i) => ({
@@ -263,7 +363,15 @@ describe('/addresses', () => {
     renderAt('/addresses')
 
     const addButton = await screen.findByRole('button', { name: '배송지 추가' })
-    expect(addButton).toBeDisabled()
+    expect(addButton).toBeEnabled()
     expect(screen.getByText('10/10')).toBeInTheDocument()
+    expect(screen.getByText('배송지는 최대 10개까지 등록할 수 있어요')).toBeInTheDocument()
+
+    await user.click(addButton)
+    await fillValidForm(user)
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    // 서버(MSW가 재현한 한도)가 422/30500으로 거절하고 화면은 그 문구를 토스트로 띄운다.
+    expect(await screen.findByRole('alert')).toHaveTextContent('배송지는 최대 10개까지 등록할 수 있어요')
   })
 })

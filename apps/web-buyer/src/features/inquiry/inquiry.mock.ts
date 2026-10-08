@@ -14,31 +14,3 @@ export const INQUIRY_TYPE_OPTIONS: {
   { value: SubmitInquiryRequestInquiryType.SELLER_PRODUCT, label: '셀러 / 상품' },
   { value: SubmitInquiryRequestInquiryType.SERVICE_ETC, label: '서비스 이용 / 기타' },
 ]
-
-// 내용 상한은 BE 계약(2000자)에 맞춘다 — 목업 카운터(/1000)가 아니라 서버가 실제 허용하는 값.
-export const MAX_INQUIRY_CONTENT_LENGTH = 2000
-
-// 이메일 형식 검증 — 공백 없는 local@domain.tld. 서버가 최종 판정하므로 과하게 엄격히 하지 않는다.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-export function isValidEmail(email: string): boolean {
-  return EMAIL_PATTERN.test(email.trim())
-}
-
-export interface InquiryDraft {
-  type: SubmitInquiryRequestInquiryType | ''
-  email: string
-  content: string
-}
-
-export type ValidInquiryDraft = InquiryDraft & { type: SubmitInquiryRequestInquiryType }
-
-// 제출 유효성 — 유형 선택 + 이메일 형식 + 내용 non-empty + 상한 이하. 셋 다 필수(목업/BE 계약).
-export function isValidInquiry(draft: InquiryDraft): draft is ValidInquiryDraft {
-  return (
-    INQUIRY_TYPE_OPTIONS.some(o => o.value === draft.type) &&
-    isValidEmail(draft.email) &&
-    draft.content.trim().length > 0 &&
-    draft.content.length <= MAX_INQUIRY_CONTENT_LENGTH
-  )
-}

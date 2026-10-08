@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Gift, Image as ImageIcon, ListChecks } from 'lucide-react'
+import { Gift, ListChecks } from 'lucide-react'
 import type { ReviewStatus } from '@aechak/api'
 import {
   Button,
+  Card,
   EmptyState,
   MobileScreen,
   Modal,
@@ -15,6 +16,7 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useAccount } from '@/shared/account'
+import { ProductLineRow } from '@/shared/catalog'
 import {
   reviewErrorMessage,
   serverReviewId,
@@ -24,6 +26,7 @@ import {
   type MyWrittenReview,
 } from '../review.queries'
 import { REVIEW_REWARD, type PendingReview } from '../review.mock'
+import { LoadMoreButton } from './LoadMoreButton'
 import { MyReviewCard } from './MyReviewCard'
 
 type MyReviewTab = 'pending' | 'completed'
@@ -205,40 +208,21 @@ function TabBody<T>({
   return (
     <>
       {view.items.map(render)}
-      {view.hasNextPage && (
-        <button
-          type="button"
-          onClick={view.fetchNextPage}
-          disabled={view.isFetchingNextPage}
-          className="h-11 w-full rounded-button border border-border bg-surface-base text-body-sm font-medium text-text-secondary transition-colors disabled:opacity-60"
-        >
-          {view.isFetchingNextPage ? '불러오는 중…' : '더보기'}
-        </button>
-      )}
+      {view.hasNextPage && <LoadMoreButton onClick={view.fetchNextPage} loading={view.isFetchingNextPage} />}
     </>
   )
 }
 
 function PendingCard({ item, onWrite }: { item: PendingReview; onWrite: () => void }) {
   return (
-    <div className="flex flex-col gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
-      <div className="flex items-center gap-3">
-        <div className="size-14 flex-none overflow-hidden rounded-image bg-surface-sunken">
-          {item.thumbnailUrl ? (
-            <img src={item.thumbnailUrl} alt="" className="size-full object-cover" />
-          ) : (
-            <div className="flex size-full items-center justify-center text-icon-muted">
-              <ImageIcon className="size-6" />
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-body-sm text-text-primary">{item.name}</p>
-          <p className="mt-0.5 text-caption text-text-tertiary">
-            {item.reviewableUntil ? `${item.since} / ${item.reviewableUntil}까지 작성` : item.since}
-          </p>
-        </div>
-      </div>
+    <Card className="flex flex-col gap-3 p-4">
+      <ProductLineRow
+        thumbnailUrl={item.thumbnailUrl}
+        thumbClass="size-14"
+        align="center"
+        name={item.name}
+        meta={item.reviewableUntil ? `${item.since} / ${item.reviewableUntil}까지 작성` : item.since}
+      />
       <div className="flex items-center justify-between rounded-md bg-neutral-surface px-3 py-2">
         <span className="flex items-center gap-1 text-caption text-text-secondary">
           <Gift className="size-3.5" />
@@ -252,7 +236,7 @@ function PendingCard({ item, onWrite }: { item: PendingReview; onWrite: () => vo
           </Button>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 

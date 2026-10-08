@@ -43,7 +43,7 @@ let loadPromise: Promise<void> | null = null
 // Daum 우편번호 스크립트를 한 번만 로드한다(중복 주입 방지). 이미 로드돼 있으면 즉시 resolve하고,
 // 로드 실패 시 다음 열기에서 재시도할 수 있도록 캐시를 비운다.
 export function loadDaumPostcode(): Promise<void> {
-  if (typeof window !== 'undefined' && window.daum?.Postcode) return Promise.resolve()
+  if (window.daum?.Postcode) return Promise.resolve()
   if (loadPromise) return loadPromise
   loadPromise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script')

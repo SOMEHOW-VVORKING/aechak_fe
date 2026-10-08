@@ -143,6 +143,23 @@ const sellerApplicationHandlers = [
         { status: 409 },
       )
     }
+    // requireSubmittable 미러(공통 필수 정보만) — message 형식은 BE 그대로 격식체다.
+    const missingFields = (
+      [
+        ['대표자명', application.representativeName],
+        ['은행 코드', application.bankCode],
+        ['계좌번호', application.accountNumberMasked],
+        ['예금주', application.accountHolder],
+      ] as const
+    )
+      .filter(([, value]) => !value)
+      .map(([label]) => label)
+    if (missingFields.length > 0) {
+      return HttpResponse.json(
+        { errorCode: 10105, message: `필수 정보가 누락됐습니다: ${missingFields.join(', ')}` },
+        { status: 400 },
+      )
+    }
     application = { ...application, status: 'SUBMITTED', submittedAt: '2026-08-13T11:00:00' }
     return new HttpResponse(null, { status: 204 })
   }),

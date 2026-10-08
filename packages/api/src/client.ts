@@ -49,6 +49,20 @@ export function setOnOnboardingRequired(handler: (() => void) | null): void {
   onOnboardingRequired = handler
 }
 
+/** 서버 실패 응답 본문(web-common ErrorResponse). 본문이 비어 오면(프록시 오류 등) 필드가 없다. */
+export interface ErrorBody {
+  errorCode?: number
+  message?: string
+}
+
+/**
+ * 실패 응답의 status·본문만 꺼낸다. 소비 앱이 axios 타입을 끌어오지 않고 errorCode로 분기하는 단일
+ * 진입점. axios 에러가 아니거나 응답 자체가 없으면(네트워크 단절·취소) undefined.
+ */
+export function errorResponse(error: unknown): { status: number; data?: ErrorBody } | undefined {
+  return axios.isAxiosError<ErrorBody | undefined>(error) ? error.response : undefined
+}
+
 axiosInstance.interceptors.request.use(config => {
   if (accessToken && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${accessToken}`
@@ -96,11 +110,8 @@ axiosInstance.interceptors.response.use(
   async (error: unknown) => {
     // 온보딩 미완(403/20006)은 전역 핸들러를 깨워 온보딩으로 유도하되, promise는 계속 reject한다
     // — 호출부(화면·쿼리)도 실패를 인지해 로딩/성공으로 새지 않게 한다.
-    if (
-      axios.isAxiosError(error) &&
-      error.response?.status === 403 &&
-      (error.response.data as { errorCode?: number } | undefined)?.errorCode === 20006
-    ) {
+    const failed = errorResponse(error)
+    if (failed?.status === 403 && failed.data?.errorCode === 20006) {
       onOnboardingRequired?.()
     }
     if (!axios.isAxiosError(error) || error.response?.status !== 401) {

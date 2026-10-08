@@ -29,15 +29,6 @@ export function fieldA11y(key: string, errors: ProductFormErrors, tooltipKey: st
   }
 }
 
-/** helperText를 못 받는 자리(이미지, 옵션값, DatePicker 등)의 오류 문구. 나타날 때 바로 읽히도록 alert. */
-export function FieldError({ id, children }: { id?: string; children: ReactNode }) {
-  return (
-    <p id={id} role="alert" className="text-caption text-error-fg">
-      {children}
-    </p>
-  )
-}
-
 export function FieldAnchor({ fieldKey, tip, children }: { fieldKey: string; tip?: string; children: ReactNode }) {
   return (
     <div id={fieldDomId(fieldKey)} className="relative">

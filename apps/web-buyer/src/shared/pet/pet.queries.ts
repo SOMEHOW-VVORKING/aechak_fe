@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deletePet,
+  errorResponse,
   getPets,
   registerPet,
   setDefaultPet,
@@ -21,7 +22,30 @@ import type { PetProfile, PetSpecies } from '@aechak/domain'
 // 서버 한도와 같은 값
 const MAX_PETS = 10
 
+// 입력 제약은 BE 계약을 그대로 옮긴다(be origin/develop 기준). 폼은 이 값을 네이티브 속성(maxLength/min/max/step)으로
+// 쓰고 판정은 브라우저 validity에 맡긴다. 경로는 be boot/api/.../user/pet/request/PetProfileConstraints.kt 와
+// domain/.../user/pet/PetProfile.kt.
+/** PetProfileConstraints.kt:9 NAME_MAX = PetProfile.kt:121 NAME_MAX */
+export const PET_NAME_MAX_LENGTH = 50
+/** PetProfileConstraints.kt:15 WEIGHT_MIN = PetProfile.kt:122 WEIGHT_MIN ("0.1") */
+export const PET_WEIGHT_MIN_KG = 0.1
+/** PetProfileConstraints.kt:16 WEIGHT_MAX = PetProfile.kt:123 WEIGHT_MAX ("200.0") */
+export const PET_WEIGHT_MAX_KG = 200
+/** PetProfileConstraints.kt:19 WEIGHT_FRACTION_DIGITS = 1 → 0.1kg 단위 */
+export const PET_WEIGHT_STEP_KG = 0.1
+
+// 화면 인라인 안내와 서버 도메인 코드 안내가 같은 문구를 쓴다.
+export const PET_NAME_REQUIRED_MESSAGE = '이름을 입력해주세요'
+export const PET_WEIGHT_RANGE_MESSAGE = `체중은 ${PET_WEIGHT_MIN_KG}~${PET_WEIGHT_MAX_KG}kg 사이로 입력해주세요`
+export const PET_WEIGHT_STEP_MESSAGE = '체중은 소수점 첫째 자리까지 입력할 수 있어요'
+const INVALID_INPUT_MESSAGE = '입력한 정보를 다시 확인해주세요'
+
+// 서버 에러코드(BE UserErrorCode 펫 대역 + @Valid 실패 90001).
 const PET_LIMIT_EXCEEDED = 30600
+const INVALID_PET_WEIGHT = 30603
+const INVALID_PET_BIRTH_YEAR_MONTH = 30604
+const INVALID_BREED = 30700
+const INVALID_REQUEST = 90001
 
 const PETS_QUERY_KEY = ['pets'] as const
 
@@ -30,7 +54,8 @@ export interface PetInput {
   name: string
   species: PetSpecies
   breed?: string
-  breedId?: number
+  /** 서버 필수 계약(RegisterPetProfileRequest.breedId: Long) — 폼이 선택을 확인한 뒤에만 호출한다. */
+  breedId: number
   birthYear?: number
   birthMonth?: number
   weightKg?: number
@@ -77,8 +102,7 @@ function toUpdatePetRequest(input: PetInput): UpdatePetProfileRequest {
 export function toRegisterPetRequest(input: PetInput): RegisterPetProfileRequest {
   return {
     name: input.name,
-    // 품종은 필수 계약이다. 미선택 상태로 저장 버튼이 눌리는 건 폼이 막아야 한다.
-    breedId: input.breedId as number,
+    breedId: input.breedId,
     // 생월을 모르면 연도만 보낸다. 서버가 1월로 맞춘다. 생년이 없으면 아예 안 보낸다.
     birthYearMonth:
       input.birthYear == null
@@ -96,7 +120,7 @@ export function usePetList() {
     queryKey: PETS_QUERY_KEY,
     queryFn: ({ signal }) => getPets(signal),
   })
-  const pets = (query.data?.data?.pets ?? []).map(toPetProfile)
+  const pets = (query.data?.data.pets ?? []).map(toPetProfile)
   return {
     pets,
     isLoading: query.isLoading,
@@ -106,29 +130,34 @@ export function usePetList() {
   }
 }
 
-// 에러 문구는 HTTP status로 고르고, 같은 status에 여러 사유가 있으면 errorCode까지 본다.
-// axios 타입을 안 끌어오려고 duck-typing.
+// 에러 문구는 errorCode를 먼저 보고(같은 status에 사유가 여럿), 없으면 HTTP status로 고른다.
+// 서버 message는 -습니다체이고 계약도 아니라 읽지 않는다. 90001은 화면 검증을 통과한 뒤에만 오므로 한 문장으로 안내한다.
 export function petErrorMessage(error: unknown): string {
-  const status = (error as { response?: { status?: number } })?.response?.status
-  const data = (error as { response?: { data?: { message?: string; errorCode?: number } } })?.response
-    ?.data
-  const serverMessage = data?.message
-  switch (status) {
-    // 422는 개수 초과 전용이 아니다. 코드까지 봐야 다른 검증 실패를 오안내하지 않는다.
+  const res = errorResponse(error)
+  switch (res?.data?.errorCode) {
+    case PET_LIMIT_EXCEEDED:
+      return `반려동물은 최대 ${MAX_PETS}마리까지 등록할 수 있어요`
+    case INVALID_PET_WEIGHT:
+      return PET_WEIGHT_RANGE_MESSAGE
+    case INVALID_PET_BIRTH_YEAR_MONTH:
+      return '생년월은 이번 달보다 미래일 수 없어요'
+    case INVALID_BREED:
+      return '선택한 품종이 올바르지 않아요'
+    case INVALID_REQUEST:
+      return INVALID_INPUT_MESSAGE
+  }
+  switch (res?.status) {
     case 422:
-      return data?.errorCode === PET_LIMIT_EXCEEDED
-        ? `반려동물은 최대 ${MAX_PETS}마리까지 등록할 수 있어요`
-        : (serverMessage ?? '입력한 정보를 다시 확인해주세요')
+    case 400:
+      return INVALID_INPUT_MESSAGE
     case 409:
       return '다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해주세요'
     case 404:
       return '이미 삭제된 반려동물이에요'
     case 403:
-      return serverMessage ?? '접근 권한이 없어요'
-    case 400:
-      return serverMessage ?? '입력한 정보를 다시 확인해주세요'
+      return '접근 권한이 없어요'
     default:
-      return serverMessage ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요'
   }
 }
 
@@ -188,7 +217,7 @@ export function useRemovePet() {
     ) =>
       mutation.mutate(id, {
         onSuccess: res => {
-          const promoted = res?.data?.promotedDefaultPetId
+          const promoted = res.data.promotedDefaultPetId
           opts?.onSuccess?.(promoted != null ? String(promoted) : null)
         },
         onError: opts?.onError,

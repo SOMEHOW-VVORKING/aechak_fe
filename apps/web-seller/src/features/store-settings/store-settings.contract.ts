@@ -41,8 +41,8 @@ export const DOCUMENT_LABEL: Record<SellerDocumentType, string> = {
   CORP_SEAL: '법인 인감증명서',
 }
 
-// BE 제출 검증(10105)의 유형별 필수 서류 표 미러 — 부족 목록이 message 문자열로만 와서
-// 파싱이 취약하므로 클라이언트가 같은 표를 보유하고 제출 전에 미리 판정한다.
+// BE 제출 검증(10105)의 유형별 필수 서류 표 미러. 기획 b14-st-3 §8이 '제출 부족 시 제출 버튼 disabled(서류 N건
+// 필요)'를 요구해 서류만 클라이언트가 미리 판정한다. 필수 정보(대표자명/계좌 등)는 BE가 10105로 알려 준다.
 export const REQUIRED_DOCUMENTS: Record<SellerLegalType, SellerDocumentType[]> = {
   individual: ['ID_CARD', 'BANKBOOK_COPY'],
   'individual-business': ['ID_CARD', 'BANKBOOK_COPY', 'BUSINESS_REGISTRATION', 'TELESALES_REPORT'],
@@ -118,16 +118,15 @@ export function toSellerApplication(wire: SellerApplicationDetail): SellerApplic
     rejectionReason: wire.rejectionReason ?? undefined,
     documents: wire.documents.map(doc => ({
       key: doc.documentType,
-      label: DOCUMENT_LABEL[doc.documentType as SellerDocumentType] ?? doc.documentType,
+      label: DOCUMENT_LABEL[doc.documentType],
       uploadedAt: doc.uploadedAt,
     })),
   }
 }
 
-function nullable(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
+// 공백만 입력한 값은 null로 보낸다(검증이 아니라 정규화). BE는 저장 시 accountNumber만 isNotBlank로 접고 나머지는
+// 그대로 저장하며, 사업자등록번호는 @BusinessRegNo가 null만 통과시켜 "  "는 400/90001이 된다.
+const nullable = (value: string) => value.trim() || null
 
 export interface SaveDraftInput {
   form: SellerApplicationFormValue
@@ -151,42 +150,9 @@ export function toSaveDraftRequest(input: SaveDraftInput): SaveSellerApplication
   }
 }
 
-// BE 제출 검증(requireSubmittable)의 유형별 필수 필드 표 미러. telesalesNumber는 어느 유형에서도
-// 필수 필드가 아니다(서류 TELESALES_REPORT만 필수 — BE와 동일).
-const REQUIRED_FIELD_LABELS: { label: string; read: (form: SellerApplicationFormValue) => string }[] = [
-  { label: '대표자명', read: form => form.representativeName },
-  { label: '은행', read: form => form.bankCode },
-  { label: '계좌번호', read: form => form.accountNumber },
-  { label: '예금주', read: form => form.accountHolder },
-]
-
-const BUSINESS_FIELD_LABELS: typeof REQUIRED_FIELD_LABELS = [
-  { label: '상호명', read: form => form.businessName },
-  { label: '사업자등록번호', read: form => form.businessRegNo },
-]
-
-const CORPORATE_FIELD_LABELS: typeof REQUIRED_FIELD_LABELS = [
-  { label: '법인등록번호', read: form => form.corpRegNo },
-]
-
-/**
- * 제출 전 부족한 필수 정보·서류 라벨. 서버 10105와 같은 기준 — 계좌번호는 응답이 마스킹뿐이라
- * 저장(전체 덮어쓰기)마다 폼에 다시 입력돼 있어야 하므로 폼 값 기준으로만 판정한다.
- */
-export function missingRequirements(
-  form: SellerApplicationFormValue,
-  providedDocumentTypes: ReadonlySet<string>,
-): string[] {
-  const fieldRules = [
-    ...REQUIRED_FIELD_LABELS,
-    ...(form.legalType !== 'individual' ? BUSINESS_FIELD_LABELS : []),
-    ...(form.legalType === 'corporate-business' ? CORPORATE_FIELD_LABELS : []),
-  ]
-  const missingFields = fieldRules.filter(rule => rule.read(form).trim() === '').map(rule => rule.label)
-  const missingDocuments = REQUIRED_DOCUMENTS[form.legalType]
-    .filter(type => !providedDocumentTypes.has(type))
-    .map(type => DOCUMENT_LABEL[type])
-  return [...missingFields, ...missingDocuments]
+/** 제출 전 부족한 필수 서류 라벨(b14-st-3 §8 제출 버튼 disabled 근거). 필수 정보는 BE 10105가 판정한다. */
+export function missingDocuments(legalType: SellerLegalType, providedDocumentTypes: ReadonlySet<string>): string[] {
+  return REQUIRED_DOCUMENTS[legalType].filter(type => !providedDocumentTypes.has(type)).map(type => DOCUMENT_LABEL[type])
 }
 
 // 사업자등록번호 사전 검증 — 서버 @BusinessRegNo(하이픈 제거 10자리 + 국세청 체크섬)와 동일 규칙.
@@ -202,11 +168,9 @@ export function isValidBusinessRegNo(value: string): boolean {
   return (10 - (sum % 10)) % 10 === nums[9]
 }
 
-// 인증/신청 에러는 errorCode로 분기한다. 10105(필수 미비)는 부족 목록이 서버 message 한 줄에
-// 실려 오므로 그대로 보여준다. axios 타입을 안 끌어오려고 duck-typing.
+// 인증/신청 에러는 errorCode로 분기한다. axios 타입을 안 끌어오려고 duck-typing.
 export function sellerApplicationErrorMessage(error: unknown): string {
-  const data = (error as { response?: { data?: { errorCode?: number; message?: string } } })
-    ?.response?.data
+  const data = (error as { response?: { data?: { errorCode?: number; message?: string } } }).response?.data
   switch (data?.errorCode) {
     case 10103:
       return '휴대폰 본인 인증이 필요해요. 구매자 앱 마이페이지에서 인증한 뒤 다시 시도해 주세요.'
@@ -218,8 +182,14 @@ export function sellerApplicationErrorMessage(error: unknown): string {
       return '이미 진행 중인 입점 신청이 있어요. 화면을 새로고침해 주세요.'
     case 10100:
       return '입점 신청을 찾을 수 없어요. 화면을 새로고침해 주세요.'
-    case 10105:
-      return data?.message ?? '필수 정보·서류를 확인해 주세요.'
+    case 10105: {
+      // 필수 정보 부족은 이 응답이 유일한 안내다. BE message('필수 정보가 누락됐습니다: A, B / 필수 서류가
+      // 누락됐습니다: C')는 격식체라 콜론 뒤 목록만 뽑아 화면의 '제출 전 필요' 줄과 같은 꼴로 보여준다.
+      const items = (data.message ?? '').split(' / ').flatMap(part => part.split(': ')[1] ?? [])
+      return items.length > 0 ? `제출 전 필요: ${items.join(', ')}` : '필수 정보와 서류를 확인해 주세요.'
+    }
+    case 90001:
+      return '입력한 내용을 다시 확인해 주세요.'
     case 100001:
       return '서류 파일 업로드가 완료되지 않았어요. 파일을 다시 올려 주세요.'
     case 100002:
