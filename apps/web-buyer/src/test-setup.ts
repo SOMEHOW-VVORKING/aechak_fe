@@ -8,6 +8,11 @@ import { resetWishlistState } from './shared/catalog'
 // 무해한 no-op으로 스텁한다(라우트 렌더 테스트 공통).
 window.scrollTo = () => {}
 
+// jsdom에는 blob URL API가 없다. 사진 미리보기(펫/리뷰/프로필)가 브라우저와 같은 코드로 돌게 스텁한다
+// — 프로덕션 번들은 CSR 전용이라 화면 코드가 `typeof URL.createObjectURL` 가드를 둘 이유가 없다.
+URL.createObjectURL ??= () => 'blob:test'
+URL.revokeObjectURL ??= () => {}
+
 // 모든 테스트에서 실네트워크를 전면 금지한다(기존 테스트는 HTTP 무호출 확인됨).
 // 핸들러 없는 요청이 발생하면 그 자체를 실패로 본다.
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))

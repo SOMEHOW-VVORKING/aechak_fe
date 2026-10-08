@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
-import { AlertCircle, Loader2, MapPin, Plus, Search, SearchX, Star } from 'lucide-react'
+import { AlertCircle, Loader2, MapPin, Search, SearchX, Star } from 'lucide-react'
 import type { DeliveryAddress } from '@aechak/domain'
 import {
   BottomFixedAction,
   BottomSheet,
   Button,
+  Card,
   Checkbox,
   EmptyState,
   Input,
@@ -16,11 +18,20 @@ import {
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { AppToast } from '@/shared/components/AppToast'
+import { DashedAddButton } from '@/shared/components/DashedAddButton'
+import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
+  CONTACT_NUMBER_PATTERN,
+  DELIVERY_ADDRESS_LABEL_MAX_LENGTH,
+  DELIVERY_MEMO_MAX_LENGTH,
+  DETAIL_ADDRESS_MAX_LENGTH,
   MAX_DELIVERY_ADDRESSES,
+  RECEIVER_NAME_MAX_LENGTH,
   deliveryAddressErrorMessage,
   formatPhone,
+  toPhoneDigits,
   useAddDeliveryAddress,
   useDeliveryAddresses,
   useRemoveDeliveryAddress,
@@ -28,7 +39,6 @@ import {
   useUpdateDeliveryAddress,
   type DeliveryAddressInput,
 } from '@/shared/delivery-address'
-import { isValidPhone, sanitizePhone } from '../delivery-address.mock'
 import { loadDaumPostcode } from '../daum-postcode'
 
 // 주소 검색 완료 후 포커스를 옮길 상세주소 입력 id(DS Input이 그대로 <input>에 부착).
@@ -40,7 +50,8 @@ export interface DeliveryAddressBookScreenProps {
 }
 
 // 배송지 주소록(b10-st-4). 목록(4-A) / 삭제 확인 Modal(4-B) / 추가·편집 폼(4-C)을
-// 한 화면에서 mode 전환으로 처리한다.
+// 한 화면에서 mode 전환으로 처리한다. 필수 필드와 연락처 형식은 폼이 필드 아래에 안내하고 저장을 막는다.
+// 최대 개수(10)와 그 밖의 거절은 서버가 판정하고(422 30500 / 400), 화면은 deliveryAddressErrorMessage 문구를 토스트로 보여준다.
 export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenProps) {
   const navigate = useNavigate()
   const { addresses, isLoading, isError, refetch } = useDeliveryAddresses()
@@ -95,23 +106,19 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
               ))}
             </div>
           ) : isError ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <EmptyState
-                icon={<AlertCircle className="size-8" />}
-                title="배송지를 불러오지 못했어요"
-                description="네트워크 상태를 확인하고 다시 시도해주세요."
-                action={{ label: '다시 시도', onClick: () => void refetch() }}
-              />
-            </div>
+            <ScreenEmptyState
+              icon={<AlertCircle className="size-8" />}
+              title="배송지를 불러오지 못했어요"
+              description="네트워크 상태를 확인하고 다시 시도해주세요."
+              action={{ label: '다시 시도', onClick: () => void refetch() }}
+            />
           ) : addresses.length === 0 ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <EmptyState
-                icon={<MapPin className="size-8" />}
-                title="등록된 배송지가 없어요"
-                description="자주 쓰는 배송지를 추가해두면 주문이 편해요."
-                action={{ label: '배송지 추가', onClick: () => setFormTarget(null) }}
-              />
-            </div>
+            <ScreenEmptyState
+              icon={<MapPin className="size-8" />}
+              title="등록된 배송지가 없어요"
+              description="자주 쓰는 배송지를 추가해두면 주문이 편해요."
+              action={{ label: '배송지 추가', onClick: () => setFormTarget(null) }}
+            />
           ) : (
             <div className="flex flex-col gap-3.5 p-4">
               <div className="flex items-center justify-between">
@@ -142,15 +149,7 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
                 />
               ))}
 
-              <button
-                type="button"
-                onClick={() => setFormTarget(null)}
-                disabled={atLimit}
-                className="flex h-12 items-center justify-center gap-1.5 rounded-card border border-dashed border-border-strong bg-surface-sunken text-body-sm text-text-secondary disabled:opacity-40"
-              >
-                <Plus className="size-[18px]" />
-                배송지 추가
-              </button>
+              <DashedAddButton label="배송지 추가" onClick={() => setFormTarget(null)} className="h-12" />
               {atLimit && (
                 <p className="text-center text-caption text-text-tertiary">
                   배송지는 최대 {MAX_DELIVERY_ADDRESSES}개까지 등록할 수 있어요
@@ -221,12 +220,7 @@ function DeliveryAddressCard({
   onSetDefault: () => void
 }) {
   return (
-    <div
-      className={[
-        'rounded-card border bg-surface-raised p-4',
-        address.isDefault ? 'border-brand-border' : 'border-border-subtle',
-      ].join(' ')}
-    >
+    <Card selected={address.isDefault} className="p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <span className="text-label font-semibold text-text-primary">
@@ -239,14 +233,7 @@ function DeliveryAddressCard({
             </StatusPill>
           )}
         </span>
-        <span className="flex flex-none items-center gap-3 text-caption">
-          <button type="button" onClick={onEdit} className="text-text-tertiary">
-            수정
-          </button>
-          <button type="button" onClick={onDelete} className="text-error-fg">
-            삭제
-          </button>
-        </span>
+        <EditDeleteActions onEdit={onEdit} onDelete={onDelete} />
       </div>
       <p className="text-body-sm text-text-secondary">
         {address.recipient} / {formatPhone(address.phone)}
@@ -269,7 +256,7 @@ function DeliveryAddressCard({
           기본 배송지로 설정
         </Button>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -290,8 +277,8 @@ function DeliveryAddressForm({
   const [form, setForm] = useState<DeliveryAddressInput>(() => ({
     label: target?.label ?? '',
     recipient: target?.recipient ?? '',
-    // 서버는 숫자만 저장하므로 편집 폼에는 하이픈을 붙여 보여준다(저장 시 다시 정규화된다).
-    phone: formatPhone(target?.phone ?? ''),
+    // 서버가 저장한 숫자열 그대로. 입력 칸은 숫자만 받는다(아래 휴대폰 onChange).
+    phone: target?.phone ?? '',
     zipcode: target?.zipcode ?? '',
     address1: target?.address1 ?? '',
     address2: target?.address2 ?? '',
@@ -300,18 +287,29 @@ function DeliveryAddressForm({
     isDefault: target?.isDefault ?? isFirstAddress,
   }))
   const [postalOpen, setPostalOpen] = useState(false)
+  // 필드 안내는 한 번 벗어난 뒤에만 띄운다(손대지 않은 폼이나 첫 입력 도중에 오류가 뜨지 않게).
+  const [touched, setTouched] = useState({ recipient: false, phone: false, address2: false })
+  const touch = (field: keyof typeof touched) => () => setTouched(prev => ({ ...prev, [field]: true }))
+  // 휴대폰 칸의 브라우저 판정(pattern 속성). 정규식을 JS로 다시 돌리지 않는다.
+  const [phoneInvalid, setPhoneInvalid] = useState(false)
 
   const set = (patch: Partial<DeliveryAddressInput>) => setForm(prev => ({ ...prev, ...patch }))
 
-  // 휴대폰: 숫자/하이픈만 입력되게 걸러내고, 값이 있는데 형식이 틀리면 에러 상태를 표시한다.
-  const phoneInvalid = form.phone.trim() !== '' && !isValidPhone(form.phone)
-
-  // 배송지 이름(label)은 선택, 상세주소(address2)는 필수. address1/zipcode는 검색으로 함께 채워진다.
+  // 배송지 이름(label)·요청사항만 선택. 주소(우편번호/기본 주소)는 검색으로 함께 채워져 빈 칸 안내 없이 저장만 막는다.
+  const recipientBlank = form.recipient.trim() === ''
+  const address2Blank = form.address2.trim() === ''
+  const recipientError = touched.recipient && recipientBlank ? '받는 사람 이름을 입력해주세요' : undefined
+  // 형식 안내도 문의 이메일처럼 벗어난 뒤에 띄운다. 저장 잠금은 phoneInvalid가 바로 건다.
+  const phoneError = !touched.phone
+    ? undefined
+    : form.phone === ''
+      ? '휴대폰 번호를 입력해주세요'
+      : phoneInvalid
+        ? '휴대폰 번호 형식을 확인해주세요. 예: 01012345678'
+        : undefined
+  const address2Error = touched.address2 && address2Blank ? '상세 주소를 입력해주세요' : undefined
   const canSave =
-    form.recipient.trim() !== '' &&
-    isValidPhone(form.phone) &&
-    form.address1.trim() !== '' &&
-    form.address2.trim() !== ''
+    !recipientBlank && form.phone !== '' && !phoneInvalid && form.address1.trim() !== '' && !address2Blank
 
   return (
     <MobileScreen
@@ -327,27 +325,48 @@ function DeliveryAddressForm({
         />
       }
     >
+      {/* maxLength/pattern은 BE AddDeliveryAddressRequest의 @Size/@Pattern과 같다(입력 단계에서 막아 서버 검증 오류가 나지 않게). */}
       <div className="flex flex-col gap-3.5 p-4">
         <Input
           label="배송지 이름 (선택)"
           placeholder="집, 회사 등"
+          maxLength={DELIVERY_ADDRESS_LABEL_MAX_LENGTH}
           value={form.label}
           onChange={e => set({ label: e.target.value })}
         />
+        {/* DS Input은 aria를 달지 않아 오류 칸마다 직접 넘긴다. helper(<id>-helper)는 오류가 있을 때만 렌더된다. */}
         <Input
+          id="address-recipient"
           label="받는 사람"
           placeholder="받는 분 이름"
+          maxLength={RECEIVER_NAME_MAX_LENGTH}
           value={form.recipient}
           onChange={e => set({ recipient: e.target.value })}
+          onBlur={touch('recipient')}
+          state={recipientError ? 'error' : 'default'}
+          helperText={recipientError}
+          aria-invalid={recipientError ? true : undefined}
+          aria-describedby={recipientError ? 'address-recipient-helper' : undefined}
         />
         <Input
+          id="address-phone"
           label="휴대폰 번호"
-          placeholder="010-0000-0000"
+          placeholder="숫자만 입력해주세요"
           inputMode="tel"
+          pattern={CONTACT_NUMBER_PATTERN}
           value={form.phone}
-          onChange={e => set({ phone: sanitizePhone(e.target.value) })}
-          state={phoneInvalid ? 'error' : 'default'}
-          helperText={phoneInvalid ? '숫자로 된 휴대폰 번호를 입력해주세요' : undefined}
+          onChange={e => {
+            const input = e.target
+            // 구분자는 서버도 같은 규칙으로 걷어내므로(normalizeContactNumber) 입력 단계에서 걷어내 숫자만 남긴다.
+            // pattern 판정은 걷어낸 값에 걸려야 해서 그 값을 DOM에 먼저 반영한 뒤 validity를 읽는다.
+            flushSync(() => set({ phone: toPhoneDigits(input.value) }))
+            setPhoneInvalid(!input.validity.valid)
+          }}
+          onBlur={touch('phone')}
+          state={phoneError ? 'error' : 'default'}
+          helperText={phoneError}
+          aria-invalid={phoneError ? true : undefined}
+          aria-describedby={phoneError ? 'address-phone-helper' : undefined}
         />
         <div className="flex flex-col gap-1.5">
           <span className="text-label font-medium text-text-secondary">주소</span>
@@ -371,14 +390,21 @@ function DeliveryAddressForm({
           <Input
             id={DETAIL_ADDRESS_INPUT_ID}
             placeholder="상세 주소를 입력해주세요"
+            maxLength={DETAIL_ADDRESS_MAX_LENGTH}
             value={form.address2}
             onChange={e => set({ address2: e.target.value })}
+            onBlur={touch('address2')}
+            state={address2Error ? 'error' : 'default'}
+            helperText={address2Error}
+            aria-invalid={address2Error ? true : undefined}
+            aria-describedby={address2Error ? `${DETAIL_ADDRESS_INPUT_ID}-helper` : undefined}
           />
         </div>
         <Input
           label="배송 요청사항"
           placeholder="예) 공동현관 비밀번호 #1234, 부재 시 문 앞에 놔주세요 (선택)"
-          value={form.deliveryMemo ?? ''}
+          maxLength={DELIVERY_MEMO_MAX_LENGTH}
+          value={form.deliveryMemo}
           onChange={e => set({ deliveryMemo: e.target.value })}
         />
         <div className="flex flex-col gap-1">

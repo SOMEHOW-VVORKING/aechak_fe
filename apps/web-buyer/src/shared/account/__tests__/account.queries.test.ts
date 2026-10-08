@@ -51,7 +51,9 @@ describe('toBuyerAccount 매퍼', () => {
 })
 
 describe('accountErrorMessage', () => {
+  // axios 에러 모양(isAxiosError 플래그 + response)만 흉내 낸 최소 객체.
   const err = (status: number, errorCode?: number, message?: string) => ({
+    isAxiosError: true,
     response: { status, data: { errorCode, message } },
   })
 
@@ -71,9 +73,12 @@ describe('accountErrorMessage', () => {
     expect(accountErrorMessage(err(403, 20006))).toContain('온보딩')
   })
 
-  it('[AC-ACCOUNT-MAP-007] 분류되지 않은 오류는 서버 message로 폴백한다', () => {
+  it('[AC-ACCOUNT-MAP-007] 분류되지 않은 오류는 서버 message(-습니다체) 대신 공통 해요체 문구를 쓴다', () => {
     expect(accountErrorMessage(err(500, 99999, '서버에서 처리하지 못했습니다.'))).toBe(
-      '서버에서 처리하지 못했습니다.',
+      '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요',
+    )
+    expect(accountErrorMessage(new Error('network'))).toBe(
+      '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요',
     )
   })
 })

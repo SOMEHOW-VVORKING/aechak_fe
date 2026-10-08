@@ -1,12 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Image as ImageIcon, MapPin, Plus } from 'lucide-react'
+import { MapPin, Plus } from 'lucide-react'
 import type { CartItem, PaymentMethod } from '@aechak/domain'
 import {
   BottomFixedAction,
   Button,
+  Card,
   Checkbox,
-  EmptyState,
   Input,
   MobileScreen,
   Radio,
@@ -14,11 +14,14 @@ import {
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { PriceRow } from '@/shared/components/PriceRow'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
 import { useCartItems } from '@/shared/cart'
 import { formatPhone, useDefaultDeliveryAddress } from '@/shared/delivery-address'
-import { buildCartView, type CartLineView } from '@/shared/catalog'
+import { buildCartView, OrderItemsCard } from '@/shared/catalog'
 import { usePointBalance } from '@/shared/points'
 import { PAYMENT_METHODS, clampPoints, finalPayable, maxUsablePoints } from '../checkout.mock'
 
@@ -109,13 +112,11 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
   if (unresolvedBuyNow) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="주문서" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="주문할 상품을 확인할 수 없어요"
-            description="상품을 다시 선택해 주세요."
-            action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="주문할 상품을 확인할 수 없어요"
+          description="상품을 다시 선택해 주세요."
+          action={{ label: '상품 둘러보기', onClick: () => navigate({ to: '/market' }) }}
+        />
       </MobileScreen>
     )
   }
@@ -136,42 +137,33 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
       <div className="flex flex-col gap-3 p-4">
         {/* 배송지 */}
         {addressLoading ? (
-          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <div className="mb-2 flex items-center gap-1.5">
-              <MapPin className="size-4 text-brand" />
-              <span className="text-label font-semibold text-text-primary">배송지</span>
-            </div>
+          <AddressSection>
             <Skeleton variant="text" className="h-4 w-40" />
             <Skeleton variant="text" className="mt-1.5 h-4 w-56" />
-          </div>
+          </AddressSection>
         ) : addressError ? (
-          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <div className="mb-2 flex items-center gap-1.5">
-              <MapPin className="size-4 text-brand" />
-              <span className="text-label font-semibold text-text-primary">배송지</span>
-            </div>
+          <AddressSection>
             {/* 조회 실패를 '배송지 없음'으로 보여주면 등록된 주소가 사라진 줄 알고 중복 등록한다. */}
             <p className="text-body-sm text-text-secondary">배송지를 불러오지 못했어요.</p>
             <Button variant="secondary" size="md" fullWidth onClick={() => void refetchAddress()} className="mt-3">
               다시 시도
             </Button>
-          </div>
+          </AddressSection>
         ) : defaultAddress ? (
-          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <MapPin className="size-4 text-brand" />
-                <span className="text-label font-semibold text-text-primary">배송지</span>
-                {defaultAddress.isDefault && (
-                  <StatusPill variant="brand" size="sm">
-                    기본
-                  </StatusPill>
-                )}
-              </div>
+          <AddressSection
+            badge={
+              defaultAddress.isDefault && (
+                <StatusPill variant="brand" size="sm">
+                  기본
+                </StatusPill>
+              )
+            }
+            trailing={
               <button type="button" onClick={goAddresses} className="text-caption text-text-link">
                 변경
               </button>
-            </div>
+            }
+          >
             <p className="text-body-sm text-text-primary">
               {defaultAddress.recipient} / {formatPhone(defaultAddress.phone)}
             </p>
@@ -179,13 +171,9 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
               {defaultAddress.address1}
               {defaultAddress.address2 ? ` ${defaultAddress.address2}` : ''}
             </p>
-          </div>
+          </AddressSection>
         ) : (
-          <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <div className="mb-2 flex items-center gap-1.5">
-              <MapPin className="size-4 text-brand" />
-              <span className="text-label font-semibold text-text-primary">배송지</span>
-            </div>
+          <AddressSection>
             <p className="text-body-sm text-text-secondary">
               등록된 배송지가 없어요. 배송지를 추가해야 주문할 수 있어요.
             </p>
@@ -199,23 +187,26 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
             >
               배송지 추가
             </Button>
-          </div>
+          </AddressSection>
         )}
 
         {/* 주문 상품(셀러별) */}
         {orderGroups.map(group => (
-          <div key={group.storeName} className="rounded-card border border-border-subtle bg-surface-raised p-4">
-            <p className="mb-2.5 text-caption font-semibold text-text-tertiary">주문 상품 / {group.storeName}</p>
-            <div className="flex flex-col gap-3">
-              {group.lines.map(line => (
-                <OrderLine key={line.key} line={line} />
-              ))}
-            </div>
-          </div>
+          <OrderItemsCard
+            key={group.storeName}
+            storeName={group.storeName}
+            items={group.lines.map(line => ({
+              key: line.key,
+              thumbnailUrl: line.product.thumbnailUrl,
+              name: line.product.name,
+              meta: `${line.option} / ${line.quantity}개`,
+              price: formatKRW(line.lineTotal),
+            }))}
+          />
         ))}
 
         {/* 적립금 */}
-        <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+        <Card className="p-4">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="text-label font-semibold text-text-primary">적립금</span>
             <span className="text-caption text-text-tertiary">보유 {formatKRW(pointBalance)}</span>
@@ -245,10 +236,10 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
             </Button>
           </div>
           <p className="mt-1.5 text-caption text-text-tertiary">최대 {formatKRW(usablePoints)}까지 사용할 수 있어요</p>
-        </div>
+        </Card>
 
         {/* 결제 수단 */}
-        <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+        <Card className="p-4">
           <p className="mb-2.5 text-label font-semibold text-text-primary">결제 수단</p>
           <div className="flex flex-col gap-1">
             {PAYMENT_METHODS.map(pm => (
@@ -269,25 +260,25 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* 결제 요약 */}
-        <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
-          <SummaryRow label="상품금액" value={formatKRW(view.itemsTotal)} />
-          <SummaryRow
+        <Card className="flex flex-col gap-2 p-4">
+          <PriceRow label="상품금액" value={formatKRW(view.itemsTotal)} />
+          <PriceRow
             label="배송비"
             value={view.shippingTotal === 0 ? '무료' : formatKRW(view.shippingTotal)}
             valueClass={view.shippingTotal === 0 ? 'text-success-fg' : 'text-text-primary'}
           />
           {points > 0 && (
-            <SummaryRow label="적립금 사용" value={`-${formatKRW(points)}`} valueClass="text-text-accent" />
+            <PriceRow label="적립금 사용" value={`-${formatKRW(points)}`} valueClass="text-text-accent" />
           )}
-          <div className="my-0.5 h-px bg-border-subtle" />
+          <Divider className="my-0.5" />
           <div className="flex items-baseline justify-between">
             <span className="text-subheading font-semibold text-text-primary">총 결제금액</span>
             <span className="text-price-lg font-bold text-brand">{formatKRW(payable)}</span>
           </div>
-        </div>
+        </Card>
 
         {/* 약관 동의 */}
         <Checkbox
@@ -300,43 +291,27 @@ export function CheckoutScreen({ buyNow, option = '기본', qty = 1, addl }: Che
   )
 }
 
-function OrderLine({ line }: { line: CartLineView }) {
-  const { product } = line
-  return (
-    <div className="flex items-start gap-3">
-      <div className="size-[52px] flex-none overflow-hidden rounded-image bg-surface-sunken">
-        {product.thumbnailUrl ? (
-          <img src={product.thumbnailUrl} alt="" className="size-full object-cover" />
-        ) : (
-          <div className="flex size-full items-center justify-center text-icon-muted">
-            <ImageIcon className="size-5" />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-body-sm text-text-primary">{product.name}</p>
-        <p className="mt-0.5 text-caption text-text-tertiary">
-          {line.option} / {line.quantity}개
-        </p>
-        <p className="mt-1 text-price-sm font-semibold text-text-price">{formatKRW(line.lineTotal)}</p>
-      </div>
-    </div>
-  )
-}
-
-function SummaryRow({
-  label,
-  value,
-  valueClass = 'text-text-primary',
+// 배송지 카드(로딩/오류/있음/없음 네 분기 공용 chrome + `MapPin 배송지` 헤더). 본문만 children으로 받는다.
+function AddressSection({
+  badge,
+  trailing,
+  children,
 }: {
-  label: string
-  value: string
-  valueClass?: string
+  badge?: ReactNode
+  trailing?: ReactNode
+  children: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between text-body-sm">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`tabular-nums ${valueClass}`}>{value}</span>
-    </div>
+    <Card className="p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <MapPin className="size-4 text-brand" />
+          <span className="text-label font-semibold text-text-primary">배송지</span>
+          {badge}
+        </div>
+        {trailing}
+      </div>
+      {children}
+    </Card>
   )
 }

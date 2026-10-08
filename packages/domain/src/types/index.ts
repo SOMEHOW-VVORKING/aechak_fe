@@ -237,7 +237,7 @@ export interface BuyerAccount {
   phone: string // 서버 마스킹 표시용 번호(인증 전 빈 문자열) — 클라이언트 마스킹 없음
   avatarUrl?: string // 표시용 URL
   profileImageKey?: string // 프로필 수정 시 사진 유지로 되돌려 보낼 원본 키(avatarUrl에서 역파싱 금지)
-  isPendingOnboarding?: boolean // 온보딩 미완료(PENDING) 여부 — 이 유저는 마이 허브 대신 온보딩으로 보낸다
+  isPendingOnboarding: boolean // 온보딩 미완료(PENDING) 여부 — 이 유저는 마이 허브 대신 온보딩으로 보낸다
   verification: VerificationStatus
 }
 
@@ -304,10 +304,20 @@ export type SellerApplicationStatus =
 // 필터·표시용 굵은 분류로 그대로 두고, 세분류가 필요한 화면은 legalType을 본다.
 export type SellerLegalType = 'individual' | 'individual-business' | 'corporate-business'
 
+// BE DocumentType enum과 1:1. domain은 @aechak/api를 import하지 못해 같은 리터럴을 여기 한 번 더 둔다
+// (api의 SellerDocumentType과 구조적으로 같아 서로 대입된다).
+export type SellerDocumentKey =
+  | 'ID_CARD'
+  | 'BANKBOOK_COPY'
+  | 'BUSINESS_REGISTRATION'
+  | 'TELESALES_REPORT'
+  | 'CORP_REGISTER'
+  | 'CORP_SEAL'
+
 // 신청 서류. BE는 종류(documentType)와 등록 시각만 갖는다 — 서류별 개별 상태(보완요청 등)는
 // BE에 없고 반려는 신청 단위(rejectionReason)다. label은 FE가 documentType에서 파생한다.
 export interface SellerApplicationDocument {
-  key: string // BE SellerDocumentType 값(ID_CARD 등) 또는 admin mock의 서류 키
+  key: SellerDocumentKey
   label: string
   uploadedAt?: string
 }

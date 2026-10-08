@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Button, DocumentHeader, MobileScreen, StatusPill } from '@aechak/design-system/web'
+import { Button, Card, DocumentHeader, MobileScreen, StatusPill } from '@aechak/design-system/web'
+import { ActionBarFrame } from '@/shared/components/ActionBarFrame'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { DATA_DELETION_IMMEDIATE, DATA_RETENTION_ROWS } from '../settings.mock'
@@ -17,10 +18,7 @@ export function DataDeletionScreen() {
     <MobileScreen
       header={<BackAppBar onBack={goBack} title="계정 및 데이터 삭제" />}
       footer={
-        <div
-          className="flex-none border-t border-border-subtle bg-surface-raised px-4 pt-3"
-          style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}
-        >
+        <ActionBarFrame>
           <Button
             variant="secondary"
             size="lg"
@@ -29,7 +27,7 @@ export function DataDeletionScreen() {
           >
             회원 탈퇴 진행
           </Button>
-        </div>
+        </ActionBarFrame>
       }
     >
       <DocumentHeader title="계정 및 데이터 삭제 안내" />
@@ -49,7 +47,7 @@ export function DataDeletionScreen() {
           <DocParagraph>
             법령/운영 정책에 따라 아래 정보는 바로 삭제되지 않고 보관되며, 작성자는 익명 처리돼요.
           </DocParagraph>
-          <div className="mt-1 flex flex-col rounded-card border border-border-subtle bg-surface-raised">
+          <Card className="mt-1 flex flex-col">
             {DATA_RETENTION_ROWS.map(row => (
               <div
                 key={row.label}
@@ -61,7 +59,7 @@ export function DataDeletionScreen() {
                 </StatusPill>
               </div>
             ))}
-          </div>
+          </Card>
         </DocSection>
       </div>
     </MobileScreen>

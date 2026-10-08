@@ -1,11 +1,11 @@
 import { useRef } from 'react'
 import { Upload } from 'lucide-react'
+import type { SellerDocumentType } from '@aechak/api'
 import { Button, StatusPill } from '@aechak/design-system/web'
 import type { StatusPillVariant } from '@aechak/design-system/web'
 
 export interface DocumentRowModel {
-  /** BE SellerDocumentType 값. */
-  type: string
+  type: SellerDocumentType
   label: string
   required: boolean
   /** 서버에 이미 등록된 시각(있으면 제출 완료). */
@@ -16,7 +16,7 @@ export interface DocumentRowModel {
 
 interface DocumentRowProps {
   document: DocumentRowModel
-  onSelect: (type: string, file: File) => void
+  onSelect: (type: SellerDocumentType, file: File) => void
 }
 
 // 서류 한 줄 — 라벨 + 상태 pill + 파일 선택. PDF까지 받아야 해서 이미지 썸네일 그리드

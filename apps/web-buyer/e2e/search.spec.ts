@@ -28,7 +28,7 @@ async function shot(page: Page, path: string) {
     content:
       '.tsqd-parent-container,.tsqd-open-btn-container,[aria-label*="query devtools" i],[aria-label*="Tanstack" i]{display:none!important}',
   })
-  await page.screenshot({ path })
+  await page.screenshot({ path, animations: 'disabled' })
 }
 
 const RECENT_KEYWORDS = [

@@ -1,5 +1,6 @@
 import type { Claim, ClaimStatus, ClaimType } from '@aechak/domain'
 import { Button, DataTable, StatusPill, type Column, type StatusPillVariant } from '@aechak/design-system/web'
+import { DoneLabel, PillWithNote, TwoLineCell } from '@/shared/components/TableCells'
 import { CLAIM_STATUS_LABEL, CLAIM_TYPE_LABEL, RESPONSIBLE_PARTY_LABEL } from '../claims.queries'
 
 const TYPE_VARIANT: Record<ClaimType, StatusPillVariant> = {
@@ -47,22 +48,12 @@ export function ClaimsTable({
     {
       key: 'order',
       label: '주문 / 상품',
-      render: c => (
-        <div>
-          <p className="font-semibold tabular-nums text-text-primary">{c.orderId}</p>
-          <p className="text-caption text-text-tertiary">{c.productName}</p>
-        </div>
-      ),
+      render: c => <TwoLineCell primary={c.orderId} secondary={c.productName} />,
     },
     {
       key: 'type',
       label: '유형 / 사유',
-      render: c => (
-        <div>
-          <StatusPill variant={TYPE_VARIANT[c.type]}>{CLAIM_TYPE_LABEL[c.type]}</StatusPill>
-          <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">{c.reason}</p>
-        </div>
-      ),
+      render: c => <PillWithNote variant={TYPE_VARIANT[c.type]} label={CLAIM_TYPE_LABEL[c.type]} note={c.reason} />,
     },
     {
       key: 'responsible',
@@ -113,9 +104,7 @@ export function ClaimsTable({
               환불 확정
             </Button>
           )}
-          {(c.status === 'approved' || c.status === 'rejected' || c.status === 'refunded') && (
-            <span className="text-caption text-text-tertiary">처리 완료</span>
-          )}
+          {(c.status === 'approved' || c.status === 'rejected' || c.status === 'refunded') && <DoneLabel />}
         </div>
       ),
     },

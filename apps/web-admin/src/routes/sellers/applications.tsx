@@ -1,38 +1,33 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Ban,
-  Briefcase,
-  Building2,
-  Check,
-  Clock,
-  Contact,
-  FileEdit,
-  FileText,
-  Loader,
-  User,
-  XCircle,
-} from 'lucide-react'
+import { Ban, Building2, Check, Clock, Contact, FileEdit, FileText, Loader, XCircle } from 'lucide-react'
 import {
   Button,
   DataTable,
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
-  StatusPill,
   Textarea,
   Toast,
 } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
-import type { SellerApplication, SellerApplicationStatus } from '@aechak/domain'
+import type { SellerApplication, SellerApplicationStatus, SellerDocumentKey } from '@aechak/domain'
 import { useSellerApplications } from '@/features/seller-applications'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { FilterSelect } from '@/shared/components/FilterSelect'
+import { MediaPlaceholder } from '@/shared/components/MediaPlaceholder'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { SellerTypePill, sellerTypeLabel } from '@/shared/components/SellerTypePill'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/sellers/applications')({
   component: SellerApplicationsPage,
@@ -40,14 +35,7 @@ export const Route = createFileRoute('/sellers/applications')({
 
 // BE ApplicationStatus 1:1. draft/cancelled는 어드민 목록에 실릴 일이 없는 값이지만(작성 중은
 // 셀러 로컬 단계, cancelled는 할당 경로 없음) Record라 전 키를 채운다 — 필터 옵션에도 그대로 파생.
-const statusMeta: Record<
-  SellerApplicationStatus,
-  {
-    label: string
-    variant: 'neutral' | 'info' | 'success' | 'error' | 'warning' | 'muted'
-    icon: typeof Clock
-  }
-> = {
+const statusMeta: Record<SellerApplicationStatus, StatusMeta> = {
   draft: { label: '작성 중', variant: 'muted', icon: FileEdit },
   submitted: { label: '심사 대기', variant: 'neutral', icon: Clock },
   reviewing: { label: '심사 중', variant: 'info', icon: Loader },
@@ -56,8 +44,10 @@ const statusMeta: Record<
   cancelled: { label: '신청 취소', variant: 'muted', icon: Ban },
 }
 
+type ApplicationDecision = 'approve' | 'reject'
+
 const decisionModalMeta: Record<
-  string,
+  ApplicationDecision,
   {
     title: string
     description: string
@@ -85,11 +75,11 @@ const decisionModalMeta: Record<
   },
 }
 
-const documentIcon: Record<string, typeof FileText> = {
-  'business-reg': FileText,
-  'mail-order': FileText,
-  bankbook: Building2,
-  'id-card': Contact,
+const documentIcon: Partial<Record<SellerDocumentKey, typeof FileText>> = {
+  BUSINESS_REGISTRATION: FileText,
+  TELESALES_REPORT: FileText,
+  BANKBOOK_COPY: Building2,
+  ID_CARD: Contact,
 }
 
 const statusFilterOptions = [
@@ -103,76 +93,47 @@ const typeFilterOptions = [
   { value: 'individual', label: '개인' },
 ]
 
-function makeApplicationColumns(onOpenDetail: (row: SellerApplication) => void): Column<SellerApplication>[] { return [
-  {
-    key: 'applicantName',
-    label: '신청자',
-    render: row => (
-      <button
-        type="button"
-        onClick={() => onOpenDetail(row)}
-        className="font-medium text-text-primary hover:text-brand hover:underline"
-      >
-        {row.applicantName}
-      </button>
-    ),
-  },
-  {
-    key: 'sellerType',
-    label: '판매자 유형',
-    align: 'center',
-    render: row =>
-      row.sellerType === 'business' ? (
-        <StatusPill variant="neutral">
-          <Briefcase className="size-3" />
-          사업자
-        </StatusPill>
-      ) : (
-        <StatusPill variant="info">
-          <User className="size-3" />
-          개인
-        </StatusPill>
-      ),
-  },
-  {
-    key: 'businessNumberMasked',
-    label: '사업자번호',
-    render: row => (
-      <span className="tabular-nums">
-        {row.businessNumberMasked ? `보유 · ${row.businessNumberMasked}` : '미보유'}
-      </span>
-    ),
-  },
-  {
-    key: 'status',
-    label: '심사 상태',
-    align: 'center',
-    render: row => {
-      const meta = statusMeta[row.status]
-      const Icon = meta.icon
-      return (
-        <StatusPill variant={meta.variant}>
-          <Icon className="size-3" />
-          {meta.label}
-        </StatusPill>
-      )
+function makeApplicationColumns(onOpenDetail: (row: SellerApplication) => void): Column<SellerApplication>[] {
+  return [
+    {
+      key: 'applicantName',
+      label: '신청자',
+      render: row => <RowLinkButton onClick={() => onOpenDetail(row)}>{row.applicantName}</RowLinkButton>,
     },
-  },
-  {
-    key: 'appliedAt',
-    label: '신청일',
-    align: 'right',
-    render: row => <span className="tabular-nums">{row.appliedAt}</span>,
-  },
-] }
+    {
+      key: 'sellerType',
+      label: '판매자 유형',
+      align: 'center',
+      render: row => <SellerTypePill sellerType={row.sellerType} />,
+    },
+    {
+      key: 'businessNumberMasked',
+      label: '사업자번호',
+      render: row => (
+        <span className="tabular-nums">
+          {row.businessNumberMasked ? `보유 · ${row.businessNumberMasked}` : '미보유'}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: '심사 상태',
+      align: 'center',
+      render: row => <StatusMetaPill meta={statusMeta[row.status]} />,
+    },
+    {
+      key: 'appliedAt',
+      label: '신청일',
+      align: 'right',
+      render: row => <span className="tabular-nums">{row.appliedAt}</span>,
+    },
+  ]
+}
 
 function SellerApplicationsPage() {
   const { data, isLoading } = useSellerApplications()
-  const [rows, setRows] = useState<SellerApplication[] | null>(null)
-  useEffect(() => {
-    if (data && rows === null) setRows(data)
-  }, [data, rows])
-  const items = rows ?? []
+  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
+    useDetailList(data)
 
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -194,45 +155,25 @@ function SellerApplicationsPage() {
     [items, statusFilter, typeFilter, search],
   )
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find(row => row.id === selectedId) ?? null
-  const SelectedStatusIcon = selected ? statusMeta[selected.status].icon : null
-
-  const [decision, setDecision] = useState('approve')
+  const [decision, setDecision] = useState<ApplicationDecision>('approve')
   const [rejectionReason, setRejectionReason] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-
-  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'info' } | null>(null)
 
   function openDrawer(row: SellerApplication) {
-    setSelectedId(row.id)
+    select(row.id)
     setDecision(row.status === 'rejected' ? 'reject' : 'approve')
     setRejectionReason(row.rejectionReason ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function closeDrawer() {
-    setSelectedId(null)
-    setConfirmOpen(false)
-  }
-
-  function applyDecision(nextStatus: SellerApplicationStatus, message: string) {
-    if (!selected) return
-    setRows(prev =>
-      (prev ?? []).map(row =>
-        row.id === selected.id
-          ? {
-              ...row,
-              status: nextStatus,
-              // BE 계약: rejectionReason은 REJECTED일 때만 값이 있다(승인 시 null로 비워짐).
-              rejectionReason: nextStatus === 'rejected' ? rejectionReason : undefined,
-              internalMemo,
-            }
-          : row,
-      ),
-    )
-    setToast({ message, variant: 'success' })
+  function applyDecision(target: SellerApplication, nextStatus: SellerApplicationStatus, message: string) {
+    patchRow(target.id, {
+      status: nextStatus,
+      // BE 계약: rejectionReason은 REJECTED일 때만 값이 있다(승인 시 null로 비워짐).
+      rejectionReason: nextStatus === 'rejected' ? rejectionReason : undefined,
+      internalMemo,
+    })
+    setToast(message)
     closeDrawer()
   }
 
@@ -241,22 +182,16 @@ function SellerApplicationsPage() {
     [items],
   )
   const applicationColumns = useMemo(() => makeApplicationColumns(openDrawer), [])
+  const decisionMeta = decisionModalMeta[decision]
 
   return (
     <div className="p-6">
-      <PageHeader title="셀러 입점 심사" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        입점 신청을 확인하고 승인 · 반려를 처리합니다.
-      </p>
+      <PageIntro title="셀러 입점 심사" description="입점 신청을 확인하고 승인 · 반려를 처리합니다." />
 
       <div className="mb-3.5 flex items-center justify-between gap-4">
         <FilterBar>
-          <div className="w-40">
-            <Select options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
-          </div>
-          <div className="w-36">
-            <Select options={typeFilterOptions} value={typeFilter} onChange={setTypeFilter} />
-          </div>
+          <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
+          <FilterSelect narrow options={typeFilterOptions} value={typeFilter} onChange={setTypeFilter} />
           <SearchInput
             value={search}
             onChange={setSearch}
@@ -278,33 +213,21 @@ function SellerApplicationsPage() {
         emptyLabel="조건에 맞는 입점 신청이 없습니다."
       />
 
-      <Drawer
-        open={selected !== null}
-        onClose={closeDrawer}
-        title="입점 신청 상세"
-        width="lg"
-      >
+      <Drawer open={selected !== undefined} onClose={closeDrawer} title="입점 신청 상세" width="lg">
         {selected && (
-          <div className="space-y-5">
-            <p className="-mt-2 text-body-sm text-text-tertiary">
-              {selected.applicantName} · {selected.sellerType === 'business' ? '사업자 셀러' : '개인 셀러'}
-            </p>
-
+          <DetailDrawerBody
+            subtitle={`${selected.applicantName} · ${sellerTypeLabel(selected.sellerType)}`}
+            actions={
+              <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
+                제출
+              </Button>
+            }
+          >
             <DrawerSummaryCard
               pills={
                 <>
-                  <StatusPill variant={selected.sellerType === 'business' ? 'neutral' : 'info'}>
-                    {selected.sellerType === 'business' ? (
-                      <Briefcase className="size-3" />
-                    ) : (
-                      <User className="size-3" />
-                    )}
-                    {selected.sellerType === 'business' ? '사업자 셀러' : '개인 셀러'}
-                  </StatusPill>
-                  <StatusPill variant={statusMeta[selected.status].variant}>
-                    {SelectedStatusIcon && <SelectedStatusIcon className="size-3" />}
-                    {statusMeta[selected.status].label}
-                  </StatusPill>
+                  <SellerTypePill sellerType={selected.sellerType} long />
+                  <StatusMetaPill meta={statusMeta[selected.status]} />
                 </>
               }
             >
@@ -322,13 +245,13 @@ function SellerApplicationsPage() {
                 {selected.documents.map(doc => {
                   const Icon = documentIcon[doc.key] ?? FileText
                   return (
-                    <div
+                    <MediaPlaceholder
                       key={doc.key}
-                      className="flex size-[62px] flex-col items-center justify-center gap-1 rounded-md border border-border-subtle bg-surface-sunken"
+                      className="size-[62px] flex-col gap-1 border border-border-subtle"
                     >
-                      <Icon className="size-4 text-icon-muted" />
+                      <Icon className="size-4" />
                       <span className="text-caption text-text-tertiary">{doc.label}</span>
-                    </div>
+                    </MediaPlaceholder>
                   )
                 })}
               </div>
@@ -372,41 +295,23 @@ function SellerApplicationsPage() {
                 placeholder="내부 공유용 메모를 입력하세요."
               />
             </DetailField>
-
-            <div className="flex gap-2 border-t border-border-subtle pt-4">
-              <Button
-                variant="primary"
-                leftIcon={<Check className="size-4" />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                제출
-              </Button>
-            </div>
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title={decisionModalMeta[decision]!.title}
-        description={decisionModalMeta[decision]!.description}
-        confirmLabel={decisionModalMeta[decision]!.confirmLabel}
-        confirmVariant={decisionModalMeta[decision]!.confirmVariant}
-        onConfirm={() => {
-          const meta = decisionModalMeta[decision]!
-          applyDecision(meta.nextStatus, meta.message)
-        }}
-      />
-
-      {toast && (
-        <Toast
-          open
-          onClose={() => setToast(null)}
-          message={toast.message}
-          variant={toast.variant}
+      {selected && (
+        <Modal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title={decisionMeta.title}
+          description={decisionMeta.description}
+          confirmLabel={decisionMeta.confirmLabel}
+          confirmVariant={decisionMeta.confirmVariant}
+          onConfirm={() => applyDecision(selected, decisionMeta.nextStatus, decisionMeta.message)}
         />
       )}
+
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
     </div>
   )
 }

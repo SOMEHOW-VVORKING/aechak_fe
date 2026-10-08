@@ -8,7 +8,7 @@ export function useProcessPayment() {
   return useMutation<
     PaymentResult,
     Error,
-    { amount: number; method: PaymentMethod; orderNo?: string }
+    { amount: number; method: PaymentMethod; orderNo: string }
   >({
     mutationFn: processPayment,
   })

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { getProductDetail } from '@aechak/api'
+import { errorResponse, getProductDetail } from '@aechak/api'
 import type { ProductReport, ProductReportReason } from '@aechak/domain'
 import { findMockProduct, mediaUrl } from '@/shared/catalog'
 import { fetchReportTarget, getReportTargetMock, type ReportTarget } from './report.mock'
@@ -12,7 +12,7 @@ export interface SubmitReportInput {
 
 // 404(진짜 미존재)만 not-found로 보내고 다른 오류(500 등)는 그대로 던진다(가짜 대상으로 위장 금지).
 function isNotFound(e: unknown): boolean {
-  return (e as { response?: { status?: number } } | null)?.response?.status === 404
+  return errorResponse(e)?.status === 404
 }
 
 // 신고 대상 상품 조회. 상세 화면(useProductDetail)과 동일한 해석 전략을 쓴다 — 목업 카탈로그

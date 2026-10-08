@@ -32,6 +32,11 @@ export { buildOrderFromContext } from './order-build'
 export type { OrderBuildInput } from './order-build'
 export { ProductGrid } from './ProductGrid'
 export type { ProductGridProps } from './ProductGrid'
+export { ProductCarousel } from './ProductCarousel'
+export type { ProductCarouselProps } from './ProductCarousel'
+export { ProductThumbnail } from './ProductThumbnail'
+export { ProductLineRow, OrderItemsCard } from './ProductLineRow'
+export type { OrderLineItem } from './ProductLineRow'
 export {
   toggleWishlist,
   onWishlistLogout,

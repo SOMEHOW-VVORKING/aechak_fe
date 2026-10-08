@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { errorResponse } from '@aechak/api'
 import {
   Alert,
   BottomFixedAction,
@@ -11,7 +12,6 @@ import {
 import {
   OnboardingHeader,
   onboardingErrorMessage,
-  readErrorCode,
   useSubmitConsents,
   useTerms,
   type OnboardingTerm,
@@ -32,8 +32,6 @@ function TermsAgreementRoute() {
   const optionalTerms = terms.filter(t => !t.isRequired)
 
   const allAgreed = terms.length > 0 && terms.every(t => agreed[t.termId])
-  // 필수 약관을 모두 체크해야만 다음으로 갈 수 있다(버튼 활성 조건). 선택 약관은 무관.
-  const requiredAgreed = requiredTerms.length > 0 && requiredTerms.every(t => agreed[t.termId])
 
   const toggleTerm = (termId: number) => {
     setAgreed(prev => ({ ...prev, [termId]: !prev[termId] }))
@@ -44,18 +42,17 @@ function TermsAgreementRoute() {
     setAgreed(Object.fromEntries(terms.map(t => [t.termId, next])))
   }
 
+  // 필수 동의 게이트는 서버가 판정한다 — BE ConsentService가 requiredAllAgreed=false면 REQUIRED_CONSENT_MISSING(403/30300)을
+  // 던지므로 체크값을 그대로 보내고 거절 문구를 인라인으로 보여준다(버튼은 잠그지 않는다).
   const handleNext = () => {
-    if (!requiredAgreed || submit.isPending) return
+    if (submit.isPending) return
     setSubmitError(null)
-    // 활성 약관 전체를 보낸다. 필수는 강제로 동의(true), 선택은 체크값 그대로 실어 서버가 기록한다.
-    const items = terms.map(t => ({
-      termId: t.termId,
-      isAgreed: t.isRequired ? true : (agreed[t.termId] ?? false),
-    }))
+    // 활성 약관 전체를 체크값 그대로 실어 서버가 기록한다.
+    const items = terms.map(t => ({ termId: t.termId, isAgreed: agreed[t.termId] ?? false }))
     submit.mutate(items, {
       onSuccess: () => navigate({ to: '/onboarding/nickname' }),
       onError: error => {
-        const { errorCode } = readErrorCode(error)
+        const errorCode = errorResponse(error)?.data?.errorCode
         // 이미 ACTIVE(30004): 온보딩을 다시 탈 필요가 없으니 홈으로 보낸다.
         if (errorCode === 30004) {
           navigate({ to: '/', replace: true })
@@ -111,7 +108,6 @@ function TermsAgreementRoute() {
             primary={{
               label: '다음',
               onClick: handleNext,
-              disabled: !requiredAgreed,
               loading: submit.isPending,
             }}
           />

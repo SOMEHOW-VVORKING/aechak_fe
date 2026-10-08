@@ -35,6 +35,12 @@ const INPUT: DeliveryAddressInput = {
   isDefault: false,
 }
 
+// axios 에러 모양(isAxiosError 플래그 + response)만 흉내 낸 최소 객체.
+const err = (status: number, data?: { errorCode?: number; message?: string }) => ({
+  isAxiosError: true,
+  response: { status, data },
+})
+
 describe('delivery-address.queries 어댑터', () => {
   it('[AC-ADDR-MAP-001] toDeliveryAddress는 서버 DeliveryAddressResponse를 도메인 DeliveryAddress로 매핑한다', () => {
     const mapped = toDeliveryAddress(RESPONSE)
@@ -60,24 +66,23 @@ describe('delivery-address.queries 어댑터', () => {
     expect(mapped.deliveryMemo).toBe('공동현관 비밀번호 #1004')
   })
 
-  it('[AC-ADDR-MAP-003] null/누락 필드는 빈 문자열·undefined로 안전하게 채운다', () => {
-    // 타입상 required여도 와이어는 신뢰 경계 밖 — 누락돼도 매퍼가 안전해야 해서 부분 객체로 검사
-    const mapped = toDeliveryAddress({ addressId: 7 } as DeliveryAddressResponse)
-    expect(mapped).toEqual({
-      id: '7',
-      label: '',
-      recipient: '',
-      phone: '',
-      zipcode: '',
-      address1: '',
-      address2: '',
-      deliveryMemo: undefined,
-      isDefault: false,
+  it('[AC-ADDR-MAP-003] 계약상 nullable인 필드(별칭·상세주소·메모)만 빈 문자열·undefined로 채운다', () => {
+    const mapped = toDeliveryAddress({
+      ...RESPONSE,
+      label: null,
+      detailAddress: null,
+      deliveryMemo: null,
     })
+    expect(mapped.label).toBe('')
+    expect(mapped.address2).toBe('')
+    expect(mapped.deliveryMemo).toBeUndefined()
   })
 
-  it('[AC-ADDR-MAP-004] toDeliveryAddressRequest는 도메인 입력을 서버 AddDeliveryAddressRequest로 되돌린다(trim 포함)', () => {
-    expect(toDeliveryAddressRequest(INPUT)).toEqual({
+  it('[AC-ADDR-MAP-004] toDeliveryAddressRequest는 직접 입력한 글자 필드의 앞뒤 공백을 걷어 되돌린다', () => {
+    // 서버는 수령인/상세주소/메모/별칭을 trim 없이 그대로 저장한다.
+    expect(
+      toDeliveryAddressRequest({ ...INPUT, recipient: ' 홍길동 ', address2: ' 20층 ', label: ' 회사 ' }),
+    ).toEqual({
       receiverName: '홍길동',
       contactNumber: '010-9999-8888',
       zipCode: '06200',
@@ -89,11 +94,11 @@ describe('delivery-address.queries 어댑터', () => {
     })
   })
 
-  it('[AC-ADDR-MAP-005] 빈 배송 요청사항은 undefined로 생략, 상세주소는 필수라 그대로 전달한다', () => {
-    // 상세주소는 이제 계약상 필수(BE @NotBlank) — 빈 값 차단은 폼 canSave가 맡고 매퍼는 가공하지 않는다.
-    const req = toDeliveryAddressRequest({ ...INPUT, deliveryMemo: '   ' })
+  it('[AC-ADDR-MAP-005] 빈(공백뿐인) 배송 요청사항/별칭은 undefined로 생략한다', () => {
+    const req = toDeliveryAddressRequest({ ...INPUT, deliveryMemo: '   ', label: '  ' })
     expect(req.detailAddress).toBe('20층')
     expect(req.deliveryMemo).toBeUndefined()
+    expect(req.label).toBeUndefined()
   })
 
   it('[AC-ADDR-MAP-006] 최대 배송지 개수는 10이다', () => {
@@ -102,26 +107,27 @@ describe('delivery-address.queries 어댑터', () => {
 
   it('[AC-ADDR-ERR-001] deliveryAddressErrorMessage는 HTTP status를 사용자 문구로 매핑한다', () => {
     // 422는 개수 초과 전용이 아니라 errorCode(30500)까지 봐야 한다
-    expect(deliveryAddressErrorMessage({ response: { status: 422, data: { errorCode: 30500 } } })).toBe(
+    expect(deliveryAddressErrorMessage(err(422, { errorCode: 30500 }))).toBe(
       '배송지는 최대 10개까지 등록할 수 있어요',
     )
-    expect(
-      deliveryAddressErrorMessage({ response: { status: 422, data: { errorCode: 30199, message: '다른 검증 실패' } } }),
-    ).toBe('다른 검증 실패')
-    expect(deliveryAddressErrorMessage({ response: { status: 422 } })).toBe(
+    expect(deliveryAddressErrorMessage(err(422, { errorCode: 30199, message: '다른 검증 실패입니다.' }))).toBe(
       '배송지 정보를 다시 확인해주세요',
     )
-    expect(deliveryAddressErrorMessage({ response: { status: 403 } })).toBe('본인 배송지만 접근할 수 있어요')
-    // 400은 서버 message가 있으면 그걸, 없으면 기본 검증 문구를 쓴다
-    expect(deliveryAddressErrorMessage({ response: { status: 400, data: { message: '우편번호 형식 오류' } } })).toBe(
-      '우편번호 형식 오류',
-    )
-    expect(deliveryAddressErrorMessage({ response: { status: 400 } })).toBe(
-      '입력한 배송지 정보를 다시 확인해주세요',
-    )
+    expect(deliveryAddressErrorMessage(err(403))).toBe('본인 배송지만 접근할 수 있어요')
+    // 이미 지워진 배송지(30501)에는 재시도 안내를 하지 않는다
+    expect(deliveryAddressErrorMessage(err(404, { errorCode: 30501 }))).toBe('이미 삭제된 배송지예요')
     // status 미상(네트워크 오류 등)은 기본 문구로 폴백한다
     expect(deliveryAddressErrorMessage(new Error('network'))).toBe(
       '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요',
     )
+  })
+
+  it('[AC-ADDR-ERR-002] 400(90001)은 서버 message와 상관없이 한 문장으로 안내한다', () => {
+    const generic = '입력한 배송지 정보를 다시 확인해주세요'
+    const invalid = (message: string) => deliveryAddressErrorMessage(err(400, { errorCode: 90001, message }))
+    expect(invalid('수령인 이름은 필수입니다.')).toBe(generic)
+    expect(invalid('연락처 형식이 올바르지 않습니다.')).toBe(generic)
+    expect(invalid('우편번호는 필수입니다., 기본 주소는 필수입니다.')).toBe(generic)
+    expect(deliveryAddressErrorMessage(err(400))).toBe(generic)
   })
 })

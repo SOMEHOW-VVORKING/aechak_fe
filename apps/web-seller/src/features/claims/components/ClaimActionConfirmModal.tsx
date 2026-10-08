@@ -1,6 +1,7 @@
 import type { Claim } from '@aechak/domain'
 import { Modal } from '@aechak/design-system/web'
 import { APPROVE_LABEL } from './ClaimsTable'
+import { ClaimSummaryBox } from './ClaimSummaryBox'
 
 export type ClaimActionType = 'approve' | 'reject'
 
@@ -37,16 +38,12 @@ export function ClaimActionConfirmModal({ target, loading, onClose, onConfirm }:
       loading={loading}
       onConfirm={onConfirm}
     >
-      <div className="flex flex-col gap-2 rounded-md bg-surface-sunken px-3.5 py-3">
-        <div className="flex items-center justify-between text-body-sm">
-          <span className="text-text-secondary">주문번호</span>
-          <span className="font-semibold tabular-nums text-text-primary">{claim.orderId}</span>
-        </div>
-        <div className="flex items-center justify-between text-body-sm">
-          <span className="text-text-secondary">사유</span>
-          <span className="text-text-primary">{claim.reason}</span>
-        </div>
-      </div>
+      <ClaimSummaryBox
+        rows={[
+          { label: '주문번호', value: claim.orderId, mono: true },
+          { label: '사유', value: claim.reason },
+        ]}
+      />
     </Modal>
   )
 }

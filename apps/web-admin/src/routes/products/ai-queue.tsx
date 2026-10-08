@@ -1,20 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  AlertOctagon,
-  Check,
-  FileText,
-  Image,
-  MessageSquare,
-  Sparkles,
-} from 'lucide-react'
+import { AlertOctagon, Check, FileText, Image, MessageSquare, Sparkles } from 'lucide-react'
 import {
   Button,
   DataTable,
   Drawer,
   FilterBar,
   Modal,
-  PageHeader,
   SearchInput,
   Select,
   StatusPill,
@@ -26,26 +18,32 @@ import type { AiReviewQueueItem, AiReviewStatus, AiReviewTargetType } from '@aec
 import { useAiReviewQueueItems } from '@/features/ai-review-queue'
 import { ActorTag } from '@/shared/components/ActorTag'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
+import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
+import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
+import { MediaPlaceholder } from '@/shared/components/MediaPlaceholder'
+import { PageIntro } from '@/shared/components/PageIntro'
+import { RowLinkButton } from '@/shared/components/RowLinkButton'
+import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
+import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { Tag } from '@/shared/components/Tag'
+import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/products/ai-queue')({
   component: AiReviewQueuePage,
 })
 
-const targetTypeMeta: Record<AiReviewTargetType, { label: string; icon: typeof Image }> = {
-  'product-image': { label: '상품 이미지', icon: Image },
-  'product-description': { label: '상품 설명', icon: FileText },
-  review: { label: '리뷰', icon: MessageSquare },
-  'sns-post': { label: 'SNS 게시물', icon: Image },
+const targetTypeMeta: Record<AiReviewTargetType, StatusMeta> = {
+  'product-image': { label: '상품 이미지', variant: 'neutral', icon: Image },
+  'product-description': { label: '상품 설명', variant: 'neutral', icon: FileText },
+  review: { label: '리뷰', variant: 'neutral', icon: MessageSquare },
+  'sns-post': { label: 'SNS 게시물', variant: 'neutral', icon: Image },
 }
 
-const reviewStatusMeta: Record<
-  AiReviewStatus,
-  { label: string; variant: 'neutral' | 'muted' | 'success' | 'error' | 'danger' }
-> = {
+const reviewStatusMeta: Record<AiReviewStatus, StatusMeta> = {
   pending: { label: '검수 대기', variant: 'neutral' },
   'auto-blinded': { label: '자동 블라인드', variant: 'muted' },
   'admin-approved': { label: '관리자 승인', variant: 'success' },
@@ -78,8 +76,10 @@ const processReasonOptions = [
   { value: 'adult-content', label: '성인성 콘텐츠' },
 ]
 
+type AiReviewDecision = 'approve' | 'reject' | 'delete'
+
 const decisionModalMeta: Record<
-  string,
+  AiReviewDecision,
   {
     title: string
     description: string
@@ -117,11 +117,15 @@ const decisionModalMeta: Record<
 
 function DetectionChip({ reason }: { reason: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-warning-surface px-2 py-0.5 text-caption font-medium text-warning-fg">
+    <Tag tone="warning">
       <AlertOctagon className="size-3" />
       {reason}
-    </span>
+    </Tag>
   )
+}
+
+function StagePill({ stage }: { stage: AiReviewQueueItem['detectionStage'] }) {
+  return <StatusPill variant={stage === 2 ? 'error' : 'warning'}>{stage}단계</StatusPill>
 }
 
 function makeQueueColumns(onOpenDetail: (row: AiReviewQueueItem) => void): Column<AiReviewQueueItem>[] {
@@ -130,27 +134,15 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewQueueItem) => void): Colum
       key: 'targetType',
       label: '대상 유형',
       align: 'center',
-      render: row => {
-        const Icon = targetTypeMeta[row.targetType].icon
-        return (
-          <StatusPill variant="neutral">
-            <Icon className="size-3" />
-            {targetTypeMeta[row.targetType].label}
-          </StatusPill>
-        )
-      },
+      render: row => <StatusMetaPill meta={targetTypeMeta[row.targetType]} />,
     },
     {
       key: 'id',
       label: '대상 ID',
       render: row => (
-        <button
-          type="button"
-          onClick={() => onOpenDetail(row)}
-          className="font-medium tabular-nums text-text-primary hover:text-brand hover:underline"
-        >
+        <RowLinkButton numeric onClick={() => onOpenDetail(row)}>
           {row.id}
-        </button>
+        </RowLinkButton>
       ),
     },
     {
@@ -163,11 +155,7 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewQueueItem) => void): Colum
       key: 'detectionStage',
       label: '탐지 단계',
       align: 'center',
-      render: row => (
-        <StatusPill variant={row.detectionStage === 2 ? 'error' : 'warning'}>
-          {row.detectionStage}단계
-        </StatusPill>
-      ),
+      render: row => <StagePill stage={row.detectionStage} />,
     },
     { key: 'sellerName', label: '셀러', render: row => row.sellerName ?? '—' },
     { key: 'productName', label: '상품', render: row => row.productName ?? '—' },
@@ -181,22 +169,15 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewQueueItem) => void): Colum
       key: 'reviewStatus',
       label: '검수 상태',
       align: 'center',
-      render: row => (
-        <StatusPill variant={reviewStatusMeta[row.reviewStatus].variant}>
-          {reviewStatusMeta[row.reviewStatus].label}
-        </StatusPill>
-      ),
+      render: row => <StatusMetaPill meta={reviewStatusMeta[row.reviewStatus]} />,
     },
   ]
 }
 
 function AiReviewQueuePage() {
   const { data, isLoading } = useAiReviewQueueItems()
-  const [rows, setRows] = useState<AiReviewQueueItem[] | null>(null)
-  useEffect(() => {
-    if (data && rows === null) setRows(data)
-  }, [data, rows])
-  const items = rows ?? []
+  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
+    useDetailList(data)
 
   const [targetTypeFilter, setTargetTypeFilter] = useState('all')
   const [detectionReasonFilter, setDetectionReasonFilter] = useState('all')
@@ -215,18 +196,13 @@ function AiReviewQueuePage() {
     [items, targetTypeFilter, detectionReasonFilter, reviewStatusFilter, search],
   )
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find(row => row.id === selectedId) ?? null
-
-  const [decision, setDecision] = useState('approve')
+  const [decision, setDecision] = useState<AiReviewDecision>('approve')
   const [processReason, setProcessReason] = useState('')
   const [sellerNotice, setSellerNotice] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
 
   function openDrawer(row: AiReviewQueueItem) {
-    setSelectedId(row.id)
+    select(row.id)
     setDecision(
       row.reviewStatus === 'admin-rejected'
         ? 'reject'
@@ -239,47 +215,34 @@ function AiReviewQueuePage() {
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function closeDrawer() {
-    setSelectedId(null)
-    setConfirmOpen(false)
-  }
-
-  function applyStatus(nextStatus: AiReviewStatus, message: string) {
-    if (!selected) return
-    setRows(prev =>
-      (prev ?? []).map(row =>
-        row.id === selected.id ? { ...row, reviewStatus: nextStatus, processReason, sellerNotice, internalMemo } : row,
-      ),
-    )
+  function applyStatus(target: AiReviewQueueItem, nextStatus: AiReviewStatus, message: string) {
+    patchRow(target.id, { reviewStatus: nextStatus, processReason, sellerNotice, internalMemo })
     setToast(message)
     closeDrawer()
   }
 
   const queueColumns = useMemo(() => makeQueueColumns(openDrawer), [])
+  const decisionMeta = decisionModalMeta[decision]
   const processReasonLabel =
     processReasonOptions.find(opt => opt.value === processReason)?.label ?? processReason
 
   return (
     <div className="p-6">
-      <PageHeader title="AI 검수 큐" />
-      <p className="-mt-4 mb-5 text-body-sm text-text-tertiary">
-        AI가 자동 숨김 처리한 상품 · 콘텐츠를 운영자가 다시 확인합니다.
-      </p>
+      <PageIntro title="AI 검수 큐" description="AI가 자동 숨김 처리한 상품 · 콘텐츠를 운영자가 다시 확인합니다." />
 
       <FilterBar className="mb-3.5">
-        <div className="w-40">
-          <Select options={targetTypeFilterOptions} value={targetTypeFilter} onChange={setTargetTypeFilter} />
-        </div>
-        <div className="w-40">
-          <Select
-            options={detectionReasonFilterOptions}
-            value={detectionReasonFilter}
-            onChange={setDetectionReasonFilter}
-          />
-        </div>
-        <div className="w-36">
-          <Select options={reviewStatusFilterOptions} value={reviewStatusFilter} onChange={setReviewStatusFilter} />
-        </div>
+        <FilterSelect options={targetTypeFilterOptions} value={targetTypeFilter} onChange={setTargetTypeFilter} />
+        <FilterSelect
+          options={detectionReasonFilterOptions}
+          value={detectionReasonFilter}
+          onChange={setDetectionReasonFilter}
+        />
+        <FilterSelect
+          narrow
+          options={reviewStatusFilterOptions}
+          value={reviewStatusFilter}
+          onChange={setReviewStatusFilter}
+        />
         <SearchInput value={search} onChange={setSearch} placeholder="대상 ID 검색" className="w-56" />
       </FilterBar>
 
@@ -292,21 +255,22 @@ function AiReviewQueuePage() {
         emptyLabel="조건에 맞는 검수 대상이 없습니다."
       />
 
-      <Drawer open={selected !== null} onClose={closeDrawer} title="AI 검수 상세" width="lg">
+      <Drawer open={selected !== undefined} onClose={closeDrawer} title="AI 검수 상세" width="lg">
         {selected && (
-          <div className="space-y-5">
-            <p className="-mt-2 text-body-sm text-text-tertiary">
-              {selected.id} · {targetTypeMeta[selected.targetType].label}
-            </p>
-
+          <DetailDrawerBody
+            subtitle={`${selected.id} · ${targetTypeMeta[selected.targetType].label}`}
+            actions={
+              <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
+                제출
+              </Button>
+            }
+          >
             <DrawerSummaryCard
               pills={
                 <>
                   <ActorTag actor="ai" />
                   <DetectionChip reason={selected.detectionReason} />
-                  <StatusPill variant={selected.detectionStage === 2 ? 'error' : 'warning'}>
-                    {selected.detectionStage}단계
-                  </StatusPill>
+                  <StagePill stage={selected.detectionStage} />
                 </>
               }
             >
@@ -319,9 +283,9 @@ function AiReviewQueuePage() {
             </DrawerSummaryCard>
 
             <DetailField label="대상 콘텐츠 미리보기">
-              <div className="flex h-[150px] w-full items-center justify-center rounded-md bg-surface-sunken text-icon-muted">
+              <MediaPlaceholder className="h-[150px] w-full">
                 <Image className="size-8" />
-              </div>
+              </MediaPlaceholder>
             </DetailField>
 
             <DetailField label="검수 이력">
@@ -377,42 +341,28 @@ function AiReviewQueuePage() {
                 placeholder="내부 공유용 메모를 입력하세요."
               />
             </DetailField>
-
-            <div className="flex gap-2 border-t border-border-subtle pt-4">
-              <Button
-                variant="primary"
-                leftIcon={<Check className="size-4" />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                제출
-              </Button>
-            </div>
-          </div>
+          </DetailDrawerBody>
         )}
       </Drawer>
 
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title={decisionModalMeta[decision]!.title}
-        description={decisionModalMeta[decision]!.description}
-        confirmLabel={decisionModalMeta[decision]!.confirmLabel}
-        confirmVariant={decisionModalMeta[decision]!.confirmVariant}
-        onConfirm={() => {
-          const meta = decisionModalMeta[decision]!
-          applyStatus(meta.nextStatus, meta.message)
-        }}
-      >
-        <SummaryGrid
-          items={[
-            {
-              label: '대상',
-              value: selected ? `${targetTypeMeta[selected.targetType].label} · ${selected.id}` : '',
-            },
-            { label: '사유', value: processReasonLabel },
-          ]}
-        />
-      </Modal>
+      {selected && (
+        <Modal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title={decisionMeta.title}
+          description={decisionMeta.description}
+          confirmLabel={decisionMeta.confirmLabel}
+          confirmVariant={decisionMeta.confirmVariant}
+          onConfirm={() => applyStatus(selected, decisionMeta.nextStatus, decisionMeta.message)}
+        >
+          <SummaryGrid
+            items={[
+              { label: '대상', value: `${targetTypeMeta[selected.targetType].label} · ${selected.id}` },
+              { label: '사유', value: processReasonLabel },
+            ]}
+          />
+        </Modal>
+      )}
 
       {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
     </div>

@@ -34,3 +34,4 @@ export {
 export { InventoryDrawer } from './components/InventoryDrawer'
 export { DraftListDrawer } from './components/DraftListDrawer'
 export { ProductEditor } from './components/ProductEditor'
+export { ProductMissing } from './components/ProductMissing'

@@ -4,7 +4,7 @@ import {
   emptyFormValue,
   formValueFrom,
   isValidBusinessRegNo,
-  missingRequirements,
+  missingDocuments,
   sellerApplicationErrorMessage,
   toSaveDraftRequest,
   toSellerApplication,
@@ -64,44 +64,26 @@ describe('store-settings.contract — 와이어 ↔ 도메인 매핑', () => {
   })
 })
 
-describe('store-settings.contract — 제출 필수 판정(BE 10105 표 미러)', () => {
-  it('[AC-SELLER-APP-004] 개인 일반은 4개 필드 + 신분증/통장 사본이 필수다', () => {
-    const missing = missingRequirements(emptyFormValue(), new Set())
-    expect(missing).toEqual(['대표자명', '은행', '계좌번호', '예금주', '신분증', '통장 사본'])
+// 필수 정보(대표자명/계좌 등)는 클라이언트가 보지 않고 BE 10105 응답으로 안내한다 — 서류만 미리 판정한다(b14-st-3).
+describe('store-settings.contract — 제출 필수 서류 판정(BE 10105 서류 표 미러)', () => {
+  it('[AC-SELLER-APP-004] 개인 일반은 신분증/통장 사본이 필수다', () => {
+    expect(missingDocuments('individual', new Set())).toEqual(['신분증', '통장 사본'])
   })
 
-  it('[AC-SELLER-APP-005] 개인 사업자는 상호명/사업자등록번호와 서류 2종이 추가된다', () => {
-    const form = { ...emptyFormValue(), legalType: 'individual-business' as const }
-    const missing = missingRequirements(form, new Set(['ID_CARD']))
-    expect(missing).toContain('상호명')
-    expect(missing).toContain('사업자등록번호')
-    expect(missing).toContain('사업자등록증')
-    expect(missing).toContain('통신판매업 신고증')
-    expect(missing).not.toContain('신분증')
-    expect(missing).not.toContain('법인등록번호')
+  it('[AC-SELLER-APP-005] 개인 사업자는 사업자등록증/통신판매업 신고증이 추가된다', () => {
+    const missing = missingDocuments('individual-business', new Set(['ID_CARD']))
+    expect(missing).toEqual(['통장 사본', '사업자등록증', '통신판매업 신고증'])
   })
 
-  it('[AC-SELLER-APP-006] 법인은 법인등록번호 + 서류 6종 전부가 필수다', () => {
-    const form = { ...emptyFormValue(), legalType: 'corporate-business' as const }
-    const missing = missingRequirements(form, new Set())
-    expect(missing).toContain('법인등록번호')
+  it('[AC-SELLER-APP-006] 법인은 서류 6종 전부가 필수다', () => {
+    const missing = missingDocuments('corporate-business', new Set())
+    expect(missing).toHaveLength(6)
     expect(missing).toContain('법인 등기부등본')
     expect(missing).toContain('법인 인감증명서')
   })
 
-  it('[AC-SELLER-APP-007] 전부 채우면 부족 목록이 비고, 계좌번호는 폼 값 기준으로만 판정한다', () => {
-    const form = {
-      ...emptyFormValue(),
-      representativeName: '정지은',
-      bankCode: '004',
-      accountNumber: '110123456789',
-      accountHolder: '정지은',
-    }
-    expect(missingRequirements(form, new Set(['ID_CARD', 'BANKBOOK_COPY']))).toEqual([])
-    // 계좌번호를 비우면(마스킹만 있고 재입력 안 한 상태) 다시 부족으로 잡힌다.
-    expect(missingRequirements({ ...form, accountNumber: '' }, new Set(['ID_CARD', 'BANKBOOK_COPY']))).toEqual([
-      '계좌번호',
-    ])
+  it('[AC-SELLER-APP-007] 서류를 전부 갖추면 부족 목록이 빈다', () => {
+    expect(missingDocuments('individual', new Set(['ID_CARD', 'BANKBOOK_COPY']))).toEqual([])
   })
 })
 
@@ -125,9 +107,20 @@ describe('store-settings.contract — 에러코드 문구', () => {
     expect(sellerApplicationErrorMessage(axiosLikeError(403, 10103))).toContain('휴대폰 본인 인증')
   })
 
-  it('[AC-SELLER-APP-010] 10105(필수 미비)는 부족 목록이 실린 서버 message를 그대로 보여준다', () => {
-    const message = '필수 서류가 누락됐습니다: 통장 사본'
-    expect(sellerApplicationErrorMessage(axiosLikeError(400, 10105, message))).toBe(message)
+  it('[AC-SELLER-APP-010] 10105(필수 미비)는 서버 message의 부족 목록만 뽑아 해요체 안내로 바꾼다', () => {
+    const message = '필수 정보가 누락됐습니다: 대표자명, 은행 코드 / 필수 서류가 누락됐습니다: 통장 사본'
+    expect(sellerApplicationErrorMessage(axiosLikeError(400, 10105, message))).toBe(
+      '제출 전 필요: 대표자명, 은행 코드, 통장 사본',
+    )
+    expect(sellerApplicationErrorMessage(axiosLikeError(400, 10105, '형식이 다른 문구'))).toBe(
+      '필수 정보와 서류를 확인해 주세요.',
+    )
+  })
+
+  it('[AC-SELLER-APP-012] 90001(형식 위반)은 서버 격식체 문구 대신 고정 안내를 보여준다', () => {
+    expect(sellerApplicationErrorMessage(axiosLikeError(400, 90001, '사업자등록번호 형식이 올바르지 않습니다.'))).toBe(
+      '입력한 내용을 다시 확인해 주세요.',
+    )
   })
 
   it('[AC-SELLER-APP-011] 파일 승격 실패(100001~100003)는 재업로드를 유도한다', () => {

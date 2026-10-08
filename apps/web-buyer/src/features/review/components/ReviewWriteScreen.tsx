@@ -1,28 +1,25 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Image as ImageIcon } from 'lucide-react'
 import type { Review } from '@aechak/domain'
 import {
   Alert,
   BottomFixedAction,
-  EmptyState,
   MobileScreen,
   PhotoUpload,
   RatingInput,
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { findProduct, placeholderImage } from '@/shared/catalog'
+import { findProduct, ProductLineRow } from '@/shared/catalog'
 import { useOrders } from '@/shared/order'
 import { reviewErrorMessage, useCreateReview, useEditReview, useReviewById } from '../review.queries'
 import { MAX_REVIEW_LENGTH, MIN_REVIEW_LENGTH, REVIEW_REWARD, validateReview } from '../review.mock'
 import {
-  isSupportedReviewPhoto,
   isWithinReviewPhotoSizeLimit,
   MAX_REVIEW_PHOTOS,
   OVERSIZED_REVIEW_PHOTO_MESSAGE,
-  UNSUPPORTED_REVIEW_PHOTO_MESSAGE,
 } from '../review.upload'
 
 export interface ReviewWriteScreenProps {
@@ -39,14 +36,13 @@ export interface ReviewWriteScreenProps {
 
 /** 서버에서 받은 표시용 URL은 놓아주면 안 되고, 로컬 미리보기 blob만 해제한다(펫 폼과 동일). */
 function revokeIfBlob(url: string) {
-  if (url.startsWith('blob:') && typeof URL?.revokeObjectURL === 'function') {
-    URL.revokeObjectURL(url)
-  }
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
 const RATING_WORDS = ['', '별로예요', '그저 그래요', '괜찮아요', '좋아요', '최고예요']
 
-// 리뷰 작성(b4-st-2). 별점·사진·본문 + 최소 글자/금칙어 검증. 등록 → 내 리뷰로 이동(토스트).
+// 리뷰 작성(b4-st-2). 별점·사진·본문 + 최소 글자/금칙어 안내. 등록 → 내 리뷰로 이동(토스트).
+// 사진 형식은 presign 서버가 판정한다(100000).
 export function ReviewWriteScreen({
   productId,
   orderId,
@@ -89,17 +85,19 @@ export function ReviewWriteScreen({
 
   const goBack = useSafeBack({ to: '/reviews/mine', search: { submitted: false } })
 
-  const validation = validateReview(rating, content)
+  // 공백만 쓴 본문은 BE(@Size만 검사)가 걸러 주지 않아 잘라낸 본문으로 검사하고 그대로 보낸다.
+  const trimmedContent = content.trim()
+  const validation = validateReview(rating, trimmedContent)
   const submitting = createReview.isPending || editReview.isPending
   // 본문을 입력했는데 무효(너무 짧음/금칙어)일 때만 에러를 노출한다(입력 전엔 안내만).
-  const showError =
-    content.trim().length > 0 && !validation.ok && validation.reason !== 'rating'
+  const contentError =
+    trimmedContent !== '' && !validation.ok && validation.reason !== 'rating' ? validation.message : undefined
 
   const handleSubmit = () => {
     if (!validation.ok) return
     if (editing) {
       editReview.mutate(
-        { id: editing.id, patch: { rating: rating as Review['rating'], content, images } },
+        { id: editing.id, patch: { rating: rating as Review['rating'], content: trimmedContent, images } },
         {
           // 결제 결과 화면과 동일 — 수정 완료 후 히스토리에서 작성/수정 화면을 빼서
           // 뒤로가기가 이 화면을 재진입(프리필된 폼 재노출)하지 않게 한다.
@@ -115,7 +113,7 @@ export function ReviewWriteScreen({
       orderId: targetOrderId,
       author: '나',
       rating: rating as Review['rating'],
-      content: content.trim(),
+      content: trimmedContent,
       images,
       option: productOption,
       verifiedPurchase: true,
@@ -132,17 +130,13 @@ export function ReviewWriteScreen({
   }
 
   const handleAddPhotos = (files: File[]) => {
-    // presigned PUT은 S3 직행이라 서버가 형식·크기를 못 막는다 — 발급 전에 여기서 걸러 안내한다.
-    if (files.some(file => !isSupportedReviewPhoto(file))) {
-      setPhotoError(UNSUPPORTED_REVIEW_PHOTO_MESSAGE)
-      return
-    }
+    // presigned PUT은 S3 직행이라 서버가 크기를 못 막는다 — 발급 전에 여기서 걸러 안내한다(형식은 서버 몫).
     if (files.some(file => !isWithinReviewPhotoSizeLimit(file))) {
       setPhotoError(OVERSIZED_REVIEW_PHOTO_MESSAGE)
       return
     }
     // 상한을 넘는 파일은 URL을 만들기 전에 자른다 — 먼저 만들고 slice로 버리면 그 blob이
-    // 참조를 잃은 채 문서가 닫힐 때까지 남는다. 잘린 이유도 말없이 두지 않고 알린다.
+    // 참조를 잃은 채 문서가 닫힐 때까지 남는다(검증이 아니라 메모리 가드). 잘린 이유도 말없이 두지 않고 알린다.
     const room = Math.max(0, MAX_REVIEW_PHOTOS - photos.length)
     const accepted = files.slice(0, room)
     setPhotoError(
@@ -151,13 +145,7 @@ export function ReviewWriteScreen({
         : null,
     )
     if (accepted.length === 0) return
-    const added = accepted.map((file, i) => ({
-      file,
-      url:
-        typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-          ? URL.createObjectURL(file)
-          : placeholderImage(200 + i * 40),
-    }))
+    const added = accepted.map(file => ({ file, url: URL.createObjectURL(file) }))
     setPhotos(prev => [...prev, ...added])
   }
 
@@ -175,13 +163,11 @@ export function ReviewWriteScreen({
   if (!productName) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="리뷰할 상품을 찾을 수 없어요"
-            description="주소가 올바르지 않거나 삭제된 상품이에요."
-            action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="리뷰할 상품을 찾을 수 없어요"
+          description="주소가 올바르지 않거나 삭제된 상품이에요."
+          action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
+        />
       </MobileScreen>
     )
   }
@@ -202,21 +188,13 @@ export function ReviewWriteScreen({
     >
       <div className="flex flex-col gap-5 p-4">
         {/* 상품 요약 */}
-        <div className="flex items-center gap-3">
-          <div className="size-12 flex-none overflow-hidden rounded-image bg-surface-sunken">
-            {thumbnail ? (
-              <img src={thumbnail} alt="" className="size-full object-cover" />
-            ) : (
-              <div className="flex size-full items-center justify-center text-icon-muted">
-                <ImageIcon className="size-5" />
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 text-body-sm text-text-primary">{productName}</p>
-            <p className="mt-0.5 text-caption text-text-tertiary">{productOption}</p>
-          </div>
-        </div>
+        <ProductLineRow
+          thumbnailUrl={thumbnail}
+          thumbClass="size-12"
+          align="center"
+          name={productName}
+          meta={productOption}
+        />
 
         {/* 별점 */}
         <div className="flex flex-col items-center gap-2 py-1">
@@ -236,8 +214,8 @@ export function ReviewWriteScreen({
             onChange={setContent}
             maxLength={MAX_REVIEW_LENGTH}
             rows={5}
-            state={showError ? 'error' : 'default'}
-            helperText={showError && !validation.ok ? validation.message : undefined}
+            state={contentError ? 'error' : 'default'}
+            helperText={contentError}
             placeholder="상품은 어떠셨나요? 다른 구매자에게 도움이 되는 후기를 남겨 주세요."
           />
         </div>
@@ -260,7 +238,7 @@ export function ReviewWriteScreen({
           )}
         </div>
 
-        {/* 등록 실패 — 401은 인터셉터가 처리하므로 여기 오는 건 구매확정/기간/중복 같은 사유다. */}
+        {/* 등록 실패 — 401은 인터셉터가 처리하므로 여기 오는 건 구매확정/기간/중복/사진 형식 같은 사유다. */}
         {createReview.isError && (
           <Alert variant="error" title="리뷰를 등록하지 못했어요">
             {reviewErrorMessage(createReview.error)}

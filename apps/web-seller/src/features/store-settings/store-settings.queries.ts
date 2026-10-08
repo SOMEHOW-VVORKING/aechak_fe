@@ -16,9 +16,8 @@ import { toSaveDraftRequest, toSellerApplication, type SaveDraftInput } from './
 export const SELLER_APPLICATION_QUERY_KEY = ['store-settings', 'application'] as const
 
 function isApplicationNotFound(error: unknown): boolean {
-  const response = (error as { response?: { status?: number; data?: { errorCode?: number } } })
-    ?.response
-  return response?.status === 404 && response?.data?.errorCode === 10100
+  const response = (error as { response?: { status?: number; data?: { errorCode?: number } } }).response
+  return response?.status === 404 && response.data?.errorCode === 10100
 }
 
 /**

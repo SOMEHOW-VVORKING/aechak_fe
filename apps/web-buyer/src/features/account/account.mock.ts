@@ -1,31 +1,10 @@
-// 계정 화면(b10-st-2 프로필 / b10-st-9 본인 인증 / b10-st-5 탈퇴) 공용 상수·파생 로직.
-// 실제 계정 데이터는 서버(shared/account)가 단일 소스이고, 여기서는 검증 규칙과 안내 문구만 둔다.
+// 계정 화면(b10-st-2 프로필 / b10-st-9 본인 인증 / b10-st-5 탈퇴) 공용 상수·안내 문구.
+// 실제 계정 데이터는 서버(shared/account)가 단일 소스이고, 닉네임 형식(30002)·휴대폰 번호 형식(90001)·
+// 인증번호 형식(90001)도 서버가 판정한다 — 여기 상수는 입력 길이 제한(maxLength)과 카운터 표시에만 쓴다.
 
 export const NICKNAME_MAX = 12
-
-// 서버(온보딩·프로필 수정 공통) 닉네임 규칙: NFC 정규화 후 완성형 한글·영문·숫자 2~12자.
-// 공백·이모지·자모는 불가. 중복은 서버가 PUT 시점에 최종 판정(30001)하므로 여기선 형식만 검사한다.
-const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
-
 export const BIO_MAX = 150
-
-// 본인 인증(b10-st-9) 클라이언트 사전 검증 — 서버(@Pattern)와 동일한 규칙. 형식이 통과할 때만
-// 발송 요청을 쏜다(위반은 서버도 400 errorCode 90001로 거절). 인증번호 대조는 전적으로 서버 소관.
 export const OTP_LENGTH = 6
-const PHONE_NUMBER_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/
-
-export function isValidPhoneNumber(phone: string): boolean {
-  return PHONE_NUMBER_PATTERN.test(phone.trim())
-}
-
-// 닉네임 형식 검증(실서버 정규식). 성공 시 목업의 "사용할 수 있는 닉네임이에요" 메시지를 돌려준다.
-export function validateNickname(nickname: string): { ok: boolean; message: string } {
-  const normalized = nickname.trim().normalize('NFC')
-  if (normalized.length === 0) return { ok: false, message: '닉네임을 입력해 주세요.' }
-  if (!NICKNAME_PATTERN.test(normalized))
-    return { ok: false, message: '닉네임은 완성형 한글·영문·숫자 2~12자로 입력해 주세요.' }
-  return { ok: true, message: '사용할 수 있는 닉네임이에요.' }
-}
 
 // ── 회원 탈퇴 안내(b10-st-5) ── 탈퇴 가능 여부는 서버(GET /users/me/withdrawal/check)가 판정한다.
 export const WITHDRAW_RETENTION_YEARS = 5

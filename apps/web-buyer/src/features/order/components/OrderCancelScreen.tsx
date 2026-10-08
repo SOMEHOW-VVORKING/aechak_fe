@@ -5,13 +5,17 @@ import type { BuyerOrder } from '@aechak/domain'
 import {
   Alert,
   BottomFixedAction,
-  EmptyState,
+  Card,
   MobileScreen,
   Modal,
-  Radio,
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { PriceRow } from '@/shared/components/PriceRow'
+import { RadioList } from '@/shared/components/RadioList'
+import { ResultHero } from '@/shared/components/ResultHero'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { formatKRW } from '@/shared/formatKRW'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { useCancelOrder, useOrder } from '../order.queries'
@@ -33,13 +37,11 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
   if (!order) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="주문 취소" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="주문을 찾을 수 없어요"
-            description="삭제되었거나 주소가 올바르지 않은 주문이에요."
-            action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="주문을 찾을 수 없어요"
+          description="삭제되었거나 주소가 올바르지 않은 주문이에요."
+          action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
+        />
       </MobileScreen>
     )
   }
@@ -55,14 +57,12 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
         }
       >
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-          <span className="flex size-16 items-center justify-center rounded-full bg-success-surface text-success-fg">
-            <CheckCircle2 className="size-10" />
-          </span>
-          <p className="text-title font-bold text-text-primary">취소가 완료됐어요</p>
-          <p className="text-body-sm leading-relaxed text-text-secondary">
-            환불 <strong className="text-text-primary">{formatKRW(order.paidAmount)}</strong>은 결제 수단으로
-            영업일 2~3일 내 처리돼요.
-          </p>
+          <ResultHero tone="success" icon={<CheckCircle2 className="size-10" />} title="취소가 완료됐어요">
+            <p className="text-body-sm leading-relaxed text-text-secondary">
+              환불 <strong className="text-text-primary">{formatKRW(order.paidAmount)}</strong>은 결제 수단으로
+              영업일 2~3일 내 처리돼요.
+            </p>
+          </ResultHero>
         </div>
       </MobileScreen>
     )
@@ -118,23 +118,10 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
           상품이 출고되면 취소할 수 없어요.
         </Alert>
 
-        {/* 취소 사유 — 상품 신고 화면과 동일한 테두리 없는 촘촘한 행 디자인(gap-0.5 + min-h-10).
-            라디오는 자체 label이라 바깥을 또 label로 감싸지 않고 div로만 감싼다. */}
+        {/* 취소 사유 — 상품 신고 화면과 같은 RadioList. */}
         <div className="flex flex-col gap-2">
           <span className="mb-1 text-label font-semibold text-text-primary">취소 사유</span>
-          <div className="flex flex-col gap-0.5">
-            {CANCEL_REASONS.map(r => (
-              <div key={r.value} className="flex min-h-10 items-center">
-                <Radio
-                  name="cancel-reason"
-                  value={r.value}
-                  checked={reason === r.value}
-                  onChange={() => setReason(r.value)}
-                  label={r.label}
-                />
-              </div>
-            ))}
-          </div>
+          <RadioList name="cancel-reason" options={CANCEL_REASONS} value={reason} onChange={setReason} />
           {needsDetail && (
             <Textarea
               value={detail}
@@ -169,17 +156,17 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
 
 function RefundSummary({ order }: { order: BuyerOrder }) {
   return (
-    <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+    <Card className="flex flex-col gap-2 p-4">
       <span className="mb-0.5 text-label font-semibold text-text-primary">환불 예정 금액</span>
-      <RefundRow label="상품 금액" value={formatKRW(order.itemsTotal)} />
-      <RefundRow
+      <PriceRow label="상품 금액" value={formatKRW(order.itemsTotal)} />
+      <PriceRow
         label="배송비"
         value={order.shippingTotal === 0 ? '무료' : formatKRW(order.shippingTotal)}
       />
       {order.pointsUsed > 0 && (
-        <RefundRow label="적립금 사용" value={`-${formatKRW(order.pointsUsed)}`} valueClass="text-text-accent" />
+        <PriceRow label="적립금 사용" value={`-${formatKRW(order.pointsUsed)}`} valueClass="text-text-accent" />
       )}
-      <div className="my-0.5 h-px bg-border-subtle" />
+      <Divider className="my-0.5" />
       <div className="flex items-baseline justify-between">
         <span className="text-label font-bold text-text-primary">총 환불</span>
         <span className="text-price-sm font-bold text-text-price">{formatKRW(order.paidAmount)}</span>
@@ -193,23 +180,6 @@ function RefundSummary({ order }: { order: BuyerOrder }) {
         </div>
       )}
       <p className="mt-1 text-caption text-text-tertiary">카드 취소는 영업일 2~3일 내 처리돼요.</p>
-    </div>
-  )
-}
-
-function RefundRow({
-  label,
-  value,
-  valueClass = 'text-text-primary',
-}: {
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <div className="flex items-center justify-between text-body-sm">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`tabular-nums ${valueClass}`}>{value}</span>
-    </div>
+    </Card>
   )
 }

@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
 import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { endServerSession, logout } from '@/shared/auth'
-import { onWishlistLogout } from '@/shared/catalog'
-import { resetReviews } from '@/shared/review'
-import { APP_VERSION, IS_LATEST_VERSION } from '../settings.mock'
+import { APP_VERSION } from '../settings.mock'
+import { useLogout } from '../settings.queries'
 import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 
 // 설정 홈(b11-st-1). 섹션형 설정 목록 + 로그아웃(확인 Modal). 고객센터 문의(b6-st-3)는
@@ -18,26 +15,16 @@ import { SettingsGroup, SettingsNavRow } from './SettingsSection'
 // 실제 이동을 배선한다(존재하지 않는 라우트로의 죽은 nav 금지).
 export function SettingsHomeScreen() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [logoutOpen, setLogoutOpen] = useState(false)
 
   const goBack = useSafeBack({ to: '/mypage' })
 
-  // 서버 세션 종료(RT 무효화 + 쿠키 만료 + access 파기)를 먼저 하고 로컬 상태를 정리한다.
-  // endServerSession은 전송 실패를 삼키므로(멱등 204 계약) onSettled 한 곳에서 마무리한다.
-  const logoutSession = useMutation({ mutationFn: endServerSession })
+  const logoutSession = useLogout()
 
   const handleLogout = () => {
     logoutSession.mutate(undefined, {
+      // 세션 정리는 useLogout이 한다(화면을 떠나도 실행). 여기서는 Modal 닫기와 이동만.
       onSettled: () => {
-        logout()
-        // 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리(공유 기기·재진입 대비)
-        onWishlistLogout(queryClient)
-        // 내가 쓴 리뷰는 서버 캐시가 아니라 클라이언트 스토어 싱글턴이라 queryClient.clear()로는
-        // 안 지워진다 — 공유 기기에서 다음 사용자가 /reviews/mine에 들어가면 그대로 보인다.
-        resetReviews()
-        // 계정 단위 서버 캐시(내 정보/적립금/펫 등)가 다음 사용자에게 새지 않게 전부 비운다.
-        queryClient.clear()
         setLogoutOpen(false)
         navigate({ to: '/' })
       },
@@ -104,7 +91,8 @@ export function SettingsHomeScreen() {
             value={
               <span className="flex items-center gap-1.5">
                 {APP_VERSION}
-                {IS_LATEST_VERSION && <StatusPill variant="neutral" size="sm">최신</StatusPill>}
+                {/* 버전 확인 소스(스토어/서버)가 아직 없어 목업대로 항상 최신으로 표시한다. */}
+                <StatusPill variant="neutral" size="sm">최신</StatusPill>
               </span>
             }
           />

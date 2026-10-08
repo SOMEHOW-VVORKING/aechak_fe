@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { EmptyState, PageHeader, Toast } from '@aechak/design-system/web'
+import { useToast } from '@/shared/hooks/useToast'
 import {
   ProductEditor,
+  ProductMissing,
   emptyProductForm,
   productErrorMessage,
   productImageUrl,
@@ -26,11 +27,6 @@ export const Route = createFileRoute('/products/new')({
   component: ProductNewRoute,
 })
 
-interface ToastState {
-  message: string
-  variant: 'success' | 'error'
-}
-
 function ProductNewRoute() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -40,26 +36,24 @@ function ProductNewRoute() {
   const draft = useProductDraft(initialDraftId)
   const register = useRegisterProduct()
   const saveDraft = useSaveProductDraft()
-  const [toast, setToast] = useState<ToastState | null>(null)
+  const toast = useToast()
 
-  const showError = (error: unknown) => setToast({ message: productErrorMessage(error), variant: 'error' })
+  const showError = (error: unknown) => toast.show(productErrorMessage(error), 'error')
 
   // 승격 후 임시저장 재조회가 404여도 이미 받은 data가 남아 있으면 에디터를 유지한다.
   if (initialDraftId && !draft.data && draft.isError) {
     return (
-      <div className="p-6">
-        <PageHeader title="상품 등록" />
-        <EmptyState
-          title="임시저장한 상품을 찾을 수 없어요"
-          action={{
-            label: '새로 등록하기',
-            onClick: () => {
-              setInitialDraftId(undefined)
-              navigate({ search: {}, replace: true })
-            },
-          }}
-        />
-      </div>
+      <ProductMissing
+        title="상품 등록"
+        message="임시저장한 상품을 찾을 수 없어요"
+        action={{
+          label: '새로 등록하기',
+          onClick: () => {
+            setInitialDraftId(undefined)
+            navigate({ search: {}, replace: true })
+          },
+        }}
+      />
     )
   }
   if (!categories || (initialDraftId && !draft.data)) return null
@@ -80,7 +74,7 @@ function ProductNewRoute() {
             { body: toDraftRequest(values), draftId: search.draftId },
             {
               onSuccess: res => {
-                setToast({ message: '임시저장했어요.', variant: 'success' })
+                toast.show('임시저장했어요.')
                 navigate({ search: { draftId: res.productId }, replace: true })
               },
               onError: showError,
@@ -97,7 +91,7 @@ function ProductNewRoute() {
           )
         }
       />
-      {toast && <Toast open message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
+      {toast.element}
     </>
   )
 }

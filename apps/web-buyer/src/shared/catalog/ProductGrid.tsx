@@ -24,8 +24,61 @@ export interface ProductGridProps {
   wishGuard?: (proceed: () => void) => void
 }
 
-// 구매자 화면 공용 2열 상품 그리드. ProductCard(디자인 시스템)를 찜 스토어·네비게이션에
-// 배선하는 얇은 래퍼 — 카테고리/검색결과/찜목록이 모두 재사용한다(중복 구현 금지).
+// ProductCard(디자인 시스템)를 레지스트리·찜 스토어·로그인 게이트에 배선한 카드 하나.
+// 2열 그리드(ProductGrid)와 가로 캐러셀(ProductCarousel)이 공유한다 — 찜 게이트 배선을 한 곳에 둔다.
+export function WiredProductCard({
+  product,
+  wished,
+  onSelect,
+  onWishChange,
+  showWish,
+  wishGuard,
+}: Omit<ProductGridProps, 'products' | 'renderExtra' | 'showWish'> & {
+  product: CatalogProduct
+  wished: boolean
+  showWish: boolean
+}) {
+  // 진입 불가(카테고리 비활성)는 품절과 다른 사유지만, 카드에서는 둘 다 "지금 살 수 없음"이라
+  // 같은 오버레이로 알린다 — 라벨만 사유에 맞게 바꾼다. CatalogProduct.isSoldOut 자체는
+  // 건드리지 않으므로 장바구니/주문 로직의 품절 판정에는 영향이 없다.
+  const unavailable = product.isSoldOut || product.isViewable === false
+  return (
+    <ProductCard
+      image={product.thumbnailUrl}
+      storeName={product.storeName}
+      name={product.name}
+      price={product.price}
+      originalPrice={product.originalPrice}
+      isSold={unavailable}
+      soldLabel={product.isSoldOut ? '품절' : '판매 중단'}
+      onClick={
+        // 진입 불가 상품은 상세가 404라 열어봐야 not-found로 떨어진다.
+        unavailable
+          ? undefined
+          : () => {
+              registerProducts([product])
+              onSelect(product)
+            }
+      }
+      wished={showWish ? wished : undefined}
+      onWishToggle={
+        showWish
+          ? () => {
+              const proceed = () => {
+                registerProducts([product])
+                toggleWishlist(product.id)
+                onWishChange?.(product, !wished)
+              }
+              if (wishGuard) wishGuard(proceed)
+              else proceed()
+            }
+          : undefined
+      }
+    />
+  )
+}
+
+// 구매자 화면 공용 2열 상품 그리드. 카테고리/검색결과/찜목록이 모두 재사용한다(중복 구현 금지).
 export function ProductGrid({
   products,
   onSelect,
@@ -38,49 +91,19 @@ export function ProductGrid({
 
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-      {products.map(product => {
-        // 진입 불가(카테고리 비활성)는 품절과 다른 사유지만, 카드에서는 둘 다 "지금 살 수 없음"이라
-        // 같은 오버레이로 알린다 — 라벨만 사유에 맞게 바꾼다. CatalogProduct.isSoldOut 자체는
-        // 건드리지 않으므로 장바구니/주문 로직의 품절 판정에는 영향이 없다.
-        const unavailable = product.isSoldOut || product.isViewable === false
-        return (
+      {products.map(product => (
         <div key={product.id} className="flex flex-col">
-          <ProductCard
-            image={product.thumbnailUrl ?? ''}
-            storeName={product.storeName}
-            name={product.name}
-            price={product.price}
-            originalPrice={product.originalPrice}
-            isSold={unavailable}
-            soldLabel={product.isSoldOut ? '품절' : '판매 중단'}
-            onClick={
-              // 진입 불가 상품은 상세가 404라 열어봐야 not-found로 떨어진다.
-              unavailable
-                ? undefined
-                : () => {
-                    registerProducts([product])
-                    onSelect(product)
-                  }
-            }
-            wished={showWish ? wished.has(product.id) : undefined}
-            onWishToggle={
-              showWish
-                ? () => {
-                    const proceed = () => {
-                      registerProducts([product])
-                      toggleWishlist(product.id)
-                      onWishChange?.(product, !wished.has(product.id))
-                    }
-                    if (wishGuard) wishGuard(proceed)
-                    else proceed()
-                  }
-                : undefined
-            }
+          <WiredProductCard
+            product={product}
+            wished={wished.has(product.id)}
+            onSelect={onSelect}
+            onWishChange={onWishChange}
+            showWish={showWish}
+            wishGuard={wishGuard}
           />
           {renderExtra?.(product)}
         </div>
-        )
-      })}
+      ))}
     </div>
   )
 }

@@ -38,37 +38,44 @@ describe('validateProductForm', () => {
     expect(validateProductForm(validForm())).toEqual({})
     // 수정(PUT)은 옵션/재고를 받지 않아 검증하지 않는다.
     expect(validateProductForm(validForm({ defaultStock: '' }), false)).toEqual({})
-    // BE 재고는 Int라 넘으면 서버가 본문을 못 읽는다.
-    expect(validateProductForm(validForm({ defaultStock: '2147483648' }))).toEqual({ defaultStock: '재고가 너무 커요' })
   })
 
-  it('[AC-SPRD-001] 가격/할인/옵션 규칙 위반은 각자의 키와 문구를 낸다', () => {
-    expect(validateProductForm(validForm({ regularPrice: '99' }))).toEqual({
-      regularPrice: '정가는 100원부터 1억 원까지 입력할 수 있어요',
-    })
+  it('[AC-SPRD-001] 할인/옵션의 필수 칸만 보고, 범위/중복 규칙은 BE 응답에 맡긴다', () => {
+    // 정가 범위, 할인가 > 정가, 종료일 < 시작일은 BE가 40001/40002로 거절한다 — 여기서는 오류가 아니다.
+    expect(validateProductForm(validForm({ regularPrice: '99' }))).toEqual({})
     const discount = { discountEnabled: true, discountStartDate: '2026-10-01' }
-    expect(validateProductForm(validForm({ ...discount, discountPrice: '16000' }))).toEqual({
-      discountPrice: '할인가는 정가보다 클 수 없어요',
-    })
-    expect(validateProductForm(validForm({ ...discount, discountPrice: '12000', discountStartDate: '' }))).toEqual({
+    expect(
+      validateProductForm(validForm({ ...discount, discountPrice: '16000', discountEndDate: '2026-09-30' })),
+    ).toEqual({})
+    expect(validateProductForm(validForm({ ...discount, discountPrice: '', discountStartDate: '' }))).toEqual({
+      discountPrice: '할인가를 입력해 주세요',
       discountStartDate: '할인 시작일을 선택해 주세요',
     })
-    expect(
-      validateProductForm(validForm({ ...discount, discountPrice: '12000', discountEndDate: '2026-09-30' })),
-    ).toEqual({ discountEndDate: '종료일은 시작일보다 앞설 수 없어요' })
 
+    // 옵션명 중복은 BE 40005 — 빈 옵션명/옵션값만 본다.
     const options = {
       optionEnabled: true,
       optionGroups: [
         { name: '색상', values: ['화이트'] },
-        { name: '색상', values: [] },
+        { name: '색상', values: ['블랙'] },
+        { name: ' ', values: [] },
       ],
-      combinations: [],
+      combinations: [{ key: 'k', optionValues: ['화이트'], additionalPrice: '', stockQuantity: '' }],
     }
     expect(validateProductForm(validForm(options))).toEqual({
-      'optionGroup-1-name': '같은 옵션명이 있어요',
-      'optionGroup-1-values': '옵션값을 1개 이상 추가해 주세요',
+      'optionGroup-2-name': '옵션명을 입력해 주세요',
+      'optionGroup-2-values': '옵션값을 1개 이상 추가해 주세요',
+      'combination-0-additionalPrice': '추가 금액을 입력해 주세요',
+      'combination-0-stockQuantity': '재고를 입력해 주세요',
     })
+
+    // 2^53 이상은 Number()가 다른 값으로 바꿔 보내므로(전송 손실) 서버 규칙과 별개로 막는다.
+    const huge = { ...options, optionGroups: [{ name: '색상', values: ['화이트'] }] }
+    expect(
+      validateProductForm(
+        validForm({ ...huge, combinations: [{ key: 'k', optionValues: ['화이트'], additionalPrice: '9007199254740993', stockQuantity: '1' }] }),
+      ),
+    ).toEqual({ 'combination-0-additionalPrice': '추가 금액이 너무 커요' })
   })
 })
 

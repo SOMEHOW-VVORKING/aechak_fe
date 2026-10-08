@@ -7,7 +7,6 @@ export { GuidelinesScreen } from './components/GuidelinesScreen'
 export { DataDeletionScreen } from './components/DataDeletionScreen'
 export {
   APP_VERSION,
-  IS_LATEST_VERSION,
   FAQ_CATEGORIES,
   FAQ_ITEMS,
   filterFaq,

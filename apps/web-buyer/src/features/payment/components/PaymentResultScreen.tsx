@@ -3,8 +3,9 @@ import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { CartItem, PaymentMethod } from '@aechak/domain'
 import { cartLineKey } from '@aechak/domain'
-import { Button, MobileScreen } from '@aechak/design-system/web'
+import { Button, Card, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ResultHero } from '@/shared/components/ResultHero'
 import { formatKRW } from '@/shared/formatKRW'
 import { getCartItems, removeManyFromCart } from '@/shared/cart'
 import { buildCartView, buildOrderFromContext } from '@/shared/catalog'
@@ -159,11 +160,8 @@ export function PaymentResultScreen({
       <MobileScreen>
         <div className="flex h-full flex-col px-6 pb-6 pt-4">
           <div className="flex flex-1 flex-col items-center justify-center gap-4">
-            <span className="flex size-16 items-center justify-center rounded-full bg-success-surface text-success-fg">
-              <CheckCircle2 className="size-10" />
-            </span>
-            <p className="text-title font-bold text-text-primary">결제가 완료되었어요</p>
-            <div className="flex w-full flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+            <ResultHero tone="success" icon={<CheckCircle2 className="size-10" />} title="결제가 완료되었어요" />
+            <Card className="flex w-full flex-col gap-2 p-4">
               <div className="flex items-center justify-between text-body-sm">
                 <span className="text-text-tertiary">주문번호</span>
                 <span className="tabular-nums text-text-primary">{result.orderNo}</span>
@@ -172,7 +170,7 @@ export function PaymentResultScreen({
                 <span className="text-text-tertiary">결제금액</span>
                 <span className="text-price-sm font-semibold text-text-price">{formatKRW(result.amount)}</span>
               </div>
-            </div>
+            </Card>
           </div>
           <div className="mt-6 flex gap-3">
             <Button
@@ -209,13 +207,11 @@ export function PaymentResultScreen({
     >
       <div className="flex h-full flex-col px-6 pb-6 pt-4">
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <span className="flex size-16 items-center justify-center rounded-full bg-error-surface text-error-fg">
-            <XCircle className="size-10" />
-          </span>
-          <p className="text-title font-bold text-text-primary">결제에 실패했어요</p>
-          <p className="text-center text-body-sm text-text-tertiary">
-            {result.failReason ?? '결제를 완료하지 못했어요. 다시 시도해 주세요.'}
-          </p>
+          <ResultHero tone="error" icon={<XCircle className="size-10" />} title="결제에 실패했어요">
+            <p className="text-center text-body-sm text-text-tertiary">
+              {result.failReason ?? '결제를 완료하지 못했어요. 다시 시도해 주세요.'}
+            </p>
+          </ResultHero>
         </div>
         <div className="mt-6 flex gap-3">
           <Button variant="secondary" size="lg" className="flex-1" onClick={changeMethod}>

@@ -15,10 +15,10 @@ export const sellerApplicationsMock: SellerApplication[] = [
     representativeNameMasked: '김*수',
     phoneMasked: '010-2***-**81',
     documents: [
-      { key: 'business-reg', label: '사업자' },
-      { key: 'mail-order', label: '통신판매' },
-      { key: 'bankbook', label: '통장' },
-      { key: 'id-card', label: '신분증' },
+      { key: 'BUSINESS_REGISTRATION', label: '사업자' },
+      { key: 'TELESALES_REPORT', label: '통신판매' },
+      { key: 'BANKBOOK_COPY', label: '통장' },
+      { key: 'ID_CARD', label: '신분증' },
     ],
     rejectionReason: '통신판매업 신고증 불일치',
     internalMemo: '대표자명 일치, 계좌 사본 흐림 — 재제출 시 계좌도 재확인.',
@@ -34,10 +34,10 @@ export const sellerApplicationsMock: SellerApplication[] = [
     representativeNameMasked: '박*희',
     phoneMasked: '010-3***-**42',
     documents: [
-      { key: 'business-reg', label: '사업자' },
-      { key: 'mail-order', label: '통신판매' },
-      { key: 'bankbook', label: '통장' },
-      { key: 'id-card', label: '신분증' },
+      { key: 'BUSINESS_REGISTRATION', label: '사업자' },
+      { key: 'TELESALES_REPORT', label: '통신판매' },
+      { key: 'BANKBOOK_COPY', label: '통장' },
+      { key: 'ID_CARD', label: '신분증' },
     ],
   },
   {
@@ -50,8 +50,8 @@ export const sellerApplicationsMock: SellerApplication[] = [
     representativeNameMasked: '정*은',
     phoneMasked: '010-4***-**19',
     documents: [
-      { key: 'bankbook', label: '통장' },
-      { key: 'id-card', label: '신분증' },
+      { key: 'BANKBOOK_COPY', label: '통장' },
+      { key: 'ID_CARD', label: '신분증' },
     ],
   },
   {
@@ -65,10 +65,10 @@ export const sellerApplicationsMock: SellerApplication[] = [
     representativeNameMasked: '최*호',
     phoneMasked: '010-5***-**07',
     documents: [
-      { key: 'business-reg', label: '사업자' },
-      { key: 'mail-order', label: '통신판매' },
-      { key: 'bankbook', label: '통장' },
-      { key: 'id-card', label: '신분증' },
+      { key: 'BUSINESS_REGISTRATION', label: '사업자' },
+      { key: 'TELESALES_REPORT', label: '통신판매' },
+      { key: 'BANKBOOK_COPY', label: '통장' },
+      { key: 'ID_CARD', label: '신분증' },
     ],
   },
   {
@@ -82,8 +82,8 @@ export const sellerApplicationsMock: SellerApplication[] = [
     representativeNameMasked: '한*진',
     phoneMasked: '010-6***-**33',
     documents: [
-      { key: 'bankbook', label: '통장' },
-      { key: 'id-card', label: '신분증' },
+      { key: 'BANKBOOK_COPY', label: '통장' },
+      { key: 'ID_CARD', label: '신분증' },
     ],
   },
 ]

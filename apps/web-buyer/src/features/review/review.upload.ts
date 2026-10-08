@@ -4,9 +4,7 @@ import { issuePresignedUrl } from '@aechak/api'
 // 돌려준다. 업로드가 서버를 거치지 않으므로 이미지 트래픽이 API로 몰리지 않는다.
 // shared/pet·shared/account의 업로드 유틸과 같은 구조다 — boundaries 규칙상 서로 재사용하지 못해
 // purpose만 다른 형태로 복제한다(그쪽 파일 주석에도 같은 이유가 적혀 있다).
-
-/** 서버가 허용하는 형식. 그 밖은 발급 단계에서 400이 오므로 미리 걸러 안내한다. */
-const ALLOWED_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
+// 허용 형식(PNG/JPEG/WEBP)은 presign 발급 서버가 판정한다(400/100000 → reviewErrorMessage).
 
 /**
  * 업로드 상한. presigned PUT은 S3 직행이라 서버가 크기를 못 막는다 —
@@ -17,15 +15,10 @@ export const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024
 /** 리뷰 한 건에 붙일 수 있는 사진 수(서버도 초과 시 110009로 막는다). */
 export const MAX_REVIEW_PHOTOS = 5
 
-export function isSupportedReviewPhoto(file: File): boolean {
-  return (ALLOWED_CONTENT_TYPES as readonly string[]).includes(file.type)
-}
-
 export function isWithinReviewPhotoSizeLimit(file: File): boolean {
   return file.size <= MAX_REVIEW_PHOTO_BYTES
 }
 
-export const UNSUPPORTED_REVIEW_PHOTO_MESSAGE = 'PNG, JPG, WEBP 형식만 올릴 수 있어요'
 export const OVERSIZED_REVIEW_PHOTO_MESSAGE = `사진은 ${MAX_REVIEW_PHOTO_BYTES / 1024 / 1024}MB까지 올릴 수 있어요`
 
 /**

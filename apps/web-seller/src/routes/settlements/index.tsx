@@ -22,48 +22,24 @@ const MONTH_OPTIONS = [
   { value: '2026-04', label: '2026.04' },
 ]
 
+// 숫자/날짜 셀은 모두 tabular — 주문번호와 최종 금액만 굵게.
+const num = (text: string, bold = false) => (
+  <span className={bold ? 'font-semibold tabular-nums' : 'tabular-nums'}>{text}</span>
+)
+const won = (value?: number) => (value != null ? `${value.toLocaleString()}원` : '-')
+
 const columns: Column<Settlement>[] = [
-  {
-    key: 'orderId',
-    label: '주문번호',
-    render: s => <span className="font-semibold tabular-nums">{s.orderId}</span>,
-  },
-  {
-    key: 'confirmedAt',
-    label: '구매확정일',
-    align: 'right',
-    render: s => <span className="tabular-nums">{s.confirmedAt ?? '-'}</span>,
-  },
-  {
-    key: 'expectedPayoutDate',
-    label: '정산예정일',
-    align: 'right',
-    render: s => <span className="tabular-nums">{s.expectedPayoutDate ?? '-'}</span>,
-  },
-  {
-    key: 'productAmount',
-    label: '상품금액',
-    align: 'right',
-    render: s => <span className="tabular-nums">{s.productAmount.toLocaleString()}원</span>,
-  },
+  { key: 'orderId', label: '주문번호', render: s => num(s.orderId, true) },
+  { key: 'confirmedAt', label: '구매확정일', align: 'right', render: s => num(s.confirmedAt ?? '-') },
+  { key: 'expectedPayoutDate', label: '정산예정일', align: 'right', render: s => num(s.expectedPayoutDate ?? '-') },
+  { key: 'productAmount', label: '상품금액', align: 'right', render: s => num(won(s.productAmount)) },
   {
     key: 'feeAmount',
     label: '수수료',
     align: 'right',
-    render: s => (
-      <span className="tabular-nums">{s.feeAmount != null ? `-${s.feeAmount.toLocaleString()}원` : '-'}</span>
-    ),
+    render: s => num(s.feeAmount != null ? `-${won(s.feeAmount)}` : '-'),
   },
-  {
-    key: 'finalAmount',
-    label: '최종정산금액',
-    align: 'right',
-    render: s => (
-      <span className="font-semibold tabular-nums">
-        {s.finalAmount != null ? `${s.finalAmount.toLocaleString()}원` : '-'}
-      </span>
-    ),
-  },
+  { key: 'finalAmount', label: '최종정산금액', align: 'right', render: s => num(won(s.finalAmount), true) },
   {
     key: 'status',
     label: '상태',

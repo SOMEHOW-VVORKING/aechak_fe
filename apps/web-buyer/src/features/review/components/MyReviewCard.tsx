@@ -1,6 +1,6 @@
-import { Image as ImageIcon } from 'lucide-react'
 import type { Review } from '@aechak/domain'
-import { RatingInput } from '@aechak/design-system/web'
+import { Card, RatingInput } from '@aechak/design-system/web'
+import { ProductThumbnail } from '@/shared/catalog'
 
 // 내가 쓴 리뷰 카드 — 상품 리뷰 목록(b4-st-3)·내 리뷰 완료 탭(b4-st-6) 공용.
 // 같은 목록에 섞이는 타인 리뷰(DS ReviewCard)와 카드 리듬을 맞추려고 세로 순서를 DS ReviewCard와
@@ -37,19 +37,11 @@ export function MyReviewCard({
   const images = review.images
 
   return (
-    <div className="flex flex-col gap-3 rounded-card border border-border-subtle bg-surface-raised p-4">
+    <Card className="flex flex-col gap-3 p-4">
       {/* 상품 컨텍스트(내 리뷰 완료 탭) */}
       {productName && (
         <div className="flex items-center gap-2.5 border-b border-border-subtle pb-3">
-          <div className="size-10 flex-none overflow-hidden rounded-image bg-surface-sunken">
-            {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="" className="size-full object-cover" />
-            ) : (
-              <div className="flex size-full items-center justify-center text-icon-muted">
-                <ImageIcon className="size-5" />
-              </div>
-            )}
-          </div>
+          <ProductThumbnail src={thumbnailUrl} className="size-10" />
           <p className="line-clamp-1 min-w-0 flex-1 text-body-sm font-medium text-text-primary">
             {productName}
           </p>
@@ -107,12 +99,14 @@ export function MyReviewCard({
               <img
                 src={src}
                 alt={`리뷰 사진 ${i + 1}`}
+                loading="lazy"
+                decoding="async"
                 className="size-[72px] rounded-sm bg-surface-sunken object-cover"
               />
             </button>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

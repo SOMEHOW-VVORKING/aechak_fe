@@ -35,6 +35,7 @@ export type {
   SellerApplicationStatus,
   SellerApplication,
   SellerLegalType,
+  SellerDocumentKey,
   SellerApplicationDocument,
   SellerOperatingStatus,
   SellerAccount,

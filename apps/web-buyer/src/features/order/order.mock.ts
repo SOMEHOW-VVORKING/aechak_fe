@@ -75,7 +75,9 @@ export const CANCEL_REASONS: { value: string; label: string; needsDetail?: boole
   { value: 'etc', label: '기타 (직접 입력)', needsDetail: true },
 ]
 
-// 'YYYY.MM.DD ...' → 'MM.DD' 표기(타임라인/카드 보조 텍스트용).
+// 'YYYY.MM.DD ...' → 'MM.DD' 표기(타임라인/카드 보조 텍스트용). 값이 있으면 항상 문자열을 돌려준다.
+export function shortDate(value: string): string
+export function shortDate(value: string | undefined): string | undefined
 export function shortDate(value: string | undefined): string | undefined {
   if (!value) return undefined
   const m = value.match(/^\d{4}\.(\d{2})\.(\d{2})/)

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getProductDetail, getProductOptions, getProductReviews } from '@aechak/api'
+import { errorResponse, getProductDetail, getProductOptions, getProductReviews } from '@aechak/api'
 import { findMockProduct, registerProducts } from '@/shared/catalog'
 import { getProductDetailMock, type ProductDetail, type ProductReviewEntry } from './product.mock'
 import {
@@ -10,10 +10,9 @@ import {
   type ProductOptionsView,
 } from './product.map'
 
-// axios는 web-buyer의 직접 의존성이 아니라(@aechak/api의 transitive) import하지 않고 에러 shape로
-// 404를 판별한다 — 미존재 상품(404)일 때만 목업으로 폴백하고, 다른 오류(500 등)는 그대로 던진다.
+// 미존재 상품(404)일 때만 목업으로 폴백하고, 다른 오류(500 등)는 그대로 던진다.
 function isNotFound(e: unknown): boolean {
-  return (e as { response?: { status?: number } } | null)?.response?.status === 404
+  return errorResponse(e)?.status === 404
 }
 
 // 상품 상세 — 실 id는 실 API(GET /products/{id}), mock id는 실 API 404 -> 목업 폴백(홈/검색/찜 등

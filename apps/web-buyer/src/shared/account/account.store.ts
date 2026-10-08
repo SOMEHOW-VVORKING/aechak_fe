@@ -13,6 +13,7 @@ const SEED_ACCOUNT: BuyerAccount = {
   bio: '코코랑 함께하는 집사일기 🐾 길고양이 정보도 나눠요.',
   email: 'coco****@aechak.co.kr',
   phone: '010-1234-5678',
+  isPendingOnboarding: false,
   verification: 'unverified',
 }
 

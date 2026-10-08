@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   axiosInstance,
   checkNickname,
+  errorResponse,
   getTerms,
   setAccessToken,
   setNickname as putNickname,
@@ -11,7 +12,7 @@ import {
 } from '@aechak/api'
 
 // 온보딩 2단계(약관 동의 → 닉네임 설정)를 실서버에 붙이는 얇은 어댑터.
-// 활성 약관·필수 동의 불변식·닉네임 중복/전이는 전부 서버 소유다. 생성된 react-query 훅이 아니라
+// 활성 약관·필수 동의 불변식·닉네임 형식/중복/전이는 전부 서버 소유다. 생성된 react-query 훅이 아니라
 // fetcher만 소비하고, 이 파일이 자체 useQuery/useMutation으로 감싼다(pet.queries.ts와 동일 이유).
 
 export type SocialProvider = 'kakao' | 'google' | 'apple'
@@ -111,29 +112,17 @@ export function useSubmitConsents() {
 
 // ── 닉네임 ──────────────────────────────────────────────────────────────────
 
-export const NICKNAME_MIN_LENGTH = 2
+/** Input maxLength와 글자수 카운터(기획 4/12)용. 형식 규칙 자체는 서버가 판정한다(30002). */
 export const NICKNAME_MAX_LENGTH = 12
 
-// 서버와 동일한 규칙: NFC 정규화 후 완성형 한글·영문·숫자 2~12자. 자모·이모지·공백 불가.
-const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
-
-/** 입력값을 서버가 보는 형태(NFC)로 맞춘다. 조합형 자모를 완성형으로 합쳐 정규식이 통과되게 한다. */
-export function normalizeNickname(nickname: string): string {
-  return nickname.normalize('NFC')
-}
-
-/** 서버 호출 없이 형식을 미리 판정한다. 통과할 때만 중복 확인 요청을 쏜다. */
-export function isValidNicknameFormat(nickname: string): boolean {
-  return NICKNAME_PATTERN.test(normalizeNickname(nickname))
-}
-
-// 중복 확인은 UX 보조일 뿐이다. 형식이 통과할 때만 enabled로 서버를 부르고,
+// 중복 확인은 UX 보조일 뿐이다. 형식(NFC 정규화 후 완성형 한글·영문·숫자 2~12자)은 GET /users/nickname/check와
+// PUT 양쪽이 30002로 거절하므로 클라이언트는 빈 값만 거르고 응답(가용 여부·30002)을 그대로 보여준다.
 // 최종 판정은 PUT nickname의 30001이 한다.
 export const useNicknameAvailability = (nickname: string) =>
   useQuery({
     queryKey: ['onboarding', 'nickname-availability', nickname],
-    queryFn: ({ signal }) => checkNickname({ nickname: normalizeNickname(nickname) }, signal),
-    enabled: isValidNicknameFormat(nickname),
+    queryFn: ({ signal }) => checkNickname({ nickname }, signal),
+    enabled: nickname !== '',
     select: response => response.data.available,
     staleTime: 0,
     retry: false,
@@ -141,7 +130,7 @@ export const useNicknameAvailability = (nickname: string) =>
 
 export function useSetNickname() {
   const mutation = useMutation({
-    mutationFn: (nickname: string) => putNickname({ nickname: normalizeNickname(nickname) }),
+    mutationFn: (nickname: string) => putNickname({ nickname }),
   })
   return {
     isPending: mutation.isPending,
@@ -155,21 +144,11 @@ export function useSetNickname() {
 
 // ── 에러 문구 ────────────────────────────────────────────────────────────────
 
-/** 응답에서 status·errorCode만 덕타이핑으로 꺼낸다(axios 타입 미import). */
-export function readErrorCode(error: unknown): { status?: number; errorCode?: number } {
-  const response = (
-    error as { response?: { status?: number; data?: { errorCode?: number } } }
-  )?.response
-  return { status: response?.status, errorCode: response?.data?.errorCode }
-}
-
 // 온보딩 에러는 errorCode로 분기한다(같은 status에 여러 사유가 섞임). 네비게이션이 필요한
 // 30300(약관)·30004(완료)는 화면이 errorCode를 보고 직접 이동하고, 인라인 문구는 이 헬퍼가 준다.
+// 서버 message는 -습니다체라 그대로 쓰지 않는다.
 export function onboardingErrorMessage(error: unknown): string {
-  const { errorCode } = readErrorCode(error)
-  const serverMessage = (error as { response?: { data?: { message?: string } } })?.response?.data
-    ?.message
-  switch (errorCode) {
+  switch (errorResponse(error)?.data?.errorCode) {
     case 30001:
       return '이미 사용 중인 닉네임이에요'
     case 30002:
@@ -181,6 +160,6 @@ export function onboardingErrorMessage(error: unknown): string {
     case 30400:
       return '약관 정보가 변경되었어요. 다시 확인해 주세요'
     default:
-      return serverMessage ?? '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요'
+      return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요'
   }
 }

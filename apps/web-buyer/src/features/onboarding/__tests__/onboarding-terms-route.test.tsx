@@ -46,21 +46,24 @@ describe('/onboarding/terms', () => {
     expect(screen.getAllByText('선택')).toHaveLength(1)
   })
 
-  it('[AC-ONBOARD-007] 필수 전부 체크 후 제출하면 활성 약관 전체(마케팅=false 포함)를 보내고 닉네임 단계로 넘어간다', async () => {
+  it('[AC-ONBOARD-007] 필수 미동의 제출은 서버 403/30300 문구를 보여주고, 전부 체크하면 활성 약관 전체(마케팅=false 포함)를 보내고 닉네임 단계로 넘어간다', async () => {
     const user = userEvent.setup()
     const router = renderAt('/onboarding/terms')
 
+    // 필수 동의 게이트는 서버가 판정한다 — 버튼은 잠그지 않고 체크값을 그대로 보낸다.
     const next = await screen.findByRole('button', { name: '다음' })
-    expect(next).toBeDisabled()
+    expect(next).toBeEnabled()
 
-    // 필수 4개만 체크(마케팅은 그대로 미체크) → 활성.
+    // 필수 4개 중 3개만 체크하고 제출 → 서버가 30300으로 거절하고 화면은 해요체 안내를 띄운다.
     await user.click(screen.getByRole('button', { name: /만 14세 이상이에요/ }))
     await user.click(screen.getByRole('button', { name: /서비스 이용약관/ }))
     await user.click(screen.getByRole('button', { name: /개인정보 처리방침/ }))
-    expect(next).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: /위치기반 서비스 약관/ }))
-    expect(next).toBeEnabled()
+    await user.click(next)
+    expect(await screen.findByText('필수 약관에 모두 동의해 주세요')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/onboarding/terms')
 
+    // 남은 필수 1개를 체크(마케팅은 그대로 미체크)하고 다시 제출 → 통과.
+    await user.click(screen.getByRole('button', { name: /위치기반 서비스 약관/ }))
     await user.click(next)
 
     expect(await screen.findByRole('heading', { name: '닉네임을 정해 주세요' })).toBeInTheDocument()

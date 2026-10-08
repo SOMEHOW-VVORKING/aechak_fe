@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { BadgeCheck, CheckCircle2, Image as ImageIcon, RotateCcw, Truck } from 'lucide-react'
-import type { BuyerOrder, BuyerOrderSellerGroup } from '@aechak/domain'
+import { BadgeCheck, CheckCircle2, RotateCcw, Truck } from 'lucide-react'
+import type { BuyerOrder } from '@aechak/domain'
 import {
   Alert,
   Button,
-  EmptyState,
+  Card,
   MobileScreen,
   StatusPill,
   Timeline,
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { Divider } from '@/shared/components/Divider'
+import { PriceRow } from '@/shared/components/PriceRow'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { formatKRW } from '@/shared/formatKRW'
+import { OrderItemsCard } from '@/shared/catalog'
 import { useConfirmOrder, useOrder } from '../order.queries'
 import { PAYMENT_METHOD_LABEL, buildOrderTimeline, shortDate } from '../order.mock'
 
@@ -35,13 +39,11 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
   if (!order) {
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="주문 상세" />}>
-        <div className="flex h-full items-center justify-center p-6">
-          <EmptyState
-            title="주문을 찾을 수 없어요"
-            description="삭제되었거나 주소가 올바르지 않은 주문이에요."
-            action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
-          />
-        </div>
+        <ScreenEmptyState
+          title="주문을 찾을 수 없어요"
+          description="삭제되었거나 주소가 올바르지 않은 주문이에요."
+          action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
+        />
       </MobileScreen>
     )
   }
@@ -83,9 +85,9 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
         ) : (
           <>
             {/* 배송 추적 타임라인 */}
-            <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
+            <Card className="p-4">
               <Timeline steps={buildOrderTimeline(order)} />
-            </div>
+            </Card>
 
             {showAutoConfirm && (
               <Alert variant="info" title="상품이 도착했어요">
@@ -98,25 +100,35 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
 
         {/* 주문 상품(셀러별) */}
         {order.groups.map(group => (
-          <OrderItemsCard key={group.sellerId} group={group} />
+          <OrderItemsCard
+            key={group.sellerId}
+            storeName={group.storeName}
+            items={group.items.map((item, i) => ({
+              key: `${item.productId}-${i}`,
+              thumbnailUrl: item.thumbnailUrl,
+              name: item.name,
+              meta: `${item.option} / ${item.quantity}개`,
+              price: formatKRW(item.unitPrice * item.quantity),
+            }))}
+          />
         ))}
 
         {/* 결제 정보 */}
-        <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+        <Card className="flex flex-col gap-2 p-4">
           <p className="mb-0.5 text-caption font-semibold text-text-tertiary">결제 정보</p>
-          <PayRow label="상품 금액" value={formatKRW(order.itemsTotal)} />
-          <PayRow
+          <PriceRow label="상품 금액" value={formatKRW(order.itemsTotal)} />
+          <PriceRow
             label="배송비"
             value={order.shippingTotal === 0 ? '무료' : formatKRW(order.shippingTotal)}
             valueClass={order.shippingTotal === 0 ? 'text-success-fg' : 'text-text-primary'}
           />
           {order.couponDiscount > 0 && (
-            <PayRow label="쿠폰 할인" value={`-${formatKRW(order.couponDiscount)}`} valueClass="text-text-accent" />
+            <PriceRow label="쿠폰 할인" value={`-${formatKRW(order.couponDiscount)}`} valueClass="text-text-accent" />
           )}
           {order.pointsUsed > 0 && (
-            <PayRow label="포인트 사용" value={`-${formatKRW(order.pointsUsed)}`} valueClass="text-text-accent" />
+            <PriceRow label="포인트 사용" value={`-${formatKRW(order.pointsUsed)}`} valueClass="text-text-accent" />
           )}
-          <div className="my-0.5 h-px bg-border-subtle" />
+          <Divider className="my-0.5" />
           <div className="flex items-baseline justify-between">
             <span className="text-label font-bold text-text-primary">총 결제금액</span>
             <span className="text-price-sm font-bold text-text-price">{formatKRW(order.paidAmount)}</span>
@@ -129,7 +141,7 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
               </span>
             </div>
           )}
-        </div>
+        </Card>
       </div>
 
       <AppToast
@@ -180,41 +192,9 @@ function StatusBanner({ order }: { order: BuyerOrder }) {
   return null
 }
 
-function OrderItemsCard({ group }: { group: BuyerOrderSellerGroup }) {
-  return (
-    <div className="rounded-card border border-border-subtle bg-surface-raised p-4">
-      <p className="mb-2.5 text-caption font-semibold text-text-tertiary">주문 상품 / {group.storeName}</p>
-      <div className="flex flex-col gap-3">
-        {group.items.map((item, i) => (
-          <div key={`${item.productId}-${i}`} className="flex items-start gap-3">
-            <div className="size-[52px] flex-none overflow-hidden rounded-image bg-surface-sunken">
-              {item.thumbnailUrl ? (
-                <img src={item.thumbnailUrl} alt="" className="size-full object-cover" />
-              ) : (
-                <div className="flex size-full items-center justify-center text-icon-muted">
-                  <ImageIcon className="size-5" />
-                </div>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-body-sm text-text-primary">{item.name}</p>
-              <p className="mt-0.5 text-caption text-text-tertiary">
-                {item.option} / {item.quantity}개
-              </p>
-              <p className="mt-1 text-price-sm font-semibold text-text-price">
-                {formatKRW(item.unitPrice * item.quantity)}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function RefundCard({ order }: { order: BuyerOrder }) {
   return (
-    <div className="flex flex-col gap-2 rounded-card border border-border-subtle bg-surface-raised p-4">
+    <Card className="flex flex-col gap-2 p-4">
       <div className="flex items-center justify-between">
         <span className="text-label font-semibold text-text-secondary">환불 내역</span>
         <StatusPill variant="success" size="sm">
@@ -222,30 +202,13 @@ function RefundCard({ order }: { order: BuyerOrder }) {
           환불 완료
         </StatusPill>
       </div>
-      <PayRow label="환불 금액" value={formatKRW(order.paidAmount)} />
-      <PayRow label="환불 수단" value={PAYMENT_METHOD_LABEL[order.method]} />
-      {order.refundedAt && <PayRow label="환불 완료일" value={shortDate(order.refundedAt) ?? ''} />}
+      <PriceRow label="환불 금액" value={formatKRW(order.paidAmount)} />
+      <PriceRow label="환불 수단" value={PAYMENT_METHOD_LABEL[order.method]} />
+      {order.refundedAt && <PriceRow label="환불 완료일" value={shortDate(order.refundedAt)} />}
       <p className="mt-1 text-caption text-text-tertiary">
         카드 환불은 카드사에 따라 영업일 기준 1~3일 더 걸릴 수 있어요.
       </p>
-    </div>
-  )
-}
-
-function PayRow({
-  label,
-  value,
-  valueClass = 'text-text-primary',
-}: {
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <div className="flex items-center justify-between text-body-sm">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`tabular-nums ${valueClass}`}>{value}</span>
-    </div>
+    </Card>
   )
 }
 

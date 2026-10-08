@@ -116,11 +116,11 @@ describe('/products 목록 (SCRUM-119)', () => {
     const save = within(drawer).getByRole('button', { name: '기본 재고 저장' })
     expect(save).toBeDisabled() // 바뀐 값이 없으면 저장 불가
 
-    // BE 증감 한도(±1,000,000)를 넘는 목표는 보내지 않는다.
+    // BE 증감 한도(±1,000,000)를 넘는 목표는 서버가 90001로 거절하고 그 문구를 행에 보여준다.
     await user.clear(input)
     await user.type(input, '1000001')
     await user.click(save)
-    expect(within(drawer).getByText('한 번에 100만 개까지 늘리거나 줄일 수 있어요')).toBeInTheDocument()
+    expect(await within(drawer).findByText('입력한 내용을 다시 확인해 주세요.')).toBeInTheDocument()
 
     await user.clear(input)
     await user.type(input, '5')
