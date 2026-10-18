@@ -1,6 +1,13 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { resetLikedProducts, resetSearchFixtures, server } from './testing/msw/server'
+import {
+  resetLikedProducts,
+  resetSearchFixtures,
+  seedCart,
+  seedOrderGroups,
+  seedPaymentState,
+  server,
+} from './testing/msw/server'
 import { resetWishlistState } from './shared/catalog'
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
@@ -23,5 +30,9 @@ afterEach(() => {
   // 한쪽만 지우면 앞 테스트에서 해제한 id가 다음 테스트에서 계속 걸러져 시드보다 적게 렌더된다.
   resetLikedProducts()
   resetWishlistState()
+  // 구매 퍼널 상태형 핸들러(장바구니·주문그룹·결제)는 테스트 간 이어지면 안 된다.
+  seedCart()
+  seedOrderGroups()
+  seedPaymentState()
 })
 afterAll(() => server.close())

@@ -1,6 +1,16 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { axiosInstance, type ReviewItemResponse } from '@aechak/api'
+import {
+  OrderListStatusFilter,
+  OrderStatus,
+  PaymentMethod,
+  type CartItemStatus,
+  type OrderDetailResponse,
+  type OrderItemStatus,
+  type PaymentCompletionStatus,
+  type PreparePaymentResponse,
+} from '@aechak/api'
 import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
@@ -264,7 +274,6 @@ function realReviewSummary() {
   return { reviewCount: all.length, averageRating, ratingDistribution: dist }
 }
 
-
 // 내 찜 목록 상태(서버 소유 목록의 축소). seedLikedProducts로 세우고 like/unlike로 갱신한다.
 // 카드 형태는 상품 목록과 동일한 ProductSummaryResponse(= ProductFixture['product']).
 let likedProductRows: ProductFixture['product'][] = []
@@ -472,7 +481,8 @@ export function currentPets(): PetRow[] {
 function withImageUrl(row: PetRow) {
   return {
     ...row,
-    profileImageUrl: row.profileImageKey == null ? null : `https://mock-cdn.local/${row.profileImageKey}`,
+    profileImageUrl:
+      row.profileImageKey == null ? null : `https://mock-cdn.local/${row.profileImageKey}`,
   }
 }
 
@@ -483,7 +493,8 @@ function speciesOf(breedId: number): 'DOG' | 'CAT' {
 
 function labelOf(breedId: number): string {
   return (
-    [...BREED_FIXTURES.DOG, ...BREED_FIXTURES.CAT].find(b => b.breedId === breedId)?.label ?? '알 수 없음'
+    [...BREED_FIXTURES.DOG, ...BREED_FIXTURES.CAT].find(b => b.breedId === breedId)?.label ??
+    '알 수 없음'
   )
 }
 
@@ -650,12 +661,18 @@ const accountHandlers = [
     }
     if (concurrentModOnce) {
       concurrentModOnce = false
-      return HttpResponse.json({ errorCode: 90003, message: '다른 곳에서 먼저 수정했습니다.' }, { status: 409 })
+      return HttpResponse.json(
+        { errorCode: 90003, message: '다른 곳에서 먼저 수정했습니다.' },
+        { status: 409 },
+      )
     }
     const nfc = body.nickname.normalize('NFC').toLowerCase()
     const keepsOwn = nfc === (account.nickname ?? '').normalize('NFC').toLowerCase()
     if (!keepsOwn && isNicknameTaken(body.nickname)) {
-      return HttpResponse.json({ errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' }, { status: 409 })
+      return HttpResponse.json(
+        { errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' },
+        { status: 409 },
+      )
     }
     // 전체 교체. 저장한 키에서 표시용 URL을 파생한다(키가 null이면 사진 제거).
     account = {
@@ -721,11 +738,51 @@ export interface TermRow {
 
 // 시드 약관: 필수 4 + 선택(마케팅) 1. title은 화면 라벨로 그대로 쓰인다.
 export const DEFAULT_TERMS: TermRow[] = [
-  { termId: 1, type: 'AGE_OVER_14', isRequired: true, version: '1.0', title: '만 14세 이상이에요', body: '만 14세 이상 확인', effectiveAt: '2026-01-01T00:00:00Z' },
-  { termId: 2, type: 'SERVICE', isRequired: true, version: '1.0', title: '서비스 이용약관', body: '서비스 이용약관 본문', effectiveAt: '2026-01-01T00:00:00Z' },
-  { termId: 3, type: 'PRIVACY', isRequired: true, version: '1.0', title: '개인정보 처리방침', body: '개인정보 처리방침 본문', effectiveAt: '2026-01-01T00:00:00Z' },
-  { termId: 4, type: 'LOCATION', isRequired: true, version: '1.0', title: '위치기반 서비스 약관', body: '위치기반 서비스 약관 본문', effectiveAt: '2026-01-01T00:00:00Z' },
-  { termId: 5, type: 'MARKETING', isRequired: false, version: '1.0', title: '마케팅 정보 수신 동의', body: '마케팅 정보 수신 동의 본문', effectiveAt: '2026-01-01T00:00:00Z' },
+  {
+    termId: 1,
+    type: 'AGE_OVER_14',
+    isRequired: true,
+    version: '1.0',
+    title: '만 14세 이상이에요',
+    body: '만 14세 이상 확인',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    termId: 2,
+    type: 'SERVICE',
+    isRequired: true,
+    version: '1.0',
+    title: '서비스 이용약관',
+    body: '서비스 이용약관 본문',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    termId: 3,
+    type: 'PRIVACY',
+    isRequired: true,
+    version: '1.0',
+    title: '개인정보 처리방침',
+    body: '개인정보 처리방침 본문',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    termId: 4,
+    type: 'LOCATION',
+    isRequired: true,
+    version: '1.0',
+    title: '위치기반 서비스 약관',
+    body: '위치기반 서비스 약관 본문',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    termId: 5,
+    type: 'MARKETING',
+    isRequired: false,
+    version: '1.0',
+    title: '마케팅 정보 수신 동의',
+    body: '마케팅 정보 수신 동의 본문',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  },
 ]
 
 const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,12}$/
@@ -763,26 +820,41 @@ const onboardingHandlers = [
   http.get(TERMS_URL, () => HttpResponse.json({ data: termRows })),
   http.post(CONSENTS_URL, async ({ request }) => {
     if (onboardingCompleted) {
-      return HttpResponse.json({ errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' }, { status: 409 })
+      return HttpResponse.json(
+        { errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' },
+        { status: 409 },
+      )
     }
     const body = (await request.json()) as { items?: SubmittedConsent[] }
     const items = body.items ?? []
     if (items.length === 0) {
-      return HttpResponse.json({ errorCode: 90001, message: '동의 항목이 비었습니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 90001, message: '동의 항목이 비었습니다.' },
+        { status: 400 },
+      )
     }
     const ids = items.map(item => item.termId)
     if (new Set(ids).size !== ids.length) {
-      return HttpResponse.json({ errorCode: 90001, message: 'termId가 중복됩니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 90001, message: 'termId가 중복됩니다.' },
+        { status: 400 },
+      )
     }
     if (ids.some(id => !termRows.some(term => term.termId === id))) {
-      return HttpResponse.json({ errorCode: 30400, message: '비활성이거나 알 수 없는 약관입니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 30400, message: '비활성이거나 알 수 없는 약관입니다.' },
+        { status: 400 },
+      )
     }
     // 활성 필수 약관은 전부 isAgreed=true로 포함돼야 한다.
     const requiredOk = termRows
       .filter(term => term.isRequired)
       .every(term => items.some(item => item.termId === term.termId && item.isAgreed))
     if (!requiredOk) {
-      return HttpResponse.json({ errorCode: 30300, message: '필수 약관에 동의해야 합니다.' }, { status: 403 })
+      return HttpResponse.json(
+        { errorCode: 30300, message: '필수 약관에 동의해야 합니다.' },
+        { status: 403 },
+      )
     }
     submittedConsents = items.map(item => ({ ...item }))
     requiredConsentSatisfied = true
@@ -791,28 +863,46 @@ const onboardingHandlers = [
   http.get(NICKNAME_CHECK_URL, ({ request }) => {
     const nickname = new URL(request.url).searchParams.get('nickname')
     if (nickname == null || nickname.length === 0) {
-      return HttpResponse.json({ errorCode: 90001, message: 'nickname 파라미터가 필요합니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 90001, message: 'nickname 파라미터가 필요합니다.' },
+        { status: 400 },
+      )
     }
     if (!NICKNAME_PATTERN.test(nickname.normalize('NFC'))) {
-      return HttpResponse.json({ errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' },
+        { status: 400 },
+      )
     }
     return HttpResponse.json({ data: { available: !isNicknameTaken(nickname) } })
   }),
   http.put(NICKNAME_URL, async ({ request }) => {
     if (onboardingCompleted) {
-      return HttpResponse.json({ errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' }, { status: 409 })
+      return HttpResponse.json(
+        { errorCode: 30004, message: '이미 온보딩이 완료된 계정입니다.' },
+        { status: 409 },
+      )
     }
     const body = (await request.json()) as { nickname?: string }
     const nickname = (body.nickname ?? '').normalize('NFC')
     if (!NICKNAME_PATTERN.test(nickname)) {
-      return HttpResponse.json({ errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' }, { status: 400 })
+      return HttpResponse.json(
+        { errorCode: 30002, message: '닉네임 형식이 올바르지 않습니다.' },
+        { status: 400 },
+      )
     }
     if (!requiredConsentSatisfied) {
-      return HttpResponse.json({ errorCode: 30300, message: '필수 약관 동의가 필요합니다.' }, { status: 403 })
+      return HttpResponse.json(
+        { errorCode: 30300, message: '필수 약관 동의가 필요합니다.' },
+        { status: 403 },
+      )
     }
     // 커밋 시점 최종 판정: 중복이면 409 30001.
     if (isNicknameTaken(nickname)) {
-      return HttpResponse.json({ errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' }, { status: 409 })
+      return HttpResponse.json(
+        { errorCode: 30001, message: '이미 사용 중인 닉네임입니다.' },
+        { status: 409 },
+      )
     }
     onboardingCompleted = true
     return HttpResponse.json({
@@ -830,8 +920,803 @@ const onboardingHandlers = [
   }),
 ]
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 장바구니 · 주문그룹 · 결제 — 구매 퍼널의 상태형 핸들러. 배송지와 같은 원칙으로 응답 계약만 재현하고
+// 화면 분기가 실제로 의존하는 서버 규칙만 흉내 낸다(수량 합산, 재고 50201, 멱등키 재반환, 50106 금액
+// 대조, 커서 페이지네이션, complete 순서, PAID 시 장바구니 정리).
+// ─────────────────────────────────────────────────────────────────────────────
+export const CART_URL = `${base}/carts`
+export const CART_ITEMS_URL = `${base}/carts/items`
+export const CART_ITEM_URL = `${base}/carts/items/:cartItemId`
+export const ORDER_GROUPS_URL = `${base}/order-groups`
+export const ORDER_DETAIL_URL = `${base}/orders/:orderId`
+export const PAYMENT_PREPARE_URL = `${base}/order-groups/:orderGroupId/payment/prepare`
+export const PAYMENT_COMPLETE_URL = `${base}/order-groups/:orderGroupId/payment/complete`
+
+const errorJson = (status: number, errorCode: number, message: string) =>
+  HttpResponse.json({ errorCode, message }, { status })
+
+const CART_QUANTITY_MAX = 99
+const CART_LINE_LIMIT = 100
+const MIN_POINT_USAGE = 1000
+const MIN_PAYMENT_AMOUNT = 100
+export const PAYMENT_WINDOW_MINUTES = 10
+
+const isValidQuantity = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 1 && (value as number) <= CART_QUANTITY_MAX
+
+// Crockford base32 26자 — BE public_id(ULID) 모양. 시각 10자 + 난수 16자.
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+function ulid(): string {
+  let time = Date.now()
+  let head = ''
+  for (let i = 0; i < 10; i += 1) {
+    head = CROCKFORD[time % 32] + head
+    time = Math.floor(time / 32)
+  }
+  let tail = ''
+  for (let i = 0; i < 16; i += 1) tail += CROCKFORD[Math.floor(Math.random() * 32)]
+  return head + tail
+}
+
+// ---- 장바구니 ------------------------------------------------------------------
+export interface CartLineRow {
+  cartItemId: number
+  optionCombinationId: number
+  productId: string
+  productName: string
+  selectedOptions: string
+  quantity: number
+  /** 할인 전 단가(정가+옵션 추가금). 서버가 역산 대신 직접 내려준다. */
+  originalPrice: number
+  /** 판매가+옵션 추가금 합산 단가(서버 계약). 주문 금액 계산의 기준. */
+  price: number
+  remainingStock: number
+  itemStatus: CartItemStatus
+  thumbnail?: string | null
+  discountRate?: number | null
+  sellerId: number
+  storeName: string
+  baseShippingFee: number
+  freeShippingThreshold: number | null
+}
+
+let cartRows: CartLineRow[] = []
+let cartSeq = 0
+
+/** 테스트마다 장바구니 상태를 세운다. 인자 없이 부르면 빈 장바구니. 배열 순서가 응답 순서(최신 담김순). */
+export function seedCart(rows: CartLineRow[] = []): void {
+  cartRows = rows.map(row => ({ ...row }))
+  cartSeq = rows.reduce((max, row) => Math.max(max, row.cartItemId), 0)
+}
+
+/** 핸들러가 쌓아둔 현재 상태. 테스트가 담기/삭제/결제 후 정리 결과를 단언할 때 읽는다. */
+export function currentCart(): CartLineRow[] {
+  return cartRows.map(row => ({ ...row }))
+}
+
+/** REAL_PRODUCT 기준 장바구니 라인 픽스처 헬퍼 — 단가는 할인가(64,000)+옵션 추가금. */
+export function makeCartRow(overrides: Partial<CartLineRow> & { cartItemId: number }): CartLineRow {
+  return {
+    optionCombinationId: 1,
+    productId: REAL_PRODUCT_ID,
+    productName: REAL_PRODUCT_DETAIL.name,
+    selectedOptions: '기본형',
+    quantity: 1,
+    originalPrice: 89000,
+    price: 64000,
+    remainingStock: 10,
+    itemStatus: 'ACTIVE',
+    thumbnail: null,
+    discountRate: 28,
+    sellerId: 1,
+    storeName: REAL_PRODUCT_DETAIL.seller.storeName,
+    baseShippingFee: REAL_PRODUCT_DETAIL.shipping.baseShippingFee,
+    freeShippingThreshold: REAL_PRODUCT_DETAIL.shipping.freeShippingThreshold,
+    ...overrides,
+  }
+}
+
+const findRealCombo = (optionCombinationId: unknown) =>
+  REAL_PRODUCT_OPTIONS.optionCombinations.find(c => c.optionCombinationId === optionCombinationId)
+
+/** 셀러별로 묶되 첫 등장 순서를 지킨다(BE 응답과 같은 그룹 순서). */
+function groupBySeller(rows: CartLineRow[]): CartLineRow[][] {
+  const order: number[] = []
+  const bySeller = new Map<number, CartLineRow[]>()
+  for (const row of rows) {
+    const bucket = bySeller.get(row.sellerId)
+    if (bucket) bucket.push(row)
+    else {
+      bySeller.set(row.sellerId, [row])
+      order.push(row.sellerId)
+    }
+  }
+  return order.map(sellerId => bySeller.get(sellerId) ?? [])
+}
+
+function cartResponseBody() {
+  return {
+    data: {
+      sellerGroups: groupBySeller(cartRows).map(rows => {
+        const first = rows[0] as CartLineRow
+        return {
+          sellerId: first.sellerId,
+          storeName: first.storeName,
+          baseShippingFee: first.baseShippingFee,
+          freeShippingThreshold: first.freeShippingThreshold,
+          items: rows.map(r => ({
+            cartItemId: r.cartItemId,
+            productId: r.productId,
+            optionCombinationId: r.optionCombinationId,
+            productName: r.productName,
+            thumbnail: r.thumbnail ?? null,
+            selectedOptions: r.selectedOptions,
+            quantity: r.quantity,
+            originalPrice: r.originalPrice,
+            price: r.price,
+            discountRate: r.discountRate ?? null,
+            remainingStock: r.remainingStock,
+            itemStatus: r.itemStatus,
+            isOrderable: r.itemStatus === 'ACTIVE',
+          })),
+        }
+      }),
+    },
+  }
+}
+
+const cartHandlers = [
+  http.get(CART_URL, () => HttpResponse.json(cartResponseBody())),
+  http.post(CART_ITEMS_URL, async ({ request }) => {
+    const body = (await request.json()) as { optionCombinationId?: number; quantity?: number }
+    if (!isValidQuantity(body.quantity)) {
+      return errorJson(400, 90001, '수량은 1개 이상 99개 이하여야 합니다.')
+    }
+    const combo = findRealCombo(body.optionCombinationId)
+    if (!combo) return errorJson(404, 50207, '상품을 찾을 수 없습니다.')
+    const existing = cartRows.find(r => r.optionCombinationId === combo.optionCombinationId)
+    // 요청 수량이 아니라 누적 결과를 상한·재고와 견준다(BE CartService.addItem).
+    const nextQuantity = (existing?.quantity ?? 0) + body.quantity
+    if (nextQuantity > CART_QUANTITY_MAX) {
+      return errorJson(400, 90001, '수량은 99개를 넘을 수 없습니다.')
+    }
+    if (nextQuantity > combo.remainingStock) return errorJson(409, 50201, '재고가 부족합니다.')
+    if (!existing && cartRows.length >= CART_LINE_LIMIT) {
+      return errorJson(422, 50203, '장바구니에 담을 수 있는 품목 수를 초과했습니다.')
+    }
+    let row: CartLineRow
+    if (existing) {
+      row = { ...existing, quantity: nextQuantity }
+      cartRows = cartRows.map(r => (r.cartItemId === existing.cartItemId ? row : r))
+    } else {
+      cartSeq += 1
+      row = makeCartRow({
+        cartItemId: cartSeq,
+        optionCombinationId: combo.optionCombinationId,
+        selectedOptions: combo.name,
+        quantity: body.quantity,
+        originalPrice: 89000 + combo.additionalPrice,
+        price: 64000 + combo.additionalPrice,
+        remainingStock: combo.remainingStock,
+      })
+      // 최신 담김이 맨 앞(BE 정렬: created_at DESC).
+      cartRows = [row, ...cartRows]
+    }
+    return HttpResponse.json(
+      {
+        data: {
+          cartItemId: row.cartItemId,
+          productId: row.productId,
+          optionCombinationId: row.optionCombinationId,
+          quantity: row.quantity,
+          itemStatus: row.itemStatus,
+        },
+      },
+      { status: 201 },
+    )
+  }),
+  http.patch(CART_ITEM_URL, async ({ params, request }) => {
+    const id = Number(params['cartItemId'])
+    const body = (await request.json()) as {
+      quantity?: number | null
+      optionCombinationId?: number | null
+    }
+    if (body.quantity == null && body.optionCombinationId == null) {
+      return errorJson(400, 90001, '잘못된 요청입니다.')
+    }
+    if (body.quantity != null && !isValidQuantity(body.quantity)) {
+      return errorJson(400, 90001, '수량은 1개 이상 99개 이하여야 합니다.')
+    }
+    const row = cartRows.find(r => r.cartItemId === id)
+    if (!row) return errorJson(404, 50205, '장바구니 항목을 찾을 수 없습니다.')
+    // quantity는 증감이 아니라 대입(절대값).
+    const quantity = body.quantity ?? row.quantity
+    const targetComboId =
+      body.optionCombinationId != null && body.optionCombinationId !== row.optionCombinationId
+        ? body.optionCombinationId
+        : null
+    if (targetComboId == null) {
+      // 수량을 늘릴 때만 재고를 본다(깎거나 유지하면 카탈로그를 조회하지 않는 BE 계약).
+      if (quantity > row.quantity && quantity > row.remainingStock) {
+        return errorJson(409, 50201, '재고가 부족합니다.')
+      }
+      cartRows = cartRows.map(r => (r.cartItemId === id ? { ...r, quantity } : r))
+      return HttpResponse.json({
+        data: {
+          cartItemId: id,
+          quantity,
+          optionCombinationId: row.optionCombinationId,
+          merged: false,
+        },
+      })
+    }
+    const combo = findRealCombo(targetComboId)
+    if (!combo) return errorJson(404, 50207, '상품을 찾을 수 없습니다.')
+    if (row.productId !== REAL_PRODUCT_ID) {
+      return errorJson(400, 90001, '같은 상품의 옵션으로만 바꿀 수 있습니다.')
+    }
+    const sibling = cartRows.find(
+      r => r.cartItemId !== id && r.optionCombinationId === combo.optionCombinationId,
+    )
+    if (sibling) {
+      // 같은 조합 라인이 이미 있으면 그쪽으로 흡수(merged=true, cartItemId는 살아남은 라인).
+      const merged = sibling.quantity + quantity
+      if (merged > CART_QUANTITY_MAX)
+        return errorJson(400, 90001, '수량은 99개를 넘을 수 없습니다.')
+      if (merged > combo.remainingStock) return errorJson(409, 50201, '재고가 부족합니다.')
+      cartRows = cartRows
+        .filter(r => r.cartItemId !== id)
+        .map(r => (r.cartItemId === sibling.cartItemId ? { ...r, quantity: merged } : r))
+      return HttpResponse.json({
+        data: {
+          cartItemId: sibling.cartItemId,
+          quantity: merged,
+          optionCombinationId: combo.optionCombinationId,
+          merged: true,
+        },
+      })
+    }
+    if (quantity > combo.remainingStock) return errorJson(409, 50201, '재고가 부족합니다.')
+    cartRows = cartRows.map(r =>
+      r.cartItemId === id
+        ? {
+            ...r,
+            quantity,
+            optionCombinationId: combo.optionCombinationId,
+            selectedOptions: combo.name,
+            originalPrice: 89000 + combo.additionalPrice,
+            price: 64000 + combo.additionalPrice,
+            remainingStock: combo.remainingStock,
+          }
+        : r,
+    )
+    return HttpResponse.json({
+      data: {
+        cartItemId: id,
+        quantity,
+        optionCombinationId: combo.optionCombinationId,
+        merged: false,
+      },
+    })
+  }),
+  http.delete(CART_ITEMS_URL, async ({ request }) => {
+    const body = (await request.json()) as { cartItemIds?: number[] }
+    if (!Array.isArray(body.cartItemIds)) return errorJson(400, 90001, '잘못된 요청입니다.')
+    const idSet = new Set(body.cartItemIds)
+    const before = cartRows.length
+    // 서버 규칙: 내 장바구니에 없는 id는 무시(멱등 삭제).
+    cartRows = cartRows.filter(r => !idSet.has(r.cartItemId))
+    return HttpResponse.json({ data: { deletedCount: before - cartRows.length } })
+  }),
+]
+
+// ---- 주문 목록·상세 ----------------------------------------------------------------
+export interface OrderLineRow {
+  productName: string
+  thumbnailUrl: string | null
+  optionName: string
+  quantity: number
+  unitPrice: number
+  itemStatus: OrderItemStatus
+}
+
+export interface SellerOrderRow {
+  orderId: string
+  sellerName: string | null
+  status: OrderStatus
+  /** 상세 payment.sellerShippingFee — 미지정이면 0. */
+  sellerShippingFee?: number
+  items: OrderLineRow[]
+}
+
+export interface OrderGroupRow {
+  orderGroupId: string
+  orderedAt: string
+  totalProductAmount: number
+  totalShippingFee: number
+  couponDiscountAmount?: number
+  usedPoint: number
+  finalPaymentAmount: number
+  sellerOrders: SellerOrderRow[]
+}
+
+let orderGroupRows: OrderGroupRow[] = []
+let orderDetailRows = new Map<string, OrderDetailResponse>()
+
+export function makeOrderLineRow(overrides: Partial<OrderLineRow> = {}): OrderLineRow {
+  return {
+    productName: REAL_PRODUCT_DETAIL.name,
+    thumbnailUrl: null,
+    optionName: '기본형',
+    quantity: 1,
+    unitPrice: 64000,
+    itemStatus: 'ORDERED',
+    ...overrides,
+  }
+}
+
+export function makeSellerOrderRow(
+  overrides: Partial<SellerOrderRow> & { orderId: string },
+): SellerOrderRow {
+  return {
+    sellerName: REAL_PRODUCT_DETAIL.seller.storeName,
+    status: 'PAID',
+    sellerShippingFee: 0,
+    items: [makeOrderLineRow()],
+    ...overrides,
+  }
+}
+
+/** 셀러 주문 하나(기본 PAID, 64,000원 라인 하나, 배송비 0)를 가진 주문그룹 픽스처. */
+export function makeOrderGroupRow(
+  overrides: Partial<OrderGroupRow> & { orderGroupId: string },
+): OrderGroupRow {
+  return {
+    orderedAt: '2026-10-10T10:00:00+09:00',
+    totalProductAmount: 64000,
+    totalShippingFee: 0,
+    couponDiscountAmount: 0,
+    usedPoint: 0,
+    finalPaymentAmount: 64000,
+    sellerOrders: [makeSellerOrderRow({ orderId: `${overrides.orderGroupId}-1` })],
+    ...overrides,
+  }
+}
+
+/**
+ * 테스트마다 주문 목록 상태를 세운다. 배열 순서가 그대로 응답 순서(최신순으로 넣을 것). 인자 없이 부르면
+ * 빈 목록. 주문그룹 생성 기록·멱등키 맵·상세 오버라이드도 함께 비운다.
+ */
+export function seedOrderGroups(groups: OrderGroupRow[] = []): void {
+  orderGroupRows = groups.map(group => ({
+    ...group,
+    sellerOrders: group.sellerOrders.map(so => ({
+      ...so,
+      items: so.items.map(item => ({ ...item })),
+    })),
+  }))
+  orderDetailRows = new Map()
+  createdOrderGroups = []
+  idempotentResponses = new Map()
+}
+
+/** 핸들러가 보는 현재 주문그룹 목록(결제 PAID로 새로 생긴 그룹 포함). */
+export function currentOrderGroups(): OrderGroupRow[] {
+  return orderGroupRows.map(group => ({ ...group, sellerOrders: [...group.sellerOrders] }))
+}
+
+/** GET /orders/{orderId}를 그룹 시드와 무관하게 세운다(같은 orderId면 그룹 파생보다 우선). */
+export function seedOrderDetail(detail: OrderDetailResponse): void {
+  orderDetailRows.set(detail.orderId, detail)
+}
+
+// BE OrderStatusFilter — 하위 주문 하나라도 해당하면 그룹이 걸린다. ALL에도 결제대기는 없다.
+const ORDER_STATUS_FILTERS: Record<OrderListStatusFilter, ReadonlySet<OrderStatus>> = {
+  all: new Set(Object.values(OrderStatus).filter(s => s !== OrderStatus.PENDING_PAYMENT)),
+  ongoing: new Set([
+    OrderStatus.PAID,
+    OrderStatus.PREPARING,
+    OrderStatus.DISPATCH_PENDING,
+    OrderStatus.SHIPPING,
+  ]),
+  completed: new Set([OrderStatus.DELIVERED, OrderStatus.PURCHASE_CONFIRMED]),
+  cancelled: new Set([OrderStatus.CANCELLED]),
+}
+const isStatusFilter = (value: string): value is OrderListStatusFilter =>
+  Object.values(OrderListStatusFilter).includes(value as OrderListStatusFilter)
+
+// 커서는 불투명 문자열 — 인덱스를 base64로 감싼다. 깨진 값은 BE처럼 400 90002.
+const encodeCursor = (index: number): string => btoa(String(index))
+function decodeCursor(cursor: string): number | null {
+  try {
+    const index = Number(atob(cursor))
+    return Number.isInteger(index) && index >= 0 ? index : null
+  } catch {
+    return null
+  }
+}
+
+const sellerOrderResponse = (so: SellerOrderRow) => ({
+  orderId: so.orderId,
+  sellerName: so.sellerName,
+  status: so.status,
+  itemCount: so.items.length,
+  representativeItem: so.items[0] ?? null,
+})
+
+const orderGroupResponse = (group: OrderGroupRow) => ({
+  orderGroupId: group.orderGroupId,
+  orderedAt: group.orderedAt,
+  totalProductAmount: group.totalProductAmount,
+  totalShippingFee: group.totalShippingFee,
+  couponDiscountAmount: group.couponDiscountAmount ?? 0,
+  usedPoint: group.usedPoint,
+  finalPaymentAmount: group.finalPaymentAmount,
+  sellerOrders: group.sellerOrders.map(sellerOrderResponse),
+})
+
+// ---- 주문그룹 생성 -------------------------------------------------------------------
+export interface CreatedOrderGroupRecord {
+  orderGroupId: string
+  idempotencyKey: string
+  cartItemIds: number[]
+  /** 생성 시점의 장바구니 라인 스냅샷(결제 PAID 때 주문 목록 행을 만드는 재료). */
+  lines: CartLineRow[]
+  deliveryAddressId: number
+  usedPoint: number
+  totalProductAmount: number
+  totalShippingFee: number
+  finalPaymentAmount: number
+  expiresAt: string
+  paid: boolean
+}
+
+let createdOrderGroups: CreatedOrderGroupRecord[] = []
+let idempotentResponses = new Map<string, unknown>()
+
+/** POST /order-groups가 만든 그룹들(멱등 재요청은 늘지 않는다). seedOrderGroups()가 비운다. */
+export function currentCreatedOrderGroups(): CreatedOrderGroupRecord[] {
+  return createdOrderGroups.map(record => ({ ...record, cartItemIds: [...record.cartItemIds] }))
+}
+
+/** BE OrderService.shippingFee — 셀러 상품금액이 임계 이상이면 0, 임계가 없으면 항상 기본 배송비. */
+function shippingFeeOf(lines: CartLineRow[]): number {
+  const first = lines[0] as CartLineRow
+  const productAmount = lines.reduce((sum, line) => sum + line.price * line.quantity, 0)
+  return first.freeShippingThreshold != null && productAmount >= first.freeShippingThreshold
+    ? 0
+    : first.baseShippingFee
+}
+
+const orderHandlers = [
+  http.post(ORDER_GROUPS_URL, async ({ request }) => {
+    const key = request.headers.get('Idempotency-Key')
+    if (key == null) return errorJson(400, 90001, 'Idempotency-Key: 필수 헤더가 누락되었습니다.')
+    if (key.trim() === '' || key.length > 100) {
+      return errorJson(400, 90004, '멱등키가 올바르지 않습니다.')
+    }
+    // 같은 키 재요청은 본문과 무관하게 최초 결과를 201로 재반환(BE는 본문을 대조하지 않는다).
+    const replay = idempotentResponses.get(key)
+    if (replay) return HttpResponse.json(replay, { status: 201 })
+
+    const body = (await request.json()) as {
+      cartItemIds?: number[]
+      deliveryAddressId?: number
+      usedPoint?: number
+      expectedFinalAmount?: number
+    }
+    const { cartItemIds, deliveryAddressId, usedPoint, expectedFinalAmount } = body
+    if (
+      !Array.isArray(cartItemIds) ||
+      cartItemIds.length === 0 ||
+      !Number.isInteger(deliveryAddressId) ||
+      !Number.isInteger(usedPoint) ||
+      (usedPoint as number) < 0 ||
+      !Number.isInteger(expectedFinalAmount) ||
+      (expectedFinalAmount as number) < 0
+    ) {
+      return errorJson(400, 90001, '잘못된 요청입니다.')
+    }
+    const selected: CartLineRow[] = []
+    for (const id of new Set(cartItemIds)) {
+      const row = cartRows.find(r => r.cartItemId === id)
+      if (!row) return errorJson(404, 50205, '장바구니 항목을 찾을 수 없습니다.')
+      selected.push(row)
+    }
+    if (selected.some(row => row.itemStatus !== 'ACTIVE')) {
+      return errorJson(409, 50104, '주문할 수 없는 상품이 포함되어 있습니다.')
+    }
+    if (selected.some(row => row.quantity > row.remainingStock)) {
+      return errorJson(409, 50107, '재고가 부족한 상품이 포함되어 있습니다.')
+    }
+    const sellerLines = groupBySeller(selected)
+    const totalProductAmount = selected.reduce((sum, row) => sum + row.price * row.quantity, 0)
+    const totalShippingFee = sellerLines.reduce((sum, lines) => sum + shippingFeeOf(lines), 0)
+    const finalPaymentAmount = totalProductAmount + totalShippingFee - (usedPoint as number)
+    // FE가 표시한 금액과 서버 계산을 대조 — 어긋나면 생성하지 않는다.
+    if (finalPaymentAmount !== expectedFinalAmount) {
+      return errorJson(409, 50106, '주문 금액이 변경되었습니다. 주문서를 다시 확인해 주세요.')
+    }
+    if ((usedPoint as number) !== 0 && (usedPoint as number) < MIN_POINT_USAGE) {
+      return errorJson(400, 50103, '적립금은 1,000원 이상부터 사용할 수 있습니다.')
+    }
+    if ((usedPoint as number) > totalProductAmount + totalShippingFee) {
+      return errorJson(422, 50102, '적립금은 결제 금액을 초과해 사용할 수 없습니다.')
+    }
+    if (finalPaymentAmount < MIN_PAYMENT_AMOUNT) {
+      return errorJson(422, 50108, '최소 결제 금액에 미치지 못합니다.')
+    }
+    const orderGroupId = ulid()
+    const expiresAt = new Date(Date.now() + PAYMENT_WINDOW_MINUTES * 60_000).toISOString()
+    createdOrderGroups = [
+      ...createdOrderGroups,
+      {
+        orderGroupId,
+        idempotencyKey: key,
+        cartItemIds: selected.map(row => row.cartItemId),
+        lines: selected.map(row => ({ ...row })),
+        deliveryAddressId: deliveryAddressId as number,
+        usedPoint: usedPoint as number,
+        totalProductAmount,
+        totalShippingFee,
+        finalPaymentAmount,
+        expiresAt,
+        paid: false,
+      },
+    ]
+    // 주문한 라인은 결제 PAID 때 서버가 지우므로 여기서는 장바구니를 건드리지 않는다.
+    const response = {
+      data: {
+        orderGroupId,
+        expiresAt,
+        totalProductAmount,
+        totalShippingFee,
+        usedPoint: usedPoint as number,
+        finalPaymentAmount,
+      },
+    }
+    idempotentResponses.set(key, response)
+    return HttpResponse.json(response, { status: 201 })
+  }),
+  http.get(ORDER_GROUPS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const status = params.get('status') ?? OrderListStatusFilter.all
+    if (!isStatusFilter(status)) return errorJson(400, 90001, 'status: 잘못된 값입니다.')
+    const sizeParam = params.get('size')
+    const size = sizeParam == null ? 20 : Number(sizeParam)
+    if (!Number.isInteger(size) || size < 1 || size > 100) {
+      return errorJson(400, 90001, 'size는 1~100 사이여야 합니다.')
+    }
+    const cursorParam = params.get('cursor')
+    const start = cursorParam == null ? 0 : decodeCursor(cursorParam)
+    if (start == null) return errorJson(400, 90002, '유효하지 않은 커서입니다.')
+    const statuses = ORDER_STATUS_FILTERS[status]
+    const list = orderGroupRows.filter(group =>
+      group.sellerOrders.some(so => statuses.has(so.status)),
+    )
+    const page = list.slice(start, start + size)
+    const next = start + size
+    const hasNext = next < list.length
+    return HttpResponse.json({
+      data: {
+        orderGroups: page.map(orderGroupResponse),
+        // totalCount는 첫 페이지(cursor 없음)에만.
+        totalCount: cursorParam == null ? list.length : null,
+        nextCursor: hasNext ? encodeCursor(next) : null,
+        hasNext,
+      },
+    })
+  }),
+  http.get(ORDER_DETAIL_URL, ({ params }) => {
+    const orderId = String(params['orderId'])
+    const seeded = orderDetailRows.get(orderId)
+    if (seeded) return HttpResponse.json({ data: seeded })
+    for (const group of orderGroupRows) {
+      const so = group.sellerOrders.find(s => s.orderId === orderId)
+      if (!so || so.status === OrderStatus.PENDING_PAYMENT) continue
+      // sellerShippingFee만 이 셀러 몫이고 나머지 payment 금액은 주문그룹 전체 값(BE OrderDetailResult).
+      const detail: OrderDetailResponse = {
+        orderId: so.orderId,
+        orderGroupId: group.orderGroupId,
+        orderedAt: group.orderedAt,
+        status: so.status,
+        sellerName: so.sellerName,
+        items: so.items,
+        payment: {
+          sellerShippingFee: so.sellerShippingFee ?? 0,
+          totalProductAmount: group.totalProductAmount,
+          totalShippingFee: group.totalShippingFee,
+          couponDiscountAmount: group.couponDiscountAmount ?? 0,
+          usedPoint: group.usedPoint,
+          finalPaymentAmount: group.finalPaymentAmount,
+        },
+      }
+      return HttpResponse.json({ data: detail })
+    }
+    // 없음·남의 것·결제대기는 구분 없이 404 50000.
+    return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+  }),
+]
+
+// ---- 결제 ----------------------------------------------------------------------------
+export interface PaymentErrorSeed {
+  status: number
+  errorCode: number
+  message?: string
+}
+/** complete 한 번의 결과 — 상태 문자열, 상태+failureCode, 또는 에러 응답. */
+export type PaymentCompleteStep =
+  | PaymentCompletionStatus
+  | { status: PaymentCompletionStatus; failureCode?: string | null }
+  | { error: PaymentErrorSeed }
+
+export interface PaymentStateSeed {
+  /** prepare 201 본문(부분 지정 가능, 나머지는 기본값) 또는 에러. 미지정이면 성공 기본값. */
+  prepare?: Partial<PreparePaymentResponse> | { error: PaymentErrorSeed }
+  /** complete 호출마다 순서대로 소비하고 마지막 값을 반복. 미지정이면 ['PAID']. */
+  completeSequence?: PaymentCompleteStep[]
+  finalPaymentAmount?: number
+  usedPoint?: number
+  /** PAID 때 장바구니에서 지울 행 — POST /order-groups로 만든 그룹이면 그 기록에서 가져오므로 생략 가능. */
+  cartItemIds?: number[]
+}
+
+// BE PaymentErrorCode 문구 — 시드가 message를 생략하면 여기서 채운다.
+export const PAYMENT_ERROR_MESSAGES: Record<number, string> = {
+  60005: '결제 게이트웨이 호출에 실패했습니다.',
+  60006: '이미 결제가 완료된 건입니다.',
+  60007: '결제 금액이 올바르지 않습니다.',
+  60008: '주문 정보를 찾을 수 없습니다.',
+  60009: '결제 가능 시간이 만료되었습니다.',
+  60010: '결제 금액이 주문 금액과 일치하지 않습니다. 고객센터로 문의해 주세요.',
+  60011: '지원하지 않는 결제 상태입니다. 고객센터로 문의해 주세요.',
+  60012: '만료로 취소된 주문입니다. 결제가 진행되었다면 환불 처리됩니다.',
+}
+
+let paymentSeeds: Record<string, PaymentStateSeed> = {}
+let paymentCalls = new Map<string, { prepare: number; complete: number }>()
+
+/**
+ * orderGroupId별 결제 응답을 세운다. 키 '*'는 POST /order-groups로 만든 그룹 전체의 기본값.
+ * 시드도 생성 기록도 없는 그룹은 404 60008. 인자 없이 부르면 전부 비우고 호출 횟수도 리셋.
+ */
+export function seedPaymentState(states: Record<string, PaymentStateSeed> = {}): void {
+  paymentSeeds = { ...states }
+  paymentCalls = new Map()
+}
+
+/** prepare/complete가 그 그룹에 몇 번 불렸는지 — 동시 발화 억제 검증용. */
+export function paymentCallCounts(orderGroupId: string): { prepare: number; complete: number } {
+  return { ...(paymentCalls.get(orderGroupId) ?? { prepare: 0, complete: 0 }) }
+}
+
+function bumpPaymentCall(orderGroupId: string, kind: 'prepare' | 'complete'): number {
+  const counts = paymentCalls.get(orderGroupId) ?? { prepare: 0, complete: 0 }
+  const before = counts[kind]
+  counts[kind] = before + 1
+  paymentCalls.set(orderGroupId, counts)
+  return before
+}
+
+const isErrorSeed = (value: unknown): value is { error: PaymentErrorSeed } =>
+  typeof value === 'object' && value != null && 'error' in value
+
+const paymentErrorJson = ({ status, errorCode, message }: PaymentErrorSeed) =>
+  errorJson(status, errorCode, message ?? PAYMENT_ERROR_MESSAGES[errorCode] ?? '결제 오류')
+
+interface ResolvedPaymentState {
+  prepare: PreparePaymentResponse | { error: PaymentErrorSeed }
+  completeSequence: PaymentCompleteStep[]
+  finalPaymentAmount: number
+  usedPoint: number
+  cartItemIds: number[]
+}
+
+function resolvePaymentState(orderGroupId: string): ResolvedPaymentState | null {
+  const created = createdOrderGroups.find(record => record.orderGroupId === orderGroupId)
+  const seed = paymentSeeds[orderGroupId] ?? (created ? paymentSeeds['*'] : undefined)
+  if (!seed && !created) return null
+  const finalPaymentAmount = seed?.finalPaymentAmount ?? created?.finalPaymentAmount ?? 0
+  const usedPoint = seed?.usedPoint ?? created?.usedPoint ?? 0
+  const prepare = isErrorSeed(seed?.prepare)
+    ? seed.prepare
+    : {
+        paymentId: orderGroupId,
+        targetAmount: finalPaymentAmount,
+        storeId: 'store-test',
+        channelKey: 'channel-key-test',
+        ...seed?.prepare,
+      }
+  const completeSequence = seed?.completeSequence?.length
+    ? seed.completeSequence
+    : ['PAID' as const]
+  return {
+    prepare,
+    completeSequence,
+    finalPaymentAmount,
+    usedPoint,
+    cartItemIds: seed?.cartItemIds ?? created?.cartItemIds ?? [],
+  }
+}
+
+/** 확정 후처리 — 주문한 장바구니 행 삭제 + 생성 기록이 있으면 주문 목록에 PAID 그룹으로 올린다. */
+function markPaid(orderGroupId: string, cartItemIds: number[]): void {
+  const idSet = new Set(cartItemIds)
+  cartRows = cartRows.filter(row => !idSet.has(row.cartItemId))
+  const record = createdOrderGroups.find(r => r.orderGroupId === orderGroupId)
+  if (!record || record.paid) return
+  record.paid = true
+  const group: OrderGroupRow = {
+    orderGroupId,
+    orderedAt: new Date().toISOString(),
+    totalProductAmount: record.totalProductAmount,
+    totalShippingFee: record.totalShippingFee,
+    couponDiscountAmount: 0,
+    usedPoint: record.usedPoint,
+    finalPaymentAmount: record.finalPaymentAmount,
+    sellerOrders: groupBySeller(record.lines).map(lines => ({
+      orderId: ulid(),
+      sellerName: (lines[0] as CartLineRow).storeName,
+      status: OrderStatus.PAID,
+      sellerShippingFee: shippingFeeOf(lines),
+      items: lines.map(line => ({
+        productName: line.productName,
+        thumbnailUrl: line.thumbnail ?? null,
+        optionName: line.selectedOptions,
+        quantity: line.quantity,
+        unitPrice: line.price,
+        itemStatus: 'ORDERED' as const,
+      })),
+    })),
+  }
+  orderGroupRows = [group, ...orderGroupRows]
+}
+
+const paymentHandlers = [
+  http.post(PAYMENT_PREPARE_URL, async ({ params, request }) => {
+    const orderGroupId = String(params['orderGroupId'])
+    const body = (await request.json()) as { method?: string }
+    if (!Object.values(PaymentMethod).includes(body.method as PaymentMethod)) {
+      return errorJson(400, 90001, '요청 본문을 읽을 수 없습니다.')
+    }
+    const state = resolvePaymentState(orderGroupId)
+    if (!state) return paymentErrorJson({ status: 404, errorCode: 60008 })
+    bumpPaymentCall(orderGroupId, 'prepare')
+    if (isErrorSeed(state.prepare)) return paymentErrorJson(state.prepare.error)
+    return HttpResponse.json({ data: state.prepare }, { status: 201 })
+  }),
+  http.post(PAYMENT_COMPLETE_URL, ({ params }) => {
+    const orderGroupId = String(params['orderGroupId'])
+    const state = resolvePaymentState(orderGroupId)
+    if (!state) return paymentErrorJson({ status: 404, errorCode: 60008 })
+    const call = bumpPaymentCall(orderGroupId, 'complete')
+    const step = state.completeSequence[
+      Math.min(call, state.completeSequence.length - 1)
+    ] as PaymentCompleteStep
+    if (isErrorSeed(step)) return paymentErrorJson(step.error)
+    const { status, failureCode } =
+      typeof step === 'string'
+        ? { status: step, failureCode: null }
+        : { status: step.status, failureCode: step.failureCode ?? null }
+    if (status === 'PAID') markPaid(orderGroupId, state.cartItemIds)
+    return HttpResponse.json({
+      data: {
+        status,
+        orderGroupId,
+        finalPaymentAmount: state.finalPaymentAmount,
+        usedPoint: state.usedPoint,
+        failureCode,
+      },
+    })
+  }),
+]
+
 export const handlers = [
   ...deliveryAddressHandlers,
+  ...cartHandlers,
+  ...orderHandlers,
+  ...paymentHandlers,
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
@@ -873,7 +1758,10 @@ export const handlers = [
     const products = PRODUCT_FIXTURES.map(f => f.product)
     return HttpResponse.json({
       data: {
-        recommended: products.filter(p => p.saleStatus === 'ON_SALE').slice(0, 8).map(card),
+        recommended: products
+          .filter(p => p.saleStatus === 'ON_SALE')
+          .slice(0, 8)
+          .map(card),
         ranking: products.slice(0, 5).map(card),
       },
     })
@@ -1061,7 +1949,9 @@ export const handlers = [
     let list = [...REAL_PRODUCT_REVIEWS]
     if (photoOnly) list = list.filter(r => r.images.length > 0)
     list.sort((a, b) =>
-      sort === 'rating_desc' ? b.rating - a.rating || b.reviewId - a.reviewId : b.reviewId - a.reviewId,
+      sort === 'rating_desc'
+        ? b.rating - a.rating || b.reviewId - a.reviewId
+        : b.reviewId - a.reviewId,
     )
 
     const start = cursor ? Number(cursor) : 0

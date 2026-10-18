@@ -231,6 +231,352 @@ export interface PointBalanceResponse {
   data: PointBalanceData
 }
 
+/**
+ * 장바구니 항목의 카탈로그 상태(조회 시 파생). ACTIVE만 주문 가능(isOrderable).
+ */
+export type CartItemStatus = (typeof CartItemStatus)[keyof typeof CartItemStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CartItemStatus = {
+  ACTIVE: 'ACTIVE',
+  SELLER_UNAVAILABLE: 'SELLER_UNAVAILABLE',
+  SALE_ENDED: 'SALE_ENDED',
+  SALE_SUSPENDED: 'SALE_SUSPENDED',
+  OPTION_UNAVAILABLE: 'OPTION_UNAVAILABLE',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+} as const
+
+export interface CartItemResponse {
+  cartItemId: number
+  /** products.public_id (ULID) */
+  productId: string
+  optionCombinationId: number
+  productName: string
+  /**
+   * 대표 이미지 URL. 없으면 null
+   * @nullable
+   */
+  thumbnail: string | null
+  /** 선택 옵션 표시 문자열(예: '닭고기 / 1kg') */
+  selectedOptions: string
+  quantity: number
+  /** 할인 전 단가(정가 + 옵션 추가금). price와 discountRate만으로 역산하면 옵션 추가금에도 할인이 걸린 값이 나와 서버가 직접 내려준다. 원가 취소선 표시에 쓴다. */
+  originalPrice: number
+  /** 판매가(할인 반영) + 옵션 추가금이 합산된 단가. 주문 금액 계산의 기준 */
+  price: number
+  /**
+   * 상품 정가 기준 할인율(%). 할인 기간이 아니면 null
+   * @nullable
+   */
+  discountRate: number | null
+  /** 마스킹하지 않은 잔여 재고 — 담아둔 수량 초과 여부는 클라이언트가 판정 */
+  remainingStock: number
+  itemStatus: CartItemStatus
+  isOrderable: boolean
+}
+
+export interface CartSellerGroupResponse {
+  sellerId: number
+  storeName: string
+  baseShippingFee: number
+  /**
+   * 무료배송 임계 금액. null이면 항상 baseShippingFee
+   * @nullable
+   */
+  freeShippingThreshold: number | null
+  items: CartItemResponse[]
+}
+
+export interface CartResponse {
+  sellerGroups: CartSellerGroupResponse[]
+}
+
+export interface CartEnvelope {
+  data: CartResponse
+}
+
+export interface AddCartItemRequest {
+  optionCombinationId: number
+  /**
+   * @minimum 1
+   * @maximum 99
+   */
+  quantity: number
+}
+
+export interface AddCartItemResponse {
+  cartItemId: number
+  productId: string
+  optionCombinationId: number
+  /** 합산 이후의 라인 수량 */
+  quantity: number
+  itemStatus: CartItemStatus
+}
+
+export interface AddCartItemEnvelope {
+  data: AddCartItemResponse
+}
+
+/**
+ * quantity·optionCombinationId 중 하나 이상 필수. quantity는 대입(절대값).
+ */
+export interface UpdateCartItemRequest {
+  /**
+   * @minimum 1
+   * @maximum 99
+   */
+  quantity?: number
+  optionCombinationId?: number
+}
+
+export interface UpdateCartItemResponse {
+  /** merged=true면 흡수한(살아남은) 라인 id */
+  cartItemId: number
+  quantity: number
+  optionCombinationId: number
+  merged: boolean
+}
+
+export interface UpdateCartItemEnvelope {
+  data: UpdateCartItemResponse
+}
+
+export interface DeleteCartItemsRequest {
+  cartItemIds: number[]
+}
+
+export interface DeleteCartItemsResponse {
+  deletedCount: number
+}
+
+export interface DeleteCartItemsEnvelope {
+  data: DeleteCartItemsResponse
+}
+
+export interface CreateOrderGroupRequest {
+  /**
+   * 주문할 본인 장바구니 행 id. 중복은 하나로 접힌다
+   * @minItems 1
+   */
+  cartItemIds: number[]
+  deliveryAddressId: number
+  /**
+   * 적립금 사용액(원). 0 또는 1,000 이상
+   * @minimum 0
+   */
+  usedPoint: number
+  /**
+   * FE가 주문서에 표시한 최종 결제액(상품합+배송비합−usedPoint). 서버 계산과 다르면 409 50106
+   * @minimum 0
+   */
+  expectedFinalAmount: number
+}
+
+export interface CreateOrderGroupResponse {
+  /** order_groups.public_id (ULID 26자). 결제 paymentId와 동일 */
+  orderGroupId: string
+  /** 결제 가능 시한(오프셋 포함 절대 시각, 생성+10분) */
+  expiresAt: string
+  totalProductAmount: number
+  totalShippingFee: number
+  usedPoint: number
+  finalPaymentAmount: number
+}
+
+export interface CreateOrderGroupEnvelope {
+  data: CreateOrderGroupResponse
+}
+
+/**
+ * 주문 목록 세그먼트
+ */
+export type OrderListStatusFilter =
+  (typeof OrderListStatusFilter)[keyof typeof OrderListStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const OrderListStatusFilter = {
+  all: 'all',
+  ongoing: 'ongoing',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const
+
+/**
+ * 셀러 주문 상태. PENDING_PAYMENT는 목록·상세 응답에 나오지 않는다
+ */
+export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const OrderStatus = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PAID: 'PAID',
+  PREPARING: 'PREPARING',
+  DISPATCH_PENDING: 'DISPATCH_PENDING',
+  SHIPPING: 'SHIPPING',
+  DELIVERED: 'DELIVERED',
+  PURCHASE_CONFIRMED: 'PURCHASE_CONFIRMED',
+  CANCELLED: 'CANCELLED',
+} as const
+
+export type OrderItemStatus = (typeof OrderItemStatus)[keyof typeof OrderItemStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const OrderItemStatus = {
+  ORDERED: 'ORDERED',
+  CANCELLED: 'CANCELLED',
+  RETURN_REQUESTED: 'RETURN_REQUESTED',
+  RETURNED: 'RETURNED',
+  EXCHANGE_REQUESTED: 'EXCHANGE_REQUESTED',
+} as const
+
+export interface OrderLineItemResponse {
+  productName: string
+  /** @nullable */
+  thumbnailUrl: string | null
+  optionName: string
+  quantity: number
+  /** 주문 시점 단가 스냅샷(할인·옵션 추가금 반영) */
+  unitPrice: number
+  itemStatus: OrderItemStatus
+}
+
+/**
+ * 대표 품목(첫 라인). 전체 품목이 아니다
+ * @nullable
+ */
+export type SellerOrderItemResponseRepresentativeItem = OrderLineItemResponse | null
+
+export interface SellerOrderItemResponse {
+  /** orders.public_id (ULID) */
+  orderId: string
+  /** @nullable */
+  sellerName: string | null
+  status: OrderStatus
+  /** 이 셀러 주문의 품목 라인 수 */
+  itemCount: number
+  /**
+   * 대표 품목(첫 라인). 전체 품목이 아니다
+   * @nullable
+   */
+  representativeItem: SellerOrderItemResponseRepresentativeItem
+}
+
+export interface OrderGroupItemResponse {
+  orderGroupId: string
+  orderedAt: string
+  totalProductAmount: number
+  totalShippingFee: number
+  couponDiscountAmount: number
+  usedPoint: number
+  finalPaymentAmount: number
+  sellerOrders: SellerOrderItemResponse[]
+}
+
+export interface OrderListResponse {
+  orderGroups: OrderGroupItemResponse[]
+  /**
+   * 첫 페이지(cursor 없음)에만 실리고 이후 null
+   * @nullable
+   */
+  totalCount?: number | null
+  /**
+   * 다음 페이지 커서. 없으면 null(키 생략 가능성까지 수용해 optional)
+   * @nullable
+   */
+  nextCursor?: string | null
+  hasNext: boolean
+}
+
+export interface OrderListEnvelope {
+  data: OrderListResponse
+}
+
+export interface OrderPaymentSummaryResponse {
+  /** 이 셀러 주문의 배송비(셀러 몫) */
+  sellerShippingFee: number
+  /** 주문그룹 전체 상품 금액 */
+  totalProductAmount: number
+  /** 주문그룹 전체 배송비 */
+  totalShippingFee: number
+  /** 주문그룹 전체 쿠폰 할인(현재 항상 0) */
+  couponDiscountAmount: number
+  /** 주문그룹 전체 적립금 사용액 */
+  usedPoint: number
+  /** 주문그룹 전체 최종 결제액 */
+  finalPaymentAmount: number
+}
+
+export interface OrderDetailResponse {
+  orderId: string
+  orderGroupId: string
+  orderedAt: string
+  status: OrderStatus
+  /** @nullable */
+  sellerName: string | null
+  items: OrderLineItemResponse[]
+  payment: OrderPaymentSummaryResponse
+}
+
+export interface OrderDetailEnvelope {
+  data: OrderDetailResponse
+}
+
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PaymentMethod = {
+  CARD: 'CARD',
+  KAKAO_PAY: 'KAKAO_PAY',
+  TOSS_PAY: 'TOSS_PAY',
+} as const
+
+export interface PreparePaymentRequest {
+  method: PaymentMethod
+}
+
+export interface PreparePaymentResponse {
+  /** 포트원 paymentId. orderGroupId와 동일 */
+  paymentId: string
+  /** 결제창에 넘길 금액(finalPaymentAmount) */
+  targetAmount: number
+  storeId: string
+  channelKey: string
+}
+
+export interface PreparePaymentEnvelope {
+  data: PreparePaymentResponse
+}
+
+/**
+ * PAID 확정 / FAILED PG 실패 확정 / NOT_STARTED 결제 시도 없음 / IN_PROGRESS PG 승인 대기
+ */
+export type PaymentCompletionStatus =
+  (typeof PaymentCompletionStatus)[keyof typeof PaymentCompletionStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PaymentCompletionStatus = {
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  NOT_STARTED: 'NOT_STARTED',
+  IN_PROGRESS: 'IN_PROGRESS',
+} as const
+
+export interface CompletePaymentResponse {
+  status: PaymentCompletionStatus
+  orderGroupId: string
+  finalPaymentAmount: number
+  usedPoint: number
+  /**
+   * FAILED일 때 PG 실패 코드(예: PG_DECLINED). 그 외 null
+   * @nullable
+   */
+  failureCode: string | null
+}
+
+export interface CompletePaymentEnvelope {
+  data: CompletePaymentResponse
+}
+
 export interface DeliveryAddressResponse {
   addressId: number
   receiverName: string
@@ -1550,6 +1896,23 @@ export type GetMyReviewsParams = {
    */
   cursor?: string
   /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetOrderGroupsParams = {
+  /**
+   * 세그먼트 필터(기본 all)
+   */
+  status?: OrderListStatusFilter
+  /**
+   * 다음 페이지 커서(이전 응답의 nextCursor)
+   */
+  cursor?: string
+  /**
+   * 페이지 크기(기본 20)
    * @minimum 1
    * @maximum 100
    */
@@ -6053,6 +6416,1017 @@ export function useGetPointBalanceSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 본인 장바구니를 셀러별 그룹으로 조회. 정렬은 최신 담김순(재담기로 수량만 늘어난 항목은 자리 유지). 카탈로그에서 내려갔거나 검수 미승인인 항목은 응답에서 제외된다. 합계·배송비·총액 필드는 없다 — 셀러별 배송비는 FE가 baseShippingFee/freeShippingThreshold로 계산한다(선택되고 주문 가능한 라인의 price*quantity 합이 임계 이상이면 0, 아니면 baseShippingFee, 임계가 null이면 항상 baseShippingFee). 장바구니가 없으면 sellerGroups가 빈 배열이다.
+ * @summary 장바구니 조회
+ */
+export const getCart = (signal?: AbortSignal) => {
+  return customInstance<CartEnvelope>({ url: `/carts`, method: 'GET', signal })
+}
+
+export const getGetCartQueryKey = () => {
+  return [`/carts`] as const
+}
+
+export const getGetCartQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCart>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCartQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCart>>> = ({ signal }) =>
+    getCart(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCart>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCartQueryResult = NonNullable<Awaited<ReturnType<typeof getCart>>>
+export type GetCartQueryError = unknown
+
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCart>>,
+          TError,
+          Awaited<ReturnType<typeof getCart>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCart>>,
+          TError,
+          Awaited<ReturnType<typeof getCart>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 조회
+ */
+
+export function useGetCart<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCartQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetCartSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCart>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetCartQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCart>>> = ({ signal }) =>
+    getCart(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getCart>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCartSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getCart>>>
+export type GetCartSuspenseQueryError = unknown
+
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 장바구니 조회
+ */
+
+export function useGetCartSuspense<TData = Awaited<ReturnType<typeof getCart>>, TError = unknown>(
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getCart>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetCartSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 같은 옵션 조합이 이미 있으면 수량을 합산한다. 수량 하한·상한(1~99) 위반과 누적 합산 초과는 모두 400 errorCode 90001이다(50200은 선언만 있고 서버가 던지지 않는다). 누적 수량이 재고를 넘으면 409 50201(품절 옵션도 여기 걸린다), 구매 불가 상태 409 50202, 품목 종류(100) 초과 422 50203, 옵션 조합 미존재·미승인 404 50207. 라인당 99 초과와 재고 부족이 동시면 90001이 먼저, 판매 중지와 재고 부족이 동시면 50202가 먼저다.
+ * @summary 장바구니 담기
+ */
+export const addCartItem = (addCartItemRequest: AddCartItemRequest, signal?: AbortSignal) => {
+  return customInstance<AddCartItemEnvelope>({
+    url: `/carts/items`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: addCartItemRequest,
+    signal,
+  })
+}
+
+export const getAddCartItemMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCartItem>>,
+    TError,
+    { data: AddCartItemRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addCartItem>>,
+  TError,
+  { data: AddCartItemRequest },
+  TContext
+> => {
+  const mutationKey = ['addCartItem']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addCartItem>>,
+    { data: AddCartItemRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return addCartItem(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AddCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof addCartItem>>>
+export type AddCartItemMutationBody = AddCartItemRequest
+export type AddCartItemMutationError = unknown
+
+/**
+ * @summary 장바구니 담기
+ */
+export const useAddCartItem = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof addCartItem>>,
+      TError,
+      { data: AddCartItemRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof addCartItem>>,
+  TError,
+  { data: AddCartItemRequest },
+  TContext
+> => {
+  const mutationOptions = getAddCartItemMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 개별/선택/전체 삭제를 cartItemIds 목록 하나로 받는다(본문 필수). 빈 배열은 삭제 0건 성공이다. 내 장바구니에 없는 id(남의 것 포함)는 무시하고 나머지만 지운다(멱등 — 실제 지운 수만 deletedCount에 반영). 403 50206(남의 항목)은 PATCH /carts/items/{cartItemId}에서만 발생한다.
+ * @summary 장바구니 항목 삭제(목록)
+ */
+export const deleteCartItems = (deleteCartItemsRequest: DeleteCartItemsRequest) => {
+  return customInstance<DeleteCartItemsEnvelope>({
+    url: `/carts/items`,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    data: deleteCartItemsRequest,
+  })
+}
+
+export const getDeleteCartItemsMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCartItems>>,
+    TError,
+    { data: DeleteCartItemsRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCartItems>>,
+  TError,
+  { data: DeleteCartItemsRequest },
+  TContext
+> => {
+  const mutationKey = ['deleteCartItems']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCartItems>>,
+    { data: DeleteCartItemsRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return deleteCartItems(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteCartItemsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCartItems>>>
+export type DeleteCartItemsMutationBody = DeleteCartItemsRequest
+export type DeleteCartItemsMutationError = unknown
+
+/**
+ * @summary 장바구니 항목 삭제(목록)
+ */
+export const useDeleteCartItems = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteCartItems>>,
+      TError,
+      { data: DeleteCartItemsRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCartItems>>,
+  TError,
+  { data: DeleteCartItemsRequest },
+  TContext
+> => {
+  const mutationOptions = getDeleteCartItemsMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 수량/옵션 조합 변경(둘 중 하나 이상 필수 — 둘 다 없으면 400 90001). quantity는 증감이 아니라 대입(절대값)이며 1~99 밖이면 400 90001. 수량을 늘리거나 옵션을 바꿀 때만 재고를 검사한다 (409 50201). 옵션 변경으로 같은 상품의 다른 조합 라인과 합쳐지면 merged=true이고 cartItemId는 흡수한 라인 id다(합산 결과가 99를 넘으면 400 90001). 다른 상품의 조합으로는 바꿀 수 없다 (400 90001). 항목 미존재 404 50205, 남의 항목 403 50206, 대상 옵션 조합 미존재 404 50207, 구매 불가 상태 409 50202.
+ * @summary 장바구니 항목 수정
+ */
+export const updateCartItem = (
+  cartItemId: number,
+  updateCartItemRequest: UpdateCartItemRequest,
+) => {
+  return customInstance<UpdateCartItemEnvelope>({
+    url: `/carts/items/${cartItemId}`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: updateCartItemRequest,
+  })
+}
+
+export const getUpdateCartItemMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCartItem>>,
+    TError,
+    { cartItemId: number; data: UpdateCartItemRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCartItem>>,
+  TError,
+  { cartItemId: number; data: UpdateCartItemRequest },
+  TContext
+> => {
+  const mutationKey = ['updateCartItem']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCartItem>>,
+    { cartItemId: number; data: UpdateCartItemRequest }
+  > = props => {
+    const { cartItemId, data } = props ?? {}
+
+    return updateCartItem(cartItemId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateCartItem>>>
+export type UpdateCartItemMutationBody = UpdateCartItemRequest
+export type UpdateCartItemMutationError = unknown
+
+/**
+ * @summary 장바구니 항목 수정
+ */
+export const useUpdateCartItem = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateCartItem>>,
+      TError,
+      { cartItemId: number; data: UpdateCartItemRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateCartItem>>,
+  TError,
+  { cartItemId: number; data: UpdateCartItemRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateCartItemMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 선택한 장바구니 행으로 주문그룹(결제 단위)과 셀러별 주문을 만든다. 생성 시점에 재고와 적립금이 차감되며 expiresAt(생성+10분)까지 결제하지 않으면 만료 배치가 취소·복구한다. 헤더 Idempotency-Key 필수(1~100자, 누락·공백·길이 초과는 400 90004 — 헤더 자체가 없으면 400 90001). 같은 키로 재요청하면 본문과 무관하게 최초 생성 결과를 201로 다시 돌려준다(본문 대조 없음 — 품목·금액이 바뀌었으면 FE가 새 키를 써야 한다). 남의 키면 403 90005. 서버가 금액을 다시 계산해 expectedFinalAmount(상품합+배송비합−usedPoint)와 대조하고 어긋나면 409 50106(가격·배송비 정책이 바뀐 것 — 장바구니를 다시 조회해 재계산). 그 밖에 409 50104(주문 불가 상품) / 409 50105(상품 버전 미준비) / 409 50107(재고 부족) / 404 50205(내 장바구니에 없는 cartItemId) / 404 50207(옵션 조합 없음) / 400 90001(바인딩 검증 — usedPoint·expectedFinalAmount 음수, cartItemIds 빈 배열) / 400 50103(적립금 1,000원 미만 사용) / 422 50102(적립금이 결제 가능액 초과) / 422 50108(최종 결제액 100원 미만) / 409 30101(적립금 잔액 부족) / 404 30501·403 30502(배송지). 응답 orderGroupId는 결제 paymentId와 같다.
+ * @summary 주문그룹 생성(주문서 제출)
+ */
+export const createOrderGroup = (
+  createOrderGroupRequest: CreateOrderGroupRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<CreateOrderGroupEnvelope>({
+    url: `/order-groups`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: createOrderGroupRequest,
+    signal,
+  })
+}
+
+export const getCreateOrderGroupMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOrderGroup>>,
+    TError,
+    { data: CreateOrderGroupRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOrderGroup>>,
+  TError,
+  { data: CreateOrderGroupRequest },
+  TContext
+> => {
+  const mutationKey = ['createOrderGroup']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOrderGroup>>,
+    { data: CreateOrderGroupRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return createOrderGroup(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateOrderGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOrderGroup>>
+>
+export type CreateOrderGroupMutationBody = CreateOrderGroupRequest
+export type CreateOrderGroupMutationError = unknown
+
+/**
+ * @summary 주문그룹 생성(주문서 제출)
+ */
+export const useCreateOrderGroup = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createOrderGroup>>,
+      TError,
+      { data: CreateOrderGroupRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createOrderGroup>>,
+  TError,
+  { data: CreateOrderGroupRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateOrderGroupMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 주문그룹 최신순 커서 페이지네이션. status 세그먼트는 하위 셀러 주문 중 하나라도 해당하면 그룹을 포함하고, 포함된 그룹의 셀러 주문은 전부 내려준다(completed 탭에 SHIPPING 주문이 섞일 수 있다). ongoing=PAID·PREPARING·DISPATCH_PENDING·SHIPPING, completed=DELIVERED·PURCHASE_CONFIRMED, cancelled=CANCELLED, all=PENDING_PAYMENT을 뺀 전부(결제대기 그룹은 어느 탭에도 안 나온다). totalCount는 첫 페이지(cursor 없음)에만 실리고 이후 null. nextCursor는 다음 페이지가 없으면 null. status·size가 범위 밖이면 400 90001, cursor가 깨졌거나 다른 필터의 것이면 400 90002.
+ * @summary 내 주문 목록(주문그룹 단위, 커서)
+ */
+export const getOrderGroups = (params?: GetOrderGroupsParams, signal?: AbortSignal) => {
+  return customInstance<OrderListEnvelope>({ url: `/order-groups`, method: 'GET', params, signal })
+}
+
+export const getGetOrderGroupsQueryKey = (params?: GetOrderGroupsParams) => {
+  return [`/order-groups`, ...(params ? [params] : [])] as const
+}
+
+export const getGetOrderGroupsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderGroupsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderGroups>>> = ({ signal }) =>
+    getOrderGroups(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOrderGroups>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderGroupsQueryResult = NonNullable<Awaited<ReturnType<typeof getOrderGroups>>>
+export type GetOrderGroupsQueryError = unknown
+
+export function useGetOrderGroups<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params: undefined | GetOrderGroupsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderGroups>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderGroups>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroups<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderGroups>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderGroups>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroups<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 주문 목록(주문그룹 단위, 커서)
+ */
+
+export function useGetOrderGroups<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderGroupsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetOrderGroupsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderGroupsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderGroups>>> = ({ signal }) =>
+    getOrderGroups(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getOrderGroups>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderGroupsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOrderGroups>>
+>
+export type GetOrderGroupsSuspenseQueryError = unknown
+
+export function useGetOrderGroupsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params: undefined | GetOrderGroupsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroupsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroupsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 주문 목록(주문그룹 단위, 커서)
+ */
+
+export function useGetOrderGroupsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroups>>,
+  TError = unknown,
+>(
+  params?: GetOrderGroupsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroups>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderGroupsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러별 주문 하나의 품목과 금액. payment.sellerShippingFee만 이 셀러 주문의 몫이고 나머지 payment 금액(totalProductAmount·totalShippingFee·couponDiscountAmount·usedPoint·finalPaymentAmount)은 주문그룹 전체 값이다 — 화면에서 이 셀러의 결제액처럼 보이게 하면 안 된다. 배송지·수령인·운송장·orderItemId는 응답에 없다. 없거나 남의 것이거나 결제대기 상태면 구분 없이 404 50000.
+ * @summary 주문 상세(셀러 주문 단위)
+ */
+export const getOrderDetail = (orderId: string, signal?: AbortSignal) => {
+  return customInstance<OrderDetailEnvelope>({ url: `/orders/${orderId}`, method: 'GET', signal })
+}
+
+export const getGetOrderDetailQueryKey = (orderId?: string) => {
+  return [`/orders/${orderId}`] as const
+}
+
+export const getGetOrderDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderDetailQueryKey(orderId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderDetail>>> = ({ signal }) =>
+    getOrderDetail(orderId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderDetailQueryResult = NonNullable<Awaited<ReturnType<typeof getOrderDetail>>>
+export type GetOrderDetailQueryError = unknown
+
+export function useGetOrderDetail<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderDetail<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderDetail<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문 상세(셀러 주문 단위)
+ */
+
+export function useGetOrderDetail<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderDetailQueryOptions(orderId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetOrderDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderDetailQueryKey(orderId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderDetail>>> = ({ signal }) =>
+    getOrderDetail(orderId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOrderDetail>>
+>
+export type GetOrderDetailSuspenseQueryError = unknown
+
+export function useGetOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문 상세(셀러 주문 단위)
+ */
+
+export function useGetOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderDetailSuspenseQueryOptions(orderId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 결제창을 열기 전 결제 행을 만들고 포트원에 paymentId·금액을 사전등록한다. 응답의 paymentId(=orderGroupId)·targetAmount·storeId·channelKey를 SDK requestPayment에 그대로 넘긴다 (currency 'CURRENCY_KRW'·orderName·payMethod·redirectUrl은 FE가 구성). 재호출하면 기존 결제 행을 돌려주되 사전등록은 매번 다시 보낸다(수단은 최초값 유지). 404 60008(주문그룹 없음·남의 것) / 409 60006(이미 결제 완료) / 409 60009(취소됐거나 만료 — message "결제 가능 시간이 만료되었습니다.") / 400 60007(결제 금액 0원 — 전액 적립금 결제 미지원) / 502 60005(상점 설정 비어 있음 또는 포트원 사전등록 실패).
+ * @summary 결제 준비(포트원 사전등록)
+ */
+export const preparePayment = (
+  orderGroupId: string,
+  preparePaymentRequest: PreparePaymentRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PreparePaymentEnvelope>({
+    url: `/order-groups/${orderGroupId}/payment/prepare`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: preparePaymentRequest,
+    signal,
+  })
+}
+
+export const getPreparePaymentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof preparePayment>>,
+    TError,
+    { orderGroupId: string; data: PreparePaymentRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof preparePayment>>,
+  TError,
+  { orderGroupId: string; data: PreparePaymentRequest },
+  TContext
+> => {
+  const mutationKey = ['preparePayment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof preparePayment>>,
+    { orderGroupId: string; data: PreparePaymentRequest }
+  > = props => {
+    const { orderGroupId, data } = props ?? {}
+
+    return preparePayment(orderGroupId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type PreparePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof preparePayment>>>
+export type PreparePaymentMutationBody = PreparePaymentRequest
+export type PreparePaymentMutationError = unknown
+
+/**
+ * @summary 결제 준비(포트원 사전등록)
+ */
+export const usePreparePayment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof preparePayment>>,
+      TError,
+      { orderGroupId: string; data: PreparePaymentRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof preparePayment>>,
+  TError,
+  { orderGroupId: string; data: PreparePaymentRequest },
+  TContext
+> => {
+  const mutationOptions = getPreparePaymentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 본문 없음. 서버가 포트원에 결제 상태를 직접 조회해 확정한다. 네 상태 모두 200으로 내려온다 — PAID(확정, 주문·주문그룹 결제완료 전이 + 주문한 장바구니 행 삭제), FAILED(PG 실패 확정, 재시도는 prepare부터), NOT_STARTED(결제 시도 흔적 없음, 재시도는 prepare부터), IN_PROGRESS(PG 승인 대기 — 잠시 후 재확인). 이미 PAID인 그룹은 몇 번을 불러도 PAID를 멱등 재반환하므로 재진입·새로고침마다 불러도 안전하다. 404 60008(주문그룹 없음·남의 것) / 409 60010(결제 금액이 주문 금액과 불일치 — 고객센터 안내) / 409 60011(지원하지 않는 PG 상태 — 고객센터 안내) / 409 60012(만료로 취소된 주문그룹 — 결제됐다면 환불 처리) / 502 60005(포트원 조회 실패·타임아웃 — 재확인).
+ * @summary 결제 확정 확인(결제창 종료 후 콜백)
+ */
+export const completePayment = (orderGroupId: string, signal?: AbortSignal) => {
+  return customInstance<CompletePaymentEnvelope>({
+    url: `/order-groups/${orderGroupId}/payment/complete`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getCompletePaymentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completePayment>>,
+    TError,
+    { orderGroupId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completePayment>>,
+  TError,
+  { orderGroupId: string },
+  TContext
+> => {
+  const mutationKey = ['completePayment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completePayment>>,
+    { orderGroupId: string }
+  > = props => {
+    const { orderGroupId } = props ?? {}
+
+    return completePayment(orderGroupId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CompletePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof completePayment>>>
+
+export type CompletePaymentMutationError = unknown
+
+/**
+ * @summary 결제 확정 확인(결제창 종료 후 콜백)
+ */
+export const useCompletePayment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completePayment>>,
+      TError,
+      { orderGroupId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completePayment>>,
+  TError,
+  { orderGroupId: string },
+  TContext
+> => {
+  const mutationOptions = getCompletePaymentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**

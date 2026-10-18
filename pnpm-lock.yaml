@@ -220,6 +220,9 @@ importers:
       '@aechak/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@portone/browser-sdk':
+        specifier: ^0.1.13
+        version: 0.1.13
       '@tanstack/react-query':
         specifier: ^5.80.7
         version: 5.101.2(react@19.2.7)
@@ -1662,6 +1665,9 @@ packages:
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@portone/browser-sdk@0.1.13':
+    resolution: {integrity: sha512-zC94/gmMeh5O44iRx/SiIyt8p+1YXxEVRQu+Fhi7WKMlzbERBViwCxY6B6MVO2QprGJS5iQG2bf6e7KoXln5Kg==}
 
   '@radix-ui/react-compose-refs@1.1.2':
     resolution: {integrity: sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==}
@@ -8114,6 +8120,8 @@ snapshots:
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
+
+  '@portone/browser-sdk@0.1.13': {}
 
   '@radix-ui/react-compose-refs@1.1.2(@types/react@19.2.17)(react@19.0.0)':
     dependencies:

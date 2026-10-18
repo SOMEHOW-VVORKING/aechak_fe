@@ -112,70 +112,90 @@ export interface Order {
   createdAt: string
 }
 
-// ── 구매자 주문 여정(web-buyer Phase 3, b4-st-1/b1-st-6/b4-st-4) ──
+// ── 구매자 주문 여정(web-buyer, b4-st-1 목록 / b1-st-6 상세) ──
 // 셀러용 `Order`/`OrderStatus`는 "셀러 한 명의 단일 상품 주문 행"이고 상태머신도 셀러 관점
-// (new_order/preparing/shipping/delivered)이다. 구매자 주문은 여러 셀러 상품을 묶은 집계이고
-// 구매확정·취소완료까지 포함하는 다른 상태머신이라, 기존 `OrderStatus` 유니온을 확장하면
+// (new_order/preparing/shipping/delivered)이다. 구매자 주문은 결제 한 번(주문그룹) 아래 셀러별 주문이
+// 여럿 달리고 구매확정·취소완료까지 포함하는 다른 상태머신이라, 기존 `OrderStatus` 유니온을 확장하면
 // web-seller의 `Record<OrderStatus, ...>`(주문 상태 라벨/색 맵)가 키 누락으로 typecheck가 깨진다.
 // 따라서 구매자 전용 타입을 additive로 둔다 — 임의 병렬 타입이 아니라 셀러 주문과 별개인
 // 구매자 주문 집계 도메인이다(셀러가 web-buyer 주문 상태를 다뤄야 하면 이 타입을 재사용/확장할 것).
+//
+// 서버 enum(PAID/DISPATCH_PENDING/…)은 어댑터(shared/order)가 아래 표시 상태로 접고, 원문은
+// `rawStatus`에 보존한다. 서버 응답에 없는 값(상품 id·결제수단·배송지·운송장·시각·orderItemId)은
+// 가짜 기본값으로 채우지 않고 optional로 두어 UI가 숨긴다.
 export type BuyerOrderStatus =
   | 'paid' // 결제완료
-  | 'preparing' // 상품준비중
+  | 'preparing' // 상품준비중(출고 대기 포함)
   | 'shipping' // 배송중
   | 'delivered' // 배송완료
   | 'confirmed' // 구매확정
   | 'cancelled' // 취소완료
 
+// 품목 상태(서버 OrderItemStatus 대응). 부분 취소·반품·교환 요청이 품목 단위로 표시된다.
+export type BuyerOrderItemStatus =
+  'ordered' | 'cancelled' | 'return-requested' | 'returned' | 'exchange-requested'
+
 // 주문에 포함된 상품(주문 시점 스냅샷 — 이후 카탈로그 가격/이름이 바뀌어도 주문 내역은 고정).
 export interface BuyerOrderItem {
-  productId: ProductId
   name: string
   option: string
   quantity: number
   unitPrice: number
+  itemStatus: BuyerOrderItemStatus
   thumbnailUrl?: string
-  /**
-   * 서버 주문 품목 id. 리뷰 작성 API(POST /reviews)가 이 값을 요구한다.
-   * 주문 조회 API가 아직 없어 목업 주문에는 없다 — 값이 있을 때만 서버 경로를 탄다.
-   */
+  /** 서버 주문 응답에 상품 id가 없어 목록/상세에서는 비어 있다(상품 링크를 만들지 않는다). */
+  productId?: ProductId
+  /** 서버 주문 품목 id. 리뷰 작성 API(POST /reviews)가 요구하지만 주문 응답에는 아직 없다. */
   orderItemId?: number
 }
 
-// 셀러별 주문 그룹(배송비는 셀러 단위로 부과 — Phase 2 장바구니 order_group 구조와 일관).
-export interface BuyerOrderSellerGroup {
-  sellerId: SellerId
-  storeName: string
-  items: BuyerOrderItem[]
-  shippingFee: number
-}
-
-// 운송장 정보(목업 — 실제 택배사 연동은 범위 밖).
-export interface OrderShipment {
-  courier: string
-  trackingNumber: string
-}
-
-export interface BuyerOrder {
-  id: OrderId // 주문번호(YYYYMMDD-####)
-  orderedAt: string // 주문일시 표시 문자열
+// 주문그룹 안의 셀러별 주문 한 건(목록 카드 행). 상태는 셀러 주문 단위이고, 그룹에는 단일 상태가 없다.
+export interface BuyerSellerOrder {
+  orderId: OrderId
+  /** 셀러 상호. 서버가 null을 줄 수 있어(탈퇴 셀러 등) optional. */
+  storeName?: string
   status: BuyerOrderStatus
-  groups: BuyerOrderSellerGroup[]
-  method: PaymentMethod
+  /** 서버 상태 원문(PAID/DISPATCH_PENDING/…). 표시는 `status`, 분기 정밀도가 필요하면 이 값을 본다. */
+  rawStatus: string
+  /** 이 셀러 주문의 품목 라인 수. */
+  itemCount: number
+  /** 대표 품목(첫 라인). 전체 품목이 아니다 — 전체는 상세(`BuyerOrderDetail.items`)에만 있다. */
+  representativeItem?: BuyerOrderItem
+}
+
+// 주문그룹(결제 한 번). 금액은 전부 그룹 전체 값이다.
+export interface BuyerOrder {
+  id: string // orderGroupId(ULID)
+  orderedAt: string // ISO 8601(오프셋 포함) — 표시 포맷은 화면이 맡는다
+  sellerOrders: BuyerSellerOrder[]
   itemsTotal: number
   shippingTotal: number
   couponDiscount: number
   pointsUsed: number
   paidAmount: number
-  pointsEarned: number
-  shipment?: OrderShipment
-  // 상태 전이 시각(목업 표시용). 배송완료 시 autoConfirmAt(D+N)까지 자동 구매확정 안내를 띄운다.
-  shippedAt?: string
-  deliveredAt?: string
-  autoConfirmAt?: string
-  confirmedAt?: string
-  cancelledAt?: string
-  refundedAt?: string
+}
+
+// 주문그룹 전체 결제 요약(상세 화면의 "결제 금액(주문 전체)" 블록).
+export interface BuyerOrderGroupPayment {
+  itemsTotal: number
+  shippingTotal: number
+  couponDiscount: number
+  pointsUsed: number
+  paidAmount: number
+}
+
+// 셀러 주문 상세(GET /orders/{orderId}). `sellerShippingFee`만 이 셀러 몫이고 `groupPayment`는
+// 주문그룹 전체 값이라 화면이 라벨로 구분한다("이 주문의 배송비" vs "결제 금액(주문 전체)").
+export interface BuyerOrderDetail {
+  orderId: OrderId
+  orderGroupId: string
+  orderedAt: string // ISO 8601
+  status: BuyerOrderStatus
+  rawStatus: string
+  storeName?: string
+  items: BuyerOrderItem[]
+  sellerShippingFee: number
+  groupPayment: BuyerOrderGroupPayment
 }
 
 // ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──

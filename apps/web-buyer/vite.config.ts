@@ -13,6 +13,10 @@ export default defineConfig({
     }),
     react(),
   ],
+  optimizeDeps: {
+    // 첫 방문 때 dep 최적화 리로드가 결제 결과 화면을 재마운트하지 않도록 미리 번들에 포함
+    include: ['@portone/browser-sdk/v2'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
