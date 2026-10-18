@@ -1,4 +1,4 @@
-import type { BuyerOrder, Review } from '@aechak/domain'
+import type { Review } from '@aechak/domain'
 import { findProduct, placeholderImage } from '@/shared/catalog'
 
 // 리뷰 화면(b4-st-2 작성 / b4-st-3 목록 / b4-st-6 내 리뷰) 공용 상수·목업·파생 로직.
@@ -149,40 +149,4 @@ export interface PendingReview {
   reviewableUntil?: string
   /** 마감이 지나면 false. 서버는 지난 항목도 목록에 남긴다. 목업 항목은 항상 작성 가능으로 본다. */
   canReview?: boolean
-}
-
-// 배송완료/구매확정 주문 상품 중 아직 리뷰를 쓰지 않은 항목(작성 대기). isReviewed는 리뷰 스토어 판정.
-export function buildPendingReviews(
-  orders: readonly BuyerOrder[],
-  isReviewed: (orderId: string, productId: string) => boolean,
-): PendingReview[] {
-  const pending: PendingReview[] = []
-  for (const order of orders) {
-    if (order.status !== 'delivered' && order.status !== 'confirmed') continue
-    const sinceDate =
-      order.status === 'confirmed'
-        ? confirmLabel('구매확정', order.confirmedAt)
-        : confirmLabel('배송완료', order.deliveredAt)
-    for (const group of order.groups) {
-      for (const item of group.items) {
-        if (isReviewed(order.id, item.productId)) continue
-        pending.push({
-          orderId: order.id,
-          productId: item.productId,
-          name: item.name,
-          option: item.option,
-          // 시드/mock 주문 항목은 thumbnailUrl을 안 담아 "빈 이미지" 아이콘으로 빠지던 걸,
-          // 상품 id로 카탈로그를 참조해 완료 리뷰/카탈로그와 동일한 실루엣 썸네일로 통일한다.
-          thumbnailUrl: item.thumbnailUrl ?? findProduct(item.productId)?.thumbnailUrl,
-          since: sinceDate,
-        })
-      }
-    }
-  }
-  return pending
-}
-
-function confirmLabel(prefix: string, date: string | undefined): string {
-  const m = date?.match(/^\d{4}\.(\d{2})\.(\d{2})/)
-  return m ? `${prefix} ${m[1]}.${m[2]}` : prefix
 }

@@ -275,24 +275,90 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
   await shot(page, 'test-results/pr-c/01-detail-review-preview.png')
 })
 
-test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로 반영된다', async ({ page }) => {
-  // 목업 주문에는 서버 orderItemId가 없어 작성이 로컬 폴백을 탄다(주문 조회 API 미도입).
-  // 서버 경로(POST /reviews)는 MSW 라우트 테스트와 my-reviews spec이 검증하고, 여기서는 화면 흐름을 본다.
-  // 내 리뷰는 서버 목록(GET /users/me/reviews)을 먼저 받아야 목업 리뷰를 붙여 그리므로 빈 목록으로 응답한다.
-  await page.route(/\/users\/me\/reviews(\?|$)/, (route: Route) =>
-    route.request().method() === 'OPTIONS'
-      ? route.fulfill({
-          status: 204,
-          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
-        })
-      : route.fulfill({
-          status: 200,
-          headers: CORS,
-          json: { data: { items: [], totalCount: 0, nextCursor: null, hasNext: false } },
-        }),
-  )
-  await page.goto('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+test('[AC-REVIEW-E2E-010] 작성 대기에서 쓴 리뷰는 POST /reviews로 저장되고 내 리뷰 완료 탭에 바로 반영된다', async ({
+  page,
+}) => {
+  // 리뷰는 서버에만 저장한다(목업 주문 로컬 폴백 폐기). 작성 대기(unreviewed)에서 orderItemId를 들고
+  // 작성 화면으로 가고, 저장 뒤 written 탭이 그 리뷰를 내려준다.
+  const state = { saved: false }
+  let posted: { orderItemId?: number; content?: string } | null = null
+  await page.route(/\/users\/me\/reviews(\?|$)/, (route: Route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.fulfill({
+        status: 204,
+        headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+      })
+    }
+    const tab = new URL(route.request().url()).searchParams.get('tab')
+    const items =
+      tab === 'unreviewed'
+        ? state.saved
+          ? []
+          : [
+              {
+                type: 'UNREVIEWED',
+                orderItemId: 77,
+                optionName: '5m / 블랙',
+                productPublicId: REAL_ID,
+                productName: '자동 리드줄 5m 대형견용',
+                productThumbnailUrl: null,
+                purchaseConfirmedAt: '2026-09-20T09:30:00',
+                reviewableUntil: '2026-10-20',
+                canReview: true,
+              },
+            ]
+        : state.saved
+          ? [
+              {
+                type: 'WRITTEN',
+                reviewId: 977,
+                rating: 5,
+                content: '배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.',
+                reviewStatus: 'PUBLIC',
+                optionName: '5m / 블랙',
+                productPublicId: REAL_ID,
+                productName: '자동 리드줄 5m 대형견용',
+                productThumbnailUrl: null,
+                createdAt: '2026-10-01T10:00:00',
+                images: [],
+              },
+            ]
+          : []
+    return route.fulfill({
+      status: 200,
+      headers: CORS,
+      json: { data: { items, totalCount: items.length, nextCursor: null, hasNext: false } },
+    })
+  })
+  await page.route('**/api/v1/reviews', (route: Route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.fulfill({
+        status: 204,
+        headers: { ...CORS, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': '*' },
+      })
+    }
+    posted = route.request().postDataJSON() as { orderItemId: number; content: string }
+    state.saved = true
+    return route.fulfill({
+      status: 201,
+      headers: CORS,
+      json: {
+        data: {
+          reviewId: 977,
+          productId: 1,
+          rating: 5,
+          content: posted.content,
+          optionName: '5m / 블랙',
+          createdAt: '2026-10-01T10:00:00',
+          images: [],
+        },
+      },
+    })
+  })
+  await page.goto('/reviews/mine')
+  await page.getByRole('button', { name: '리뷰 쓰기' }).click()
   await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
+  await expect(page.getByText('자동 리드줄 5m 대형견용')).toBeVisible()
 
   // 별점 입력은 radio 5개(1~5점) — 마지막이 5점이다.
   await page.getByRole('radio').last().click()
@@ -305,6 +371,7 @@ test('[AC-REVIEW-E2E-010] 리뷰를 작성하면 내 리뷰 완료 탭에 바로
   await page.getByRole('button', { name: '리뷰 등록' }).click()
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
+  expect(posted).toMatchObject({ orderItemId: 77 })
   await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
 })
 

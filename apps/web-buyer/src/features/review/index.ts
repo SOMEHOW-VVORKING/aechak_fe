@@ -10,7 +10,6 @@ export {
   validateReview,
   sortReviews,
   getProductReviewData,
-  buildPendingReviews,
 } from './review.mock'
 export type { ReviewSort, ProductReviewData, PendingReview, ReviewValidation } from './review.mock'
 export {
