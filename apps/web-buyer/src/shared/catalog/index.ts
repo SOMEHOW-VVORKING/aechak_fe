@@ -3,18 +3,8 @@
 export { placeholderImage } from './placeholder'
 export { mediaUrl } from './media'
 export { registerProducts, getRegistered, resetRegistry } from './registry'
-export {
-  MAIN_CATEGORIES,
-  SUB_CATEGORIES,
-  CATALOG_SORTS,
-  mainCategoryLabel,
-} from './categories'
-export type {
-  MainCategory,
-  MainCategoryOption,
-  CatalogSort,
-  CatalogSortOption,
-} from './categories'
+export { MAIN_CATEGORIES, SUB_CATEGORIES, CATALOG_SORTS, mainCategoryLabel } from './categories'
+export type { MainCategory, MainCategoryOption, CatalogSort, CatalogSortOption } from './categories'
 export {
   CATALOG_PRODUCTS,
   findProduct,
@@ -28,8 +18,6 @@ export type { CatalogProduct } from './products'
 export { toCatalogProduct } from './product-summary.mapper'
 export { buildCartView } from './cart-view'
 export type { CartView, CartSellerGroup, CartLineView } from './cart-view'
-export { buildOrderFromContext } from './order-build'
-export type { OrderBuildInput } from './order-build'
 export { ProductGrid } from './ProductGrid'
 export type { ProductGridProps } from './ProductGrid'
 export { ProductCarousel } from './ProductCarousel'

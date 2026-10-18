@@ -6,7 +6,16 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
-import { PRODUCT_OPTIONS_URL, PRODUCT_REVIEWS_URL, REAL_PRODUCT_ID, server } from '@/testing/msw/server'
+import {
+  PRODUCT_OPTIONS_URL,
+  PRODUCT_REVIEWS_URL,
+  REAL_PRODUCT_ID,
+  REAL_PRODUCT_OPTIONS,
+  currentCart,
+  makeCartRow,
+  seedCart,
+  server,
+} from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -31,7 +40,9 @@ describe('/products/$productId', () => {
 
   it('[AC-PRODUCT-005] 존재하는 상품은 상세를 렌더한다', async () => {
     renderAt('/products/p-feeder-5l')
-    expect(await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')).toBeInTheDocument()
+    expect(
+      await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머'),
+    ).toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-011] 실 ULID 상품은 실 API 상세(이름·설명)를 렌더한다', async () => {
@@ -51,6 +62,56 @@ describe('/products/$productId', () => {
     // 프리미엄형(+5,000원) 선택 시 기본가 64,000 + 5,000 = 69,000원(시트 총액에만 등장)
     await user.selectOptions(select, '프리미엄형')
     expect(await screen.findByText('69,000원')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-022] 옵션 시트 수량 상한은 재고가 많아도 라인당 상한 99개다', async () => {
+    // 기본형 재고를 150으로 — 상한이 재고를 따르면 99를 넘겨 담기가 400으로 거절된다.
+    server.use(
+      http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
+        params.productId === REAL_PRODUCT_ID
+          ? HttpResponse.json({
+              data: {
+                ...REAL_PRODUCT_OPTIONS,
+                optionCombinations: REAL_PRODUCT_OPTIONS.optionCombinations.map(c =>
+                  c.optionCombinationId === 1 ? { ...c, remainingStock: 150 } : c,
+                ),
+              },
+            })
+          : new HttpResponse(null, { status: 404 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    expect(await screen.findByText('재고 150개')).toBeInTheDocument()
+    const qty = screen.getByRole('textbox', { name: '값' })
+    await user.clear(qty)
+    await user.type(qty, '150')
+    await user.tab()
+    expect(qty).toHaveValue('99')
+    expect(screen.getByText('총 99개')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '증가' })).toBeDisabled()
+  })
+
+  it('[AC-PRODUCT-023] 이미 담긴 수량과 합쳐 99개를 넘으면 합산 초과로 안내하고 시트를 열어 둔다', async () => {
+    seedCart([
+      makeCartRow({ cartItemId: 1, optionCombinationId: 1, quantity: 99, remainingStock: 150 }),
+    ])
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    await user.click(await screen.findByRole('button', { name: '장바구니 담기' }))
+
+    expect(
+      await screen.findByText(/이미 담긴 수량과 합쳐 99개를 넘을 수 없어요/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('수량은 1개 이상 99개 이하로 담을 수 있어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '장바구니 담기' })).toBeInTheDocument()
+    expect(currentCart()[0]?.quantity).toBe(99)
   })
 
   it('[AC-PRODUCT-013] 실 옵션 조회가 오류면 옵션 시트가 담기/구매를 막고 재시도를 보여준다', async () => {
@@ -111,9 +172,9 @@ describe('/products/$productId', () => {
     expect(screen.queryByText('포토리뷰만')).not.toBeInTheDocument()
     expect(screen.getByText('전체보기')).toBeInTheDocument()
 
-    // 리뷰 '구매' 인증 pill 제거(소비측에서 verifiedPurchase 미전달) — '구매하기' 버튼은 별개라 유지
+    // 리뷰 '구매' 인증 pill 제거(소비측에서 verifiedPurchase 미전달)
     expect(screen.queryByText('구매')).not.toBeInTheDocument()
-    expect(screen.getByText('구매하기')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '장바구니' })).toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-014] 비회원이 전체보기를 누르면 강제 이동 대신 로그인 게이트가 뜬다', async () => {
@@ -166,20 +227,23 @@ describe('/products/$productId', () => {
     expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
   })
 
-  it('[AC-PRODUCT-017] 비회원이 하단 구매하기를 누르면 결제로 이동하지 않고 게이트가 뜬다', async () => {
-    logout()
+  it('[AC-PRODUCT-017] 바로구매 진입점이 없다 — 액션바·옵션 시트 모두 담기만 제공한다', async () => {
+    // BE 주문 생성이 장바구니 행 id만 받으므로 바로구매 CTA를 두지 않는다(담기 우회는 수량이 합쳐져 의도와 다른 주문).
     const user = userEvent.setup()
-    const router = renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
 
-    await user.click(screen.getByRole('button', { name: '구매하기' }))
-    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
-    expect(
-      screen.getByText('구매는 로그인한 뒤에 이어서 진행할 수 있어요.', { exact: false }),
-    ).toBeInTheDocument()
-    // 결제/옵션으로 이동하지 않고 상세에 머문다.
-    expect(screen.queryByText('옵션 선택')).not.toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+    expect(screen.queryByRole('button', { name: '구매하기' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+    expect(await screen.findByRole('button', { name: '장바구니 담기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '바로 구매' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-021] 품절 상품은 액션바 담기 버튼이 품절로 비활성화된다', async () => {
+    renderAt('/products/p-scratcher')
+    await screen.findByRole('button', { name: '품절' })
+    expect(screen.getByRole('button', { name: '품절' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '장바구니' })).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-018] 로그인 상태의 실 상품 상세는 서버 리뷰를 최대 3개까지 미리 보여준다', async () => {
@@ -205,7 +269,10 @@ describe('/products/$productId', () => {
     server.use(
       http.get(PRODUCT_REVIEWS_URL, () => {
         reviewCalls += 1
-        return HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+        return HttpResponse.json(
+          { errorCode: 20004, message: '인증이 필요합니다.' },
+          { status: 401 },
+        )
       }),
     )
     logout()

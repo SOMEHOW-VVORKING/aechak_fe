@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { CheckoutScreen } from '@/features/checkout'
 
-// ?buyNow=<productId>&option=<옵션>&qty=<수량>&addl=<옵션추가금> — 상품 상세 "바로 구매"로 진입 시
-// 단일 상품 주문. 파라미터가 없으면 장바구니의 선택 항목으로 주문한다.
+// 주문서는 장바구니 선택 항목으로만 진입한다. 옛 바로구매 search(?buyNow=…)는 받되 beforeLoad에서
+// 장바구니로 돌려보낸다 — BE 주문 생성이 장바구니 행 id만 받아 합성 주문을 만들 수 없다.
 export const Route = createFileRoute('/checkout')({
   validateSearch: (
     search: Record<string, unknown>,
@@ -22,10 +22,12 @@ export const Route = createFileRoute('/checkout')({
           ? Number(search.addl) || undefined
           : undefined,
   }),
+  beforeLoad: ({ search }) => {
+    if (search.buyNow) throw redirect({ to: '/cart', replace: true })
+  },
   component: CheckoutRoute,
 })
 
 function CheckoutRoute() {
-  const { buyNow, option, qty, addl } = Route.useSearch()
-  return <CheckoutScreen buyNow={buyNow} option={option} qty={qty} addl={addl} />
+  return <CheckoutScreen />
 }
