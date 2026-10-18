@@ -117,6 +117,9 @@ b3-st-2), 검색 결과(`routes/search/results.tsx`, b3-st-3), 상품 상세
   (SALE 배너 아래)은 이후 비개인화 "추천 상품" 가로 캐러셀로 채워졌다 — 아래 "홈 '추천 상품' 가로 캐러셀"
   Revision 참고. "개인화 OFF"는 여전히 유효(펫 이름/AI/sparkles 없음)하고, 캐러셀은 그 제약 안에서 홈을
   채우는 비개인화 큐레이션이다.**
+- **(2026-10-17 갱신) 아래 상품 상세 bullet은 목업 시절 이력이다** — 지금 하단 액션바는 찜 + 장바구니만이고
+  옵션 시트에 '바로 구매'는 없으며 담기는 서버 `POST /carts/items`로 나간다. 정본은 끝의 "장바구니 서버 연동
+  (SCRUM-237 W1)" 절의 "담기"·"바로구매 차단" 항목.
 - **상품 상세: 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF.** 옵션 선택 `BottomSheet`는 포함(옵션 Select +
   수량 NumberInput + 재고 + 합계 + 장바구니 담기/바로 구매). 하단 액션바는 찜/장바구니/구매하기. 장바구니
   담기·바로 구매는 장바구니(b1-st-3)·결제 화면이 범위 밖이라 실제 이동 대신 `Toast`로 피드백만 준다(죽은
@@ -256,6 +259,8 @@ full-bleed 화면을 구현했다. feature 모듈은 `features/{cart,checkout,ad
 `MarketAppBar`의 장바구니 아이콘(실 배지), 상품 상세 옵션 시트의 `장바구니 담기`/`바로 구매`. 쿠폰·정기배송·
 비회원 게이트·실 PG는 범위 밖.
 
+- **(2026-10-17 갱신) 장바구니 목업 스토어는 서버 연동으로 대체됐다** — 아래 "장바구니 서버 연동(SCRUM-237)" 절이 현재 정본이고, 이 절의 `cart.store`/`buildCartView` 서술은 이력이다.
+- **(2026-10-17 갱신) 주문서도 서버 장바구니 + `POST /order-groups` 실연동으로 바뀌었다** — 아래 "주문서 — 주문그룹 생성·결제 시작(SCRUM-237 W2)" 절이 정본이고, 이 절의 바로구매 합성 주문서·`useDefaultAddress` 서술은 이력이다.
 - **장바구니·배송지는 shared 전역 스토어**(`src/shared/cart/cart.store.ts`, `src/shared/address/address.store.ts`).
   찜(`shared/catalog/wishlist.store.ts`)과 동일하게 zustand 없이 `useSyncExternalStore`로 구현 —
   상품 상세·앱바 배지·장바구니·주문서가 한 소스를 본다. feature 간 직접 import 금지라 여러 feature가 공유하는
@@ -319,6 +324,11 @@ full-bleed 화면을 구현했다. feature 모듈은 `features/{cart,checkout,ad
 주문 취소(`routes/orders/$orderId/cancel.tsx`, b4-st-4) / 리뷰 작성(`routes/reviews/write.tsx`, b4-st-2) /
 상품 리뷰 목록(`routes/reviews/product/$productId.tsx`, b4-st-3) / 내 리뷰(`routes/reviews/mine.tsx`, b4-st-6) 6개
 full-bleed 화면. feature 모듈은 `features/{order,review}`. DS 변경 없음(도메인만 additive 확장).
+
+> **2026-10-17 갱신** — 주문 목록·상세는 실 API(`GET /order-groups`, `GET /orders/{orderId}`)로 전환됐고
+> `shared/order`의 목업 주문 스토어(`addOrder`/`cancelOrder`/`confirmOrder`)·배송 타임라인·취소/구매확정
+> mutation은 폐기됐다. 아래 bullet 중 주문 스토어·타임라인·취소·`buildOrderFromContext` 설명은 이력이며,
+> 현재 구조는 맨 아래 "주문 목록·상세 — GET /order-groups, GET /orders/{orderId} 실연동" 절을 볼 것.
 
 - **구매자 주문은 셀러 `Order`/`OrderStatus`와 별개인 additive 도메인 타입이다** (`packages/domain`:
   `BuyerOrder`/`BuyerOrderStatus`(paid/preparing/shipping/delivered/confirmed/cancelled)/`BuyerOrderItem`/
@@ -454,6 +464,9 @@ Phase 4(account/pet)와 내 블록(report)이 서로 다른 위치라 자동 병
   가이드라인/동의/데이터삭제)으로만 이동하고, 본인인증/펫/고객센터 문의는 안 넣었다. `data-deletion`의
   "회원 탈퇴 진행"은 Phase 4 소관 `/mypage/withdraw`가 내 트리에 없어 최근접 `/mypage`로 보냈다
   (병합 후 탈퇴 플로우로 정합성 조정 대상 — 코드 주석에 명시).
+- **(2026-10-17 갱신) 아래의 동의 토글 서술은 목업 시절 이력이다** — 지금 `ConsentSettingsScreen`은 서버 활성
+  약관(`GET /terms`, `useConsentTerms`)을 필수/선택으로 나눠 조회만 하고 토글·토스트가 없다(BE가 온보딩 전용
+  제출만 받아 선택 동의 철회·재동의를 아직 열 수 없다). 알림 토글은 여전히 UI만 동작한다.
 - **설정 화면 공용 컴포넌트**: `SettingsSection.tsx`(`SettingsGroup`/`SettingsNavRow`/
   `SettingsControlRow` — 목업 set-group/set-card 패턴), `DocLayout.tsx`(`DocSection`/`DocParagraph`
   — 정책·안내 문서 3종 공유). 알림/동의 토글은 **실제 상태 반영**(전체 알림 마스터가 꺼지면 야간
@@ -488,7 +501,8 @@ Phase 4(account/pet)와 내 블록(report)이 서로 다른 위치라 자동 병
   기존대로 통과).
 - **B**: `DataDeletionScreen`의 "회원 탈퇴 진행"이 리베이스로 존재하게 된 Phase 4 실제 탈퇴 화면
   `/mypage/withdraw`로 이동(이전 임시 `/mypage`에서 교정).
-- **C**: 마케팅 수신 동의 토글이 낡은 표시를 남기던 문제 — 설명 문구를 `marketingOn`으로 분기하고,
+- **C** (2026-10-17 갱신: 이력 — 동의 화면의 마케팅 토글·토스트는 `GET /terms` 조회 전용으로 바뀌며 사라졌다):
+  마케팅 수신 동의 토글이 낡은 표시를 남기던 문제 — 설명 문구를 `marketingOn`으로 분기하고,
   토스트도 마지막 동작(동의/철회)을 기억해 문구·아이콘·variant를 맞춘다(철회 시 원래 동의 날짜를
   더 이상 찍지 않음). 새 토글 상태를 표시에 반영할 때 설명·토스트가 상태와 어긋나지 않는지 점검할 것.
 - **D**: 설정/정책/FAQ/가이드라인/삭제안내/신고 사유의 **사용자 노출 문자열** 가운뎃점(`·`)을 `/`로
@@ -1424,3 +1438,222 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   204이고 403/404 분기는 테스트가 `server.use`로 갈아끼운다.
 
 ---
+
+### 결제 — prepare → 포트원 SDK → complete 실연동 (SCRUM-237, 2026-10-17)
+
+결제 결과 화면(b1-st-5)이 목업 분기(`payment.mock.ts`의 카드=실패/간편결제=성공, `generateOrderNo`,
+클라이언트 주문 스토어 `addOrder`, 클라이언트 장바구니 삭제)를 버리고 서버 계약으로 전환됐다.
+어댑터는 `shared/payment/`(주문서와 결과 화면이 feature 경계를 넘어 같이 쓴다).
+
+- **SDK는 npm `@portone/browser-sdk`의 `/v2` 엔트리.** 설치 후 `dist/v2.js`를 열어 확인한 로딩 방식:
+  `requestPayment()` 첫 호출 때 `https://cdn.portone.io/v2/browser-sdk.js` 스크립트를 head에 주입하고
+  `window.PortOne`을 기다린다. **`window.PortOne`이 이미 있으면 주입 없이 그 객체를 쓴다** — E2E는 이
+  성질로 `page.addInitScript`에 스텁 `window.PortOne`을 심고 `cdn.portone.io/**`는 abort한다. vitest는
+  `vi.mock('@portone/browser-sdk/v2')`. 모듈 레벨 `promise` 변수가 로드를 1회로 묶으므로 앱 쪽 once-guard는
+  필요 없다.
+- **`startPayment({orderGroupId, method, orderName?})`** = `POST .../payment/prepare` → `requestPayment`.
+  payMethod는 CARD→`'CARD'`, KAKAO_PAY/TOSS_PAY→`'EASY_PAY'`+`easyPay.easyPayProvider`. currency
+  `'CURRENCY_KRW'`, `redirectUrl`은 `/payment/result?orderGroupId=&method=`(모바일 redirect 복귀용),
+  customer 미전달. 결과는 `launched|cancelled|failed(stage: prepare|sdk, errorCode?)` — **`launched`는
+  "결제창이 정상 종료됐다"는 뜻일 뿐 성공이 아니다.** 성공은 결과 화면의 `complete`가 서버에 묻는다. 포트원은
+  사용자 취소에 별도 코드가 없어(`code`+`message`) 문구의 취소/cancel로 가른다. 같은 그룹의 동시 호출은
+  모듈 맵 Promise 공유로 prepare·결제창이 한 번만 열린다(prepare 재호출은 PG 사전등록을 매번 보낸다).
+- **결과 화면은 "정확히 한 번"이 아니라 "안전하게 반복 확인".** 마운트·재진입·새로고침마다
+  `confirmPayment()`가 `POST .../payment/complete`를 부른다(BE가 PAID에 멱등). StrictMode 이중 마운트는
+  그룹별 진행 중 Promise(모듈 맵)가 한 요청으로 합치고, 끝나면 지워 다음 진입은 다시 묻는다 — 예전
+  ref 가드 금지 규칙은 이 방식으로 대체. `IN_PROGRESS`·네트워크 오류·502(60005)는 1s/2s/4s backoff로
+  최대 3회 재확인, 그래도 IN_PROGRESS면 "확인 중" 화면 + 다시 확인 버튼. 테스트는
+  `confirmPayment(id, { retryDelaysMs })`로 지연을 0으로 둔다.
+- 상태별 화면: `PAID` → 완료(헤더 없음, 주문번호=orderGroupId, 적립금 사용 행은 >0일 때만, CTA 홈으로/주문 내역
+  보기, 전부 replace) + `['cart']`·`['order-groups']`·`['points']` 무효화. `FAILED`/`NOT_STARTED` → 실패
+  (뒤로가기 유지, 장바구니로/다시 시도). 다시 시도는 같은 수단으로 prepare→결제창→complete 재실행이며
+  `method` 쿼리가 없으면 버튼을 숨긴다. 다시 시도의 prepare가 60006(이미 결제됨 — 다른 탭·결제앱에서 끝난 경우)
+  이면 실패 문구 대신 complete를 다시 물어 완료 화면으로 가고(BE가 PAID를 멱등 재반환), 60009(만료)면 장바구니
+  안내 문구와 함께 다시 시도 버튼을 숨긴다(같은 그룹으로는 더 결제할 수 없다). 60010/60011/60012 → "확인이 필요한 결제" + 고객센터 문의, 재시도
+  없음. 그 밖의 오류(60008 등) → "확인하지 못했어요" + 다시 확인.
+- **주문 상세 CTA는 `/orders`(목록)로 간다.** 결과 화면이 아는 id는 orderGroupId뿐이고 상세
+  경로(`/orders/{orderId}`)는 셀러 주문 id라 바로 연결할 수 없다.
+- 라우트 search는 `{orderGroupId, method?}`. 포트원 redirect 복귀 시 붙는 `paymentId`·`code`·`message`는
+  읽지 않는다(서버 응답이 기준). orderGroupId가 없으면 `beforeLoad`에서 `/cart`로.
+- 회귀: `shared/payment/__tests__/payment.queries.test.ts`(`[AC-PAYMENT-SDK-001~007]` 매핑·startPayment,
+  `[AC-PAYMENT-CONFIRM-001~004]` backoff·공유 Promise, `[AC-PAYMENT-ERR-001~003]` — shared 쪽은 feature의
+  `AC-PAYMENT-00n`과 번호가 겹치지 않게 접두를 따로 둔다), `features/payment/__tests__/`
+  (`payment-route`: 004/005/010/011/016/018/019 화면 분기, 022 다시 시도의 prepare 60006 → complete 재확인으로
+  완료 화면, 023 prepare 60009 → 장바구니 안내 + 다시 시도 숨김, `payment-order`: 008 StrictMode 1회·017 재진입
+  재호출·020/021 캐시 무효화·009 replace), E2E `e2e/payment.spec.ts`(`[AC-PAYMENT-E2E-001~005]`).
+  옛 목업 AC(001~003 분기, 006~007 주문번호 유일성)는 서버 전환으로 폐기.
+
+---
+
+### 장바구니 서버 연동 (SCRUM-237 W1, 2026-10-17) — 목업 스토어 폐기, `/carts` 4종 실연동
+
+목업 `shared/cart/cart.store.ts`(라인 원본 클라이언트 보관)와 `features/cart/cart.queries.ts`(`buildCartView`
+셀렉터)를 지우고, 장바구니 라인 원본을 서버(`GET /carts`)가 소유하는 구조로 바꿨다. PR #23(SCRUM-200)의
+어댑터 로직을 이식하되 마크업은 main의 공용 컴포넌트(`Card`/`PriceRow`/`Divider`/`ScreenEmptyState`/
+`ProductThumbnail`/`ProductCarousel`)를 유지했다.
+
+- **어댑터는 `shared/cart/cart.queries.ts`** — 생성 fetcher(`getCart`/`addCartItem`/`updateCartItem`/
+  `deleteCartItems`)만 소비하고 자체 `useQuery`/`useMutation`으로 감싼다. 쿼리 키 `['cart']` 하나를 화면
+  (`useCartView`)·배지(`useCartCount`)·담기 확인 시트(`useCartQuery`)가 공유하고, 모든 mutation 성공은
+  `invalidateQueries(['cart'])` 한 번으로 끝난다. `buildServerCartView(res, deselected)`가 순수 함수로 서버
+  응답 + 해제 집합 → 화면 뷰(`ServerCartView`)를 만든다(서버 enum·와이어 필드는 이 파일 밖으로 안 나간다).
+- **선택(체크)은 `shared/cart/cart-selection.store.ts`** — 서버에 선택 개념이 없어 "해제된 cartItemId 집합"만
+  `useSyncExternalStore`로 든다(새 라인 기본 선택). `moveCartSelection(from, to)`는 PATCH `merged=true` 응답
+  때 해제 상태를 살아남은 id로 옮긴다. 로그아웃·계정 전환 시 `resetCartSelection()`을 `queryClient.clear()`와
+  함께 부른다(main.tsx `setOnAuthExpired`·설정 로그아웃(`settings.queries.ts`)이 호출한다).
+- **배송비·소계·총액은 FE 계산**(`sellerShippingFee`) — 셀러별로 **선택되고 주문 가능한**(`selected && orderable`)
+  라인의 `price*quantity` 합이 `freeShippingThreshold` 이상이면 0, 아니면 `baseShippingFee`, 임계 `null`이면 항상
+  base, 선택 라인이 없는 셀러는 0. 서버 `OrderService`와 같은 규칙이어야 주문 생성 50106이 안 난다. 옛
+  `FREE_SHIPPING_THRESHOLD`/`BASE_SHIPPING_FEE` 전역 상수는 장바구니에서 더 쓰지 않는다.
+- **수량 변경은 대입(절대값) PATCH + 라인별 직렬화 큐**(`cart-quantity-queue.ts`). 라인당 요청 하나만 띄우고
+  진행 중에 들어온 연타는 마지막 희망 수량만 기억해 완료 후 1회 더 보낸다(2→3→4 연타면 PATCH는 2, 4 둘).
+  낙관적 갱신은 해당 라인 수량만 바꾸고, 실패하면 스냅샷 복원 대신 `['cart']` 재조회(다른 라인의 성공분을
+  되돌리지 않게). 수량 상한은 `min(99, remainingStock)`, `quantity > remainingStock`인 라인은 경고 + 선택 시
+  주문하기 비활성(서버는 재고 0일 때만 OUT_OF_STOCK을 주고 초과 판정은 클라이언트에 위임).
+- **삭제는 전부 `DELETE /carts/items` 본문 `{cartItemIds}`**(개별 X·선택 삭제). 멱등이라 없는 id는 무시된다.
+- **담기는 `ProductDetailScreen` → `useAddCartItem`** — `OptionSheet.onAddToCart(choice, qty)`로 선택 항목 전체를
+  넘기고 `optionCombinationId`가 없으면(목업 폴백 상품) 거부 토스트. 성공 응답의 `cartItemId`를
+  `AddedToCartSheet`에 넘겨 `GET /carts`에서 그 라인(옵션/수량)을 찾아 요약한다. 재담기로 해제돼 있던 라인에
+  누적되면 `setCartItemSelected(id, true)`로 다시 선택 상태로 돌린다. 실패 시 옵션 시트를 열어 둔다.
+- **배지(`useCartCount`)는 `GET /carts` 캐시에서 `select`로 "표시 라인 수"를 파생**한다(수량 합계가 아니라
+  품목 종류 수 — `/carts/items/count`는 BE develop에 없음). access token이 없으면 조회하지 않아(0) 비로그인
+  홈/마켓에서 401 → 전역 로그인 이동으로 튕기지 않는다. 시그니처(`number` 반환)는 그대로라 `HomeScreen`·
+  `CatalogScreen`·`MarketAppBar` 소비 코드는 바뀌지 않았다.
+- **바로구매 차단** — BE 주문 생성이 장바구니 행 id만 받고, 담기 우회는 같은 옵션 수량과 합쳐져 의도와 다른 주문이
+  된다. `ProductDetailScreen` 액션바는 찜 + 장바구니(품절이면 '품절'로 비활성)만 남기고 옵션 시트의 '바로 구매'
+  버튼을 지웠다. `routes/checkout.tsx`는 `?buyNow=` search를 받되 `beforeLoad`에서 `/cart`로 redirect한다.
+  합성 경로(`shared/catalog/cart-view.ts`·`order-build.ts`)는 파일만 보존.
+- **에러 문구는 `cartErrorMessage(error)`가 errorCode로 고른다**(90001/50201/50202/50203/50205/50206/50207,
+  그 외 서버 message → 기본 문구). HTTP status는 코드가 겹쳐(404가 50205·50207 둘 다) 쓰지 않는다.
+- **테스트** — MSW 상태형 핸들러(`seedCart`/`makeCartRow`/`currentCart`, test-setup afterEach 리셋) 기준.
+  `shared/cart/__tests__/cart-view.test.ts`(`[AC-CART-VIEW-001~006]`·`[AC-CART-SELECT-001~004]`),
+  `cart-quantity-queue.test.ts`(`[AC-CART-QUEUE-001~004]`), `features/cart/__tests__/cart-route.test.tsx`
+  (ROUTE-001~004·EMPTY-001·PRICE-001·QTY-SERIAL-001·SHIPPING-001·GATE-002/003·BUYNOW-BLOCK-001·SOLDOUT-001~003·
+  DELETE-001·ERROR-001~003·QTY-MIN-001·QTY-MAX-001·STOCK-001), `features/product/__tests__/added-to-cart-route.test.tsx`
+  (SHEET-001~006·008, BADGE-001). PATCH 본문 단언은 기록용 핸들러를 `server.use`로 앞에 두고 `undefined`를 반환해
+  상태형 핸들러로 fall-through시키는 방식. 옛 `cart.store.test`·`order-removal.test`는 폐기.
+  E2E `e2e/cart.spec.ts`(`[AC-CART-E2E-001~004]`): 2셀러 그룹·선택 해제 시 배송비 변화·PATCH 절대값 본문·DELETE
+  본문·조회 실패/PATCH 실패 표시, 캡처 `test-results/pr-c/cart-0N-*.png`.
+
+---
+
+### 주문 목록·상세 — GET /order-groups, GET /orders/{orderId} 실연동 (SCRUM-237, 2026-10-17)
+
+주문 목록(b4-st-1)·주문 상세(b1-st-6)가 클라이언트 목업 스토어에서 실 API로 전환됐다. 어댑터는
+`src/shared/order/order.queries.ts`(fetcher만 소비, 자체 `useInfiniteQuery`/`useQuery`), 화면은
+`features/order`. 이번 전환에서 정한 것들:
+
+- **주문그룹에 단일 상태를 부여하지 않는다.** BE 응답은 결제 한 번(`orderGroupId`) 아래 셀러 주문
+  (`sellerOrders[]`, 각자 `status`)이 달리고, 목록 필터는 "하위 주문 하나라도 해당하면 그룹 통째" 규칙이라
+  완료 탭에도 배송중 셀러 주문이 같은 카드에 나올 수 있다. `OrderCard`는 셀러 주문 행마다 `StatusPill`을 붙이고
+  행 전체가 그 셀러 주문(`orderId`)의 상세 진입 버튼이다. 도메인 타입도 그렇게 바뀌었다 —
+  `BuyerOrder`(= 주문그룹, 상태 없음) → `BuyerSellerOrder`(상태·`rawStatus`·`itemCount`·`representativeItem`),
+  상세는 `BuyerOrderDetail`. 셀러 `Order`/`OrderStatus`는 그대로다.
+- **서버 상태 8종 → 표시 6종 매핑은 어댑터 안에서만**(`toBuyerOrderStatus`): PAID→paid,
+  PREPARING·DISPATCH_PENDING→preparing(출고 대기를 배송중으로 보이게 하지 않는다), SHIPPING→shipping,
+  DELIVERED→delivered, PURCHASE_CONFIRMED→confirmed, CANCELLED→cancelled. PENDING_PAYMENT는 응답에 오지 않고
+  오면 건너뛴다(그룹의 모든 셀러 주문이 그러면 그룹을 버린다). 원문은 `rawStatus`에 보존한다. 세그먼트
+  `all/in-progress/done/canceled`는 status `all/ongoing/completed/cancelled`로 1:1이며, BE `OrderStatusFilter`
+  기준으로 **배송완료(DELIVERED)는 완료 탭**이다.
+- **상세의 금액은 두 종류다.** `payment.sellerShippingFee`만 이 셀러 주문 몫이고 나머지(상품 금액·배송비·
+  쿠폰·적립금·최종 결제액)는 **주문그룹 전체 값**이라, 결제 정보 카드를 "이 주문의 배송비"와
+  "결제 금액(주문 전체)" 두 블록으로 나눠 라벨로 구분한다. 목록 카드의 금액도 "결제 금액(주문 전체)"로 적는다.
+  셀러 주문 하나의 결제액처럼 보이게 합산·표시하지 말 것.
+- **응답에 없는 값은 가짜로 채우지 않고 UI에서 뺐다.** 배송지·수령인·운송장·출고/배송완료/자동확정 시각·
+  결제수단·적립 예정액·`productId`·`orderItemId`가 없어서 배송 추적 타임라인, 자동 구매확정 Alert, 환불 카드
+  (결제수단), 적립 예정 포인트, 상품 상세 링크를 제거했다. 목록 `representativeItem`은 대표 품목 하나라 전체
+  품목으로 위장하지 않는다 — 카드 제목은 `대표상품명 외 (itemCount-1)개`, 품목 전체는 상세에만 있다.
+  `orderedAt`은 ISO(오프셋 포함)라 `formatOrderedAt`/`shortDate`가 **Asia/Seoul 고정**으로 그린다(CI UTC에서
+  날짜가 흔들리지 않게).
+- **취소·구매확정·리뷰 작성 진입은 BE가 없어 제거했다**(AGENTS 6-10). `DetailActionBar`와 목록 카드의
+  리뷰 CTA를 없앴고, `routes/orders/$orderId/cancel.tsx`는 `beforeLoad`에서 상세로 `redirect`한다.
+  `OrderCancelScreen.tsx`는 파일만 보존(렌더 경로 없음, 확정 시 서버 호출 없이 "준비 중" Alert). 목업
+  `useCancelOrder/useConfirmOrder`는 삭제. 실 주문 품목에 `orderItemId`가 없어 주문 화면에서 리뷰 작성으로
+  보내지 않는다(`/reviews/write` 자체는 보존).
+- **조회 실패는 빈 상태로 위장하지 않는다.** 목록은 `EmptyState` "주문 내역을 불러오지 못했어요" + 다시 시도,
+  상세는 404(50000)만 "주문을 찾을 수 없어요"로, 그 외는 "주문을 불러오지 못했어요" + 다시 시도로 가른다
+  (`isOrderNotFound`/`orderErrorMessage`). 상세는 404에 재시도하지 않는다(`retry` 콜백).
+- **캐시 키는 `ORDER_GROUPS_QUERY_KEY = ['order-groups']` 접두**(목록 `[..., 'list', status]`, 상세
+  `[..., 'detail', orderId]`). 결제 성공 화면이 이 접두 하나로 둘을 함께 무효화한다. 세그먼트 전환은 키가 바뀌어
+  커서를 처음부터 받고, `totalCount`는 첫 페이지 값만 보존해 "총 N건"으로 보여준다. 페이지 크기 10.
+- 회귀: `order-route.test.tsx` `[AC-ORDER-ROUTE-001~013]`(혼합 상태 pill, status 필터 요청, 더보기 커서,
+  빈 목록, 500 → 다시 시도, 행 클릭 → 상세, 금액 라벨 구분, 404, 상세 500 → 1회 재시도 후 오류, cancel URL
+  redirect, 403 → 사유 + 다시 시도, 오프라인 첫 진입 목록·상세는 스켈레톤),
+  `shared/order/__tests__/order.queries.test.ts` `[AC-ORDER-MAP-001~005]`(상태/품목 매핑·결제대기 스킵·
+  에러 판정), `order.mock.test.ts` `[AC-ORDER-001·002·004~008]`(라벨·세그먼트·KST 포맷·제목), E2E `e2e/orders.spec.ts`
+  `[AC-ORDER-E2E-001~005]`(캡처 `test-results/pr-c/orders-0N-*.png`). 서버 상태·필터·커서 규칙은 MSW
+  `testing/msw/server.ts`의 `seedOrderGroups`/`seedOrderDetail`이 소유한다.
+
+
+---
+
+### 주문서 — 주문그룹 생성·결제 시작 실연동 (SCRUM-237 W2, 2026-10-17)
+
+주문서(b1-st-4)가 목업 장바구니 스토어·바로구매 합성 뷰·`navigate('/payment/result', {amount, orderedKeys…})`를
+버리고 서버 장바구니(`useCartView`) → `POST /order-groups`(Idempotency-Key) → `startPayment`(prepare → 포트원 SDK)
+→ `/payment/result?orderGroupId=&method=` 흐름으로 바뀌었다. 적립금 입력 규칙(`checkout.mock.ts`의
+`clampPointsInput`/`clampPoints`/`maxUsablePoints`, 하한은 포커스 이탈·결제 직전에만)은 그대로다.
+
+- **주문 요약·금액은 서버 장바구니의 선택·주문 가능 라인(`selected && orderable`)만** 센다. 배송비는 W1의
+  `sellerShippingFee`가 셀러별로 계산한 `view.shippingTotal`을 그대로 쓰므로(선택 라인 합 ≥ 임계면 0, 임계 null이면
+  항상 base, 선택 라인 없는 셀러 0) 서버 `OrderService`와 같은 규칙이다. `expectedFinalAmount = itemsTotal +
+  shippingTotal − usedPoint`, `cartItemIds`도 같은 라인 집합이라 품절 라인은 체크돼 있어도 본문에 들어가지 않는다.
+  배송지는 `useDefaultDeliveryAddress()`의 `id`(문자열)를 `Number()`로 바꿔 `deliveryAddressId`로 보낸다.
+- **주문 시도(attempt)는 `shared/order/order-attempt.store.ts`가 sessionStorage `aechak.orderAttempt`에 든다.**
+  `{attemptId, idempotencyKey, fingerprint, orderGroupId|null, expiresAt|null, createdAt}` — fingerprint는 정렬한
+  `cartItemIds` + `deliveryAddressId` + `usedPoint` + `expectedFinalAmount`. 규칙: 같은 fingerprint면 같은 키 재사용
+  (통신 오류·응답 유실·새로고침 뒤 재제출이 서버의 최초 응답을 재반환받는다), `orderGroupId`가 있고 만료까지 30초 이상
+  남았으면 새 주문 없이 그 그룹으로 결제 단계 재진입(결제창 취소 뒤 다시 결제하기), fingerprint가 다르거나 만료됐으면 새
+  키의 새 시도. 토큰·개인정보는 저장하지 않는다. 멱등키는 `crypto.randomUUID()`(36자, 공백 없음).
+- **진행 중인 주문 모드(재진입은 live 장바구니가 아니라 스냅샷으로).** 서버는 주문그룹 생성 시점에 재고·적립금을
+  차감하므로, 그룹이 살아 있는 동안 장바구니/적립금을 refetch하면 fingerprint가 달라져(잔액 감소 → 적립금 클램프 →
+  금액 변동) 새 그룹을 또 만들거나, 라인이 재고 초과·품절로 보여 10분간 아무것도 못 하는 막다른 길이 됐다. 그래서
+  attempt에 **주문 스냅샷** `snapshot: {method, orderName, cartItemIds, lineCount, totalProductAmount,
+  totalShippingFee, usedPoint, finalPaymentAmount}`을 함께 저장하고, `readReenterableOrderAttempt()`(orderGroupId·
+  snapshot 있고 expiresAt−30s > now)가 참이면 `CheckoutScreen`은 live 장바구니로 다시 계산하지 않고 스냅샷 금액·수단만
+  보여준다 — 수단 Radio는 비활성("진행 중인 주문은 처음 선택한 수단으로 결제돼요"; 서버 `Payment.method`가 최초 수단으로
+  고정되기 때문), 동의 체크박스·적립금 입력은 다시 받지 않는다. CTA는 **이어서 결제하기**(`startPayment({orderGroupId,
+  method: 스냅샷, orderName: 스냅샷})` → launched/60006은 결과 화면(60006은 attempt 삭제), 60009는 attempt 삭제 +
+  카트·적립금 무효화 + 일반 모드 전환, 취소/실패는 안내)와 **새 주문으로 시작**(attempt 삭제 → 일반 모드; "확보한 재고는
+  만료(최대 10분)까지 풀리지 않아요"를 CTA 위에 한 줄로). 일반 모드에서도 결제하기 전에 live 그룹이 있으면 새 그룹을 만들지
+  않고 이 모드로 전환하고, 그룹을 만든 뒤 결제창 취소/실패로 주문서에 남으면 바로 이 모드가 된다. **스냅샷 라인이 live
+  장바구니에 하나도 없으면 결제가 끝나 서버가 지운 것으로 보고 attempt를 버린다**(`orderAttemptLinesInCart`) — 결제 결과
+  화면이 PAID 때 attempt를 지우지 않아도 다음 진입에서 정리된다. `CartScreen`은 같은 조건이면 상단에 "결제를 기다리는 주문이
+  있어요 / 이어서 결제하기(→ /checkout)" 배너를 띄워 재고 초과 표시로 주문하기가 막혀도 출구를 둔다. 근본 해법(차감 시점을
+  결제 확정으로 이동 또는 PENDING 그룹 취소 EP, 만료 복구 배치)은 BE 선결 과제.
+- **장바구니 선택(해제) 상태는 `sessionStorage` `aechak.cartDeselected`에 영속화**(`cart-selection.store.ts`). 해제 집합이
+  메모리 전용이던 때는 /checkout 새로고침·직접 진입에서 해제한 라인이 전부 선택으로 돌아와 주문서 금액이 바뀌고(새 fingerprint
+  → 두 번째 PENDING 그룹) 있었다. 모든 변경이 저장소에 함께 적히고(전부 선택이면 키 삭제), 모듈 로드 시 복원(파싱 실패·배열
+  아님·정수 아님은 버림), `resetCartSelection()`이 저장소까지 지운다(main.tsx 세션 만료·설정 로그아웃이 이미 호출).
+- **`POST /order-groups`는 `shared/order/order.queries.ts`의 `createOrderGroupWithKey`/`useCreateOrderGroup`** —
+  orval이 `in: header` 파라미터를 생성하지 않아 `customInstance`로 `Idempotency-Key`를 직접 붙인다. 에러 문구는
+  `createOrderGroupErrorMessage`(50106/50104/50105/50107/50205/50207/50101/50103/50102/50108/30101/30501/30502/
+  90004·90005 + status 폴백), 코드 분기는 `createOrderGroupErrorCode`.
+- **handlePay 분기**: 성공 → attempt에 `orderGroupId/expiresAt` 기록 → `startPayment({orderGroupId, method,
+  orderName: buildOrderName(대표상품명, 라인수)})`. `launched` → `/payment/result`로 `replace` 이동(성공 판정은 결과
+  화면의 complete). `cancelled` → 인라인 Alert "결제를 취소했어요"(그룹은 10분 유효, 다시 결제하기는 같은 그룹으로
+  재진입). `failed`(prepare 60006 이미 결제) → 결과 화면으로 보내 PAID 확인. `failed`(prepare 60009 만료) →
+  attempt 삭제 + "결제 가능 시간이 지났어요" 안내(다음 결제하기가 새 키·새 그룹). 그 밖의 실패는 Alert.
+  주문 생성 409 50106(금액 불일치) → attempt 삭제 + `['cart']` 무효화 + "주문 금액이 바뀌어 다시 계산했어요" 안내(화면
+  금액이 서버 값으로 갱신된다). 50104/50107/50205(장바구니 상태가 원인) → attempt 삭제 + 카트 무효화 + `/cart`로
+  돌려보낸다(장바구니 화면이 품절/재고 경고를 보여준다). 진행 중에는 결제 버튼이 `loading`으로 잠겨 연타해도 주문그룹은
+  한 번만 만든다.
+- **빈 상태·오류**: 장바구니 조회 실패는 "장바구니를 불러오지 못했어요" + 다시 시도, 주문 가능 선택 라인이 없으면
+  "주문할 상품이 없어요" + 장바구니로. 바로구매(`?buyNow=`)는 `routes/checkout.tsx` `beforeLoad`가 `/cart`로
+  redirect하므로 `CheckoutScreen`은 props를 받지 않는다. W1의 과도기 셰임 `shared/cart/legacy.ts`는 삭제했다.
+- **폐기(소유 밖이지만 게이트를 막아 함께 정리)**: `shared/catalog/order-build.ts`와 테스트(목업 주문 조립 — 유일
+  소비처였던 결제 결과 화면이 서버 전환으로 더 쓰지 않고 새 도메인 타입과 맞지 않았다). 리뷰 feature는 폐기된 목업 주문
+  스토어(`useOrders`/`buildPendingReviews`) 의존을 걷어냈다 — 작성 대기는 서버 목록뿐, `useCreateReview`는
+  `orderItemId` 필수(로컬 폴백 제거), `/reviews/write`에 `orderItemId` 없이 신규 작성으로 들어오면 "리뷰를 쓸
+  주문을 찾을 수 없어요" 안내로 막는다(수정 모드는 로컬 스토어 리뷰 그대로).
+- 회귀: `features/checkout/__tests__/checkout-route.test.tsx`(`[AC-CHECKOUT-005/006/007]` 배송지,
+  `[AC-CHECKOUT-020~023]` 서버 카트 요약·배송비·빈 상태·조회 실패, `[AC-CHECKOUT-011]` 품절 제외,
+  `[AC-CHECKOUT-024~033]` 멱등키 헤더·본문·replace·적립금/수단 반영·같은 키 재시도·본문 변경 시 새 키·취소 후
+  재진입·50106·50104·60006·60009·연타 1회, `[AC-POINT-CHECKOUT-004~006]`·`[AC-CHECKOUT-013~015/018]` 적립금 보존,
+  `[AC-CHECKOUT-034~040]` 진행 중인 주문 모드 — 스냅샷 금액·수단 고정·이어서 결제(POST 미발생)·60009 일반 모드
+  전환·60006·새 주문으로 시작·취소 뒤 장바구니 변동에도 같은 그룹·스냅샷 라인 소실 시 정리),
+  `features/cart/__tests__/cart-route.test.tsx`(`[AC-CART-ROUTE-005~007]` 결제 대기 배너),
+  `shared/order/__tests__/order-attempt.store.test.ts`(`[AC-ORDER-ATTEMPT-001~008]`, 006~008 스냅샷 저장·복원·
+  옛 형식 비재진입·라인 잔존 판정), `shared/cart/__tests__/cart-selection.store.test.ts`(`[AC-CART-SELECT-005~007]`
+  해제 집합 영속화·복원·리셋), E2E `e2e/checkout.spec.ts`(`[AC-CHECKOUT-E2E-001~004]`, 캡처
+  `test-results/pr-c/checkout-01~05`). 옛 바로구매 AC(016/017)는 폐기.

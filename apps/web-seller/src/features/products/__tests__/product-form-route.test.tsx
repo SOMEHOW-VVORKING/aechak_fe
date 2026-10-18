@@ -392,11 +392,13 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     expect(screen.queryByRole('status', { name: '등록 양식을 불러오는 중' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SPRD-038] 배송 정책은 셀러 정책 요약과 배송 정책 화면 링크로 보여준다', async () => {
+  it('[AC-SPRD-038] 배송 정책 칸은 목업 요약 대신 준비 중 안내만 보여준다(seller 모듈에 정책 API 없음)', async () => {
     renderAt('/products/new')
 
-    expect(await screen.findByText(/기본 배송비 3,000원/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '배송 정책 수정' })).toHaveAttribute('href', '/shipping-policy')
+    expect(await screen.findByText('배송 정책 설정은 준비 중이에요')).toBeInTheDocument()
+    // 목업 수치(기본 배송비 3,000원)와 목업 화면으로 가는 링크는 실 등록 폼에 싣지 않는다.
+    expect(screen.queryByText(/기본 배송비/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '배송 정책 수정' })).not.toBeInTheDocument()
   })
 })
 

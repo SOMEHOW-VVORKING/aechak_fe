@@ -28,11 +28,29 @@ import { SellerTypePill, sellerTypeLabel } from '@/shared/components/SellerTypeP
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/sellers/')({
-  component: SellersPage,
+  component: SellersGate,
 })
+
+// 운영 진입 차단 스위치. admin 모듈에 셀러 계정 조회·제재 API가 없어(입점 심사와 별개) 목록·판매정지·
+// 메모가 전부 목업이다 — 주소로 들어와도 열지 않는다. 아래 SellersPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
+const SERVER_SELLER_ACCOUNTS_AVAILABLE = false
+
+function SellersGate() {
+  if (!SERVER_SELLER_ACCOUNTS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="셀러 관리"
+        description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다."
+        message="셀러 관리는 준비 중이에요"
+      />
+    )
+  }
+  return <SellersPage />
+}
 
 const operatingStatusMeta: Record<SellerOperatingStatus, StatusMeta> = {
   active: { label: '영업중', variant: 'success', icon: CheckCircle },

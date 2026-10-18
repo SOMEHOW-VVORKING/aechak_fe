@@ -23,7 +23,8 @@ import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { formatKRW } from '@/shared/formatKRW'
-import { addToCart } from '@/shared/cart'
+import { errorResponse } from '@aechak/api'
+import { CART_MAX_QUANTITY, cartErrorMessage, useAddCartItem } from '@/shared/cart'
 import {
   hydrateLikedFromDetail,
   SUB_CATEGORIES,
@@ -43,6 +44,14 @@ import { AddedToCartSheet } from './AddedToCartSheet'
 
 // 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
 // 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
+// 담기(POST)는 서버가 이미 담긴 같은 옵션 수량과 합쳐 상한(99)을 판정한다 — 시트의 수량은 상한 안이므로
+// 90001은 합산 초과라 그 취지로 안내한다. 나머지는 장바구니 공용 문구.
+function addCartErrorMessage(error: unknown): string {
+  return errorResponse(error)?.data?.errorCode === 90001
+    ? `이미 담긴 수량과 합쳐 ${CART_MAX_QUANTITY}개를 넘을 수 없어요. 장바구니에서 수량을 확인해 주세요`
+    : cartErrorMessage(error)
+}
+
 function buildOptionChoices(
   raw: ProductOptionsView | null | undefined,
   detail: ProductDetail | null | undefined,
@@ -70,6 +79,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [addedSheetOpen, setAddedSheetOpen] = useState(false)
+  // 방금 담은 서버 라인 id — 담기 확인 시트가 옵션/수량 요약을 이 라인에서 읽는다.
+  const [addedCartItemId, setAddedCartItemId] = useState<number | null>(null)
+  const addCart = useAddCartItem()
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [toast, setToast] = useState<{ open: boolean; message: string; variant: ToastVariant }>({
     open: false,
@@ -83,7 +95,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
   // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
   const reviewPreview = useProductReviewPreview(productId, {
-    enabled: isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
+    enabled:
+      isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
   })
   // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
   const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
@@ -130,7 +143,6 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               })
             }
             onCart={() => requireAuth('cart', () => setSheetOpen(true))}
-            onBuy={() => requireAuth('buy', () => setSheetOpen(true))}
           />
         ) : undefined
       }
@@ -175,7 +187,11 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                       <button
                         type="button"
                         onClick={() => navigate({ to: '/market', search: { category: crumb } })}
-                        className={isLast ? 'text-text-secondary underline-offset-2 hover:underline' : 'underline-offset-2 hover:underline'}
+                        className={
+                          isLast
+                            ? 'text-text-secondary underline-offset-2 hover:underline'
+                            : 'underline-offset-2 hover:underline'
+                        }
                       >
                         {crumb}
                       </button>
@@ -187,7 +203,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               })}
             </div>
 
-            <h1 className="text-body-lg font-semibold leading-snug text-text-primary">{data.name}</h1>
+            <h1 className="text-body-lg font-semibold leading-snug text-text-primary">
+              {data.name}
+            </h1>
 
             {/* 판매중/SALE 상태 pill 줄은 제거했다 — 바로 아래에서 구매 가능하고 세일 %도
                 가격 블록에서 확인되므로 중복/노이즈였다. 품절 표시는 상단 이미지 캐러셀의
@@ -252,27 +270,27 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                       ))}
                     </div>
                   ) : (
-                  <div className="flex flex-col gap-3">
-                    {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => {
-                      // 클로저 안에서는 좁히기가 풀리므로 배열을 먼저 받아 둔다.
-                      const images = review.images
-                      return (
-                        <ReviewCard
-                          key={`${review.author}-${i}`}
-                          author={review.author}
-                          rating={review.rating}
-                          date={review.date}
-                          content={review.content}
-                          images={images}
-                          onImageClick={
-                            images && images.length > 0
-                              ? index => setLightboxSrc(images[index] ?? null)
-                              : undefined
-                          }
-                        />
-                      )
-                    })}
-                  </div>
+                    <div className="flex flex-col gap-3">
+                      {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => {
+                        // 클로저 안에서는 좁히기가 풀리므로 배열을 먼저 받아 둔다.
+                        const images = review.images
+                        return (
+                          <ReviewCard
+                            key={`${review.author}-${i}`}
+                            author={review.author}
+                            rating={review.rating}
+                            date={review.date}
+                            content={review.content}
+                            images={images}
+                            onImageClick={
+                              images && images.length > 0
+                                ? index => setLightboxSrc(images[index] ?? null)
+                                : undefined
+                            }
+                          />
+                        )
+                      })}
+                    </div>
                   )}
                 </>
               ) : (
@@ -300,7 +318,10 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               {data.specs.length > 0 && (
                 <Card className="flex flex-col gap-2 p-4">
                   {data.specs.map(spec => (
-                    <div key={spec.label} className="flex items-start justify-between gap-4 text-body-sm">
+                    <div
+                      key={spec.label}
+                      className="flex items-start justify-between gap-4 text-body-sm"
+                    >
                       <span className="flex-none text-text-tertiary">{spec.label}</span>
                       <span className="text-right text-text-primary">{spec.value}</span>
                     </div>
@@ -329,18 +350,29 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
           choices={optionChoices}
           loading={optionsQuery.isLoading}
           error={optionsQuery.isError}
+          adding={addCart.isPending}
           onRetry={() => void optionsQuery.refetch()}
           onClose={() => setSheetOpen(false)}
-          onAddToCart={(option, qty, additionalPrice) => {
-            addToCart(productId, option, qty, additionalPrice)
-            setSheetOpen(false)
-            // 하단 중앙 토스트가 하단 액션바를 덮던 문제를 근본 해소 — 토스트 대신 확인 바텀시트를
-            // 올려 담긴 사실 + 추천 상품을 보여준다.
-            setAddedSheetOpen(true)
-          }}
-          onBuyNow={(option, qty, additionalPrice) => {
-            setSheetOpen(false)
-            navigate({ to: '/checkout', search: { buyNow: productId, option, qty, addl: additionalPrice } })
+          onAddToCart={(choice, qty) => {
+            // 장바구니는 서버 소유라 옵션 조합 id가 필수 — 목업 폴백 상품(실 옵션 없음)은 담을 수 없다.
+            if (choice.optionCombinationId == null) {
+              setSheetOpen(false)
+              showToast('지금은 이 상품을 장바구니에 담을 수 없어요.', 'error')
+              return
+            }
+            addCart.mutate(
+              { optionCombinationId: choice.optionCombinationId, quantity: qty },
+              {
+                onSuccess: res => {
+                  setSheetOpen(false)
+                  setAddedCartItemId(res.cartItemId)
+                  // 토스트 대신 확인 바텀시트로 담긴 사실 + 추천 상품을 보여준다(액션바 가림 방지).
+                  setAddedSheetOpen(true)
+                },
+                // 실패 시 시트를 열어둔다 — 수량/옵션을 바로 고쳐 다시 담을 수 있게(재고 부족 등).
+                onError: e => showToast(addCartErrorMessage(e), 'error'),
+              },
+            )
           }}
         />
       )}
@@ -348,6 +380,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       <AddedToCartSheet
         open={addedSheetOpen}
         productId={productId}
+        cartItemId={addedCartItemId}
         onClose={() => setAddedSheetOpen(false)}
         onViewCart={() => {
           setAddedSheetOpen(false)
@@ -470,18 +503,18 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
   )
 }
 
+// 하단 액션바는 찜 + 장바구니 담기뿐이다. 바로구매는 BE 주문 생성이 장바구니 행 id만 받아 진입점을 두지
+// 않는다(담기 우회는 같은 옵션 수량과 합쳐져 의도와 다른 주문이 된다).
 function ActionBar({
   wished,
   soldOut,
   onToggleWish,
   onCart,
-  onBuy,
 }: {
   wished: boolean
   soldOut?: boolean
   onToggleWish: () => void
   onCart: () => void
-  onBuy: () => void
 }) {
   return (
     <div
@@ -500,45 +533,44 @@ function ActionBar({
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
       </button>
-      {/* 품절 상품은 담기/구매를 막아 죽은 시트로 빠지지 않게 한다. 찜은 유지. */}
-      <Button variant="secondary" size="lg" onClick={onCart} className="flex-1" disabled={soldOut}>
-        장바구니
-      </Button>
-      <Button size="lg" onClick={onBuy} className="flex-[1.4]" disabled={soldOut}>
-        {soldOut ? '품절' : '구매하기'}
+      {/* 품절 상품은 담기를 막아 죽은 시트로 빠지지 않게 한다. 찜은 유지. */}
+      <Button size="lg" onClick={onCart} className="flex-1" disabled={soldOut}>
+        {soldOut ? '품절' : '장바구니'}
       </Button>
     </div>
   )
 }
 
-// 옵션 조합 하나를 선택 항목 하나로 평탄화한 목록(choices)을 소비한다. 조합 추가금은 총액과
-// 콜백에 실어 다운스트림 장바구니/주문 합계에 반영된다. 선택 조합이 품절이면 담기/구매를 막는다.
+// 옵션 조합 하나를 선택 항목 하나로 평탄화한 목록(choices)을 소비한다. 선택 조합이 품절이면 담기를 막는다.
 function OptionSheet({
   open,
   basePrice,
   choices,
   loading,
   error,
+  adding,
   onRetry,
   onClose,
   onAddToCart,
-  onBuyNow,
 }: {
   open: boolean
   basePrice: number
   choices: OptionChoice[]
   loading: boolean
   error: boolean
+  /** 담기 API 진행 중 — 담기 버튼 로딩/중복 클릭 방지. */
+  adding: boolean
   onRetry: () => void
   onClose: () => void
-  onAddToCart: (option: string, qty: number, additionalPrice: number) => void
-  onBuyNow: (option: string, qty: number, additionalPrice: number) => void
+  /** 담기는 옵션 조합 id가 필요해 선택 항목 전체를 넘긴다(서버 담기 계약). */
+  onAddToCart: (choice: OptionChoice, qty: number) => void
 }) {
   const [selectedKey, setSelectedKey] = useState('')
   const [qty, setQty] = useState(1)
   // 기본 선택은 주문 가능한(품절 아닌) 첫 조합 — 첫 조합이 품절인데 뒤에 판매 조합이 있으면 첫인상이
   // "구매 불가"가 되지 않게 한다.
-  const choice = choices.find(c => c.key === selectedKey) ?? choices.find(c => !c.soldOut) ?? choices[0]
+  const choice =
+    choices.find(c => c.key === selectedKey) ?? choices.find(c => !c.soldOut) ?? choices[0]
   const allSoldOut = choices.length > 0 && choices.every(c => c.soldOut)
 
   // 선택 조합이 바뀌면 수량을 1로 되돌려 재고 초과를 막는다.
@@ -564,7 +596,11 @@ function OptionSheet({
   if (loading || !choice) {
     return (
       <BottomSheet open={open} onClose={onClose} title="옵션 선택">
-        <div role="status" aria-live="polite" className="py-10 text-center text-body-sm text-text-tertiary">
+        <div
+          role="status"
+          aria-live="polite"
+          className="py-10 text-center text-body-sm text-text-tertiary"
+        >
           옵션을 불러오는 중이에요
         </div>
       </BottomSheet>
@@ -582,7 +618,8 @@ function OptionSheet({
     )
   }
 
-  const maxStock = choice.remainingStock ?? 99
+  // 서버 라인당 상한(99)과 재고 중 작은 값 — 재고가 많아도 99를 넘기면 담기가 400(90001)으로 거절된다.
+  const maxStock = Math.min(CART_MAX_QUANTITY, choice.remainingStock ?? CART_MAX_QUANTITY)
   const total = (basePrice + choice.additionalPrice) * qty
   const orderDisabled = choice.soldOut || maxStock <= 0
 
@@ -603,36 +640,36 @@ function OptionSheet({
         />
         <div className="flex items-center justify-between">
           <span className="text-body text-text-secondary">수량</span>
-          <NumberInput value={qty} onChange={setQty} min={1} max={Math.max(1, maxStock)} size="sm" />
+          <NumberInput
+            value={qty}
+            onChange={setQty}
+            min={1}
+            max={Math.max(1, maxStock)}
+            size="sm"
+          />
         </div>
         {choice.remainingStock != null && (
-          <p className="text-right text-caption text-text-tertiary">재고 {choice.remainingStock}개</p>
+          <p className="text-right text-caption text-text-tertiary">
+            재고 {choice.remainingStock}개
+          </p>
         )}
         <Divider />
         <div className="flex items-center justify-between">
           <span className="text-body text-text-secondary">총 {qty}개</span>
           <span className="text-price-lg font-bold text-text-price">{formatKRW(total)}</span>
         </div>
-        {orderDisabled && <p className="text-caption text-error-fg">선택한 옵션은 품절이라 주문할 수 없어요</p>}
-        <div className="flex gap-2.5">
-          <Button
-            variant="secondary"
-            size="lg"
-            disabled={orderDisabled}
-            onClick={() => onAddToCart(choice.key, qty, choice.additionalPrice)}
-            className="flex-1"
-          >
-            장바구니 담기
-          </Button>
-          <Button
-            size="lg"
-            disabled={orderDisabled}
-            onClick={() => onBuyNow(choice.key, qty, choice.additionalPrice)}
-            className="flex-1"
-          >
-            바로 구매
-          </Button>
-        </div>
+        {orderDisabled && (
+          <p className="text-caption text-error-fg">선택한 옵션은 품절이라 주문할 수 없어요</p>
+        )}
+        <Button
+          size="lg"
+          disabled={orderDisabled}
+          loading={adding}
+          onClick={() => onAddToCart(choice, qty)}
+          className="w-full"
+        >
+          장바구니 담기
+        </Button>
       </div>
     </BottomSheet>
   )

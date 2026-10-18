@@ -28,11 +28,29 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/products/review')({
-  component: ProductReviewPage,
+  component: ProductReviewGate,
 })
+
+// 운영 진입 차단 스위치. admin 모듈에 상품 검수 API가 없어 목록·통과·블라인드·판매중지가 전부 목업이다 —
+// 주소로 들어와도 열지 않는다. 아래 ProductReviewPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
+const SERVER_PRODUCT_REVIEW_AVAILABLE = false
+
+function ProductReviewGate() {
+  if (!SERVER_PRODUCT_REVIEW_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="상품 검수 관리"
+        description="셀러 등록 상품 · 신고 상품 · 블라인드 상품을 검수합니다."
+        message="상품 검수 관리는 준비 중이에요"
+      />
+    )
+  }
+  return <ProductReviewPage />
+}
 
 const saleStatusMeta: Record<ProductReviewSaleStatus, StatusMeta> = {
   'on-sale': { label: '판매중', variant: 'success' },

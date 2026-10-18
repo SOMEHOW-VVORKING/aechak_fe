@@ -769,3 +769,12 @@ E2E spec은 0개였다. 네 가지를 함께 세웠고, 어드민 E2E는 이 저
 세 앱의 E2E가 모두 `ci.yml`의 `e2e` 잡에서 돈다. 그전에는 web-buyer만 돌았고 주석은 "web-seller/
 web-admin은 spec이 0개"라고 적고 있었는데, 셀러 spec 2개가 두 달 전에 들어온 뒤로 갱신되지 않아
 그동안 CI 보호 없이 방치돼 있었다.
+
+## 목업 화면 진입 차단과 nav 축소 (2026-10-17)
+
+구매자 앱의 장바구니·주문·결제 실연동(SCRUM-237)과 같은 PR에서, BE 컨트롤러가 없는 셀러·어드민 화면을 AGENTS 6-10 규약대로 정리했다.
+
+- **web-seller**: 대시보드(`/`)·주문(`/orders`)·클레임(`/claims`)·정산(`/settlements`)·배송 정책(`/shipping-policy`)은 라우트 파일 상단의 `SERVER_*_AVAILABLE = false` 게이트로 "준비 중" `UnavailableScreen`만 렌더한다(`/products/$productId/edit`의 `SERVER_PRODUCT_DETAIL_AVAILABLE` 선례). 원 컴포넌트·목업 queries·mutation 훅은 파일로 보존했지만 어떤 경로에서도 도달하지 않는다. nav는 상품 관리·스토어 설정 두 항목만 남겼고, 라우트 파일이 없던 항목(문의/리뷰/쿠폰/공지/계정)도 함께 뺐다. 대시보드는 로그인 복귀 URL이 `/`라 redirect 대신 안내 + "상품 관리로" 버튼으로 두었다. 상품 등록·수정 폼의 목업 배송 정책 요약은 `ShippingPolicyNotice`(준비 중 카드)로 바꿨다.
+- **web-admin**: 회원 관리·상품 검수·AI 검수 큐·셀러 계정 관리 네 화면을 같은 방식으로 게이트했고, nav는 홈·셀러 입점 심사(서버 배지)만 남겼다. 라우트가 없는 nav 14개와 상수 배지 7곳을 제거했다. BE에 없는 `POST /auth/login`을 부르던 `features/auth/auth.queries.ts`는 고아 코드라 삭제했고(`LoginForm`·`auth.store`는 보존), 어드민 실로그인은 BE가 ADMIN 역할을 세우는 운영 코드를 갖춘 뒤 web-seller의 카카오 웹 로그인을 이식하는 방향이다.
+- **되살리는 법**: 해당 BE API가 머지되면 라우트의 상수를 올리고 nav 항목을 복원한 뒤 `features/*/queries`의 목업 `queryFn`을 생성 fetcher로 바꾼다. 테스트는 `shared/__tests__/unavailable-routes.test.tsx`(seller)와 각 라우트 테스트의 게이트 AC를 그때 반전시킨다.
+

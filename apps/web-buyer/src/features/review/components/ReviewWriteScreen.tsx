@@ -13,7 +13,6 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { findProduct, ProductLineRow } from '@/shared/catalog'
-import { useOrders } from '@/shared/order'
 import { reviewErrorMessage, useCreateReview, useEditReview, useReviewById } from '../review.queries'
 import { MAX_REVIEW_LENGTH, MIN_REVIEW_LENGTH, REVIEW_REWARD, validateReview } from '../review.mock'
 import {
@@ -54,7 +53,6 @@ export function ReviewWriteScreen({
 }: ReviewWriteScreenProps) {
   const navigate = useNavigate()
   const editing = useReviewById(reviewId)
-  const orders = useOrders()
   const createReview = useCreateReview()
   const editReview = useEditReview()
 
@@ -63,15 +61,12 @@ export function ReviewWriteScreen({
   const targetOrderId = editing?.orderId ?? orderId ?? ''
 
   const product = findProduct(targetProductId)
-  const orderItem = orders
-    .find(o => o.id === targetOrderId)
-    ?.groups.flatMap(g => g.items)
-    .find(i => i.productId === targetProductId)
-  // 목업 주문 품목 -> 서버 작성 대기 스냅샷 -> 카탈로그 순. 서버 품목은 목업 주문 스토어에 없다.
-  const productName = orderItem?.name ?? snapshotName ?? product?.name
-  const productOption = orderItem?.option ?? snapshotOption ?? product?.category ?? '기본 구성'
-  const thumbnail = orderItem?.thumbnailUrl ?? snapshotThumbnail ?? product?.thumbnailUrl
-  const targetOrderItemId = orderItem?.orderItemId ?? serverOrderItemId
+  // 서버 작성 대기 스냅샷 -> 카탈로그 순.
+  const productName = snapshotName ?? product?.name
+  const productOption = snapshotOption ?? product?.category ?? '기본 구성'
+  const thumbnail = snapshotThumbnail ?? product?.thumbnailUrl
+  // 신규 작성은 서버 주문 품목 id가 있어야 한다(리뷰는 서버에만 저장). 수정은 로컬 스토어 리뷰만 대상.
+  const targetOrderItemId = serverOrderItemId
 
   const [rating, setRating] = useState(editing?.rating ?? 0)
   const [content, setContent] = useState(editing?.content ?? '')
@@ -119,8 +114,8 @@ export function ReviewWriteScreen({
       verifiedPurchase: true,
       createdAt: '2026.07.10',
     }
+    if (targetOrderItemId == null) return
     createReview.mutate(
-      // orderItemId는 서버 주문 품목에만 있다. 없으면(목업 주문) mutation이 로컬 스토어 경로로 간다.
       { review, orderItemId: targetOrderItemId, files: photos.flatMap(p => (p.file ? [p.file] : [])) },
       {
         onSuccess: () =>
@@ -167,6 +162,22 @@ export function ReviewWriteScreen({
           title="리뷰할 상품을 찾을 수 없어요"
           description="주소가 올바르지 않거나 삭제된 상품이에요."
           action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
+        />
+      </MobileScreen>
+    )
+  }
+
+  // 주문 품목 id 없이 들어온 신규 작성(직접 URL 진입)은 저장할 곳이 없다 — 작성 대기에서 다시 진입하게 한다.
+  if (!editing && targetOrderItemId == null) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" />}>
+        <ScreenEmptyState
+          title="리뷰를 쓸 주문을 찾을 수 없어요"
+          description="내 리뷰의 작성 대기 목록에서 리뷰 쓰기를 눌러 주세요."
+          action={{
+            label: '내 리뷰로',
+            onClick: () => navigate({ to: '/reviews/mine', search: { submitted: false } }),
+          }}
         />
       </MobileScreen>
     )

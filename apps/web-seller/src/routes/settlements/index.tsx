@@ -3,10 +3,28 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { Settlement, SettlementStatus } from '@aechak/domain'
 import { DataTable, Drawer, PageHeader, Select, StatusPill, type Column, type StatusPillVariant } from '@aechak/design-system/web'
 import { SETTLEMENT_STATUS_LABEL, SettlementDetailContent, useSettlements } from '@/features/settlements'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 
 export const Route = createFileRoute('/settlements/')({
-  component: SettlementsRoute,
+  component: SettlementsGate,
 })
+
+// 운영 진입 차단 스위치. seller 모듈에 정산 조회 API가 없어 목록·상세가 전부 목업이다 — 주소로
+// 들어와도 열지 않는다. 아래 SettlementsRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
+const SERVER_SETTLEMENTS_AVAILABLE = false
+
+function SettlementsGate() {
+  if (!SERVER_SETTLEMENTS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="정산/매출"
+        message="정산/매출 조회는 준비 중이에요"
+        description="정산 내역은 서버가 준비되면 여기서 볼 수 있어요."
+      />
+    )
+  }
+  return <SettlementsRoute />
+}
 
 const STATUS_VARIANT: Record<SettlementStatus, StatusPillVariant> = {
   pending: 'neutral',

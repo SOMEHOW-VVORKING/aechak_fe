@@ -10,8 +10,6 @@ export {
   FAQ_CATEGORIES,
   FAQ_ITEMS,
   filterFaq,
-  REQUIRED_CONSENTS,
-  MARKETING_CONSENT_DEFAULT,
   PRIVACY_REVISION,
   PRIVACY_SECTIONS,
   GUIDELINE_REVISION,
@@ -20,4 +18,6 @@ export {
   DATA_DELETION_IMMEDIATE,
   DATA_RETENTION_ROWS,
 } from './settings.mock'
-export type { FaqCategory, FaqItem, RequiredConsent } from './settings.mock'
+export type { FaqCategory, FaqItem } from './settings.mock'
+export { useConsentTerms, toConsentTerm } from './settings.queries'
+export type { ConsentTerm } from './settings.queries'

@@ -1,57 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
-import {
-  LayoutDashboard,
-  ClipboardList,
-  RotateCcw,
-  MessageCircle,
-  Star,
-  Package,
-  Truck,
-  Tag,
-  Wallet,
-  Store,
-  Megaphone,
-  UserCog,
-} from 'lucide-react'
+import { Package, Store } from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
 
+// nav에는 seller 모듈에 API가 있는 화면만 둔다(상품 관리·스토어 설정). 대시보드/주문/클레임/배송 정책/
+// 정산은 목업이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이 없는 항목
+// (문의/리뷰/쿠폰/공지/계정)은 404로 가는 죽은 nav라 함께 뺐다. BE가 생기면 항목을 되돌린다.
 const groups: NavGroup[] = [
-  {
-    key: '운영',
-    label: '운영',
-    items: [
-      { key: '/', label: '대시보드', icon: <LayoutDashboard className={iconClass} /> },
-      { key: '/orders', label: '주문/배송 관리', icon: <ClipboardList className={iconClass} /> },
-      { key: '/claims', label: '취소/반품/교환', icon: <RotateCcw className={iconClass} /> },
-      { key: '/inquiries', label: '고객 문의', icon: <MessageCircle className={iconClass} /> },
-      { key: '/reviews', label: '리뷰 관리', icon: <Star className={iconClass} /> },
-    ],
-  },
   {
     key: '판매 설정',
     label: '판매 설정',
-    items: [
-      { key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> },
-      { key: '/shipping-policy', label: '배송 정책', icon: <Truck className={iconClass} /> },
-      { key: '/coupons', label: '혜택/쿠폰/할인', icon: <Tag className={iconClass} /> },
-    ],
-  },
-  {
-    key: '정산',
-    label: '정산',
-    items: [{ key: '/settlements', label: '정산/매출', icon: <Wallet className={iconClass} /> }],
+    items: [{ key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> }],
   },
   {
     key: '스토어',
     label: '스토어',
     items: [
       { key: '/store-settings', label: '스토어 설정', icon: <Store className={iconClass} /> },
-      { key: '/notices', label: '알림/공지', icon: <Megaphone className={iconClass} /> },
-      { key: '/account', label: '계정/보안', icon: <UserCog className={iconClass} /> },
     ],
   },
 ]

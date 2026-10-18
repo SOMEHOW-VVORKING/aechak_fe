@@ -27,11 +27,29 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/members')({
-  component: MembersPage,
+  component: MembersGate,
 })
+
+// 운영 진입 차단 스위치. admin 모듈에 회원 조회·제재 API가 없어(컨트롤러는 입점 심사뿐) 목록·제재가
+// 전부 목업이다 — 주소로 들어와도 열지 않는다. 아래 MembersPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
+const SERVER_MEMBERS_AVAILABLE = false
+
+function MembersGate() {
+  if (!SERVER_MEMBERS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="일반 회원 관리"
+        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다."
+        message="일반 회원 관리는 준비 중이에요"
+      />
+    )
+  }
+  return <MembersPage />
+}
 
 const statusMeta: Record<MemberAccountStatus, StatusMeta> = {
   normal: { label: '정상', variant: 'success', icon: CheckCircle },

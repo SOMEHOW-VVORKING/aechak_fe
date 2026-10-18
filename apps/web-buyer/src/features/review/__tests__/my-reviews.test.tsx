@@ -7,7 +7,6 @@ import { beforeEach, describe, it, expect } from 'vitest'
 import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, server } from '@/testing/msw/server'
-import { cancelOrder, getOrders, resetOrders } from '@/shared/order'
 import { getReviews, removeReview, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
 
@@ -82,20 +81,18 @@ function serveTabs(tabs: { unreviewed?: Page; written?: Page }) {
   return calls
 }
 
-/** 목업 주문/리뷰를 비워 서버 응답만 보이게 한다. */
+/** 로컬 시드 리뷰를 비워 서버 응답만 보이게 한다. */
 function clearMockData() {
-  for (const order of getOrders()) cancelOrder(order.id)
   for (const review of getReviews()) removeReview(review.id)
 }
 
 describe('내 리뷰 서버 연동', () => {
   beforeEach(() => {
-    resetOrders()
     resetReviews()
     resetAccount()
   })
 
-  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 개수는 서버 totalCount에 목업 주문 항목을 더한다', async () => {
+  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 작성 대기는 서버 항목만, 작성 완료는 로컬 시드 리뷰를 더한다', async () => {
     const calls = serveTabs({
       unreviewed: page([unreviewed()], { totalCount: 1 }),
       written: page([written()], { totalCount: 1 }),
@@ -103,8 +100,8 @@ describe('내 리뷰 서버 연동', () => {
     const user = userEvent.setup()
     renderAt('/reviews/mine')
 
-    // 서버 1 + 목업 주문 작성 대기 3, 서버 1 + 목업 리뷰 2.
-    expect(await screen.findByText('작성 대기 4')).toBeInTheDocument()
+    // 작성 대기는 서버 1(목업 주문 스토어 폐기로 로컬 파생 없음), 작성 완료는 서버 1 + 로컬 시드 리뷰 2.
+    expect(await screen.findByText('작성 대기 1')).toBeInTheDocument()
     expect(await screen.findByText('작성 완료 3')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 연어 사료')).toBeInTheDocument()
     expect(screen.getByText('구매확정 09.20 / 10.20까지 작성')).toBeInTheDocument()
@@ -133,9 +130,8 @@ describe('내 리뷰 서버 연동', () => {
     renderAt('/reviews/mine')
 
     expect(await screen.findByText('리뷰 목록을 불러오지 못했어요')).toBeInTheDocument()
-    // 개수를 모르니 라벨에 숫자를 붙이지 않고, 목업 주문 항목도 섞어 보여주지 않는다.
+    // 개수를 모르니 라벨에 숫자를 붙이지 않는다.
     expect(screen.getByText('작성 대기')).toBeInTheDocument()
-    expect(screen.queryByText('자동 리드줄 5m 대형견용')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /다시/ })).not.toBeInTheDocument()
   })
 

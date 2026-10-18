@@ -13,7 +13,6 @@ import {
   REVIEWS_URL,
   server,
 } from '@/testing/msw/server'
-import { addOrder, resetOrders } from '@/shared/order'
 import { getReviews, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
 
@@ -35,25 +34,31 @@ function renderHistory(entries: string[]) {
   return router
 }
 
+// 내 리뷰 작성 대기(서버 orderItemId 77)에서 넘어오는 작성 화면 URL — 주문 시점 스냅샷을 search로 받는다.
+const SERVER_WRITE_URL =
+  '/reviews/write?productId=p-leash-5m&orderItemId=77&productName=' +
+  encodeURIComponent('자동 리드줄 5m 대형견용') +
+  '&option=' +
+  encodeURIComponent('5m / 블랙')
+
 describe('리뷰 라우트', () => {
   beforeEach(() => {
-    resetOrders()
     resetReviews()
     resetAccount()
   })
 
   it('[AC-REVIEW-ROUTE-001] /reviews/mine은 대기/완료 탭과 개수를 렌더한다', async () => {
-    // 시드: 작성 대기 3(배송완료 리드줄·노즈워크 + 구매확정 관절), 작성 완료 2(시드 리뷰).
+    // 작성 대기는 서버 목록(기본 핸들러 빈 목록)뿐이고, 작성 완료는 로컬 시드 리뷰 2건.
     renderAt('/reviews/mine')
-    expect(await screen.findByText('작성 대기 3')).toBeInTheDocument()
+    expect(await screen.findByText('작성 대기 0')).toBeInTheDocument()
     expect(await screen.findByText('작성 완료 2')).toBeInTheDocument()
-    expect(await screen.findByText('자동 리드줄 5m 대형견용')).toBeInTheDocument()
   })
 
-  it('[AC-REVIEW-ROUTE-002] /reviews/write는 대상 상품과 별점 입력을 렌더한다', async () => {
-    renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+  it('[AC-REVIEW-ROUTE-002] /reviews/write는 작성 대기 스냅샷의 상품과 별점 입력을 렌더한다', async () => {
+    renderAt(SERVER_WRITE_URL)
     expect(await screen.findByText('상품은 만족하셨나요?')).toBeInTheDocument()
     expect(await screen.findByText('자동 리드줄 5m 대형견용')).toBeInTheDocument()
+    expect(screen.getByText('5m / 블랙')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-ROUTE-003] /reviews/product/$productId는 리뷰 요약과 목록을 렌더한다', async () => {
@@ -344,42 +349,6 @@ describe('리뷰 라우트', () => {
     expect(await screen.findByText('최신순에서만 보이는 리뷰예요.')).toBeInTheDocument()
   })
 
-  // 실 주문(서버 orderItemId 보유) 하나를 얹는다 — 목업 시드 주문에는 orderItemId가 없어
-  // 작성이 로컬 폴백을 타므로, 서버 경로를 재현하려면 이 값을 가진 주문이 필요하다.
-  function seedServerOrder() {
-    addOrder({
-      id: '20260805-0001',
-      orderedAt: '2026.08.05 10:00',
-      status: 'delivered',
-      method: 'kakaopay',
-      groups: [
-        {
-          sellerId: 'seller-멍멍마트',
-          storeName: '멍멍마트',
-          shippingFee: 0,
-          items: [
-            {
-              productId: 'p-leash-5m',
-              name: '자동 리드줄 5m 대형견용',
-              option: '5m / 블랙',
-              quantity: 1,
-              unitPrice: 24000,
-              orderItemId: 77,
-            },
-          ],
-        },
-      ],
-      itemsTotal: 24000,
-      shippingTotal: 0,
-      couponDiscount: 0,
-      pointsUsed: 0,
-      paidAmount: 24000,
-      pointsEarned: 240,
-      deliveredAt: '2026.08.06',
-      autoConfirmAt: '2026.08.13',
-    })
-  }
-
   async function writeReview(content: string) {
     const user = userEvent.setup()
     await screen.findByText('상품은 만족하셨나요?')
@@ -392,7 +361,6 @@ describe('리뷰 라우트', () => {
   }
 
   it('[AC-REVIEW-WRITE-001] 실 주문(orderItemId 보유)의 리뷰는 서버에 저장되고 내 리뷰는 서버 목록으로 보인다', async () => {
-    seedServerOrder()
     let posted: { orderItemId?: number; rating?: number } | null = null
     server.use(
       // 저장 전에는 비어 있고 저장 뒤에는 그 리뷰를 내려주는 written 탭.
@@ -437,7 +405,7 @@ describe('리뷰 라우트', () => {
         )
       }),
     )
-    const router = renderAt('/reviews/write?productId=p-leash-5m&orderId=20260805-0001')
+    const router = renderAt(SERVER_WRITE_URL)
     await writeReview('배송도 빠르고 튼튼해서 만족스러워요.')
 
     await waitFor(() => expect(posted).not.toBeNull())
@@ -449,25 +417,42 @@ describe('리뷰 라우트', () => {
     expect(getReviews().some(r => r.id === 'srv-977')).toBe(false)
   })
 
-  it('[AC-REVIEW-WRITE-002] 목업 주문(orderItemId 없음)은 서버를 부르지 않고 로컬에만 남는다', async () => {
-    let called = 0
-    server.use(
-      http.post(REVIEWS_URL, () => {
-        called += 1
-        return new HttpResponse(null, { status: 201 })
-      }),
-    )
-    renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
-    await writeReview('목업 주문이라 로컬에만 남아야 해요.')
+  it('[AC-REVIEW-WRITE-005] 주문 품목 id 없이 진입하면 작성 폼 대신 안내를 보여주고 로컬에도 남기지 않는다', async () => {
+    // 실 주문 품목에는 orderItemId가 있어야 서버에 저장된다 — 없으면 저장되지 않는 리뷰를 성공처럼 보일 수 없다.
+    const user = userEvent.setup()
+    const router = renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
 
-    await waitFor(() =>
-      expect(getReviews().some(r => r.id === 'rv-20260703-0098-p-leash-5m')).toBe(true),
-    )
-    expect(called).toBe(0)
+    expect(await screen.findByText('리뷰를 쓸 주문을 찾을 수 없어요')).toBeInTheDocument()
+    expect(screen.queryByText('상품은 만족하셨나요?')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '리뷰 등록' })).not.toBeInTheDocument()
+    expect(getReviews().some(r => r.id === 'rv-20260703-0098-p-leash-5m')).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: '내 리뷰로' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/mine'))
   })
 
-  it('[AC-REVIEW-WRITE-004] 공백만 쓴 본문은 등록할 수 없고 앞뒤 공백은 잘라서 저장한다', async () => {
-    renderAt('/reviews/write?productId=p-leash-5m&orderId=20260703-0098')
+  it('[AC-REVIEW-WRITE-004] 공백만 쓴 본문은 등록할 수 없고 앞뒤 공백은 잘라서 보낸다', async () => {
+    let posted: { content?: string } | null = null
+    server.use(
+      http.post(REVIEWS_URL, async ({ request }) => {
+        posted = (await request.json()) as { content: string }
+        return HttpResponse.json(
+          {
+            data: {
+              reviewId: 978,
+              productId: 1,
+              rating: 5,
+              content: posted.content,
+              optionName: '5m / 블랙',
+              createdAt: '2026-08-21T10:00:00',
+              images: [],
+            },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    renderAt(SERVER_WRITE_URL)
     const user = userEvent.setup()
     await screen.findByText('상품은 만족하셨나요?')
     const stars = screen.getAllByRole('radio')
@@ -479,21 +464,16 @@ describe('리뷰 라우트', () => {
     await user.clear(screen.getByRole('textbox'))
     await user.type(screen.getByRole('textbox'), '  산책할 때 아주 잘 쓰고 있어요  ')
     await user.click(screen.getByRole('button', { name: '리뷰 등록' }))
-    await waitFor(() =>
-      expect(getReviews().find(r => r.id === 'rv-20260703-0098-p-leash-5m')?.content).toBe(
-        '산책할 때 아주 잘 쓰고 있어요',
-      ),
-    )
+    await waitFor(() => expect(posted?.content).toBe('산책할 때 아주 잘 쓰고 있어요'))
   })
 
   it('[AC-REVIEW-WRITE-003] 이미 리뷰를 쓴 주문(409)은 화면에 사유를 안내한다', async () => {
-    seedServerOrder()
     server.use(
       http.post(REVIEWS_URL, () =>
         HttpResponse.json({ errorCode: 110004, message: '이미 리뷰를 작성한 주문입니다.' }, { status: 409 }),
       ),
     )
-    const router = renderAt('/reviews/write?productId=p-leash-5m&orderId=20260805-0001')
+    const router = renderAt(SERVER_WRITE_URL)
     await writeReview('이미 쓴 주문이라 실패해야 해요.')
 
     expect(await screen.findByText('이미 리뷰를 쓴 주문이에요.')).toBeInTheDocument()
@@ -629,7 +609,7 @@ describe('리뷰 라우트', () => {
 
     // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다.
     router.history.back()
-    expect(await screen.findByText('작성 대기 3')).toBeInTheDocument()
+    expect(await screen.findByText('작성 대기 0')).toBeInTheDocument()
     expect(screen.queryByText('상품은 만족하셨나요?')).not.toBeInTheDocument()
   })
 })

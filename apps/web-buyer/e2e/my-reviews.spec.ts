@@ -112,14 +112,14 @@ test('[AC-MY-REVIEW-E2E-001] 작성 대기/작성 완료 탭이 서버 목록과
   await stubMyReviews(page, { unreviewed: [PENDING, EXPIRED], written: WRITTEN })
   await page.goto('/reviews/mine')
 
-  // 서버 2건 + 목업 주문 작성 대기 3건.
-  await expect(page.getByRole('tab', { name: '작성 대기 5' })).toBeVisible()
+  // 작성 대기는 서버 2건뿐(목업 주문 스토어 폐기).
+  await expect(page.getByRole('tab', { name: '작성 대기 2' })).toBeVisible()
   await expect(page.getByText('서버 주문 연어 사료')).toBeVisible()
   await expect(page.getByText('구매확정 09.20 / 10.20까지 작성')).toBeVisible()
   await expect(page.getByText('작성 기간이 지났어요')).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-01-pending.png')
 
-  // 서버 2건 + 목업 리뷰 2건.
+  // 서버 2건 + 로컬 시드 리뷰 2건.
   await page.getByRole('tab', { name: '작성 완료 4' }).click()
   await expect(page.getByText('서버에 저장된 내 리뷰 본문이에요.')).toBeVisible()
   await expect(page.getByText('커뮤니티 정책에 따라 일부 표현이 가려졌어요.')).toBeVisible()
@@ -166,7 +166,7 @@ test('[AC-MY-REVIEW-E2E-002] 서버 작성 대기에서 리뷰를 쓰면 POST �
 
   await page.goto('/reviews/mine')
   await page.getByText('서버 주문 연어 사료').waitFor()
-  // 서버 항목 카드의 리뷰 쓰기(목업 항목보다 앞에 있다).
+  // 서버 항목 카드의 리뷰 쓰기.
   await page.getByRole('button', { name: '리뷰 쓰기' }).first().click()
 
   await expect(page.getByText('서버 주문 연어 사료')).toBeVisible()
@@ -181,7 +181,7 @@ test('[AC-MY-REVIEW-E2E-002] 서버 작성 대기에서 리뷰를 쓰면 POST �
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('연어 사료를 아이가 정말 잘 먹어요.')).toBeVisible()
   // 서버 0 + 목업 3, 서버 1 + 목업 2.
-  await expect(page.getByRole('tab', { name: '작성 대기 3' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '작성 대기 0' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '작성 완료 3' })).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-04-after-write.png')
 })

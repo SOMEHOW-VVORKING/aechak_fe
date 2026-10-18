@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { CheckCircle2 } from 'lucide-react'
-import type { BuyerOrder } from '@aechak/domain'
+import type { BuyerOrderDetail } from '@aechak/domain'
 import {
   Alert,
   BottomFixedAction,
@@ -14,25 +13,32 @@ import { BackAppBar } from '@/shared/components/BackAppBar'
 import { Divider } from '@/shared/components/Divider'
 import { PriceRow } from '@/shared/components/PriceRow'
 import { RadioList } from '@/shared/components/RadioList'
-import { ResultHero } from '@/shared/components/ResultHero'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { formatKRW } from '@/shared/formatKRW'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { useCancelOrder, useOrder } from '../order.queries'
+import { useOrder } from '../order.queries'
 import { CANCEL_REASONS, isCancelable } from '../order.mock'
 
-// 주문 취소(b4-st-4). 배송 시작 전 주문만 취소 가능 — 배송중/완료 등은 취소 불가 안내를 보여준다.
+// 주문 취소(b4-st-4). BE 취소 엔드포인트가 아직 없어 라우트(`routes/orders/$orderId/cancel.tsx`)가 상세로
+// 되돌려 보내고 이 화면은 렌더되지 않는다 — 사유 폼·환불 요약 마크업만 보존하고, 목업 성공(상태 전이)은 없다.
 export function OrderCancelScreen({ orderId }: { orderId: string }) {
   const navigate = useNavigate()
-  const order = useOrder(orderId)
-  const cancel = useCancelOrder()
+  const { order, isPending } = useOrder(orderId)
 
   const [reason, setReason] = useState('')
   const [detail, setDetail] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [done, setDone] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
 
   const goBack = useSafeBack({ to: '/orders/$orderId', params: { orderId } })
+
+  if (isPending) {
+    return (
+      <MobileScreen header={<BackAppBar onBack={goBack} title="주문 취소" />}>
+        <div className="p-4" aria-busy="true" />
+      </MobileScreen>
+    )
+  }
 
   if (!order) {
     return (
@@ -46,35 +52,16 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
     )
   }
 
-  // 4-C 취소 완료 결과.
-  if (done) {
-    return (
-      <MobileScreen
-        footer={
-          <BottomFixedAction
-            primary={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders', replace: true }) }}
-          />
-        }
-      >
-        <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-          <ResultHero tone="success" icon={<CheckCircle2 className="size-10" />} title="취소가 완료됐어요">
-            <p className="text-body-sm leading-relaxed text-text-secondary">
-              환불 <strong className="text-text-primary">{formatKRW(order.paidAmount)}</strong>은 결제 수단으로
-              영업일 2~3일 내 처리돼요.
-            </p>
-          </ResultHero>
-        </div>
-      </MobileScreen>
-    )
-  }
-
   // 취소 불가(배송중/배송완료/구매확정/이미 취소됨).
   if (!isCancelable(order.status)) {
     const alreadyCancelled = order.status === 'cancelled'
     return (
       <MobileScreen header={<BackAppBar onBack={goBack} title="주문 취소" />}>
         <div className="flex flex-col gap-4 p-4">
-          <Alert variant="warning" title={alreadyCancelled ? '이미 취소된 주문이에요' : '취소할 수 없는 주문이에요'}>
+          <Alert
+            variant="warning"
+            title={alreadyCancelled ? '이미 취소된 주문이에요' : '취소할 수 없는 주문이에요'}
+          >
             {alreadyCancelled
               ? '이 주문은 이미 취소 처리됐어요.'
               : '이미 배송이 시작되어 주문 취소가 어려워요.'}
@@ -95,13 +82,10 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
   const needsDetail = selectedReason?.needsDetail ?? false
   const canSubmit = reason !== '' && (!needsDetail || detail.trim().length > 0)
 
+  // 취소 API가 없어 확정해도 서버에 보내지 않는다 — 가짜 완료 대신 준비 중임을 알린다.
   const handleConfirm = () => {
-    cancel.mutate(orderId, {
-      onSuccess: () => {
-        setConfirmOpen(false)
-        setDone(true)
-      },
-    })
+    setConfirmOpen(false)
+    setUnavailable(true)
   }
 
   return (
@@ -109,19 +93,34 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
       header={<BackAppBar onBack={goBack} title="주문 취소" />}
       footer={
         <BottomFixedAction
-          primary={{ label: '취소 신청', onClick: () => setConfirmOpen(true), disabled: !canSubmit }}
+          primary={{
+            label: '취소 신청',
+            onClick: () => setConfirmOpen(true),
+            disabled: !canSubmit,
+          }}
         />
       }
     >
       <div className="flex flex-col gap-4 p-4">
-        <Alert variant="info" title="배송 전이라 즉시 취소할 수 있어요">
-          상품이 출고되면 취소할 수 없어요.
-        </Alert>
+        {unavailable ? (
+          <Alert variant="warning" title="주문 취소는 준비 중이에요">
+            아직 앱에서 취소를 접수할 수 없어요. 고객센터로 문의해 주세요.
+          </Alert>
+        ) : (
+          <Alert variant="info" title="배송 전이라 즉시 취소할 수 있어요">
+            상품이 출고되면 취소할 수 없어요.
+          </Alert>
+        )}
 
         {/* 취소 사유 — 상품 신고 화면과 같은 RadioList. */}
         <div className="flex flex-col gap-2">
           <span className="mb-1 text-label font-semibold text-text-primary">취소 사유</span>
-          <RadioList name="cancel-reason" options={CANCEL_REASONS} value={reason} onChange={setReason} />
+          <RadioList
+            name="cancel-reason"
+            options={CANCEL_REASONS}
+            value={reason}
+            onChange={setReason}
+          />
           {needsDetail && (
             <Textarea
               value={detail}
@@ -143,42 +142,43 @@ export function OrderCancelScreen({ orderId }: { orderId: string }) {
         confirmLabel="취소하기"
         cancelLabel="닫기"
         onConfirm={handleConfirm}
-        loading={cancel.isPending}
       >
         <div className="flex items-center justify-between rounded-card bg-surface-sunken px-4 py-3">
           <span className="text-body-sm text-text-secondary">총 환불</span>
-          <span className="text-price-sm font-bold text-text-price">{formatKRW(order.paidAmount)}</span>
+          <span className="text-price-sm font-bold text-text-price">
+            {formatKRW(refundTotal(order))}
+          </span>
         </div>
       </Modal>
     </MobileScreen>
   )
 }
 
-function RefundSummary({ order }: { order: BuyerOrder }) {
+// 이 셀러 주문의 상품 금액 + 배송비. 적립금·쿠폰은 주문그룹 전체 값이라 셀러 단위 환불액을 알 수 없어 뺀다.
+function itemsSubtotal(order: BuyerOrderDetail): number {
+  return order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+}
+
+function refundTotal(order: BuyerOrderDetail): number {
+  return itemsSubtotal(order) + order.sellerShippingFee
+}
+
+function RefundSummary({ order }: { order: BuyerOrderDetail }) {
   return (
     <Card className="flex flex-col gap-2 p-4">
       <span className="mb-0.5 text-label font-semibold text-text-primary">환불 예정 금액</span>
-      <PriceRow label="상품 금액" value={formatKRW(order.itemsTotal)} />
+      <PriceRow label="상품 금액" value={formatKRW(itemsSubtotal(order))} />
       <PriceRow
         label="배송비"
-        value={order.shippingTotal === 0 ? '무료' : formatKRW(order.shippingTotal)}
+        value={order.sellerShippingFee === 0 ? '무료' : formatKRW(order.sellerShippingFee)}
       />
-      {order.pointsUsed > 0 && (
-        <PriceRow label="적립금 사용" value={`-${formatKRW(order.pointsUsed)}`} valueClass="text-text-accent" />
-      )}
       <Divider className="my-0.5" />
       <div className="flex items-baseline justify-between">
         <span className="text-label font-bold text-text-primary">총 환불</span>
-        <span className="text-price-sm font-bold text-text-price">{formatKRW(order.paidAmount)}</span>
+        <span className="text-price-sm font-bold text-text-price">
+          {formatKRW(refundTotal(order))}
+        </span>
       </div>
-      {order.pointsUsed > 0 && (
-        <div className="flex items-center justify-between">
-          <span className="text-caption text-text-tertiary">적립금 복구</span>
-          <span className="tabular-nums text-caption text-success-fg">
-            +{order.pointsUsed.toLocaleString('ko-KR')}P
-          </span>
-        </div>
-      )}
       <p className="mt-1 text-caption text-text-tertiary">카드 취소는 영업일 2~3일 내 처리돼요.</p>
     </Card>
   )

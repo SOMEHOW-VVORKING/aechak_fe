@@ -8,6 +8,8 @@ import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
 import { resetReviews } from '@/shared/review'
+import { resetCartSelection } from '@/shared/cart'
+import { resetOrderAttempt } from '@/shared/order'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -45,6 +47,8 @@ setOnAuthExpired(() => {
   logout()
   onWishlistLogout(queryClient) // 세션 만료 시 찜 미러/진행중 동기화/쿼리 캐시를 원자적으로 정리
   resetReviews() // 내가 쓴 리뷰는 클라이언트 스토어라 쿼리 캐시 정리로는 안 지워진다(설정 로그아웃과 동일)
+  resetCartSelection() // 장바구니 선택 해제 집합과 주문 시도(멱등키·주문그룹)는 계정 단위 — 다음 계정에 넘기지 않는다
+  resetOrderAttempt()
   // 계정 단위 서버 캐시(내 리뷰/내 정보/적립금 등)도 설정 로그아웃과 같이 전부 비운다. 남겨 두면
   // 로그인 화면에서 뒤로 가거나 다른 계정으로 로그인했을 때 staleTime 안에서는 이전 계정 데이터가 보인다.
   queryClient.clear()

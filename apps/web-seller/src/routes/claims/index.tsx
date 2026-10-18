@@ -13,10 +13,28 @@ import {
   useUpdateClaimMemo,
   type ClaimActionTarget,
 } from '@/features/claims'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 
 export const Route = createFileRoute('/claims/')({
-  component: ClaimsRoute,
+  component: ClaimsGate,
 })
+
+// 운영 진입 차단 스위치. seller 모듈에 클레임 API가 없어 승인·거부·환불·메모가 전부 목업이다 —
+// 주소로 들어와도 열지 않는다. 아래 ClaimsRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
+const SERVER_CLAIMS_AVAILABLE = false
+
+function ClaimsGate() {
+  if (!SERVER_CLAIMS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="취소/반품/교환"
+        message="취소/반품/교환 관리는 준비 중이에요"
+        description="클레임 승인·거부·환불 확정은 서버가 준비되면 열어 둘게요."
+      />
+    )
+  }
+  return <ClaimsRoute />
+}
 
 const TAB_TYPES: ClaimType[] = ['cancel', 'return', 'exchange', 'dispute']
 

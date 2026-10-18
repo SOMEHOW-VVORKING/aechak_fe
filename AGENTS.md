@@ -31,7 +31,7 @@ dev는 `api-dev` · `seller-api-dev` · `admin-api-dev`.aechak.co.kr이다. 어�
 
 ### 앱 셸 — 새 화면은 셸을 다시 만들지 말고 라우트 파일만 추가한다
 
-- **web-seller**: `src/shared/components/AppShell.tsx`가 `SideNav` + `<Outlet/>`을 조립하고 12개 화면 라우트/그룹을 이미 정의. `src/routes/<segment>/index.tsx`만 추가하면 활성 탭 자동 처리.
+- **web-seller**: `src/shared/components/AppShell.tsx`가 `SideNav` + `<Outlet/>`을 조립한다. nav에는 BE가 있는 화면(상품 관리·스토어 설정)만 올라 있고, BE가 없는 라우트(대시보드·주문·클레임·정산·배송 정책)는 라우트 파일의 `SERVER_*_AVAILABLE` 상수 게이트로 "준비 중" 안내만 보인다 — BE가 생기면 상수를 올리고 nav 항목을 복원한다. 새 화면은 `src/routes/<segment>/index.tsx`를 추가하고 nav 그룹에 항목을 넣으면 활성 탭이 자동 처리된다.
 - **web-admin**: `src/routes/__root.tsx` 안에 `AdminShell`을 **인라인**으로 정의(web-seller와 위치 다름). 마찬가지로 `src/routes/`에 파일만 추가.
 - **web-buyer**: 탭 셸은 별도 파일이 아니라 **pathless layout route** `src/routes/_tabs.tsx`. 5개 탭(index/market/sns/chat/mypage)이 자식으로 하단 탭바 공유. 온보딩 라우트는 `__root` 직속이라 탭바가 안 뜬다(탭바가 보이면 파일이 `_tabs/` 밑에 잘못 들어간 것).
 - 라우트 파일 추가 후 `routeTree.gen.ts` 갱신은 아래 "개발 명령어" 참고(standalone `generate-routes`는 무효).
@@ -69,7 +69,7 @@ dev는 `api-dev` · `seller-api-dev` · `admin-api-dev`.aechak.co.kr이다. 어�
 | 모달/탭 등 전역 UI 상태 | Zustand | `feature/xxx.store.ts` |
 | 컴포넌트 내부 폼·토글 | useState/useReducer | 컴포넌트 내부 |
 
-**API 응답을 Zustand에 저장하지 말 것**(TanStack Query 캐시가 서버 상태 담당). web-buyer의 순수 클라이언트 전역 상태(찜/장바구니 등)는 zustand 없이 React `useSyncExternalStore`로 구현하는 게 관례(아래 6절).
+**API 응답을 Zustand에 저장하지 말 것**(TanStack Query 캐시가 서버 상태 담당). web-buyer의 순수 클라이언트 전역 상태(찜 미러/장바구니 선택 상태/auth 등)는 zustand 없이 React `useSyncExternalStore`로 구현하는 게 관례(아래 7절 "상태 · 폼"). 장바구니 라인·주문 자체는 서버 상태라 TanStack Query 캐시(`['cart']`·`['order-groups']`)가 원본이다.
 
 ### 1-5. 테스트 컨벤션 (AC 기반)
 
@@ -224,7 +224,7 @@ breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·�
 
 ### 상태 · 폼
 
-- **전역 클라이언트 상태(찜/장바구니/주문/계정/펫/auth 등)는 zustand 없이 `useSyncExternalStore`** 전역 스토어로 구현(`src/shared/<domain>/*.store.ts`). 테스트 격리용 `reset*` 제공. "정확히 하나"(대표 펫/기본 배송지)는 항상 정규화(삭제 시 첫 항목 자동 승격).
+- **전역 클라이언트 상태(찜 미러/계정/펫/auth/리뷰 등)는 zustand 없이 `useSyncExternalStore`** 전역 스토어로 구현(`src/shared/<domain>/*.store.ts`). 테스트 격리용 `reset*` 제공. 장바구니 라인과 주문은 클라이언트 스토어가 아니라 서버(`GET /carts`·`GET /order-groups`)가 원본이고 TanStack Query가 캐시한다 — 클라이언트에 남는 것은 선택 상태(`shared/cart/cart-selection.store.ts`, 해제된 cartItemId 집합)와 주문 시도 기록(`shared/order/order-attempt.store.ts`, sessionStorage)뿐이다. "정확히 하나"(대표 펫/기본 배송지)는 항상 정규화(삭제 시 첫 항목 자동 승격).
 - **단일 폼 저장 화면 패턴**: 폼 state는 라우트 소유 + `useEffect`의 `!form` 가드로 1회만 시드(재시딩하면 저장 직후 입력이 서버 왕복 사이 삭제되는 버그). 필드 변경은 하나의 `onChange:(patch)=>void`로 합침. 저장이 서버 파생 필드(status 등)를 바꾸면 `onSuccess:(updated)=>setForm(updated)`로 반드시 반영(안 하면 상태 전이 후에도 버튼이 안 잠김). 성공 피드백은 `Toast` + `invalidateQueries`.
 - 목록 레이아웃 넘침 가드는 CSS `truncate`/`line-clamp-2` + `min-w-0`가 정석(DS `ProductCard`는 이미 걸림, 건드리지 말 것). 글자수 하드캡이 자연스러운 자리(랭킹 행 등)만 `@/shared/truncate`의 `truncateText(text, maxChars)`.
 
@@ -233,13 +233,13 @@ breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·�
 - **회원 전용 열람(JWT 필수) 진입점은 `useLoginGate().requireAuth(feature, action)`로 감싸** 비회원 401 강제 이탈을 막는다(로그인 BottomSheet만 열고 action 미실행). `auth.store`의 `loggedIn` 기본값은 `true`(기존 회원 흐름 전제, 새로고침 시 리셋되는 세션 mock).
 - **실 API 화면은 목업 카탈로그 id를 `findMockProduct`(레지스트리 제외)로 네트워크 전에 걸러 목업을 반환**하고, 실 상품 첫 페이지 404는 목업 폴백이 아니라 `notFound`로(레지스트리에 등록된 실 상품을 가짜 데이터로 위장 금지).
 - 세션 만료 시 전역 콜백은 `logout` + `/onboarding/login` 이동을 맡고, 온보딩 미완(403/20006)은 `setOnOnboardingRequired`가 `/onboarding/terms`로 보낸다. **이 두 핸들러를 등록하는 앱은 web-buyer뿐이다** — 셀러센터는 `setOnAuthExpired`만 걸고(온보딩 화면이 없다) 어드민은 온보딩 개념 자체가 없다. 20006을 "전역이 알아서 처리한다"고 전제한 주석을 다른 앱에 복사하지 말 것.
-- cart 등 파생 로직(셀러 그룹핑/배송비)은 상품 데이터가 필요하므로 `shared/cart`가 아니라 `shared/catalog`에 두고, 두 shared가 공유하는 순수 키 함수는 `@aechak/domain`으로 옮긴다(shared→shared 금지 회피).
+- 장바구니 파생 로직(셀러 그룹핑/배송비/소계)은 `shared/cart/cart.queries.ts`(`buildServerCartView`·`sellerShippingFee`)가 서버 `GET /carts` 응답으로 계산한다 — 상품·셀러·배송 정책이 서버 라인에 실려 오므로 카탈로그 조회가 필요 없다. `shared/catalog/cart-view.ts`는 목업 시절 합성 경로로 파일만 보존돼 있다(새 코드에서 쓰지 말 것). 두 shared가 공유하는 순수 키 함수(`cartLineKey`)는 `@aechak/domain`에 둔다(shared→shared 금지 회피).
 - **적립금 사용 한도와 최소 결제 금액은 서버 계약이다**(BE `OrderGroup`의 `MIN_POINT_USAGE`=1,000 · `MIN_PAYMENT_AMOUNT`=100). 적립금은 0원이거나 1,000원 이상이어야 하고 적립금을 뺀 뒤 100원은 남아야 한다 — 어기면 각각 400/50103, 422/50102, 422/50108이다. **입력 중에는 상한만 적용하고 하한은 입력이 끝난 뒤 한 번만 맞춘다** — 제어 입력에서 매 타이핑마다 하한으로 올리면 그 구간 밖 금액을 아예 입력할 수 없게 된다. 하한 미달은 올리지 말고 0으로 내린다(적립금은 사용자 자산이라 의도를 넘겨 쓰게 만들면 안 된다).
 
 ### 그 밖의 반복 규칙
 
 - **토스트는 `src/shared/components/AppToast`가 유일한 통로**(DS `Toast` 직접 import 금지, 한글 nowrap 처리). message는 텍스트만. 하단 고정 액션바가 있는 화면은 `aboveActionBar` prop을 켠다.
-- **상품 placeholder 썸네일은 `shared/catalog`의 `placeholderImage`(실루엣 SVG data-URI)로 통일** — lucide `ImageIcon` fallback 금지. 스냅샷 스토어(order/review)는 boundaries상 `shared/catalog` import 불가라, 썸네일은 store가 아니라 feature 읽기 계층에서 상품 id→카탈로그 참조로 채운다.
+- **상품 placeholder 썸네일은 `shared/catalog`의 `placeholderImage`(실루엣 SVG data-URI)로 통일** — lucide `ImageIcon` fallback 금지. 스냅샷 스토어(review)는 boundaries상 `shared/catalog` import 불가라, 썸네일은 store가 아니라 feature 읽기 계층에서 상품 id→카탈로그 참조로 채운다(주문 품목 썸네일은 서버 응답 `thumbnailUrl`을 그대로 쓴다).
 - **일회성 완료/결과 화면(결제/제출/리뷰 작성 완료)은 진입/이탈 navigate에 `replace: true`**(마운트마다 mutation 재발화 방지). 되돌리면 안 되는 완료 화면은 `header` 자체를 빼 ← 버튼을 없앤다(`BackAppBar` 수정 말고 `header` 미지정). 큰 아이콘/제목이 상태를 전하는 자리에 중복 pill·중복 버튼 금지.
 - **DS `Radio`/`Checkbox`의 `<input>`은 `sr-only`** — 자동화는 노드가 아니라 라벨 텍스트를 클릭. 컨트롤드 `Textarea`는 `fill`이 아니라 `type`으로 채워야 onChange 반영. jsdom은 `BottomSheet`의 `onTransitionEnd`를 안 쏴 닫힌 시트가 DOM에 남는다(셀렉터 정확 매칭).
 - **펫 수집 필드는 종/이름/품종/생년월/체중/사진뿐** — `gender`는 제거됐으니 다시 넣지 말 것. `PetSpecies`는 `'dog' | 'cat'` 2종.

@@ -14,10 +14,8 @@ import {
 } from '@aechak/api'
 import type { Review } from '@aechak/domain'
 import { findMockProduct, findProduct, placeholderImage } from '@/shared/catalog'
-import { useOrders } from '@/shared/order'
-import { addReview, removeReview, updateReview, useReviews } from '@/shared/review'
+import { removeReview, updateReview, useReviews } from '@/shared/review'
 import {
-  buildPendingReviews,
   filterPhotoReviews,
   getProductReviewData,
   sortReviews,
@@ -293,26 +291,17 @@ function dropReviewFromPages(queryClient: QueryClient, queryKey: readonly unknow
 export interface CreateReviewInput {
   /** 화면이 조립한 리뷰(별점·본문·상품/주문). 서버 경로에서도 응답값으로 덮어 스토어에 넣는다. */
   review: Review
-  /**
-   * 서버 주문 품목 id. 있으면 POST /reviews로 실제 저장하고, 없으면(목업 주문) 로컬 스토어만
-   * 갱신한다 — 주문 조회 API가 아직 없어 지금은 항상 후자를 탄다. 찜의 mock/real 게이트와 같은
-   * 방식이라, 주문 API가 열려 이 값이 채워지면 호출부 변경 없이 서버 경로로 넘어간다.
-   */
-  orderItemId?: number
+  /** 서버 주문 품목 id(작성 대기 항목). 리뷰는 서버에만 저장한다 — 없으면 작성 화면이 진입을 막는다. */
+  orderItemId: number
   /** 첨부 사진 원본. 서버 경로에서만 presigned 업로드해 imageKeys로 바꾼다. */
   files?: File[]
 }
 
-// 리뷰 작성 mutation. 리뷰 스토어에 반영되면 내 리뷰/상품 리뷰에 즉시 나타난다.
+// 리뷰 작성 mutation(POST /reviews). 성공하면 내 리뷰·상품 리뷰 캐시를 무효화한다.
 export function useCreateReview() {
   const queryClient = useQueryClient()
   return useMutation<void, Error, CreateReviewInput>({
     mutationFn: async ({ review, orderItemId, files = [] }) => {
-      if (orderItemId == null) {
-        await new Promise(resolve => setTimeout(resolve, 500))
-        addReview(review)
-        return
-      }
       // 사진은 S3로 직접 올리고 tmp 키만 본문에 싣는다. 한 장이라도 실패하면 리뷰를 만들지 않는다
       // (반쪽 리뷰가 남지 않게) — 업로드 실패는 그대로 mutation 에러로 올라간다.
       const imageKeys = await Promise.all(files.map(uploadReviewPhoto))
@@ -329,7 +318,7 @@ export function useCreateReview() {
       // 작성 화면에서 돌아가면 내 리뷰 캐시는 비활성이라 무효화만으로는 마운트 직후 이전 목록
       // (방금 쓴 품목이 아직 작성 대기에 있고 작성 완료에는 없는 상태)이 재조회 전까지 보인다.
       // 캐시를 비워 마운트 시 로딩을 거쳐 새 목록을 받게 한다.
-      if (variables.orderItemId != null) void queryClient.resetQueries({ queryKey: MY_REVIEWS_KEY })
+      void queryClient.resetQueries({ queryKey: MY_REVIEWS_KEY })
     },
   })
 }
@@ -501,27 +490,18 @@ function useMyReviewTab<T>(
   }
 }
 
+const NO_LOCAL_PENDING: PendingReview[] = []
+
 /**
  * 내 리뷰 두 탭. 작성 대기는 GET /users/me/reviews?tab=unreviewed, 작성 완료는 tab=written이 원본이다.
- *
- * 주문 조회 API가 아직 없어 체크아웃/주문 내역은 클라이언트 목업 주문 스토어로만 돈다. 그 주문의 품목은
- * 서버에 없어 서버 목록에 나오지 않고, 리뷰도 POST 없이 로컬 리뷰 스토어에만 남는다(useCreateReview의
- * orderItemId 없는 경로). 그래서 목업 주문에서 파생한 작성 대기와 로컬 스토어 리뷰만 서버 항목 뒤에
- * 붙인다. 주문 API가 열려 목업 주문이 사라지면 local 두 줄만 지우면 된다.
+ * 작성 대기는 서버 항목뿐이다(목업 주문 스토어 폐기). 작성 완료는 아직 로컬 스토어 리뷰(시드·수정분)를
+ * 서버 항목 뒤에 붙인다.
  */
 export function useMyReviews(): {
   pending: MyReviewTabView<PendingReview>
   completed: MyReviewTabView<MyWrittenReview>
 } {
-  const orders = useOrders()
   const reviews = useReviews()
-  const localPending = useMemo(
-    () =>
-      buildPendingReviews(orders, (orderId, productId) =>
-        reviews.some(r => r.orderId === orderId && r.productId === productId),
-      ),
-    [orders, reviews],
-  )
   const localCompleted = useMemo<MyWrittenReview[]>(
     () =>
       reviews.map(r => {
@@ -531,7 +511,7 @@ export function useMyReviews(): {
     [reviews],
   )
   return {
-    pending: useMyReviewTab('unreviewed', i => (i.type === 'UNREVIEWED' ? [toPendingReview(i)] : []), localPending),
+    pending: useMyReviewTab('unreviewed', i => (i.type === 'UNREVIEWED' ? [toPendingReview(i)] : []), NO_LOCAL_PENDING),
     completed: useMyReviewTab('written', i => (i.type === 'WRITTEN' ? [toWrittenReview(i)] : []), localCompleted),
   }
 }
