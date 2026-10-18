@@ -1,6 +1,6 @@
 // 설정 그룹(b11-st-1~7)의 정적 콘텐츠·mock 데이터 + FAQ 필터 순수 로직.
-// 알림/동의 토글 상태는 각 화면의 로컬 state로 다루므로(목업도 화면 단위) 여기서는
-// "기본값"과 표시 콘텐츠만 제공한다.
+// 알림 토글 상태는 화면의 로컬 state로 다루므로 여기서는 "기본값"과 표시 콘텐츠만 제공한다.
+// 동의 관리는 서버 약관(settings.queries의 useConsentTerms)을 쓰므로 여기 없다.
 
 export const APP_VERSION = 'v2.4.1'
 
@@ -69,27 +69,6 @@ export function filterFaq(items: FaqItem[], category: FaqCategory, query: string
     return item.question.toLowerCase().includes(q) || item.answer.toLowerCase().includes(q)
   })
 }
-
-// ── 동의 관리(b11-st-3) ──────────────────────────────────────────────────────
-
-export interface RequiredConsent {
-  id: string
-  label: string
-  agreedAt: string
-  // 해당 동의의 문서 라우트. 문서 화면이 있는 항목만 연결하고, 없는 항목은 이동 불가 행으로 둔다
-  // (없는데 다른 문서로 보내면 잘못된 문서를 여는 오내비게이션이 된다).
-  route?: '/settings/privacy'
-}
-
-// 필수 동의 항목 — 철회 불가. 문서 화면이 있는 항목(개인정보 처리방침)만 해당 문서로 연결한다.
-export const REQUIRED_CONSENTS: RequiredConsent[] = [
-  { id: 'terms', label: '이용약관', agreedAt: '2026.03.10' },
-  { id: 'privacy', label: '개인정보 처리방침', agreedAt: '2026.03.10', route: '/settings/privacy' },
-  { id: 'location', label: '위치기반 서비스 약관', agreedAt: '2026.03.10' },
-]
-
-// 선택 동의(마케팅 수신) 기본 상태 — 화면에서 토글로 철회 가능.
-export const MARKETING_CONSENT_DEFAULT = { agreed: true, agreedAt: '2026.06.16' }
 
 // ── 개인정보 처리방침(b11-st-4) ──────────────────────────────────────────────
 

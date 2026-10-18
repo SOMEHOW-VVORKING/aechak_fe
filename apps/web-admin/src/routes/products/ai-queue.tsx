@@ -30,11 +30,29 @@ import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
 import { Tag } from '@/shared/components/Tag'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
 export const Route = createFileRoute('/products/ai-queue')({
-  component: AiReviewQueuePage,
+  component: AiReviewQueueGate,
 })
+
+// 운영 진입 차단 스위치. admin 모듈에 AI 검수 큐 API가 없어 목록·승인·반려·삭제가 전부 목업이다 —
+// 주소로 들어와도 열지 않는다. 아래 AiReviewQueuePage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
+const SERVER_AI_REVIEW_QUEUE_AVAILABLE = false
+
+function AiReviewQueueGate() {
+  if (!SERVER_AI_REVIEW_QUEUE_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="AI 검수 큐"
+        description="AI가 자동 숨김 처리한 상품 · 콘텐츠를 운영자가 다시 확인합니다."
+        message="AI 검수 큐는 준비 중이에요"
+      />
+    )
+  }
+  return <AiReviewQueuePage />
+}
 
 const targetTypeMeta: Record<AiReviewTargetType, StatusMeta> = {
   'product-image': { label: '상품 이미지', variant: 'neutral', icon: Image },

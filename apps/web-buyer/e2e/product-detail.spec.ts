@@ -55,7 +55,14 @@ const OPTIONS = {
   },
 }
 
+// 상세가 함께 부르는 리뷰 미리보기도 스텁한다 — 로컬 8080에 실 BE가 떠 있으면 비로그인 401 → refresh 실패 →
+// 로그인 화면으로 튕겨 상세 단언이 깨진다(CI처럼 BE가 없으면 네트워크 오류로 조용히 끝나 드러나지 않는다).
+const EMPTY_REVIEWS = {
+  data: { summary: null, reviews: [], totalCount: 0, nextCursor: null, hasNext: false },
+}
+
 test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 총액에 반영된다', async ({ page }) => {
+  await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 
@@ -69,6 +76,7 @@ test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 �
 })
 
 test('[AC-PRODUCT-E2E-003] 옵션 시트 수량 조절이 총액/재고 경계에 반영되고 옵션 변경 시 리셋된다', async ({ page }) => {
+  await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 

@@ -14,7 +14,7 @@ import {
   useProductDraft,
   useRegisterProduct,
 } from '@/features/products'
-import { ShippingPolicySummary } from '@/features/shipping-policy'
+import { ShippingPolicyNotice } from '@/features/shipping-policy'
 
 /**
  * 임시저장 진입점(임시저장 버튼·목록의 초안 Drawer)은 BE에 임시저장 개념이 없어서(`ProductDraft`
@@ -89,14 +89,15 @@ function ProductNewRoute() {
 
   return (
     <>
-      {/* 임시저장 버튼(onSaveDraft·draftSaving)은 위 주석대로 넘기지 않는다 — BE에 임시저장이 없다. */}
+      {/* 임시저장 버튼(onSaveDraft·draftSaving)은 위 주석대로 넘기지 않는다 — BE에 임시저장이 없다.
+          배송 정책 칸도 목업 요약 대신 준비 중 안내만 싣는다(seller 모듈에 정책 API 없음). */}
       <ProductEditor
         mode="create"
         initial={
           draft.data ? toFormValues(draft.data, categories, key => productImageUrl(key) ?? '') : emptyProductForm()
         }
         categories={categories}
-        shippingSummary={<ShippingPolicySummary />}
+        shippingSummary={<ShippingPolicyNotice />}
         submitting={register.isPending}
         onSubmit={values =>
           register.mutate(
