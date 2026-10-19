@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -30,7 +30,8 @@ function renderAt(path: string) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return router
+  // queryClient도 돌려준다 — 백그라운드 재조회(창 포커스 복귀) 실패를 테스트가 직접 일으킬 창구다.
+  return { router, queryClient }
 }
 
 const drafts = async () => (await mockFetchProductDrafts()).data
@@ -108,7 +109,7 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
 
   it('[AC-SPRD-032] 필수값을 채워 등록하면 presigned 키를 실어 POST하고 목록 맨 앞에 판매중으로 나타난다', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/products/new')
+    const { router } = renderAt('/products/new')
 
     await fillRequired(user, '원목 스크래쳐 L')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
@@ -283,7 +284,7 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
         ),
       ),
     )
-    const router = renderAt('/products/new')
+    const { router } = renderAt('/products/new')
 
     await fillRequired(user, '가격 위반 상품')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
@@ -524,6 +525,42 @@ describe('/products/$productId/edit 수정 폼 (SCRUM-254)', () => {
     expect(await screen.findByText('상품을 불러오지 못했어요')).toBeInTheDocument()
     expect(screen.getByText('판매 활동이 가능한 계정이 아니라 처리할 수 없어요.')).toBeInTheDocument()
     expect(screen.queryByText('상품을 찾을 수 없어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-064] 프리필 뒤 재조회가 실패해도 작성 중인 입력을 버리지 않고 경고만 띄운다', async () => {
+    const user = userEvent.setup()
+    const { queryClient } = renderAt(editPath)
+
+    await user.clear(await screen.findByLabelText('상품명'))
+    await user.type(screen.getByLabelText('상품명'), '작성 중인 이름')
+
+    // react-query는 캐시가 있으면 재조회 실패에도 직전 data를 남긴다 — 그걸 보지 않고 폼을
+    // 언마운트하면 창 포커스 한 번으로 입력이 사라진다(staleTime 60초 + refetchOnWindowFocus).
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId`, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    await act(() => queryClient.refetchQueries({ queryKey: ['products', 'detail'] }))
+
+    expect(
+      await screen.findByText('최신 상품 정보를 다시 불러오지 못했어요. 저장 전에 새로고침해 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('상품명')).toHaveValue('작성 중인 이름')
+  })
+
+  it('[AC-SPRD-065] 옵션 조회만 실패하면 영구 로딩이 아니라 불러오지 못했다고 보여준다', async () => {
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId/options`, () =>
+        HttpResponse.json({ errorCode: 40007, message: '조회할 수 없는 상품입니다.' }, { status: 403 }),
+      ),
+    )
+    renderAt(editPath)
+
+    await screen.findByLabelText('상품명')
+
+    expect(await screen.findByText('옵션/재고를 불러오지 못했어요.')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('내 상품이 아니라 조회할 수 없어요.')
   })
 
   it('[AC-SPRD-062] 서버가 thumbnailImageKey를 null로 주면 폼을 열고 재업로드를 안내한다', async () => {

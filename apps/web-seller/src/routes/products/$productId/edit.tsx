@@ -32,7 +32,11 @@ function ProductEditRoute() {
 
   const toList = { label: '목록으로', onClick: () => void navigate({ to: '/products' }) }
 
-  if (detail.isError) {
+  // `!detail.data` 가드가 핵심이다 — react-query는 캐시된 값이 있는 상태에서 백그라운드 재조회가
+  // 실패해도 isError를 세우고 직전 data를 남긴다. 그걸 보지 않고 폼을 언마운트하면, 창을 다시
+  // 포커스해 일어난 재조회가 실패했을 때 작성 중인 입력과 올려 둔 이미지가 사라진다
+  // (main.tsx staleTime 60초 + refetchOnWindowFocus 기본값). 등록 라우트의 임시저장 가드와 같은 결.
+  if (!detail.data && detail.isError) {
     // 404는 대상이 없는 것이고, 403/40004(휴점·정지 셀러)·5xx·네트워크는 "지금 못 불러온 것"이다 —
     // 둘을 같은 문구로 접으면 운영자가 상품이 사라진 줄 안다.
     return isNotFound(detail.error) ? (
@@ -48,7 +52,7 @@ function ProductEditRoute() {
   }
   // 카테고리 트리가 없으면 소분류를 복원할 수 없어 폼 자체가 성립하지 않는다(등록 폼과 달리
   // 프리필된 categoryId를 경로로 되돌려야 한다) — 백지 대신 사유와 재시도를 보여준다.
-  if (categoriesQuery.isError) {
+  if (!categoriesQuery.data && categoriesQuery.isError) {
     return (
       <ProductMissing
         title="상품 수정"
@@ -74,6 +78,14 @@ function ProductEditRoute() {
   const product = detail.data
   return (
     <>
+      {/* 재조회 실패는 폼을 닫지 않고 "지금 보는 값이 최신이 아닐 수 있다"만 알린다. */}
+      {detail.isError && (
+        <div className="px-6 pt-6">
+          <Alert variant="warning">
+            최신 상품 정보를 다시 불러오지 못했어요. 저장 전에 새로고침해 확인해 주세요.
+          </Alert>
+        </div>
+      )}
       {/* 서버는 대표 이미지 행이 없는 상품에 thumbnailImageKey=null을 준다(500이 아니다). 그 상태로는
           저장이 통과하지 못하므로(PUT의 썸네일 키는 필수) 폼을 열어 주되 이유를 먼저 밝힌다. */}
       {product.thumbnailImageKey == null && (
