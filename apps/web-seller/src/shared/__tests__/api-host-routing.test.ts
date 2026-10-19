@@ -134,8 +134,13 @@ describe('401 refresh 재시도', () => {
     setAccessToken(null)
   })
 
-  it('[AC-APIHOST-007] refresh는 기능 호스트가 아니라 api 호스트로 나간다', async () => {
+  it('[AC-APIHOST-007] refresh는 기능 호스트가 아니라 api 호스트로 나가고 만료 토큰을 교체한다', async () => {
     // refresh 쿠키는 api 모듈이 Path=/api/v1/auth로 심는다 — seller 호스트로 나가면 404다.
+    // 재시도는 같은 config를 재사용하므로 Authorization에 남은 만료 토큰을 직접 갈아끼워야 한다
+    // (요청 인터셉터는 헤더가 이미 있으면 덮지 않는다). 토큰 없는 상태로는 그 교체 코드를 지워도
+    // 통과하므로 만료 토큰을 먼저 심는다.
+    setAccessToken('expired')
+    const sentTokens: (string | null)[] = []
     let refreshedOn = ''
     server.use(
       http.post(`${apiBase}/auth/web/refresh`, () => {
@@ -151,17 +156,20 @@ describe('401 refresh 재시도', () => {
         })
       }),
       // 첫 호출은 401, refresh 뒤 재시도는 성공시켜 재시도 경로까지 지나가게 한다.
-      http.get(`${sellerBase}/sellers/me/products`, ({ request }) =>
-        request.headers.get('Authorization') === 'Bearer fresh'
+      http.get(`${sellerBase}/sellers/me/products`, ({ request }) => {
+        const authorization = request.headers.get('Authorization')
+        sentTokens.push(authorization)
+        return authorization === 'Bearer fresh'
           ? HttpResponse.json({ data: { retried: true } })
-          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
-      ),
+          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+      }),
     )
     const response = await axiosInstance.get<{ data: { retried: boolean } }>(
       '/sellers/me/products',
     )
     expect(refreshedOn).toBe('api')
     expect(response.data.data.retried).toBe(true)
+    expect(sentTokens).toEqual(['Bearer expired', 'Bearer fresh'])
   })
 
   it('[AC-APIHOST-008] 재시도도 401이면 refresh를 한 번만 하고 포기한다', async () => {

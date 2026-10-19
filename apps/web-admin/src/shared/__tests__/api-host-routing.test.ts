@@ -72,10 +72,15 @@ describe('공유 API 클라이언트 호스트 분기 — 어드민', () => {
     expect(await configOf('/auth/callback/kakao')).toEqual({ host: 'api', withCredentials: true })
   })
 
-  it('[AC-ADMHOST-005] 어드민 요청의 401은 api 호스트 refresh로 복구되고 새 토큰으로 재시도된다', async () => {
+  it('[AC-ADMHOST-005] 어드민 요청의 401은 api 호스트 refresh로 복구되고 만료 토큰이 새 토큰으로 교체된다', async () => {
     // refresh 쿠키는 api 모듈이 `Path=/api/v1/auth`로 심는다 — admin 호스트로 나가면 그 경로가
-    // 없어 404다. 그리고 재시도는 같은 config를 재사용하므로 헤더를 새 토큰으로 갈아끼워야 한다
-    // (안 그러면 refresh가 성공해도 만료 토큰으로 재시도해 계속 401).
+    // 없어 404다. 그리고 재시도는 같은 config를 재사용하므로 Authorization에 남은 만료 토큰을
+    // **직접 갈아끼워야** 한다(요청 인터셉터는 헤더가 이미 있으면 덮지 않는다).
+    //
+    // 토큰이 없는 상태로 이 시나리오를 돌리면 교체 코드를 지워도 통과한다 — 빈 헤더에 인터셉터가
+    // 새 토큰을 넣어 주기 때문이다. 그래서 만료 토큰을 먼저 심는다.
+    setAccessToken('expired')
+    const sentTokens: (string | null)[] = []
     let refreshedOn = ''
     server.use(
       http.post(`${apiBase}/auth/web/refresh`, () => {
@@ -90,17 +95,21 @@ describe('공유 API 클라이언트 호스트 분기 — 어드민', () => {
           data: { accessToken: 'wrong-host', tokenType: 'Bearer', expiresIn: 1800 },
         })
       }),
-      http.get(`${adminBase}/admin/admins`, ({ request }) =>
-        request.headers.get('Authorization') === 'Bearer fresh'
+      http.get(`${adminBase}/admin/admins`, ({ request }) => {
+        const authorization = request.headers.get('Authorization')
+        sentTokens.push(authorization)
+        return authorization === 'Bearer fresh'
           ? HttpResponse.json({ data: { retried: true } })
-          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
-      ),
+          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+      }),
     )
 
     const response = await axiosInstance.get<{ data: { retried: boolean } }>('/admin/admins')
 
     expect(refreshedOn).toBe('api')
     expect(response.data.data.retried).toBe(true)
+    // 첫 요청은 만료 토큰, 재시도는 새 토큰이어야 한다.
+    expect(sentTokens).toEqual(['Bearer expired', 'Bearer fresh'])
   })
 
   it('[AC-ADMHOST-006] 403 errorCode 20011은 refresh를 거치지 않고 그대로 올라온다', async () => {
