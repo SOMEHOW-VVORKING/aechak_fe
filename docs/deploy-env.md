@@ -1,0 +1,105 @@
+# 배포 환경변수 (SCRUM-272)
+
+세 웹앱의 `VITE_*` 값을 한 표로 둔다. **Cloudflare 설정에 그대로 옮겨 적을 수 있는 형태**가 이 문서의 목적이다.
+
+2026-10-19 dev 배포에서 셀러·어드민 앱이 브라우저에서 `http://localhost:8081`·`http://localhost:8082`를 호출해 전면 실패했다(`ERR_CONNECTION_REFUSED`). 빌드에 `VITE_*`가 주입되지 않아 `main.tsx`의 로컬 기본값이 번들에 굳은 것이었고, 셀러 앱은 `VITE_API_BASE_URL`에 셀러 API 호스트가 들어가 `/categories`·`/auth/*`까지 401이 됐다. 그 뒤 운영 빌드에서는 값이 비거나 로컬 주소를 가리키면 **부팅이 멈추고 사유가 화면에 뜨도록** 바뀌었다(`packages/api/src/env.ts`). 즉 값을 틀리면 조용히 반쯤 동작하는 대신 "설정이 끝나지 않아 화면을 열 수 없어요"가 보인다.
+
+## 1. 값 표
+
+### 앱 ↔ 변수
+
+| 앱 | 빌드 디렉터리 | `VITE_API_BASE_URL` | `VITE_SELLER_API_BASE_URL` | `VITE_ADMIN_API_BASE_URL` | `VITE_MEDIA_BASE_URL` |
+|---|---|---|---|---|---|
+| web-buyer | `apps/web-buyer` | 필수 | — | — | 선택 |
+| web-seller | `apps/web-seller` | **필수** | 필수 | — | 선택 |
+| web-admin | `apps/web-admin` | 필수 | — | 필수 | — |
+
+> **`VITE_API_BASE_URL`은 어느 앱에서든 구매자 api 모듈이다.** 셀러 앱에서도 그렇다 — 카테고리 트리(`GET /categories`), 로그인·refresh(`/auth/*`), 업로드 presigned 발급(`POST /files/presigned-url`)이 모두 그 호스트로 나간다. 여기에 셀러/어드민 API 호스트를 넣으면 그 셋이 전부 401·404가 된다. **지금 dev 배포가 틀린 지점이 정확히 여기다.**
+
+### 환경별 값
+
+| 변수 | dev | prod |
+|---|---|---|
+| `VITE_API_BASE_URL` | `https://api-dev.aechak.co.kr` | `https://api.aechak.co.kr` |
+| `VITE_SELLER_API_BASE_URL` | `https://seller-api-dev.aechak.co.kr` | `https://seller-api.aechak.co.kr` |
+| `VITE_ADMIN_API_BASE_URL` | `https://admin-api-dev.aechak.co.kr` | `https://admin-api.aechak.co.kr` |
+| `VITE_MEDIA_BASE_URL` | `https://media-dev.aechak.co.kr` | `https://media.aechak.co.kr` |
+
+출처는 BE `terraform/route53.tf`의 `locals`다(`api_domain`·`seller_api_domain`·`admin_api_domain`·`media_domain`). prod 값은 그 규칙에서 나온 것이고 **prod 환경은 아직 띄워져 있지 않다**(`terraform/envs/prod.tfvars`의 `frontend_origins`가 아직 `aechak.example.com` TODO다) — prod 배포 전에 실제 생성된 도메인으로 한 번 확인할 것.
+
+### 프런트 도메인 (CORS·로그인 return 화이트리스트와 짝)
+
+| 앱 | 로컬 | dev | prod |
+|---|---|---|---|
+| web-buyer | `http://localhost:5175` | `https://dev.aechak.co.kr` | `https://aechak.co.kr` |
+| web-seller | `http://localhost:5173` | `https://seller-dev.aechak.co.kr` | `https://seller.aechak.co.kr` |
+| web-admin | `http://localhost:5174` | `https://admin-dev.aechak.co.kr` | `https://admin.aechak.co.kr` |
+
+이 값은 FE가 쓰는 변수가 아니고 **BE 쪽 설정의 입력**이다. 두 자리에 들어간다.
+
+- CORS 허용 origin — `terraform/envs/<env>.tfvars`의 `frontend_origins`(api) / `seller_frontend_origins`(seller) / `admin_frontend_origins`(admin). dev tfvars에는 현재 로컬 포트만 들어 있다.
+- 서버 콜백 로그인의 `return` 화이트리스트 — `AUTH_WEB_RETURN_URLS`에 `<프런트 도메인>/login/complete`를 넣는다. **정확 일치**라 오타·끝 슬래시 하나로 로그인이 막힌다(오픈 리다이렉트 방지). 로컬은 `boot/api`의 `application-local.yml`에 세 앱 모두 등재돼 있다.
+
+## 2. Cloudflare에 넣는 값 (복사용)
+
+세 앱을 각각 별도 프로젝트로 빌드한다. 모노레포이므로 빌드 커맨드가 루트에서 돌고 출력은 앱 디렉터리 아래다.
+
+```
+# ── web-buyer (dev)
+VITE_API_BASE_URL=https://api-dev.aechak.co.kr
+VITE_MEDIA_BASE_URL=https://media-dev.aechak.co.kr
+
+# ── web-seller (dev)
+VITE_API_BASE_URL=https://api-dev.aechak.co.kr
+VITE_SELLER_API_BASE_URL=https://seller-api-dev.aechak.co.kr
+VITE_MEDIA_BASE_URL=https://media-dev.aechak.co.kr
+
+# ── web-admin (dev)
+VITE_API_BASE_URL=https://api-dev.aechak.co.kr
+VITE_ADMIN_API_BASE_URL=https://admin-api-dev.aechak.co.kr
+```
+
+```
+# ── web-buyer (prod)
+VITE_API_BASE_URL=https://api.aechak.co.kr
+VITE_MEDIA_BASE_URL=https://media.aechak.co.kr
+
+# ── web-seller (prod)
+VITE_API_BASE_URL=https://api.aechak.co.kr
+VITE_SELLER_API_BASE_URL=https://seller-api.aechak.co.kr
+VITE_MEDIA_BASE_URL=https://media.aechak.co.kr
+
+# ── web-admin (prod)
+VITE_API_BASE_URL=https://api.aechak.co.kr
+VITE_ADMIN_API_BASE_URL=https://admin-api.aechak.co.kr
+```
+
+빌드 설정(세 앱 공통 형태):
+
+| 항목 | 값 |
+|---|---|
+| Build command | `pnpm install --frozen-lockfile && pnpm --filter <앱> build` |
+| Build output directory | `apps/<앱>/dist` |
+| Node version | 22 |
+
+`<앱>`은 `web-buyer` / `web-seller` / `web-admin`이다.
+
+## 3. 값을 쓸 때의 규칙
+
+`packages/api`의 검증이 운영 빌드에서 강제하는 것들이다. 어기면 배포된 앱이 부팅하지 않고 어느 변수가 왜 틀렸는지 화면에 뜬다.
+
+1. **origin만 적는다.** 경로·쿼리·해시·자격증명을 붙이지 않는다. 경로 접두 `/api/v1`은 코드(`client.ts`의 `API_PATH_PREFIX`)가 붙이므로 값에 함께 넣으면 `/api/v1/api/v1`로 나가 전부 404다. `packages/api/openapi/schema.yaml`의 `servers`에는 접두가 포함돼 적혀 있어(문서 정확성용, orval은 무시한다) 그대로 복사하기 쉬운 자리다.
+2. **스킴을 적는다.** `api-dev.aechak.co.kr`처럼 `https://`가 빠지면 axios가 상대경로로 해석해 배포 도메인 자신에게 요청을 보낸다.
+3. **운영 빌드에 로컬 주소를 넣지 않는다.** `localhost`·`127.0.0.1`·`0.0.0.0`·`::1`·`*.localhost`는 모두 거절된다 — 이번 사고의 조건이다.
+4. **빈 값은 미설정과 같다.** 공백만 넣어도 비어 있는 것으로 본다.
+5. `VITE_MEDIA_BASE_URL`은 이 검증 대상이 아니다. 미설정이면 URL을 지어내지 않고 placeholder 썸네일을 보여준다(`shared/catalog/media.ts`, `products.queries.ts`의 `productImageUrl`).
+
+로컬 개발은 `.env` 없이도 돈다 — 개발 빌드에서는 로컬 기본값(api 8080 / seller 8081 / admin 8082)을 쓴다. 값을 바꿔야 하면 각 앱의 `.env.example`을 복사해 `.env`로 쓴다.
+
+## 4. 범위 밖 (사람이 해야 하는 일)
+
+- **Cloudflare에 위 변수를 등재하는 것** — 두 레포 어디에도 FE 배포 워크플로가 없고 `VITE_*`를 주입하는 자리도 없다(수동 빌드). SCRUM-272 티켓도 "클라우드플레어 환경변수 등재와 프론트 배포 자동화는 범위 밖"으로 못박았다.
+- **FE 배포 자동화(GitHub Actions 등)** — 위와 같은 이유.
+- **dev tfvars의 CORS origin에 배포 도메인 추가** — 현재 `frontend_origins`·`seller_frontend_origins`·`admin_frontend_origins`에 로컬 포트만 들어 있다. 배포 도메인에서 API를 부르려면 BE 쪽에 그 origin이 필요하다.
+- **`AUTH_WEB_RETURN_URLS`에 배포 도메인의 `/login/complete` 등재** — 안 넣으면 카카오 로그인 복귀가 막힌다(정확 일치).
+- **`schema.yaml`의 `servers` prod 항목이 `https://api.aechak.com`으로 적혀 있다** — 실제 hosted zone은 `aechak.co.kr`이다. 문서 정확성용 필드이고 orval이 무시하므로 동작에는 영향이 없지만, 이 문서와 어긋나므로 정정이 필요하다(별 티켓).
