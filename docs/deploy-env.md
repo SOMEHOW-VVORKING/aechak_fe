@@ -35,10 +35,17 @@
 | web-seller | `http://localhost:5173` | `https://seller-dev.aechak.co.kr` | `https://seller.aechak.co.kr` |
 | web-admin | `http://localhost:5174` | `https://admin-dev.aechak.co.kr` | `https://admin.aechak.co.kr` |
 
-이 값은 FE가 쓰는 변수가 아니고 **BE 쪽 설정의 입력**이다. 두 자리에 들어간다.
+이 값은 FE가 쓰는 변수가 아니고 **BE 쪽 설정의 입력**이다. 두 자리에 들어가는데, **둘 다 terraform이 자동으로 만든다** — 사람이 손으로 더할 자리가 아니다(`terraform/ssm-parameters.tf`).
 
-- CORS 허용 origin — `terraform/envs/<env>.tfvars`의 `frontend_origins`(api) / `seller_frontend_origins`(seller) / `admin_frontend_origins`(admin). dev tfvars에는 현재 로컬 포트만 들어 있다.
-- 서버 콜백 로그인의 `return` 화이트리스트 — `AUTH_WEB_RETURN_URLS`에 `<프런트 도메인>/login/complete`를 넣는다. **정확 일치**라 오타·끝 슬래시 하나로 로그인이 막힌다(오픈 리다이렉트 방지). 로컬은 `boot/api`의 `application-local.yml`에 세 앱 모두 등재돼 있다.
+- CORS 허용 origin — `locals`가 배포 도메인(`https://<web|seller|admin>_domain`)과 `terraform/envs/<env>.tfvars`의 로컬 origin을 **합성**한다. api 모듈에는 세 웹 합집합(`CORS_ALLOWED_ORIGINS`), seller·admin 모듈에는 각 콘솔 목록이 들어간다. 그래서 dev tfvars에 로컬 포트만 적혀 있는 것은 **배포 도메인 누락을 뜻하지 않는다** — 배포 도메인은 locals가 붙인다(tfvars 주석도 "배포 도메인은 terraform locals가 붙이므로 여기엔 로컬 포트만 적는다"라고 적어 뒀다).
+- 서버 콜백 로그인의 `return` 화이트리스트 — `AUTH_WEB_RETURN_URLS`도 같은 합집합에 `/login/complete`를 붙여 생성된다. **정확 일치**라 오타·끝 슬래시 하나로 로그인이 막힌다(오픈 리다이렉트 방지). 로컬 개발은 그와 별도로 `boot/api`의 `application-local.yml`에 세 앱 모두 등재돼 있다.
+
+따라서 로그인·CORS가 안 될 때 확인할 것은 "값을 손으로 넣었는가"가 아니라 **그 환경에 terraform이 적용됐는가, SSM 파라미터의 실제 값이 무엇인가**다.
+
+```bash
+aws ssm get-parameter --name /aechak/dev/api/CORS_ALLOWED_ORIGINS --query Parameter.Value --output text
+aws ssm get-parameter --name /aechak/dev/api/AUTH_WEB_RETURN_URLS --query Parameter.Value --output text
+```
 
 ## 2. Cloudflare에 넣는 값 (복사용)
 
@@ -100,6 +107,5 @@ VITE_ADMIN_API_BASE_URL=https://admin-api.aechak.co.kr
 
 - **Cloudflare에 위 변수를 등재하는 것** — 두 레포 어디에도 FE 배포 워크플로가 없고 `VITE_*`를 주입하는 자리도 없다(수동 빌드). SCRUM-272 티켓도 "클라우드플레어 환경변수 등재와 프론트 배포 자동화는 범위 밖"으로 못박았다.
 - **FE 배포 자동화(GitHub Actions 등)** — 위와 같은 이유.
-- **dev tfvars의 CORS origin에 배포 도메인 추가** — 현재 `frontend_origins`·`seller_frontend_origins`·`admin_frontend_origins`에 로컬 포트만 들어 있다. 배포 도메인에서 API를 부르려면 BE 쪽에 그 origin이 필요하다.
-- **`AUTH_WEB_RETURN_URLS`에 배포 도메인의 `/login/complete` 등재** — 안 넣으면 카카오 로그인 복귀가 막힌다(정확 일치).
+- **dev 환경에 terraform이 적용됐는지 확인** — CORS origin과 로그인 `return` 화이트리스트는 `ssm-parameters.tf`가 배포 도메인을 포함해 생성하므로 손으로 넣을 것이 없지만, 그 환경에 apply가 되지 않았거나 ECS 태스크가 갱신 전 값으로 떠 있으면 배포 도메인에서 오는 요청이 막힌다. 위 `aws ssm get-parameter`로 실제 값을 먼저 본다.
 - **`schema.yaml`의 `servers` prod 항목이 `https://api.aechak.com`으로 적혀 있다** — 실제 hosted zone은 `aechak.co.kr`이다. 문서 정확성용 필드이고 orval이 무시하므로 동작에는 영향이 없지만, 이 문서와 어긋나므로 정정이 필요하다(별 티켓).
