@@ -144,6 +144,40 @@ interface CombinationRow {
   isActive: boolean
 }
 
+/** 단건 조회 응답 — 목록에 없는 값(카테고리·설명·할인 기간·추가/상세 이미지 키)이 프리필의 본질이다. */
+interface DetailRow {
+  productId: string
+  categoryId: number
+  productName: string
+  description: string | null
+  regularPrice: number
+  discountPrice: number | null
+  discountStartAt: string | null
+  discountEndAt: string | null
+  thumbnailImageKey: string | null
+  additionalImageKeys: string[]
+  detailImageKeys: string[]
+  saleStatus: ProductRow['saleStatus']
+  inspectionStatus: ProductRow['inspectionStatus']
+}
+
+const detailOf = (product: ProductRow, overrides: Partial<DetailRow> = {}): DetailRow => ({
+  productId: product.productId,
+  categoryId: 20901,
+  productName: product.name,
+  description: null,
+  regularPrice: product.regularPrice,
+  discountPrice: product.discountPrice,
+  discountStartAt: null,
+  discountEndAt: null,
+  thumbnailImageKey: product.thumbnailImageKey,
+  additionalImageKeys: [],
+  detailImageKeys: [],
+  saleStatus: product.saleStatus,
+  inspectionStatus: product.inspectionStatus,
+  ...overrides,
+})
+
 const row = (overrides: Partial<ProductRow> & Pick<ProductRow, 'productId' | 'name'>): ProductRow => ({
   thumbnailImageKey: null,
   categoryName: '자동 급식기',
@@ -195,7 +229,28 @@ function stubSellerProducts(page: Page) {
       [{ optionCombinationId: 1, name: '기본', additionalPrice: 0, stockQuantity: r.totalStock, isActive: true }],
     ]),
   )
+  const details = new Map<string, DetailRow>(
+    SEED_ROWS.map(r => [
+      r.productId,
+      detailOf(
+        r,
+        // 급식기 한 건만 "목록에 없는 값"을 전부 채워 둔다 — 프리필 왕복을 그 상품으로 검증한다.
+        r.productId === '01JE2EFEEDER00000000000001'
+          ? {
+              description: '5L 대용량 자동 급식기',
+              discountPrice: 59000,
+              discountStartAt: '2026-10-01T15:30:00',
+              discountEndAt: '2026-10-31T18:00:00',
+              thumbnailImageKey: 'products/E2E-THUMB.png',
+              additionalImageKeys: ['products/E2E-ADD1.png'],
+              detailImageKeys: ['products/E2E-DETAIL1.png'],
+            }
+          : {},
+      ),
+    ]),
+  )
   const queries: string[] = []
+  const updateBodies: unknown[] = []
   let idSeq = 0
   let combinationSeq = 100
 
@@ -220,6 +275,7 @@ function stubSellerProducts(page: Page) {
     if (segments.length === 0) {
       if (request.method() === 'POST') {
         const body = request.postDataJSON() as {
+          categoryId: number
           productName: string
           regularPrice: number
           discountPrice?: number | null
@@ -234,6 +290,7 @@ function stubSellerProducts(page: Page) {
           totalStock: body.optionCombinations.reduce((sum, c) => sum + c.stockQuantity, 0),
         })
         products = [created, ...products]
+        details.set(created.productId, detailOf(created, { categoryId: body.categoryId }))
         options.set(
           created.productId,
           body.optionCombinations.map(c => ({
@@ -294,6 +351,45 @@ function stubSellerProducts(page: Page) {
     const product = products.find(p => p.productId === segments[0])
     if (!product) return fulfillJson(r, 404, { errorCode: 40000, message: '상품을 찾을 수 없습니다.' })
 
+    // GET 단건(수정 폼 프리필) / PUT 수정 — 이미지 키는 현재 열려 있는 행만 내려주므로 응답을
+    // 그대로 되돌려 보내는 왕복이 성립한다.
+    if (segments.length === 1) {
+      const detail = details.get(product.productId)
+      if (!detail) return fulfillJson(r, 404, { errorCode: 40000, message: '상품을 찾을 수 없습니다.' })
+      if (request.method() === 'GET') return fulfillJson(r, 200, { data: detail })
+      const body = request.postDataJSON() as Partial<DetailRow> & {
+        categoryId: number
+        productName: string
+        regularPrice: number
+        thumbnailImageKey: string
+      }
+      updateBodies.push(body)
+      const next: DetailRow = {
+        ...detail,
+        categoryId: body.categoryId,
+        productName: body.productName,
+        description: body.description ?? null,
+        regularPrice: body.regularPrice,
+        discountPrice: body.discountPrice ?? null,
+        discountStartAt: body.discountStartAt ?? null,
+        discountEndAt: body.discountEndAt ?? null,
+        thumbnailImageKey: body.thumbnailImageKey,
+        additionalImageKeys: body.additionalImageKeys ?? [],
+        detailImageKeys: body.detailImageKeys ?? [],
+      }
+      details.set(product.productId, next)
+      product.name = next.productName
+      product.regularPrice = next.regularPrice
+      product.discountPrice = next.discountPrice
+      product.discountRate =
+        next.discountPrice == null
+          ? null
+          : Math.round(((next.regularPrice - next.discountPrice) * 100) / next.regularPrice)
+      return fulfillJson(r, 200, {
+        data: { productId: product.productId, saleStatus: product.saleStatus, updatedAt: '2026-10-07T11:00:00' },
+      })
+    }
+
     // PATCH 판매 상태 — 재고 파생 전이가 같은 요청 안에서 동기로 얹힌다.
     if (segments[1] === 'status') {
       const { saleStatus } = request.postDataJSON() as { saleStatus: 'ON_SALE' | 'SUSPENDED' }
@@ -330,7 +426,7 @@ function stubSellerProducts(page: Page) {
     return fulfillJson(r, 404, { errorCode: 40000, message: '상품을 찾을 수 없습니다.' })
   })
 
-  return { ready: route, queries }
+  return { ready: route, queries, updateBodies }
 }
 
 async function stubAll(page: Page) {
@@ -450,23 +546,65 @@ test('[AC-SPRD-E2E-002] 목록 필터는 빈 값 없이 나가고 판매 상태�
   expect(queries.some(q => new URLSearchParams(q).get('createdTo') === '2026-10-06')).toBe(true)
 })
 
-test('[AC-SPRD-E2E-003] BE 미지원 기능(수정·삭제·임시저장)은 진입점이 없고 수정 주소는 안내만 보여준다', async ({
-  page,
-}) => {
+test('[AC-SPRD-E2E-003] BE 미지원 기능(삭제·임시저장)은 진입점이 없다', async ({ page }) => {
   await stubAll(page)
   await page.goto('/products')
   await expect(page.getByRole('row')).toHaveCount(4)
 
-  await expect(page.getByRole('button', { name: '수정', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '삭제', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /임시저장/ })).toHaveCount(0)
-  await expect(page.getByText(/상품 정보 수정은 준비 중이에요/)).toBeVisible()
+  await expect(page.getByText(/옵션 구성과 상품 삭제는 아직 바꿀 수 없어요/)).toBeVisible()
+})
 
-  // 주소를 직접 쳐서 들어와도 폼이 열리지 않는다(부족한 프리필로 PUT하면 기존 이미지를 잃는다).
-  await page.goto('/products/01JE2EFEEDER00000000000001/edit')
-  await expect(page.getByText('상품 수정은 아직 준비 중이에요')).toBeVisible()
+test('[AC-SPRD-E2E-005] 목록 수정 → 단건 조회 프리필 → 저장이 저장 키와 할인 시각을 그대로 되돌려 보낸다', async ({
+  page,
+}) => {
+  const { updateBodies } = await stubAll(page)
+  await page.goto('/products')
+  const feeder = page.getByRole('row').filter({ hasText: '고양이 자동 급식기 스마트 5L' })
+
+  await feeder.getByRole('button', { name: '고양이 자동 급식기 스마트 5L 수정' }).click()
+  await expect(page).toHaveURL(/\/products\/01JE2EFEEDER00000000000001\/edit$/)
+
+  // 목록 응답에 없는 값까지 단건 조회로 복원된다.
+  await expect(page.getByLabel('상품명')).toHaveValue('고양이 자동 급식기 스마트 5L')
+  await expect(page.getByLabel('소분류')).toHaveValue('20901')
+  await expect(page.getByLabel('상세 설명')).toHaveValue('5L 대용량 자동 급식기')
+  await expect(page.getByLabel('할인가')).toHaveValue('59000')
+  await expect(page.getByLabel('할인 시작일')).toHaveValue('2026-10-01')
+  await shot(page, '08-edit-prefilled')
+
+  await page.getByLabel('상품명').fill('고양이 자동 급식기 스마트 5L v2')
+  await page.getByRole('button', { name: '수정 완료' }).click()
+
+  await expect(page).toHaveURL(/\/products$/)
+  await expect(page.getByText('상품을 수정했어요.')).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: '고양이 자동 급식기 스마트 5L v2' })).toBeVisible()
+
+  // 저장 키를 그대로 되돌려 보내야 한다 — 빠뜨리면 그 이미지가 직전 버전으로 닫히고, 닫힌 과거 키를
+  // 섞으면 403/100002다. 날짜를 안 건드렸으므로 할인 시각(15:30)도 보존돼야 한다.
+  expect(updateBodies).toHaveLength(1)
+  expect(updateBodies[0]).toMatchObject({
+    categoryId: 20901,
+    productName: '고양이 자동 급식기 스마트 5L v2',
+    description: '5L 대용량 자동 급식기',
+    discountPrice: 59000,
+    discountStartAt: '2026-10-01T15:30:00',
+    discountEndAt: '2026-10-31T18:00:00',
+    thumbnailImageKey: 'products/E2E-THUMB.png',
+    additionalImageKeys: ['products/E2E-ADD1.png'],
+    detailImageKeys: ['products/E2E-DETAIL1.png'],
+  })
+})
+
+test('[AC-SPRD-E2E-006] 없는 상품의 수정 주소는 폼 대신 찾을 수 없다는 안내로 끝난다', async ({ page }) => {
+  await stubAll(page)
+
+  await page.goto('/products/01JE2ENOPE0000000000000000/edit')
+
+  await expect(page.getByText('상품을 찾을 수 없어요')).toBeVisible()
   await expect(page.getByLabel('상품명')).toHaveCount(0)
-  await shot(page, '07-edit-blocked-notice')
+  await shot(page, '09-edit-not-found')
   await page.getByRole('button', { name: '목록으로' }).click()
   await expect(page).toHaveURL(/\/products$/)
 })

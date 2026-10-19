@@ -1,8 +1,9 @@
 import type { ShippingPolicy } from '@aechak/domain'
 
+// defaultCourier는 서버 courier_masters의 PK를 그대로 담는다 — 대문자다(소문자는 404/50303).
 export const MOCK_SHIPPING_POLICY: ShippingPolicy = {
   sellerId: 'seller-1',
-  defaultCourier: 'cj',
+  defaultCourier: 'CJ',
   baseFee: 3000,
   freeShippingThreshold: 30000,
   originAddress: '서울 마포구 와우산로 00, 물류 1센터',
