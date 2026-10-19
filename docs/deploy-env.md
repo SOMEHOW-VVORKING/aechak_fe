@@ -49,6 +49,38 @@ aws ssm get-parameter --name /aechak/dev/api/AUTH_WEB_RETURN_URLS --query Parame
 
 ## 2. Cloudflare에 넣는 값 (복사용)
 
+### 어느 프로젝트를 고치는가
+
+배포는 Cloudflare Pages **Git 연동**이 맡는다(레포에 워크플로 파일은 없지만, PR마다 세 프로젝트가 preview를 만든다 — PR 체크에 `Cloudflare Pages: <프로젝트>`로 나타난다). 환경변수는 각 Pages 프로젝트의 Settings → Environment variables에 넣는다.
+
+| Cloudflare Pages 프로젝트 | 앱 | preview 도메인 |
+|---|---|---|
+| `aechak-fe` | web-buyer | `<branch>.aechak-fe.pages.dev` |
+| `aechak-seller` | web-seller | `<branch>.aechak-seller.pages.dev` |
+| `aechak-admin` | web-admin | `<branch>.aechak-admin.pages.dev` |
+
+### 2026-10-19 현재 실제로 들어가 있는 값
+
+preview 번들의 `configureApiHosts` 호출부를 직접 열어 확인한 것이다(`.pages.dev`의 `assets/index-*.js`).
+
+| 프로젝트 | 측정된 값 | 판정 |
+|---|---|---|
+| `aechak-fe` | `apiOrigin: "https://api-dev.aechak.co.kr"` | 정상 |
+| `aechak-seller` | `apiOrigin: "https://seller-api-dev.aechak.co.kr"`, `sellerOrigin: undefined ?? "http://localhost:8081"` | **둘 다 틀렸다** |
+| `aechak-admin` | `apiOrigin: "https://api-dev.aechak.co.kr"`, `adminOrigin: undefined ?? "http://localhost:8082"` | **adminOrigin 미설정** |
+
+즉 고쳐야 할 것은 정확히 셋이다.
+
+1. `aechak-seller`의 `VITE_API_BASE_URL`을 `https://seller-api-dev.aechak.co.kr` → **`https://api-dev.aechak.co.kr`** 로 바꾼다.
+2. `aechak-seller`에 `VITE_SELLER_API_BASE_URL=https://seller-api-dev.aechak.co.kr` 을 **추가**한다.
+3. `aechak-admin`에 `VITE_ADMIN_API_BASE_URL=https://admin-api-dev.aechak.co.kr` 을 **추가**한다.
+
+`VITE_MEDIA_BASE_URL`은 라우트 분할 청크에 들어가 진입 번들에서 확인되지 않았다 — 설정 화면에서 직접 확인할 것(미설정이면 썸네일만 placeholder가 되고 API는 정상이다).
+
+> ⚠️ 호스트 변수 검증이 들어간 뒤로는, 값이 비거나 로컬 주소를 가리키는 배포는 **흰 화면이 아니라 "설정이 끝나지 않아 화면을 열 수 없어요" 안내**를 띄우고 부팅하지 않는다. 위 셋을 넣기 전까지 `aechak-seller`·`aechak-admin`의 preview·운영 배포가 그 화면으로 보이는 것이 정상 동작이다(이전에는 화면이 뜬 채로 모든 요청이 실패했다).
+
+### 환경변수 블록
+
 세 앱을 각각 별도 프로젝트로 빌드한다. 모노레포이므로 빌드 커맨드가 루트에서 돌고 출력은 앱 디렉터리 아래다.
 
 ```
@@ -105,7 +137,7 @@ VITE_ADMIN_API_BASE_URL=https://admin-api.aechak.co.kr
 
 ## 4. 범위 밖 (사람이 해야 하는 일)
 
-- **Cloudflare에 위 변수를 등재하는 것** — 두 레포 어디에도 FE 배포 워크플로가 없고 `VITE_*`를 주입하는 자리도 없다(수동 빌드). SCRUM-272 티켓도 "클라우드플레어 환경변수 등재와 프론트 배포 자동화는 범위 밖"으로 못박았다.
-- **FE 배포 자동화(GitHub Actions 등)** — 위와 같은 이유.
+- **Cloudflare Pages 프로젝트에 위 변수를 등재하는 것**(2절의 고칠 것 셋) — 레포에서 바꿀 수 있는 자리가 아니다. SCRUM-272 티켓도 "클라우드플레어 환경변수 등재와 프론트 배포 자동화는 범위 밖"으로 못박았다.
+- **FE 배포 자동화** — 빌드 자체는 이미 Cloudflare Pages Git 연동이 돌리고 있다(레포 워크플로는 없다). 그 배선을 바꾸는 일은 범위 밖이다.
 - **dev 환경에 terraform이 적용됐는지 확인** — CORS origin과 로그인 `return` 화이트리스트는 `ssm-parameters.tf`가 배포 도메인을 포함해 생성하므로 손으로 넣을 것이 없지만, 그 환경에 apply가 되지 않았거나 ECS 태스크가 갱신 전 값으로 떠 있으면 배포 도메인에서 오는 요청이 막힌다. 위 `aws ssm get-parameter`로 실제 값을 먼저 본다.
 - **`schema.yaml`의 `servers` prod 항목이 `https://api.aechak.com`으로 적혀 있다** — 실제 hosted zone은 `aechak.co.kr`이다. 문서 정확성용 필드이고 orval이 무시하므로 동작에는 영향이 없지만, 이 문서와 어긋나므로 정정이 필요하다(별 티켓).
