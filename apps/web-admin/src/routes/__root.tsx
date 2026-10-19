@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
-import { ClipboardCheck, LayoutDashboard, ShieldCheck } from 'lucide-react'
+import { ClipboardCheck, LayoutDashboard, ShieldCheck, UserCog } from 'lucide-react'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
@@ -25,6 +25,8 @@ const navGroups: NavGroup[] = [
         label: '셀러 입점 심사',
         icon: <ClipboardCheck className={iconClass} />,
       },
+      // 관리자 명부는 admin 모듈에 EP 3종(GET·POST·DELETE /admin/admins)이 있어 nav에 올린다.
+      { key: '/admins', label: '관리자 관리', icon: <UserCog className={iconClass} /> },
     ],
   },
 ]
@@ -45,6 +47,18 @@ function withPendingBadge(groups: NavGroup[], pendingCount: number | null): NavG
 
 function AdminShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  // /login 계열(로그인 화면 + /login/complete 서버 콜백 복귀)은 nav에 속하지 않는 별도 라우트라
+  // SideNav 없이 단독 렌더링한다. 셸 안의 usePendingApplicationCount가 로그인 전에 심사 조회를
+  // 발사해 401/403을 만들지 않도록, 훅보다 **먼저** 돌려보낸다(조건을 훅 아래로 내리면 안 된다).
+  // 로그인 플로우 밖에서 SideNav-less 라우트가 또 생기면 조건을 더하지 말고 pathless layout으로
+  // 전환할 것(web-seller AppShell과 같은 지시).
+  if (pathname === '/login' || pathname === '/login/' || pathname.startsWith('/login/')) {
+    return <Outlet />
+  }
+  return <AdminNavShell pathname={pathname} />
+}
+
+function AdminNavShell({ pathname }: { pathname: string }) {
   const navigate = useNavigate()
   const pendingCount = usePendingApplicationCount()
   const groups = useMemo(() => withPendingBadge(navGroups, pendingCount), [pendingCount])

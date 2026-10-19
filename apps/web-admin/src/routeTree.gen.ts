@@ -10,15 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MembersRouteImport } from './routes/members'
+import { Route as AdminsRouteImport } from './routes/admins'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SellersIndexRouteImport } from './routes/sellers/index'
+import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as SellersApplicationsRouteImport } from './routes/sellers/applications'
 import { Route as ProductsReviewRouteImport } from './routes/products/review'
 import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
+import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 
 const MembersRoute = MembersRouteImport.update({
   id: '/members',
   path: '/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminsRoute = AdminsRouteImport.update({
+  id: '/admins',
+  path: '/admins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +37,11 @@ const IndexRoute = IndexRouteImport.update({
 const SellersIndexRoute = SellersIndexRouteImport.update({
   id: '/sellers/',
   path: '/sellers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginIndexRoute = LoginIndexRouteImport.update({
+  id: '/login/',
+  path: '/login/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SellersApplicationsRoute = SellersApplicationsRouteImport.update({
@@ -46,65 +59,91 @@ const ProductsAiQueueRoute = ProductsAiQueueRouteImport.update({
   path: '/products/ai-queue',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginCompleteRoute = LoginCompleteRouteImport.update({
+  id: '/login/complete',
+  path: '/login/complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
+  '/login/': typeof LoginIndexRoute
   '/sellers/': typeof SellersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
+  '/login': typeof LoginIndexRoute
   '/sellers': typeof SellersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
+  '/login/complete': typeof LoginCompleteRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
+  '/login/': typeof LoginIndexRoute
   '/sellers/': typeof SellersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admins'
     | '/members'
+    | '/login/complete'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
+    | '/login/'
     | '/sellers/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admins'
     | '/members'
+    | '/login/complete'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
+    | '/login'
     | '/sellers'
   id:
     | '__root__'
     | '/'
+    | '/admins'
     | '/members'
+    | '/login/complete'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
+    | '/login/'
     | '/sellers/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminsRoute: typeof AdminsRoute
   MembersRoute: typeof MembersRoute
+  LoginCompleteRoute: typeof LoginCompleteRoute
   ProductsAiQueueRoute: typeof ProductsAiQueueRoute
   ProductsReviewRoute: typeof ProductsReviewRoute
   SellersApplicationsRoute: typeof SellersApplicationsRoute
+  LoginIndexRoute: typeof LoginIndexRoute
   SellersIndexRoute: typeof SellersIndexRoute
 }
 
@@ -115,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/members'
       fullPath: '/members'
       preLoaderRoute: typeof MembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admins': {
+      id: '/admins'
+      path: '/admins'
+      fullPath: '/admins'
+      preLoaderRoute: typeof AdminsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -129,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/sellers'
       fullPath: '/sellers/'
       preLoaderRoute: typeof SellersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/': {
+      id: '/login/'
+      path: '/login'
+      fullPath: '/login/'
+      preLoaderRoute: typeof LoginIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sellers/applications': {
@@ -152,15 +205,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsAiQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/complete': {
+      id: '/login/complete'
+      path: '/login/complete'
+      fullPath: '/login/complete'
+      preLoaderRoute: typeof LoginCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminsRoute: AdminsRoute,
   MembersRoute: MembersRoute,
+  LoginCompleteRoute: LoginCompleteRoute,
   ProductsAiQueueRoute: ProductsAiQueueRoute,
   ProductsReviewRoute: ProductsReviewRoute,
   SellersApplicationsRoute: SellersApplicationsRoute,
+  LoginIndexRoute: LoginIndexRoute,
   SellersIndexRoute: SellersIndexRoute,
 }
 export const routeTree = rootRouteImport
