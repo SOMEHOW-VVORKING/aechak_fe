@@ -1,4 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Alert, PageHeader, Skeleton } from '@aechak/design-system/web'
+import { errorResponse } from '@aechak/api'
 import { useToast } from '@/shared/hooks/useToast'
 import {
   ProductEditor,
@@ -17,62 +19,73 @@ export const Route = createFileRoute('/products/$productId/edit')({
   component: ProductEditRoute,
 })
 
-/**
- * 운영 진입 차단 스위치.
- *
- * BE에 셀러 단건 조회(`GET /sellers/me/products/{productId}`)가 없다. 목록 응답과 옵션 응답을 합쳐도
- * `categoryId`·`description`·할인 기간·추가/상세 이미지 키를 복원할 수 없는데, `PUT`은 이미지 목록을
- * 통째로 교체하고 할인 세 필드를 함께 받는다 — 부족한 프리필로 저장하면 **기존 이미지와 할인 설정을
- * 잃는다.** 그래서 목록에서 이 화면으로 가는 버튼을 없애고, 주소를 직접 쳐서 들어와도 폼을 열지 않는다.
- *
- * 아래 `ProductEditForm`과 queries 층의 `useUpdateProduct` 배선은 지우지 않았다. 서버 단건 조회가
- * 생기면 `useProductDetail`의 목업을 그 fetcher로 바꾸고 이 상수를 올리면 그대로 살아난다.
- */
-const SERVER_PRODUCT_DETAIL_AVAILABLE = false
+/** 없는 상품과 남의 상품을 BE가 같은 404/40000으로 가린다 — 그 둘만 "찾을 수 없어요"로 끝낸다. */
+const isNotFound = (error: unknown) => errorResponse(error)?.data?.errorCode === 40000
 
 function ProductEditRoute() {
-  const navigate = useNavigate()
-  if (!SERVER_PRODUCT_DETAIL_AVAILABLE) {
-    return (
-      <ProductMissing
-        title="상품 수정"
-        message="상품 수정은 아직 준비 중이에요"
-        description="지금은 재고와 판매 상태만 바꿀 수 있어요. 수정 기능은 준비가 끝나면 열어 둘게요."
-        action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
-      />
-    )
-  }
-  return <ProductEditForm />
-}
-
-/** 서버 단건 조회가 생기면 그대로 쓸 수정 폼. 지금은 위 스위치가 내려가 있어 렌더되지 않는다. */
-function ProductEditForm() {
   const { productId } = Route.useParams()
   const navigate = useNavigate()
-  const { data: categories } = useProductCategories()
-  // 프리필용 단건 조회는 BE에 없어 목업으로만 동작한다(products.mock `BE 엔드포인트 없음` 구역).
+  const categoriesQuery = useProductCategories()
   const detail = useProductDetail(productId)
   const updateProduct = useUpdateProduct()
   const toast = useToast()
 
-  if (!detail.data && detail.isError) {
-    return (
+  const toList = { label: '목록으로', onClick: () => void navigate({ to: '/products' }) }
+
+  if (detail.isError) {
+    // 404는 대상이 없는 것이고, 403/40004(휴점·정지 셀러)·5xx·네트워크는 "지금 못 불러온 것"이다 —
+    // 둘을 같은 문구로 접으면 운영자가 상품이 사라진 줄 안다.
+    return isNotFound(detail.error) ? (
+      <ProductMissing title="상품 수정" message="상품을 찾을 수 없어요" action={toList} />
+    ) : (
       <ProductMissing
         title="상품 수정"
-        message="상품을 찾을 수 없어요"
-        action={{ label: '목록으로', onClick: () => void navigate({ to: '/products' }) }}
+        message="상품을 불러오지 못했어요"
+        description={productErrorMessage(detail.error)}
+        action={toList}
       />
     )
   }
-  if (!categories || !detail.data) return null
+  // 카테고리 트리가 없으면 소분류를 복원할 수 없어 폼 자체가 성립하지 않는다(등록 폼과 달리
+  // 프리필된 categoryId를 경로로 되돌려야 한다) — 백지 대신 사유와 재시도를 보여준다.
+  if (categoriesQuery.isError) {
+    return (
+      <ProductMissing
+        title="상품 수정"
+        message="카테고리를 불러오지 못했어요"
+        description={productErrorMessage(categoriesQuery.error)}
+        action={{ label: '다시 시도', onClick: () => void categoriesQuery.refetch() }}
+      />
+    )
+  }
+  if (!categoriesQuery.data || !detail.data) {
+    return (
+      <div className="p-6">
+        <PageHeader title="상품 수정" />
+        <div role="status" aria-label="수정 양식을 불러오는 중" className="flex flex-col gap-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      </div>
+    )
+  }
 
+  const product = detail.data
   return (
     <>
+      {/* 서버는 대표 이미지 행이 없는 상품에 thumbnailImageKey=null을 준다(500이 아니다). 그 상태로는
+          저장이 통과하지 못하므로(PUT의 썸네일 키는 필수) 폼을 열어 주되 이유를 먼저 밝힌다. */}
+      {product.thumbnailImageKey == null && (
+        <div className="px-6 pt-6">
+          <Alert variant="warning">대표 썸네일이 없는 상품이에요. 저장하려면 썸네일을 다시 올려 주세요.</Alert>
+        </div>
+      )}
       <ProductEditor
         mode="edit"
         productId={productId}
-        initial={toFormValues(detail.data, categories, key => productImageUrl(key) ?? '')}
-        categories={categories}
+        initial={toFormValues(product, categoriesQuery.data, key => productImageUrl(key) ?? '')}
+        categories={categoriesQuery.data}
         shippingSummary={<ShippingPolicyNotice />}
         submitting={updateProduct.isPending}
         onSubmit={values =>
