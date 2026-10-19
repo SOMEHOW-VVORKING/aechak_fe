@@ -84,17 +84,21 @@ describe('resolveApiHosts — 운영 빌드', () => {
       'https://api-dev.aechak.co.kr?token=x',
       'https://api-dev.aechak.co.kr#frag',
       'https://user:pw@api-dev.aechak.co.kr',
+      // 값 없는 구분자만 붙은 경우 — URL.search/hash가 빈 문자열이라 파싱 결과로는 구별되지 않는데
+      // withPrefix가 원문에 접두를 이어 붙여 `…?/api/v1`을 만든다(경로가 쿼리 안으로 들어간다).
+      'https://api-dev.aechak.co.kr?',
+      'https://api-dev.aechak.co.kr#',
     ]) {
       expect(() =>
         resolveApiHosts(sellerOptions(true, notOrigin, 'https://seller-api-dev.aechak.co.kr')),
       ).toThrow(ApiHostConfigError)
     }
-    // 끝의 슬래시 하나는 사람이 흔히 붙이는 형태라 허용한다(client.ts가 접두를 붙일 때 떼어낸다).
+    // 끝의 슬래시 하나는 사람이 흔히 붙이는 형태라 거절하지 않고 origin으로 정규화해 돌려준다.
     expect(
       resolveApiHosts(
         sellerOptions(true, 'https://api-dev.aechak.co.kr/', 'https://seller-api-dev.aechak.co.kr'),
       ).apiOrigin,
-    ).toBe('https://api-dev.aechak.co.kr/')
+    ).toBe('https://api-dev.aechak.co.kr')
   })
 
   it('[AC-APIENV-006] 스킴이 없거나 http/https가 아니면 던진다', () => {

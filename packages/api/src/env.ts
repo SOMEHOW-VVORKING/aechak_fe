@@ -95,10 +95,14 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
   }
   // 경로·쿼리·해시가 붙으면 접두가 그 뒤에 이어 붙는다 — `.../api/v1`을 넣으면 `/api/v1/api/v1`이고
   // `?foo=1`을 넣으면 접두가 쿼리 값 안으로 들어간다. 둘 다 조용히 전부 404가 된다.
+  //
+  // 쿼리·해시는 **원문 문자열**에서 구분자 유무로 본다. `https://api-dev.aechak.co.kr?`처럼 값이 없는
+  // 구분자만 붙으면 `URL.search`·`URL.hash`가 빈 문자열이라 파싱 결과로는 구별되지 않는데,
+  // withPrefix가 원문에 접두를 이어 붙여 `…?/api/v1`을 만든다(경로가 쿼리 안으로 들어간다).
   const extra = [
     parsed.pathname !== '/' && parsed.pathname !== '' ? `경로(${parsed.pathname})` : null,
-    parsed.search !== '' ? `쿼리(${parsed.search})` : null,
-    parsed.hash !== '' ? `해시(${parsed.hash})` : null,
+    raw.includes('?') ? '쿼리' : null,
+    raw.includes('#') ? '해시' : null,
     parsed.username !== '' || parsed.password !== '' ? '자격증명' : null,
   ].filter((part): part is string => part !== null)
   if (extra.length > 0) {
@@ -114,7 +118,9 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
         `사용자 PC로 요청을 보내 전부 실패합니다(ERR_CONNECTION_REFUSED).`,
     )
   }
-  return raw
+  // 통과한 값은 origin으로 정규화해 돌려준다 — 끝 슬래시 하나(`https://h/`)는 사람이 흔히 붙이는
+  // 형태라 거절하지 않고 여기서 떼어낸다. 접두 조립이 원문 모양에 의존하지 않게 하는 지점이다.
+  return parsed.origin
 }
 
 /**
