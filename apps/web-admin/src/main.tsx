@@ -3,19 +3,33 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { configureApiHosts } from '@aechak/api'
+import { bootstrapApiHosts } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { setupAuthExpiredRedirect } from '@/features/auth'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
 applyCssVariables()
-// 어드민 콘솔도 두 호스트를 부른다 — 로그인·refresh는 api 모듈(8080), 심사 업무는 admin 모듈이다.
-// 접두(/api/v1)가 빠져 있던 것을 여기서 함께 바로잡는다(빠지면 refresh가 엉뚱한 경로로 나간다).
-// 로컬 admin 포트는 seller와 8081이 겹쳐 BE 쪽에서 8082로 옮기기로 했다.
-configureApiHosts({
-  apiOrigin: import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080',
-  adminOrigin: import.meta.env['VITE_ADMIN_API_BASE_URL'] ?? 'http://localhost:8082',
+// 어드민 콘솔도 두 호스트를 부른다 — 로그인·refresh는 api 모듈(8080), 심사·명부 업무는 admin
+// 모듈이다(어드민 모듈에는 `/auth/*`가 아예 없다). 접두(/api/v1)는 configureApiHosts가 붙인다.
+// 로컬 admin 포트는 seller와 8081이 겹쳐 BE 쪽에서 8082로 옮겼다.
+//
+// 로컬 기본값은 개발 빌드에서만 쓴다. 운영 빌드에 변수가 주입되지 않으면 bootstrapApiHosts가
+// 부팅을 멈추고 무엇이 비었는지 밝힌다 — 이전에는 조용히 localhost:8082로 되돌아가 배포된
+// 어드민이 사용자 PC를 호출했다(SCRUM-272).
+bootstrapApiHosts({
+  app: 'web-admin',
+  isProd: import.meta.env.PROD,
+  api: {
+    name: 'VITE_API_BASE_URL',
+    value: import.meta.env['VITE_API_BASE_URL'],
+    devFallback: 'http://localhost:8080',
+  },
+  admin: {
+    name: 'VITE_ADMIN_API_BASE_URL',
+    value: import.meta.env['VITE_ADMIN_API_BASE_URL'],
+    devFallback: 'http://localhost:8082',
+  },
 })
 
 const router = createRouter({ routeTree })
