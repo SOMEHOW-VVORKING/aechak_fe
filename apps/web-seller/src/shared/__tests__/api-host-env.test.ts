@@ -63,11 +63,38 @@ describe('resolveApiHosts — 운영 빌드', () => {
       'http://127.0.0.1:8081',
       'http://0.0.0.0:8081',
       'https://localhost',
+      // DNS 루트 표기와 대문자, RFC 6761이 예약한 .localhost 하위 도메인도 같은 곳을 가리킨다 —
+      // 집합 비교만 하면 `new URL(...).hostname`이 `localhost.`가 되어 그대로 통과한다.
+      'http://localhost.:8081',
+      'http://LOCALHOST:8081',
+      'http://seller-api.localhost:8081',
     ]) {
       expect(() => resolveApiHosts(sellerOptions(true, 'https://api-dev.aechak.co.kr', local))).toThrow(
         ApiHostConfigError,
       )
     }
+  })
+
+  it('[AC-APIENV-011] origin이 아니면(경로·쿼리·해시·자격증명) 던진다 — 접두가 두 번 붙는 것을 막는다', () => {
+    // schema.yaml의 servers가 `http://localhost:8080/api/v1`처럼 접두를 포함해 적혀 있어 사람이
+    // 그대로 복사하기 쉽다. 그 값을 넣으면 client.ts가 접두를 또 붙여 /api/v1/api/v1로 나간다.
+    for (const notOrigin of [
+      'https://api-dev.aechak.co.kr/api/v1',
+      'https://api-dev.aechak.co.kr/api/v1/',
+      'https://api-dev.aechak.co.kr?token=x',
+      'https://api-dev.aechak.co.kr#frag',
+      'https://user:pw@api-dev.aechak.co.kr',
+    ]) {
+      expect(() =>
+        resolveApiHosts(sellerOptions(true, notOrigin, 'https://seller-api-dev.aechak.co.kr')),
+      ).toThrow(ApiHostConfigError)
+    }
+    // 끝의 슬래시 하나는 사람이 흔히 붙이는 형태라 허용한다(client.ts가 접두를 붙일 때 떼어낸다).
+    expect(
+      resolveApiHosts(
+        sellerOptions(true, 'https://api-dev.aechak.co.kr/', 'https://seller-api-dev.aechak.co.kr'),
+      ).apiOrigin,
+    ).toBe('https://api-dev.aechak.co.kr/')
   })
 
   it('[AC-APIENV-006] 스킴이 없거나 http/https가 아니면 던진다', () => {

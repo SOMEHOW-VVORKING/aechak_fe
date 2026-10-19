@@ -14,6 +14,16 @@ import { configureApiHosts, type ApiHostConfig } from './client'
 /** 로컬 주소로 간주하는 호스트명. 운영 빌드에서 이 중 하나를 가리키면 그 자체가 결함이다. */
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'])
 
+/**
+ * DNS 루트 표기(`localhost.`)와 대문자를 접은 뒤 판정한다. `new URL('https://localhost.:8081')`의
+ * hostname은 `localhost.`라서 집합 비교만으로는 그대로 통과한다 — 가리키는 곳은 똑같이 사용자 PC다.
+ * RFC 6761이 예약한 `.localhost` 하위 도메인(`api.localhost`)도 같은 이유로 막는다.
+ */
+function isLocalHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/\.$/, '')
+  return LOCAL_HOSTNAMES.has(normalized) || normalized.endsWith('.localhost')
+}
+
 export interface ApiHostSpec {
   /** 환경변수 이름. 오류 문구에 그대로 실어 사람이 어디를 채워야 하는지 알게 한다. */
   name: string
@@ -53,11 +63,14 @@ export class ApiHostConfigError extends Error {
 /**
  * 한 변수를 검증하고 쓸 값을 돌려준다. 문제가 있으면 `problems`에 사람이 읽을 사유를 쌓는다.
  *
- * 검증 항목 셋:
+ * 검증 항목 넷:
  * ① 비어 있지 않다(미주입·빈 문자열·공백만 전부 결함).
  * ② `http`/`https` 스킴의 절대 URL이다(`api-dev.aechak.co.kr`처럼 스킴이 빠지면 axios가
  *    상대경로로 해석해 배포 도메인으로 요청을 보낸다).
- * ③ 운영 빌드인데 로컬 주소를 가리키지 않는다 — **이번 사고를 직접 잡는 항목이다.**
+ * ③ **origin이다** — 경로·쿼리·해시·자격증명이 붙어 있지 않다. 접두 `/api/v1`은 코드가 붙이므로
+ *    env 값에 그것까지 넣으면 `/api/v1/api/v1`로 나간다(schema.yaml의 servers가 접두를 포함해
+ *    적혀 있어 사람이 그대로 복사하기 쉬운 자리다).
+ * ④ 운영 빌드인데 로컬 주소를 가리키지 않는다 — **이번 사고를 직접 잡는 항목이다.**
  */
 function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): string {
   const raw = spec.value?.trim() ?? ''
@@ -80,7 +93,22 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
     problems.push(`${spec.name}=${raw} 의 스킴이 http/https가 아닙니다.`)
     return raw
   }
-  if (isProd && LOCAL_HOSTNAMES.has(parsed.hostname)) {
+  // 경로·쿼리·해시가 붙으면 접두가 그 뒤에 이어 붙는다 — `.../api/v1`을 넣으면 `/api/v1/api/v1`이고
+  // `?foo=1`을 넣으면 접두가 쿼리 값 안으로 들어간다. 둘 다 조용히 전부 404가 된다.
+  const extra = [
+    parsed.pathname !== '/' && parsed.pathname !== '' ? `경로(${parsed.pathname})` : null,
+    parsed.search !== '' ? `쿼리(${parsed.search})` : null,
+    parsed.hash !== '' ? `해시(${parsed.hash})` : null,
+    parsed.username !== '' || parsed.password !== '' ? '자격증명' : null,
+  ].filter((part): part is string => part !== null)
+  if (extra.length > 0) {
+    problems.push(
+      `${spec.name}=${raw} 에 ${extra.join('·')}가 붙어 있습니다. origin만 넣어 주세요 — ` +
+        `경로 접두 /api/v1은 코드가 붙이므로 값에 함께 넣으면 /api/v1/api/v1로 나갑니다.`,
+    )
+    return raw
+  }
+  if (isProd && isLocalHostname(parsed.hostname)) {
     problems.push(
       `${spec.name}=${raw} 가 로컬 주소를 가리킵니다. 배포 빌드에 그 값이 굳으면 브라우저가 ` +
         `사용자 PC로 요청을 보내 전부 실패합니다(ERR_CONNECTION_REFUSED).`,
