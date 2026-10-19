@@ -61,7 +61,9 @@ aws ssm get-parameter --name /aechak/dev/api/AUTH_WEB_RETURN_URLS --query Parame
 
 ### 2026-10-19 현재 실제로 들어가 있는 값
 
-preview 번들의 `configureApiHosts` 호출부를 직접 열어 확인한 것이다(`.pages.dev`의 `assets/index-*.js`).
+측정 대상은 **`feature-scrum-254-seller-pro` 브랜치의 preview 번들**이다 — `https://feature-scrum-254-seller-pro.<project>.pages.dev/assets/index-*.js`를 내려받아 `configureApiHosts` 호출부를 직접 읽었다.
+
+Cloudflare Pages는 **Preview와 Production의 환경변수를 따로 둘 수 있다.** 아래는 Preview 쪽 값이므로 Production도 같다고 단정할 수는 없지만, `https://seller-dev.aechak.co.kr`·`https://admin-dev.aechak.co.kr`의 브라우저 콘솔(사고 당시 실측)이 같은 증상을 보였으니 Production도 같은 상태로 보인다. **두 묶음을 모두 확인하고 고칠 것.**
 
 | 프로젝트 | 측정된 값 | 판정 |
 |---|---|---|
