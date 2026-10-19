@@ -15,6 +15,8 @@ export const ADMIN_ORIGIN = 'http://localhost:8082'
 const apiBase = `${API_ORIGIN}${API_PATH_PREFIX}`
 const adminBase = `${ADMIN_ORIGIN}${API_PATH_PREFIX}`
 
+export const ADMIN_ROSTER_URL = `${adminBase}/admin/admins`
+export const ADMIN_ROSTER_MEMBER_URL = `${ADMIN_ROSTER_URL}/:userId`
 export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
@@ -241,5 +243,124 @@ const applicationHandlers = [
   ),
 ]
 
-export const handlers = [...applicationHandlers]
+// ─── 관리자 명부 (admin 호스트 /admin/admins) ──────────────────────────────────
+// BE AdminUserRoleService + User.promoteToAdmin의 가드 순서를 그대로 미러한다. 순서가 계약의
+// 일부라서(자기 자신 판정이 존재 확인보다 먼저다) FE 분기가 틀리면 이 스텁에서 드러난다.
+
+export type WireUserStatus = 'PENDING_ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'WITHDRAWN'
+
+/** 명부 응답 행 + 서버만 아는 값(role·요청자 여부 판정에 쓰는 status). */
+export interface AdminRosterWire {
+  userId: number
+  nickname: string | null
+  status: WireUserStatus
+  joinedAt: string
+  role: 'ADMIN' | 'GENERAL'
+}
+
+/** 요청자(JWT sub). `isSelf`는 BE가 응답 변환 단계에서 이 값과 비교해 만든다. */
+export const CURRENT_ADMIN_USER_ID = 1
+
+let roster: AdminRosterWire[] = []
+
+export function makeAdminRosterWire(overrides: Partial<AdminRosterWire> = {}): AdminRosterWire {
+  return {
+    userId: 2,
+    nickname: '운영자',
+    status: 'ACTIVE',
+    joinedAt: '2026-10-18T09:00:00',
+    role: 'ADMIN',
+    ...overrides,
+  }
+}
+
+/** 인자 없이 부르면 요청자 1명만 있는 명부가 된다(마지막 관리자 가드 시나리오의 기본값). */
+export function seedAdminRoster(rows: AdminRosterWire[] = []): void {
+  roster = [
+    makeAdminRosterWire({
+      userId: CURRENT_ADMIN_USER_ID,
+      // 'ActorTag' 같은 짧은 라벨과 겹치지 않는 이름을 쓴다 — 화면의 자기 행 pill은 '나'다.
+      nickname: '현재 운영자',
+      joinedAt: '2026-10-01T09:00:00',
+    }),
+    ...rows.map(row => ({ ...row })),
+  ]
+}
+
+/** 핸들러가 반영한 현재 명부 — 테스트가 승격·강등 결과를 읽는다. */
+export function currentAdminRoster(): AdminRosterWire[] {
+  return roster.map(row => ({ ...row }))
+}
+
+const rosterHandlers = [
+  http.get(ADMIN_ROSTER_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    // page 음수와 범위 밖 size는 서버가 보정하고 거절하지 않는다(BE PageQuery.of).
+    const page = Math.max(0, Number(params.get('page') ?? 0) || 0)
+    const sizeParam = params.get('size')
+    const size = sizeParam == null ? 20 : Math.min(100, Math.max(1, Math.trunc(Number(sizeParam)) || 1))
+    // 정렬은 가입 순(userId 오름차순) 고정이다.
+    const admins = roster.filter(row => row.role === 'ADMIN').sort((a, b) => a.userId - b.userId)
+    return HttpResponse.json({
+      data: {
+        items: admins.slice(page * size, page * size + size).map(row => ({
+          userId: row.userId,
+          nickname: row.nickname,
+          status: row.status,
+          joinedAt: row.joinedAt,
+          isSelf: row.userId === CURRENT_ADMIN_USER_ID,
+        })),
+        totalCount: admins.length,
+      },
+    })
+  }),
+
+  http.post(ADMIN_ROSTER_URL, async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as { userId?: number | null } | null
+    const userId = body?.userId
+    if (userId == null) {
+      return HttpResponse.json(errorBody(90001, '승격할 사용자 id는 필수입니다.'), { status: 400 })
+    }
+    // BE 가드 순서: ① 자기 자신(존재 확인보다 먼저) ② 없는 계정 ③ 비활성 비관리자 ④ 이미 관리자.
+    if (userId === CURRENT_ADMIN_USER_ID) {
+      return HttpResponse.json(errorBody(30014, '자신의 역할은 변경할 수 없습니다.'), { status: 403 })
+    }
+    const target = roster.find(row => row.userId === userId)
+    if (!target) {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+    }
+    // 이미 관리자면 상태를 보지 않고 30012다(rejectInactivePromotion이 먼저 return한다).
+    if (target.role === 'ADMIN') {
+      return HttpResponse.json(errorBody(30012, '이미 관리자인 계정입니다.'), { status: 409 })
+    }
+    if (target.status !== 'ACTIVE') {
+      return HttpResponse.json(
+        errorBody(30017, '활성 상태인 계정만 관리자로 승격할 수 있습니다.'),
+        { status: 409 },
+      )
+    }
+    target.role = 'ADMIN'
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.delete(ADMIN_ROSTER_MEMBER_URL, ({ params }) => {
+    const userId = Number(params['userId'])
+    if (userId === CURRENT_ADMIN_USER_ID) {
+      return HttpResponse.json(errorBody(30014, '자신의 역할은 변경할 수 없습니다.'), { status: 403 })
+    }
+    const target = roster.find(row => row.userId === userId)
+    if (!target) {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+    }
+    const adminCount = roster.filter(row => row.role === 'ADMIN').length
+    if (target.role === 'ADMIN' && adminCount <= 1) {
+      return HttpResponse.json(errorBody(30013, '마지막 관리자는 강등할 수 없습니다.'), { status: 409 })
+    }
+    // 이미 일반 회원이면 멱등 no-op도 204다.
+    target.role = 'GENERAL'
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
+export const handlers = [...applicationHandlers, ...rosterHandlers]
 export const server = setupServer(...handlers)
