@@ -80,6 +80,16 @@ Cloudflare Pages는 **Preview와 Production의 환경변수를 따로 둘 수 �
 `VITE_MEDIA_BASE_URL`은 라우트 분할 청크에 들어가 진입 번들에서 확인되지 않았다 — 설정 화면에서 직접 확인할 것(미설정이면 썸네일만 placeholder가 되고 API는 정상이다).
 
 > ⚠️ 호스트 변수 검증이 들어간 뒤로는, 값이 비거나 로컬 주소를 가리키는 배포는 **흰 화면이 아니라 "설정이 끝나지 않아 화면을 열 수 없어요" 안내**를 띄우고 부팅하지 않는다. 위 셋을 넣기 전까지 `aechak-seller`·`aechak-admin`의 preview·운영 배포가 그 화면으로 보이는 것이 정상 동작이다(이전에는 화면이 뜬 채로 모든 요청이 실패했다).
+>
+> 실측(검증 도입 브랜치의 preview를 헤드리스 브라우저로 열어 확인): `aechak-seller`는 `VITE_SELLER_API_BASE_URL이(가) 비어 있어요`, `aechak-admin`은 `VITE_ADMIN_API_BASE_URL이(가) 비어 있어요`를 띄우고 멈췄고, `aechak-fe`는 정상 부팅했다.
+
+### preview 도메인으로는 API 연동을 검증할 수 없다
+
+preview URL은 브랜치마다 달라지는 서브도메인(`feature-....aechak-fe.pages.dev`)이라 BE CORS 화이트리스트에 들어 있지 않다. `CORS_ALLOWED_ORIGINS`에는 배포 도메인(`https://dev.aechak.co.kr` 등)과 로컬 포트만 있으므로, **환경변수를 올바르게 넣어도 preview에서는 모든 API가 CORS로 막힌다.**
+
+실측: 구매자 preview가 정상 부팅한 뒤 `https://api-dev.aechak.co.kr/api/v1/auth/web/refresh` 호출에서 `No 'Access-Control-Allow-Origin' header is present`로 실패했다. 이것은 결함이 아니라 preview의 구조적 한계다 — 매 브랜치 서브도메인을 화이트리스트에 넣는 것은 오픈 리다이렉트·CORS 범위를 넓히는 일이라 하지 않는다.
+
+**API 연동 검증은 배포 도메인(`dev.aechak.co.kr`·`seller-dev.aechak.co.kr`·`admin-dev.aechak.co.kr`)에서 한다.** preview로 확인할 수 있는 것은 빌드 성공과 호스트 변수 검증 결과(부팅 여부·안내 문구)까지다.
 
 ### 환경변수 블록
 
