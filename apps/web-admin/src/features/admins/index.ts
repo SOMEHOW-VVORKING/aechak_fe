@@ -6,6 +6,7 @@ export {
   adminDisplayName,
   demoteErrorMessage,
   formatJoinedAt,
+  needsRelogin,
   parseUserId,
   promoteErrorMessage,
   rosterErrorMessage,

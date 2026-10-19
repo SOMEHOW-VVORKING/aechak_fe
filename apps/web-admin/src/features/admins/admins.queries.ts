@@ -111,6 +111,18 @@ export function rosterErrorMessage(error: unknown): string {
   )
 }
 
+/**
+ * 다시 로그인해야 풀리는 실패인가.
+ *
+ * 403/20011(비ADMIN 토큰)·403/20005(정지 계정)은 재시도로 풀리지 않고, 세션 만료 전역 이동
+ * (setOnAuthExpired)도 깨우지 않는다 — 401이 아니기 때문이다. 화면이 재로그인을 안내하면서 갈
+ * 수단을 함께 주지 않으면 운영자가 주소를 직접 쳐야 복구된다.
+ */
+export function needsRelogin(error: unknown): boolean {
+  const code = errorCodeOf(error)
+  return code === 20004 || code === 20005 || code === 20011
+}
+
 const PROMOTE_ERROR: Record<number, string> = {
   90001: '사용자 id를 확인해 주세요.',
   30000: '그 id의 계정을 찾을 수 없어요.',

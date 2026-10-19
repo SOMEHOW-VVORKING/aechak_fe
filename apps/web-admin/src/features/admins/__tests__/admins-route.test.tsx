@@ -23,11 +23,12 @@ function renderAt(path: string) {
   })
   // 에러 분기를 즉시 보려면 재시도를 끈다(main.tsx는 retry 1).
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return router
 }
 
 const rowOf = async (text: string) => (await screen.findByText(text)).closest('tr') as HTMLElement
@@ -210,5 +211,56 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('관리자 명부를 불러오지 못했어요.')).toBeInTheDocument()
     expect(screen.queryByText('등록된 관리자가 없어요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-ADM-ROSTER-012] 권한 오류는 안내만 하지 않고 로그인 화면으로 갈 수단을 함께 준다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    const router = renderAt('/admins')
+
+    // 403은 401이 아니라 세션 만료 전역 이동(setOnAuthExpired)을 깨우지 않는다 — 버튼이 없으면
+    // 운영자가 주소를 직접 쳐야 복구된다.
+    await user.click(await screen.findByRole('button', { name: '로그인 화면으로' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+  })
+
+  it('[AC-ADM-ROSTER-013] 2페이지 조회가 실패해도 이전 페이지로 돌아갈 수단이 남는다', async () => {
+    const user = userEvent.setup()
+    // 21명이면 2페이지가 생긴다(서버 size 20).
+    seedAdminRoster(
+      Array.from({ length: 20 }, (_, index) =>
+        makeAdminRosterWire({
+          userId: 100 + index,
+          nickname: `관리자${index}`,
+          joinedAt: '2026-10-05T09:00:00',
+        }),
+      ),
+    )
+    const router = renderAt('/admins')
+    await screen.findByText('관리자0')
+    expect(router.state.location.pathname).toBe('/admins')
+
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: '다음' }))
+
+    // 실패하면 totalCount가 0으로 떨어져 totalPages도 1이 된다 — `totalPages > 1`로만 페이저를
+    // 그리면 '이전' 버튼까지 사라져 빈 화면에 갇힌다.
+    expect(await screen.findByText('관리자 명부를 불러오지 못했어요.')).toBeInTheDocument()
+    const previous = screen.getByRole('button', { name: '이전' })
+    expect(previous).toBeEnabled()
+    expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+
+    server.resetHandlers()
+    await user.click(previous)
+    expect(await screen.findByText('관리자0')).toBeInTheDocument()
   })
 })

@@ -58,13 +58,25 @@ interface StubOptions {
   forbidden?: boolean
 }
 
+/** refresh가 발급하는 access. 업무 요청은 이 토큰을 Bearer로 달고 와야 한다. */
+const VALID_ACCESS_TOKEN = 'e2e-admin-token'
+
 /** 명부 3종을 상태 있게 스텁한다. 가드 순서는 BE AdminUserRoleService를 그대로 미러한다. */
 async function stubAdminApi(page: Page, options: StubOptions = {}) {
   const roster = SEED.map(row => ({ ...row }))
+  const bearerSeen: (string | null)[] = []
 
   await page.route(`${ADMIN_API_ORIGIN}/api/v1/admin/admins**`, async route => {
     const method = route.request().method()
     if (method === 'OPTIONS') return fulfillAdmin(route, 204, null)
+
+    // 토큰을 검사하지 않으면 "401 → refresh → 새 Bearer로 재시도"가 전혀 돌지 않는다 —
+    // 세션 복원이 깨져도 E2E가 통과해 버린다. 서버와 같게 토큰 없으면 401이다.
+    const authorization = (await route.request().allHeaders())['authorization'] ?? null
+    bearerSeen.push(authorization)
+    if (authorization !== `Bearer ${VALID_ACCESS_TOKEN}`) {
+      return fulfillAdmin(route, 401, { errorCode: 20004, message: '인증이 필요합니다.' })
+    }
 
     const url = new URL(route.request().url())
     const match = /\/admin\/admins(?:\/(\d+))?$/.exec(url.pathname)
@@ -130,9 +142,14 @@ async function stubAdminApi(page: Page, options: StubOptions = {}) {
   })
 
   // 셸이 부르는 심사 대기 수 — 명부 화면과 무관하지만 스텁이 없으면 실네트워크로 샌다.
-  await page.route(`${ADMIN_API_ORIGIN}/api/v1/admin/seller-applications**`, route =>
-    fulfillAdmin(route, 200, { data: { items: [], totalCount: 0 } }),
-  )
+  await page.route(`${ADMIN_API_ORIGIN}/api/v1/admin/seller-applications**`, async route => {
+    if (route.request().method() === 'OPTIONS') return fulfillAdmin(route, 204, null)
+    const authorization = (await route.request().allHeaders())['authorization'] ?? null
+    if (authorization !== `Bearer ${VALID_ACCESS_TOKEN}`) {
+      return fulfillAdmin(route, 401, { errorCode: 20004, message: '인증이 필요합니다.' })
+    }
+    return fulfillAdmin(route, 200, { data: { items: [], totalCount: 0 } })
+  })
 
   // 호스트 분기가 무동작이 되면(configureApiHosts 누락) 명부 요청이 api 호스트로 샌다. 같은 경로를
   // api 호스트에도 심되 500으로 떨어뜨려 화면에 오류가 뜨게 만든다.
@@ -159,9 +176,11 @@ async function stubAdminApi(page: Page, options: StubOptions = {}) {
     return route.fulfill({
       status: 200,
       headers: AUTH_CORS,
-      json: { data: { accessToken: 'e2e-admin-token', tokenType: 'Bearer', expiresIn: 1800 } },
+      json: { data: { accessToken: VALID_ACCESS_TOKEN, tokenType: 'Bearer', expiresIn: 1800 } },
     })
   })
+
+  return { bearerSeen }
 }
 
 test.use({ viewport: { width: 1440, height: 900 } })
@@ -198,7 +217,7 @@ test('[AC-ADM-E2E-010] 로그인 화면은 카카오만 열려 있고 SideNav �
 })
 
 test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에서 승격·강등이 돈다', async ({ page }) => {
-  await stubAdminApi(page)
+  const { bearerSeen } = await stubAdminApi(page)
 
   // access는 쿼리로 오지 않는다 — 복귀 라우트의 refresh가 유일한 수령 경로다.
   await page.goto('/login/complete?status=ACTIVE&isNew=false')
@@ -232,6 +251,25 @@ test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에�
   await modal.getByRole('button', { name: '권한 해제' }).click()
   await expect(page.getByText('관리자 권한을 해제했어요.')).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '김운영' })).toHaveCount(0)
+
+  // 업무 요청은 콜백에서 받은 access를 Bearer로 달고 나간다 — 스텁이 토큰을 검사하므로 세션 수령이
+  // 깨지면 전부 401이 되어 위 단언들이 먼저 실패한다.
+  expect(bearerSeen.every(value => value === `Bearer ${VALID_ACCESS_TOKEN}`)).toBe(true)
+})
+
+test('[AC-ADM-E2E-015] 토큰 없이 명부에 들어가면 401 → refresh → 새 Bearer로 재시도해 열린다', async ({
+  page,
+}) => {
+  const { bearerSeen } = await stubAdminApi(page)
+
+  // 새로고침·주소 직접 입력은 메모리 access가 없는 상태다. 공유 클라이언트의 401 인터셉터가
+  // refresh로 세션을 복원하고 **새 토큰으로** 원 요청을 재시도해야 화면이 열린다.
+  await page.goto('/admins')
+
+  await expect(page.getByRole('row').filter({ hasText: '현재 운영자' })).toBeVisible()
+  // 첫 요청은 토큰 없이(또는 낡은 토큰으로) 나가 401을 받고, 재시도가 새 토큰을 달고 나간다.
+  expect(bearerSeen[0]).not.toBe(`Bearer ${VALID_ACCESS_TOKEN}`)
+  expect(bearerSeen).toContain(`Bearer ${VALID_ACCESS_TOKEN}`)
 })
 
 test('[AC-ADM-E2E-012] 비활성 계정 승격은 409 errorCode 30017 사유를 보여준다', async ({ page }) => {
@@ -255,6 +293,12 @@ test('[AC-ADM-E2E-013] 권한 없는 계정(403 errorCode 20011)은 빈 명부�
   await expect(page.getByText('관리자 명부를 불러오지 못했어요.')).toBeVisible()
   await expect(page.getByText('등록된 관리자가 없어요.')).toHaveCount(0)
   await shot(page, '04-forbidden')
+
+  // 403은 401이 아니라 세션 만료 전역 이동을 깨우지 않는다 — 재로그인을 안내하면서 갈 수단을
+  // 주지 않으면 운영자가 주소를 직접 쳐야 복구된다.
+  await page.getByRole('button', { name: '로그인 화면으로' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeVisible()
 })
 
 test('[AC-ADM-E2E-014] 세션이 없으면(401 → refresh 실패) 명부 진입이 로그인으로 튕긴다', async ({ page }) => {

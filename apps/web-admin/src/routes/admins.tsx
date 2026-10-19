@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, UserMinus, UserPlus } from 'lucide-react'
 import { Alert, Button, DataTable, Input, Modal, StatusPill, Toast } from '@aechak/design-system/web'
 import type { Column, StatusPillVariant } from '@aechak/design-system/web'
@@ -10,6 +10,7 @@ import {
   adminDisplayName,
   demoteErrorMessage,
   formatJoinedAt,
+  needsRelogin,
   parseUserId,
   promoteErrorMessage,
   rosterErrorMessage,
@@ -34,6 +35,7 @@ const STATUS_VARIANT: Record<keyof typeof USER_STATUS_LABEL, StatusPillVariant> 
 }
 
 function AdminRosterPage() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(0)
   const { rows, totalCount, isLoading, isError, error } = useAdminRoster(page)
 
@@ -49,12 +51,14 @@ function AdminRosterPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / DEFAULT_PAGE_SIZE))
   // 마지막 페이지의 유일한 관리자를 강등하면 재조회 결과에 그 페이지가 없어져 빈 목록에 갇힌다 —
-  // 페이지 이동 버튼은 totalPages > 1일 때만 그려지므로 되돌아올 수단까지 사라진다.
   // 조회 중에는 totalCount가 0이라 페이지가 잘못 접히므로 응답이 온 뒤에만 보정한다.
   const lastPage = totalPages - 1
   useEffect(() => {
     if (!isLoading && !isError && page > lastPage) setPage(lastPage)
   }, [isLoading, isError, page, lastPage])
+  // 2페이지 조회가 실패하면 totalCount가 0으로 떨어져 totalPages도 1이 된다 — 그때 `totalPages > 1`로만
+  // 페이저를 그리면 되돌아올 '이전' 버튼까지 사라져 빈 화면에 갇힌다(오류 상태에서는 위 보정도 안 돈다).
+  const showPager = totalPages > 1 || page > 0
 
   const parsedUserId = parseUserId(userIdInput)
 
@@ -194,7 +198,17 @@ function AdminRosterPage() {
       {/* 실 API 전환이 만든 실패 경로 — "데이터 없음"으로 접으면 권한 없음(403/20011)이 빈 명부로 보인다. */}
       {isError && (
         <Alert variant="error" className="mb-3.5">
-          {rosterErrorMessage(error)}
+          <span className="flex flex-col items-start gap-2">
+            {rosterErrorMessage(error)}
+            {/* 로그인 자체는 역할을 보지 않아 일반 회원도 여기까지 들어온다. 403은 세션 만료 전역
+                이동을 깨우지 않으므로, 재로그인을 안내하면서 갈 수단을 함께 줘야 한다 —
+                없으면 운영자가 주소를 직접 쳐야 복구된다. */}
+            {needsRelogin(error) && (
+              <Button variant="secondary" size="sm" onClick={() => void navigate({ to: '/login' })}>
+                로그인 화면으로
+              </Button>
+            )}
+          </span>
         </Alert>
       )}
 
@@ -210,7 +224,7 @@ function AdminRosterPage() {
         <span>
           관리자 <span className="font-semibold tabular-nums text-text-primary">{totalCount}</span>명
         </span>
-        {totalPages > 1 && (
+        {showPager && (
           <span className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -228,7 +242,7 @@ function AdminRosterPage() {
               variant="ghost"
               size="sm"
               rightIcon={<ChevronRight className="size-4" />}
-              disabled={page + 1 >= totalPages}
+              disabled={page + 1 >= totalPages || isError}
               onClick={() => setPage(current => current + 1)}
             >
               다음
