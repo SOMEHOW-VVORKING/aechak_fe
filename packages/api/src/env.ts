@@ -52,7 +52,7 @@ export class ApiHostConfigError extends Error {
 
   constructor(app: string, problems: readonly string[]) {
     super(
-      `[${app}] API 호스트 환경변수가 올바르지 않아 앱을 시작할 수 없습니다.\n` +
+      `[${app}] API 호스트 환경변수가 올바르지 않아 앱을 시작할 수 없어요.\n` +
         problems.map(problem => `  - ${problem}`).join('\n'),
     )
     this.name = 'ApiHostConfigError'
@@ -76,7 +76,7 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
   const raw = spec.value?.trim() ?? ''
   if (raw === '') {
     if (!isProd) return spec.devFallback
-    problems.push(`${spec.name}이(가) 비어 있습니다. 배포 환경변수에 API origin을 넣어 주세요.`)
+    problems.push(`${spec.name}이(가) 비어 있어요. 배포 환경변수에 API origin을 넣어 주세요.`)
     return spec.devFallback
   }
 
@@ -85,12 +85,12 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
     parsed = new URL(raw)
   } catch {
     problems.push(
-      `${spec.name}=${raw} 는 절대 URL이 아닙니다. http:// 또는 https:// 로 시작하는 origin을 넣어 주세요.`,
+      `${spec.name}=${raw} 는 절대 URL이 아니에요. http:// 또는 https:// 로 시작하는 origin을 넣어 주세요.`,
     )
     return raw
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    problems.push(`${spec.name}=${raw} 의 스킴이 http/https가 아닙니다.`)
+    problems.push(`${spec.name}=${raw} 의 스킴이 http/https가 아니에요.`)
     return raw
   }
   // 경로·쿼리·해시가 붙으면 접두가 그 뒤에 이어 붙는다 — `.../api/v1`을 넣으면 `/api/v1/api/v1`이고
@@ -107,15 +107,15 @@ function resolveOne(spec: ApiHostSpec, isProd: boolean, problems: string[]): str
   ].filter((part): part is string => part !== null)
   if (extra.length > 0) {
     problems.push(
-      `${spec.name}=${raw} 에 ${extra.join('·')}가 붙어 있습니다. origin만 넣어 주세요 — ` +
-        `경로 접두 /api/v1은 코드가 붙이므로 값에 함께 넣으면 /api/v1/api/v1로 나갑니다.`,
+      `${spec.name}=${raw} 에 ${extra.join(' / ')}가 붙어 있어요. origin만 넣어 주세요 — ` +
+        `경로 접두 /api/v1은 코드가 붙이니 값에 함께 넣으면 /api/v1/api/v1로 나가요.`,
     )
     return raw
   }
   if (isProd && isLocalHostname(parsed.hostname)) {
     problems.push(
-      `${spec.name}=${raw} 가 로컬 주소를 가리킵니다. 배포 빌드에 그 값이 굳으면 브라우저가 ` +
-        `사용자 PC로 요청을 보내 전부 실패합니다(ERR_CONNECTION_REFUSED).`,
+      `${spec.name}=${raw} 가 로컬 주소를 가리켜요. 배포 빌드에 그 값이 굳으면 브라우저가 ` +
+        `사용자 PC로 요청을 보내 전부 실패해요(ERR_CONNECTION_REFUSED).`,
     )
   }
   // 통과한 값은 origin으로 정규화해 돌려준다 — 끝 슬래시 하나(`https://h/`)는 사람이 흔히 붙이는
