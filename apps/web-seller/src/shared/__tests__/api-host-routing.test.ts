@@ -29,6 +29,12 @@ async function hostOf(path: string): Promise<string> {
   return response.data.host
 }
 
+/** 요청이 실제로 들고 나간 설정 — axios가 응답에 그 config를 그대로 붙여 준다. */
+async function configOf(path: string) {
+  const response = await axiosInstance.get<{ host: string }>(path)
+  return { host: response.data.host, withCredentials: response.config.withCredentials }
+}
+
 describe('공유 API 클라이언트 호스트 분기', () => {
   beforeEach(() => {
     setAccessToken(null)
@@ -57,6 +63,32 @@ describe('공유 API 클라이언트 호스트 분기', () => {
     routeProbe('/categories')
     await expect(hostOf('/files/presigned-url')).resolves.toBe('api')
     await expect(hostOf('/categories')).resolves.toBe('api')
+  })
+
+  it('[AC-APIHOST-010] 택배사 마스터는 me가 없어도 /sellers 접두라 seller 모듈로 나간다', async () => {
+    // BE가 이 컨트롤러를 `/sellers/couriers`에 둔 이유가 바로 이 분기다(공용 마스터인데도
+    // 경로를 /sellers로 시작시켰다) — 접두 규칙이 깨지면 이 요청만 조용히 api로 샌다.
+    routeProbe('/sellers/couriers')
+    await expect(hostOf('/sellers/couriers')).resolves.toBe('seller')
+  })
+
+  it('[AC-APIHOST-011] 인증 경로는 seller 호스트가 설정돼 있어도 api 모듈로 나간다', async () => {
+    // dev 배포에서 실제로 틀린 지점이다 — VITE_API_BASE_URL에 셀러 API 호스트가 들어가
+    // `/auth/web/refresh`와 `/categories`가 셀러 호스트로 나가 401이 됐다. 값 검증은
+    // api-host-env 테스트가 맡고, 여기서는 값이 맞을 때 분기가 올바른지를 못 박는다.
+    for (const path of ['/auth/web/refresh', '/auth/web/logout', '/auth/callback/kakao']) {
+      routeProbe(path)
+      await expect(hostOf(path)).resolves.toBe('api')
+    }
+  })
+
+  it('[AC-APIHOST-012] 셀러·api 호스트 요청은 둘 다 credentials를 켠 채 나간다', async () => {
+    // credentials를 끄는 것은 `/admin` 경로뿐이다(어드민 CORS에 allowCredentials가 없다).
+    // 셀러 쪽에 그 분기가 번지면 refresh 쿠키가 동봉되지 않아 세션 복원이 조용히 깨진다.
+    routeProbe('/sellers/me/products')
+    routeProbe('/categories')
+    expect(await configOf('/sellers/me/products')).toEqual({ host: 'seller', withCredentials: true })
+    expect(await configOf('/categories')).toEqual({ host: 'api', withCredentials: true })
   })
 
   it('[AC-APIHOST-005] 호출부가 다른 호스트를 직접 지정하면 그 선택을 덮지 않는다', async () => {
@@ -102,8 +134,13 @@ describe('401 refresh 재시도', () => {
     setAccessToken(null)
   })
 
-  it('[AC-APIHOST-007] refresh는 기능 호스트가 아니라 api 호스트로 나간다', async () => {
+  it('[AC-APIHOST-007] refresh는 기능 호스트가 아니라 api 호스트로 나가고 만료 토큰을 교체한다', async () => {
     // refresh 쿠키는 api 모듈이 Path=/api/v1/auth로 심는다 — seller 호스트로 나가면 404다.
+    // 재시도는 같은 config를 재사용하므로 Authorization에 남은 만료 토큰을 직접 갈아끼워야 한다
+    // (요청 인터셉터는 헤더가 이미 있으면 덮지 않는다). 토큰 없는 상태로는 그 교체 코드를 지워도
+    // 통과하므로 만료 토큰을 먼저 심는다.
+    setAccessToken('expired')
+    const sentTokens: (string | null)[] = []
     let refreshedOn = ''
     server.use(
       http.post(`${apiBase}/auth/web/refresh`, () => {
@@ -119,17 +156,20 @@ describe('401 refresh 재시도', () => {
         })
       }),
       // 첫 호출은 401, refresh 뒤 재시도는 성공시켜 재시도 경로까지 지나가게 한다.
-      http.get(`${sellerBase}/sellers/me/products`, ({ request }) =>
-        request.headers.get('Authorization') === 'Bearer fresh'
+      http.get(`${sellerBase}/sellers/me/products`, ({ request }) => {
+        const authorization = request.headers.get('Authorization')
+        sentTokens.push(authorization)
+        return authorization === 'Bearer fresh'
           ? HttpResponse.json({ data: { retried: true } })
-          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 }),
-      ),
+          : HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
+      }),
     )
     const response = await axiosInstance.get<{ data: { retried: boolean } }>(
       '/sellers/me/products',
     )
     expect(refreshedOn).toBe('api')
     expect(response.data.data.retried).toBe(true)
+    expect(sentTokens).toEqual(['Bearer expired', 'Bearer fresh'])
   })
 
   it('[AC-APIHOST-008] 재시도도 401이면 refresh를 한 번만 하고 포기한다', async () => {
