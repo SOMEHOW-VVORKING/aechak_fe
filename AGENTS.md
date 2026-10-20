@@ -6,6 +6,7 @@ AI 에이전트(Codex, Claude 등)가 이 리포에서 작업할 때 항상 따�
 
 - [docs/web-buyer-notes.md](docs/web-buyer-notes.md) — web-buyer 화면별 이력
 - [docs/web-seller-admin-notes.md](docs/web-seller-admin-notes.md) — web-seller/web-admin 이력 + 디자인시스템 함정 발견 서사 + 모바일 셋업
+- [docs/deploy-env.md](docs/deploy-env.md) — 세 앱 × 두 환경의 `VITE_*` 값 표(Cloudflare 복사용) + 호스트 값 규칙
 
 ---
 
@@ -201,7 +202,7 @@ breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·�
 
 1. **`packages/api/openapi/schema.yaml`은 손으로 유지**, 경로에 `/api/v1` 접두 넣지 말 것(axios baseURL이 붙임). nullable 객체 필드는 OpenAPI 3.0이라 `allOf: [$ref] + nullable: true`로 써야 orval이 `T | null`을 만든다. 스펙 변경 후 `pnpm --filter @aechak/api openapi:generate` → 생성물 통째 커밋.
 2. **생성된 react-query 훅이 아니라 fetcher만 소비**하고 feature `*.queries.ts`가 자체 `useQuery`/`useInfiniteQuery`로 감싼다(패키지 간 react-query 버전 표류 회피). 서버 enum/필드는 feature 안에 가둔다.
-3. **BE는 실행 모듈이 셋이고 호스트가 다르다** — api(인증·카탈로그·주문·presigned 발급), seller(입점 신청·셀러 상품), admin(어드민 심사). 각 앱 `main.tsx`가 `configureApiHosts({ apiOrigin, sellerOrigin?, adminOrigin? })`를 한 번 부르고, 공유 인터셉터가 **요청 경로 접두로** 호스트를 가른다(`/sellers`·`/seller-applications` → seller, `/admin` → admin, 나머지와 `/auth` → api). axios 인스턴스를 복제하지 않는 이유는 토큰·refresh Promise·전역 콜백이 `client.ts`의 모듈 스코프라 복제하면 세션 상태가 갈리기 때문이다. api 호스트를 콕 집어야 하면 `forceApiHost: true`를 쓴다(경로만으로는 "호출부가 api를 지정했다"를 표현할 수 없다 — mergeConfig가 defaults의 baseURL을 늘 채운다).
+3. **BE는 실행 모듈이 셋이고 호스트가 다르다** — api(인증·카탈로그·주문·presigned 발급), seller(입점 신청·셀러 상품), admin(어드민 심사). 각 앱 `main.tsx`는 `bootstrapApiHosts({ app, isProd, api, seller?, admin? })` 하나만 부른다(`packages/api/src/env.ts`) — 그 안이 값 검증 + `configureApiHosts`를 한다. **운영 빌드에서 호스트 변수가 비거나 origin이 아니거나 localhost를 가리키면 부팅을 멈추고 사유를 화면·콘솔에 띄운다.** `?? 'http://localhost:808x'` 같은 조용한 되돌림을 다시 넣지 말 것 — dev 배포에서 그 값이 번들에 굳어 앱이 전면 실패한 적이 있다(SCRUM-272, 값 표는 `docs/deploy-env.md`). **`VITE_API_BASE_URL`은 셀러·어드민 앱에서도 구매자 api 모듈이다.** 공유 인터셉터가 **요청 경로 접두로** 호스트를 가른다(`/sellers`·`/seller-applications` → seller, `/admin` → admin, 나머지와 `/auth` → api). axios 인스턴스를 복제하지 않는 이유는 토큰·refresh Promise·전역 콜백이 `client.ts`의 모듈 스코프라 복제하면 세션 상태가 갈리기 때문이다. api 호스트를 콕 집어야 하면 `forceApiHost: true`를 쓴다(경로만으로는 "호출부가 api를 지정했다"를 표현할 수 없다 — mergeConfig가 defaults의 baseURL을 늘 채운다).
 4. **어드민 경로만 `withCredentials=false`로 나간다.** `boot/admin`의 CORS 설정에 `allowCredentials`가 없어(bearer 전용 설계) credentials 모드로 보내면 브라우저가 정상 응답까지 버린다. refresh는 쿠키가 필요하므로 `forceApiHost`로 api 모듈에 credentials와 함께 보낸다 — 어드민 모듈에는 `/auth/*` 자체가 없다.
 5. **401은 인터셉터가 refresh(공유 Promise로 스탬피드 방지, 재시도 시 헤더를 새 토큰으로 교체) → 실패하면 `setOnAuthExpired` 전역 콜백.** 재시도 1회 제한은 `config.authRetried` 불리언이 보장한다 — **WeakSet 표식만으로는 막히지 않는다.** axios가 `request()`마다 `mergeConfig`로 새 config 객체를 만들어(`Object.create(null)`) 재시도의 401이 WeakSet에 없는 객체로 돌아오기 때문이고, 그대로 두면 "refresh는 성공하는데 원 요청은 계속 401"인 서버에서 무한 루프가 된다. mergeConfig가 모르는 키를 그대로 옮기는 성질을 이용한 표식이다. 화면은 비인증 오류(네트워크/500)만 인라인 안내(재시도 버튼 없음, 하드코딩 폴백 부활 금지).
 6. **배열 쿼리는 반복 파라미터(`?k=A&k=B`)로 나간다** — 공유 인스턴스의 `paramsSerializer: { indexes: null }`이 담당하고, 스펙에는 `style: form` + `explode: true`로 쓴다. axios 기본값(`k[]=A`)으로 나가면 BE 바인딩이 "지원하지 않는 값"으로 400을 준다. **값이 빈 파라미터는 키째 빼서 보낼 것** — 서버가 `?stock=`·`?createdFrom=`을 미입력이 아니라 형식 오류로 거절하는 자리가 있다(정규화는 queries 층이 맡는다).
