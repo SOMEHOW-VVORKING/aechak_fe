@@ -63,7 +63,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 세 앱 모두 spec을 갖췄다(buyer 45 / seller 6 / admin 4). 브라우저는 한 번만 받으면
+      # 세 앱 모두 spec을 갖췄다(buyer 45 / seller 8 / admin 6). 브라우저는 한 번만 받으면
       # 세 앱이 같은 캐시를 쓰므로 설치는 한 줄로 끝낸다.
       - name: Install Playwright browsers
         run: pnpm --filter web-buyer exec playwright install --with-deps chromium

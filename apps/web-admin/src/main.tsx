@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { configureApiHosts } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
+import { setupAuthExpiredRedirect } from '@/features/auth'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -18,6 +19,10 @@ configureApiHosts({
 })
 
 const router = createRouter({ routeTree })
+
+// 세션 만료(401 → refresh 실패) 시 로그인 화면으로 보낸다. 배선 자체는 features/auth가 들고 있어
+// 테스트가 같은 함수를 부를 수 있다(등록을 빠뜨리면 명부가 그냥 비어 보이기만 한다).
+setupAuthExpiredRedirect(router)
 
 declare module '@tanstack/react-router' {
   interface Register {

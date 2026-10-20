@@ -1717,6 +1717,47 @@ export interface SellerProductOptionsResponse {
 }
 
 /**
+ * 계정 상태. BE UserStatus enum 이름이 그대로 직렬화된다
+ */
+export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UserStatus = {
+  PENDING_ONBOARDING: 'PENDING_ONBOARDING',
+  ACTIVE: 'ACTIVE',
+  SUSPENDED: 'SUSPENDED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+export interface AdminRosterSummary {
+  userId: number
+  /**
+   * 온보딩 전 계정이면 null로 온다 — 화면이 식별자로 쓸 수 없다
+   * @nullable
+   */
+  nickname: string | null
+  status: UserStatus
+  /** 가입 시각(users.created_at), 오프셋 없는 LocalDateTime. **승격 시각이 아니다** — 승격 시각 컬럼이 없어 계약 초안의 promotedAt이 이 필드로 바뀌었다 */
+  joinedAt: string
+  /** 요청자(JWT sub) 자신의 행. 자기 역할 변경은 서버가 403 errorCode 30014로 막는다 */
+  isSelf: boolean
+}
+
+export interface AdminRosterListData {
+  items: AdminRosterSummary[]
+  totalCount: number
+}
+
+export interface AdminRosterListResponse {
+  data: AdminRosterListData
+}
+
+export interface PromoteAdminRequest {
+  /** 승격할 계정의 내부 숫자 id. 누락은 400 errorCode 90001 */
+  userId: number
+}
+
+/**
  * 목록 행. 사업자등록번호·전화번호는 목록 응답에 아예 없다(상세에만 사업자등록번호가 있다). 화면에 신청인 이름을 보일 때는 상호명이 없으면 대표자명으로 접는다 — 서버 승인 로직이 스토어명을 정할 때 쓰는 폴백과 같은 규칙이다
  */
 export interface AdminApplicationSummary {
@@ -2045,6 +2086,18 @@ export const GetSellerProductsSort = {
   price_asc: 'price_asc',
   price_desc: 'price_desc',
 } as const
+
+export type GetAdminRosterParams = {
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
 
 export type GetAdminSellerApplicationsParams = {
   /**
@@ -9743,6 +9796,356 @@ export const useChangeSellerProductOptionCombination = <TError = unknown, TConte
   TContext
 > => {
   const mutationOptions = getChangeSellerProductOptionCombinationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 가입 순(userId 오름차순) 고정이고 오프셋 페이지네이션이다. page/size 형식 오류는 서버가 보정한다(page<0→0, size는 1~100 절삭) — 400을 내지 않는다. `nickname`은 온보딩 전 계정이면 null로 온다. `isSelf`는 요청자(JWT sub) 자신의 행 표시이고 필드명이 그대로 직렬화된다. 가입 시각 필드명은 `promotedAt`이 아니라 `joinedAt`(= users.created_at)이다 — 승격 시각 컬럼이 없어 BE가 이름을 바꿨고, 화면이 이것을 승격 시각으로 표기하면 거짓말이 된다.
+ * @summary 어드민 관리자 명부 목록
+ */
+export const getAdminRoster = (params?: GetAdminRosterParams, signal?: AbortSignal) => {
+  return customInstance<AdminRosterListResponse>({
+    url: `/admin/admins`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminRosterQueryKey = (params?: GetAdminRosterParams) => {
+  return [`/admin/admins`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminRosterQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminRosterQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminRoster>>> = ({ signal }) =>
+    getAdminRoster(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminRoster>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminRosterQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminRoster>>>
+export type GetAdminRosterQueryError = unknown
+
+export function useGetAdminRoster<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminRosterParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminRoster>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminRoster>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminRoster<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminRoster>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminRoster>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminRoster<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 관리자 명부 목록
+ */
+
+export function useGetAdminRoster<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminRosterQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminRosterSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminRosterQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminRoster>>> = ({ signal }) =>
+    getAdminRoster(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminRoster>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminRosterSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminRoster>>
+>
+export type GetAdminRosterSuspenseQueryError = unknown
+
+export function useGetAdminRosterSuspense<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminRosterParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminRosterSuspense<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminRosterSuspense<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 관리자 명부 목록
+ */
+
+export function useGetAdminRosterSuspense<
+  TData = Awaited<ReturnType<typeof getAdminRoster>>,
+  TError = unknown,
+>(
+  params?: GetAdminRosterParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminRoster>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminRosterSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 성공은 204 No Content(본문 없음)다. **승격 직후 그 사람의 토큰에는 권한이 반영되지 않는다** — role은 로그인 시점 JWT 스냅샷이라 승격된 계정이 api에서 다시 로그인해야 ADMIN 토큰을 받는다. 화면에 그 안내를 고정 문구로 둬야 한다(계약의 일부). 400 errorCode 90001 — userId 누락(@Valid). 404 errorCode 30000 USER_NOT_FOUND. 409 errorCode 30012 USER_ALREADY_ADMIN. 409 errorCode 30017 USER_NOT_PROMOTABLE — ACTIVE가 아닌 계정(정지·온보딩 미완). 계약 초안의 30015가 아니고, P0-4 보고 시점의 500도 아니다(현재 develop에서 409/30017로 고정됐다). 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 승격. 강등 직후에도 옛 ADMIN 토큰이 게이트를 통과하므로 자기 자격을 되돌리는 경로를 막는다.
+ * @summary 어드민 관리자 승격
+ */
+export const promoteAdmin = (promoteAdminRequest: PromoteAdminRequest, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/admin/admins`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: promoteAdminRequest,
+    signal,
+  })
+}
+
+export const getPromoteAdminMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof promoteAdmin>>,
+    TError,
+    { data: PromoteAdminRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof promoteAdmin>>,
+  TError,
+  { data: PromoteAdminRequest },
+  TContext
+> => {
+  const mutationKey = ['promoteAdmin']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof promoteAdmin>>,
+    { data: PromoteAdminRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return promoteAdmin(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type PromoteAdminMutationResult = NonNullable<Awaited<ReturnType<typeof promoteAdmin>>>
+export type PromoteAdminMutationBody = PromoteAdminRequest
+export type PromoteAdminMutationError = unknown
+
+/**
+ * @summary 어드민 관리자 승격
+ */
+export const usePromoteAdmin = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof promoteAdmin>>,
+      TError,
+      { data: PromoteAdminRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof promoteAdmin>>,
+  TError,
+  { data: PromoteAdminRequest },
+  TContext
+> => {
+  const mutationOptions = getPromoteAdminMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 성공은 204 No Content(본문 없음)이고 **멱등이다** — 이미 일반 회원이면 no-op도 204다. 404 errorCode 30000 USER_NOT_FOUND. 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 강등. 409 errorCode 30013 LAST_ADMIN_CANNOT_BE_DEMOTED — 관리자가 0명이 되는 강등. 0명이 되면 어드민 전 EP가 20011로 막히고 복구 경로가 DB 직접 조작이나 기동 부트스트랩뿐이라 서버가 막는다. 강등해도 이미 발급된 access(30분)·refresh(7일)는 만료까지 ADMIN으로 통과한다(토큰 무효화 배선 없음) — 즉시 차단으로 설명하면 안 된다.
+ * @summary 어드민 관리자 강등
+ */
+export const demoteAdmin = (userId: number) => {
+  return customInstance<void>({ url: `/admin/admins/${userId}`, method: 'DELETE' })
+}
+
+export const getDemoteAdminMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof demoteAdmin>>,
+    TError,
+    { userId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof demoteAdmin>>,
+  TError,
+  { userId: number },
+  TContext
+> => {
+  const mutationKey = ['demoteAdmin']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof demoteAdmin>>,
+    { userId: number }
+  > = props => {
+    const { userId } = props ?? {}
+
+    return demoteAdmin(userId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DemoteAdminMutationResult = NonNullable<Awaited<ReturnType<typeof demoteAdmin>>>
+
+export type DemoteAdminMutationError = unknown
+
+/**
+ * @summary 어드민 관리자 강등
+ */
+export const useDemoteAdmin = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof demoteAdmin>>,
+      TError,
+      { userId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof demoteAdmin>>,
+  TError,
+  { userId: number },
+  TContext
+> => {
+  const mutationOptions = getDemoteAdminMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
