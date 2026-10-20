@@ -250,6 +250,104 @@ describe('주문 목록·상세 핸들러', () => {
     seedOrderDetail({ ...detail.data.data, orderId: 'O1', status: 'DELIVERED' })
     expect((await axiosInstance.get('/orders/O1')).data.data.status).toBe('DELIVERED')
   })
+
+  it('[AC-MSW-ORDER-009] 상세는 배송지·송장·진행 중 클레임·구매확정 기한을 신규 필드로 내려준다', async () => {
+    seedOrderGroups([
+      makeOrderGroupRow({
+        orderGroupId: 'G1',
+        sellerOrders: [
+          makeSellerOrderRow({ orderId: 'O1', status: 'SHIPPING' }),
+          makeSellerOrderRow({
+            orderId: 'O2',
+            status: 'DELIVERED',
+            purchaseConfirmDueAt: '2026-10-19T14:00:00+09:00',
+            shipment: {
+              courierCode: 'CJ',
+              courierName: 'CJ대한통운',
+              trackingNumber: '1234567890',
+              dispatchedAt: '2026-10-11T09:00:00+09:00',
+              deliveredAt: '2026-10-12T14:00:00+09:00',
+              lastTrackingStatus: null,
+            },
+            activeClaim: {
+              claimPublicId: 'C1',
+              claimType: 'RETURN',
+              status: 'COLLECTING',
+              refundStatus: 'REQUESTED',
+            },
+          }),
+        ],
+      }),
+    ])
+    // 배송지는 주문그룹 소유라 모든 셀러 주문이 같은 스냅샷을 본다.
+    const shipping = (await axiosInstance.get('/orders/O1')).data.data
+    expect(shipping.deliveryAddress).toMatchObject({ receiverName: '김집사', zipCode: '04044' })
+    // 송장 미등록·클레임 없음·기한 미부여는 null(키 누락이 아니다).
+    expect(shipping.shipment).toBeNull()
+    expect(shipping.activeClaim).toBeNull()
+    expect(shipping.purchaseConfirmDueAt).toBeNull()
+    // 품목에는 리뷰 대상 id와 상품 공개 id가 실린다.
+    expect(shipping.items[0]).toMatchObject({ orderItemId: expect.any(Number), productId: expect.any(String) })
+
+    const delivered = (await axiosInstance.get('/orders/O2')).data.data
+    expect(delivered.shipment).toMatchObject({ courierName: 'CJ대한통운', trackingNumber: '1234567890' })
+    expect(delivered.activeClaim).toMatchObject({ claimType: 'RETURN', status: 'COLLECTING' })
+    expect(delivered.purchaseConfirmDueAt).toBe('2026-10-19T14:00:00+09:00')
+  })
+
+  it('[AC-MSW-ORDER-010] 구매확정은 배송완료+클레임 없음만 204, 그 밖은 50007/50008/50000', async () => {
+    seedOrderGroups([
+      makeOrderGroupRow({
+        orderGroupId: 'G1',
+        sellerOrders: [
+          makeSellerOrderRow({ orderId: 'SHIPPING', status: 'SHIPPING' }),
+          makeSellerOrderRow({ orderId: 'DONE', status: 'PURCHASE_CONFIRMED' }),
+          makeSellerOrderRow({
+            orderId: 'CLAIMED',
+            status: 'DELIVERED',
+            activeClaim: {
+              claimPublicId: 'C1',
+              claimType: 'RETURN',
+              status: 'CLAIM_REQUESTED',
+              refundStatus: 'NONE',
+            },
+          }),
+          makeSellerOrderRow({
+            orderId: 'OK',
+            status: 'DELIVERED',
+            purchaseConfirmDueAt: '2026-10-19T14:00:00+09:00',
+          }),
+        ],
+      }),
+    ])
+    expect(await failureOf(axiosInstance.post('/orders/NOPE/confirm'))).toEqual({
+      status: 404,
+      errorCode: 50000,
+    })
+    expect(await failureOf(axiosInstance.post('/orders/SHIPPING/confirm'))).toEqual({
+      status: 409,
+      errorCode: 50007,
+    })
+    expect(await failureOf(axiosInstance.post('/orders/CLAIMED/confirm'))).toEqual({
+      status: 409,
+      errorCode: 50007,
+    })
+    expect(await failureOf(axiosInstance.post('/orders/DONE/confirm'))).toEqual({
+      status: 409,
+      errorCode: 50008,
+    })
+
+    const confirmed = await axiosInstance.post('/orders/OK/confirm')
+    expect(confirmed.status).toBe(204)
+    // 확정은 비가역 — 재조회가 구매확정을 돌려주고 기한은 사라지며, 두 번째 요청은 50008이다.
+    const detail = (await axiosInstance.get('/orders/OK')).data.data
+    expect(detail.status).toBe('PURCHASE_CONFIRMED')
+    expect(detail.purchaseConfirmDueAt).toBeNull()
+    expect(await failureOf(axiosInstance.post('/orders/OK/confirm'))).toEqual({
+      status: 409,
+      errorCode: 50008,
+    })
+  })
 })
 
 describe('결제 핸들러', () => {

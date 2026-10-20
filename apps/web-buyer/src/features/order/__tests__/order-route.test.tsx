@@ -6,6 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import {
+  ORDER_CONFIRM_URL,
   ORDER_DETAIL_URL,
   ORDER_GROUPS_URL,
   makeOrderGroupRow,
@@ -93,6 +94,88 @@ const PAID_ONLY = makeOrderGroupRow({
           optionName: '무향 / 8.5L',
           quantity: 2,
           unitPrice: 16000,
+        }),
+      ],
+    }),
+  ],
+})
+
+// 배송완료 + 송장 등록 + 자동확정 기한 — 구매확정 버튼이 뜨는 유일한 조건.
+const DELIVERED = makeOrderGroupRow({
+  orderGroupId: '01GRPDELIVERED00000000001',
+  sellerOrders: [
+    makeSellerOrderRow({
+      orderId: 'o-delivered',
+      sellerName: '멍멍마트',
+      status: 'DELIVERED',
+      items: [makeOrderLineRow({ productName: '유기농 수제 간식', optionName: '연어 / 200g' })],
+      shipment: {
+        courierCode: 'CJ',
+        courierName: 'CJ대한통운',
+        trackingNumber: '1234567890',
+        dispatchedAt: '2026-10-11T09:00:00+09:00',
+        deliveredAt: '2026-10-12T14:00:00+09:00',
+        lastTrackingStatus: null,
+      },
+      purchaseConfirmDueAt: '2026-10-19T14:00:00+09:00',
+    }),
+  ],
+})
+
+// 배송완료인데 반품이 회수 단계 — 서버가 구매확정을 409 50007로 막는 상태.
+const CLAIM_IN_PROGRESS = makeOrderGroupRow({
+  orderGroupId: '01GRPCLAIM0000000000000001',
+  sellerOrders: [
+    makeSellerOrderRow({
+      orderId: 'o-claim',
+      sellerName: '멍멍마트',
+      status: 'DELIVERED',
+      items: [makeOrderLineRow({ productName: '반품 중인 간식', itemStatus: 'RETURN_REQUESTED' })],
+      purchaseConfirmDueAt: '2026-10-19T14:00:00+09:00',
+      activeClaim: {
+        claimPublicId: '01CLAIM0000000000000000001',
+        claimType: 'RETURN',
+        status: 'COLLECTING',
+        refundStatus: 'REQUESTED',
+      },
+    }),
+  ],
+})
+
+const CONFIRMED_ITEM = makeOrderLineRow({
+  orderItemId: 9001,
+  productId: 'p-confirmed',
+  productName: '유기농 수제 간식',
+  optionName: '연어 / 200g',
+})
+
+// 구매확정 — 리뷰 작성 진입이 열리는 상태.
+const CONFIRMED = makeOrderGroupRow({
+  orderGroupId: '01GRPCONFIRMED00000000001',
+  sellerOrders: [
+    makeSellerOrderRow({
+      orderId: 'o-confirmed',
+      sellerName: '멍멍마트',
+      status: 'PURCHASE_CONFIRMED',
+      items: [CONFIRMED_ITEM],
+    }),
+  ],
+})
+
+const CONFIRMED_WITH_RETURNED = makeOrderGroupRow({
+  orderGroupId: '01GRPCONFMIX0000000000001',
+  sellerOrders: [
+    makeSellerOrderRow({
+      orderId: 'o-confirmed-mixed',
+      sellerName: '멍멍마트',
+      status: 'PURCHASE_CONFIRMED',
+      items: [
+        CONFIRMED_ITEM,
+        makeOrderLineRow({
+          orderItemId: 9002,
+          productId: 'p-returned',
+          productName: '반품된 간식',
+          itemStatus: 'RETURNED',
         }),
       ],
     }),
@@ -288,9 +371,13 @@ describe('/orders/$orderId 주문 상세', () => {
     expect(within(payment).getByText('-1,000원')).toBeInTheDocument()
     expect(within(payment).getAllByText('3,000원')).toHaveLength(2)
 
-    // 배송지·운송장·타임라인·자동확정·취소·구매확정·리뷰 진입은 서버 응답에 없어 그리지 않는다.
-    expect(screen.queryByText('배송지')).not.toBeInTheDocument()
-    expect(screen.queryByText(/자동 구매확정/)).not.toBeInTheDocument()
+    // 배송지 스냅샷은 서버 응답에 있으므로 그린다(연락처는 숫자열을 하이픈으로 조립).
+    expect(screen.getByText('배송지')).toBeInTheDocument()
+    expect(screen.getByText('김집사 / 010-1234-5678')).toBeInTheDocument()
+    // 배송중인데 송장이 없으면 "등록되면 보여드려요" 안내 — 가짜 운송장을 만들지 않는다.
+    expect(screen.getByText(/송장이 등록되면/)).toBeInTheDocument()
+    // 배송중 주문에는 구매확정·리뷰·취소 진입이 없다.
+    expect(screen.queryByText(/자동으로 구매확정/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '주문 취소' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '구매확정' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '리뷰 쓰기' })).not.toBeInTheDocument()
@@ -340,5 +427,136 @@ describe('/orders/$orderId 주문 상세', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/orders/o-paid'))
     expect(await screen.findByText('o-paid')).toBeInTheDocument()
     expect(screen.queryByText('취소 사유')).not.toBeInTheDocument()
+  })
+
+  it('[AC-ORDER-ROUTE-014] 배송완료 상세는 송장·배송완료 시각과 자동확정 기한을 보여준다', async () => {
+    seedOrderGroups([DELIVERED])
+    renderAt('/orders/o-delivered')
+
+    expect(await screen.findByText('배송 조회')).toBeInTheDocument()
+    expect(screen.getByText('CJ대한통운')).toBeInTheDocument()
+    expect(screen.getByText('1234567890')).toBeInTheDocument()
+    expect(screen.getByText('10.11 09:00')).toBeInTheDocument()
+    expect(screen.getByText('10.12 14:00')).toBeInTheDocument()
+    // 추적 동기화 경로가 없어 lastTrackingStatus는 null — 빈 행을 만들지 않는다.
+    expect(screen.queryByText('최근 상태')).not.toBeInTheDocument()
+    expect(screen.getByText(/자동으로 구매확정/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '구매확정' })).toBeInTheDocument()
+  })
+})
+
+describe('/orders/$orderId 구매확정', () => {
+  it('[AC-ORDER-ROUTE-015] 구매확정은 확인 Modal을 거쳐야 요청된다(비가역 — 바로 mutate하지 않음)', async () => {
+    seedOrderGroups([DELIVERED])
+    const posts: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'POST' && request.url.endsWith('/confirm')) posts.push(request.url)
+    })
+    const user = userEvent.setup()
+    renderAt('/orders/o-delivered')
+
+    await user.click(await screen.findByRole('button', { name: '구매확정' }))
+    expect(await screen.findByText('구매확정할까요?')).toBeInTheDocument()
+    expect(screen.getByText(/되돌릴 수 없어요/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '확정할게요' })).toBeInTheDocument()
+    // 아직 아무것도 보내지 않았다.
+    expect(posts).toHaveLength(0)
+
+    // 취소하면 요청 없이 닫힌다.
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByText('구매확정할까요?')).not.toBeInTheDocument())
+    expect(posts).toHaveLength(0)
+  })
+
+  it('[AC-ORDER-ROUTE-016] 확인하면 POST /orders/{id}/confirm을 부르고 상세가 구매확정으로 갱신된다', async () => {
+    seedOrderGroups([DELIVERED])
+    const posts: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'POST') posts.push(new URL(request.url).pathname)
+    })
+    const user = userEvent.setup()
+    renderAt('/orders/o-delivered')
+
+    await user.click(await screen.findByRole('button', { name: '구매확정' }))
+    await user.click(screen.getByRole('button', { name: '확정할게요' }))
+
+    expect(await screen.findByText('구매확정했어요. 적립금이 지급돼요')).toBeInTheDocument()
+    await waitFor(() => expect(posts).toEqual(['/api/v1/orders/o-delivered/confirm']))
+    // 캐시 무효화로 상세가 다시 오고, 구매확정 상태에서는 버튼이 사라지고 리뷰 진입이 열린다.
+    expect(await screen.findByRole('button', { name: '리뷰 쓰기' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '구매확정' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('[AC-ORDER-ROUTE-017] 이미 확정(409 50008)과 확정 불가(409 50007)를 다른 문구로 안내한다', async () => {
+    seedOrderGroups([DELIVERED])
+    let errorCode = 50008
+    server.use(
+      http.post(ORDER_CONFIRM_URL, () =>
+        HttpResponse.json({ errorCode, message: 'conflict' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/orders/o-delivered')
+
+    await user.click(await screen.findByRole('button', { name: '구매확정' }))
+    await user.click(screen.getByRole('button', { name: '확정할게요' }))
+    expect(await screen.findByText('이미 구매확정된 주문이에요')).toBeInTheDocument()
+
+    errorCode = 50007
+    await user.click(await screen.findByRole('button', { name: '구매확정' }))
+    await user.click(screen.getByRole('button', { name: '확정할게요' }))
+    expect(await screen.findByText('구매확정할 수 없는 상태로 바뀌었어요')).toBeInTheDocument()
+  })
+
+  it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 읽기 전용으로 보여주고 구매확정 버튼을 두지 않는다', async () => {
+    seedOrderGroups([CLAIM_IN_PROGRESS])
+    renderAt('/orders/o-claim')
+
+    expect(await screen.findByText('반품 진행 중')).toBeInTheDocument()
+    expect(screen.getByText('회수 진행 중')).toBeInTheDocument()
+    expect(screen.getByText('환불 요청됨')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '구매확정' })).not.toBeInTheDocument()
+    // 요청·철회 진입점은 사유 코드 어휘 미확정(SCRUM-273)이라 두지 않는다.
+    expect(screen.queryByRole('button', { name: '반품 요청' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '요청 철회' })).not.toBeInTheDocument()
+  })
+})
+
+describe('/orders/$orderId 리뷰·상품 진입', () => {
+  it('[AC-ORDER-ROUTE-019] 구매확정 품목의 리뷰 쓰기는 orderItemId와 주문 스냅샷을 넘긴다', async () => {
+    seedOrderGroups([CONFIRMED])
+    const user = userEvent.setup()
+    const router = renderAt('/orders/o-confirmed')
+
+    await user.click(await screen.findByRole('button', { name: '리뷰 쓰기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/write'))
+    expect(router.state.location.search).toEqual({
+      productId: 'p-confirmed',
+      orderItemId: 9001,
+      productName: '유기농 수제 간식',
+      option: '연어 / 200g',
+    })
+  })
+
+  it('[AC-ORDER-ROUTE-020] 취소·반품 품목에는 리뷰 쓰기를 두지 않는다(서버가 110010으로 거절)', async () => {
+    seedOrderGroups([CONFIRMED_WITH_RETURNED])
+    renderAt('/orders/o-confirmed-mixed')
+
+    expect(await screen.findByText('유기농 수제 간식')).toBeInTheDocument()
+    expect(screen.getByText('반품된 간식')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '리뷰 쓰기' })).toHaveLength(1)
+  })
+
+  it('[AC-ORDER-ROUTE-021] 품목을 누르면 productId로 상품 상세로 간다', async () => {
+    seedOrderGroups([CONFIRMED])
+    const user = userEvent.setup()
+    const router = renderAt('/orders/o-confirmed')
+
+    await user.click(await screen.findByRole('button', { name: '유기농 수제 간식 상품 보기' }))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe('/products/p-confirmed'),
+    )
   })
 })

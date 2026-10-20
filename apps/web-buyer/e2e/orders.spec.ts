@@ -1,5 +1,10 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
-import type { OrderDetailEnvelope, OrderGroupItemResponse, OrderListEnvelope } from '@aechak/api'
+import type {
+  OrderDeliveryAddressResponse,
+  OrderDetailEnvelope,
+  OrderGroupItemResponse,
+  OrderListEnvelope,
+} from '@aechak/api'
 
 // 주문 목록(b4-st-1) ↔ GET /order-groups, 주문 상세(b1-st-6) ↔ GET /orders/{orderId} 연동 E2E.
 // 실백엔드 없이 page.route 스텁으로 서버 계약(status 필터·커서·그룹 안 셀러 주문별 상태)을 재현한다
@@ -68,6 +73,8 @@ const MIXED: OrderGroupItemResponse = {
       status: 'SHIPPING',
       itemCount: 2,
       representativeItem: {
+        orderItemId: 9001,
+        productId: '01K7E2E0PRODCHURU00000001',
         productName: '츄르 참치맛 40개입',
         thumbnailUrl: IMG,
         optionName: '참치맛 / 40개입',
@@ -82,6 +89,8 @@ const MIXED: OrderGroupItemResponse = {
       status: 'DELIVERED',
       itemCount: 1,
       representativeItem: {
+        orderItemId: 9002,
+        productId: '01K7E2E0PRODLEASH00000001',
         productName: '자동 리드줄 5m 대형견용',
         thumbnailUrl: null,
         optionName: '5m / 블랙',
@@ -108,6 +117,8 @@ const DISPATCH_PENDING: OrderGroupItemResponse = {
       status: 'DISPATCH_PENDING',
       itemCount: 1,
       representativeItem: {
+        orderItemId: 9003,
+        productId: '01K7E2E0PRODSAND00000001',
         productName: '대용량 모래 8.5L 벤토나이트',
         thumbnailUrl: null,
         optionName: '무향 / 8.5L',
@@ -134,6 +145,8 @@ const CANCELLED: OrderGroupItemResponse = {
       status: 'CANCELLED',
       itemCount: 1,
       representativeItem: {
+        orderItemId: 9004,
+        productId: '01K7E2E0PRODSCRAT00000001',
         productName: '스크래쳐 하우스 2종 세트',
         thumbnailUrl: null,
         optionName: '2종 세트',
@@ -143,6 +156,16 @@ const CANCELLED: OrderGroupItemResponse = {
       },
     },
   ],
+}
+
+// 주문 시점 배송지 스냅샷(BE OrderDeliveryAddressResponse — 연락처는 숫자만).
+const ADDRESS: OrderDeliveryAddressResponse = {
+  receiverName: '김집사',
+  contactNumber: '01012345678',
+  zipCode: '04044',
+  baseAddress: '서울 마포구 양화로 00',
+  detailAddress: '101동 1004호',
+  deliveryMemo: '문 앞에 놓아주세요',
 }
 
 // BE OrderStatusFilter — 하위 주문 하나라도 해당하면 그룹이 통째로 걸린다.
@@ -200,6 +223,8 @@ const DETAIL: OrderDetailEnvelope = {
     sellerName: '냥이상점',
     items: [
       {
+        orderItemId: 9001,
+        productId: '01K7E2E0PRODCHURU00000001',
         productName: '츄르 참치맛 40개입',
         thumbnailUrl: IMG,
         optionName: '참치맛 / 40개입',
@@ -208,6 +233,8 @@ const DETAIL: OrderDetailEnvelope = {
         itemStatus: 'ORDERED',
       },
       {
+        orderItemId: 9005,
+        productId: '01K7E2E0PRODCUSHION000001',
         productName: '캣닢 쿠션',
         thumbnailUrl: null,
         optionName: '기본',
@@ -224,6 +251,51 @@ const DETAIL: OrderDetailEnvelope = {
       usedPoint: 1000,
       finalPaymentAmount: 86000,
     },
+    deliveryAddress: ADDRESS,
+    // 배송중이지만 송장이 아직 등록되지 않은 상태(BE는 송장 등록 전 null을 준다).
+    shipment: null,
+    activeClaim: null,
+    purchaseConfirmDueAt: null,
+  },
+}
+
+// 배송완료 + 송장 등록 + 자동확정 기한 — 구매확정 버튼이 뜨는 유일한 조건.
+const DELIVERED_DETAIL: OrderDetailEnvelope = {
+  data: {
+    orderId: '01K7E2E0ORDERDONE00000001',
+    orderGroupId: MIXED.orderGroupId,
+    orderedAt: MIXED.orderedAt,
+    status: 'DELIVERED',
+    sellerName: '멍멍마트',
+    items: [MIXED.sellerOrders[1]!.representativeItem!],
+    payment: {
+      sellerShippingFee: 0,
+      totalProductAmount: 84000,
+      totalShippingFee: 3000,
+      couponDiscountAmount: 0,
+      usedPoint: 1000,
+      finalPaymentAmount: 86000,
+    },
+    deliveryAddress: ADDRESS,
+    shipment: {
+      courierCode: 'CJ',
+      courierName: 'CJ대한통운',
+      trackingNumber: '1234567890',
+      dispatchedAt: '2026-10-11T09:00:00+09:00',
+      deliveredAt: '2026-10-12T14:00:00+09:00',
+      lastTrackingStatus: null,
+    },
+    activeClaim: null,
+    purchaseConfirmDueAt: '2026-10-19T14:00:00+09:00',
+  },
+}
+
+// 구매확정 — 품목별 리뷰 작성 진입이 열리는 상태.
+const CONFIRMED_DETAIL: OrderDetailEnvelope = {
+  data: {
+    ...DELIVERED_DETAIL.data,
+    status: 'PURCHASE_CONFIRMED',
+    purchaseConfirmDueAt: null,
   },
 }
 
@@ -293,12 +365,86 @@ test('[AC-ORDER-E2E-003] 셀러 주문 행을 누르면 상세로 가고 셀러 
   await expect(page.getByText('이 주문의 배송비')).toBeVisible()
   await expect(page.getByText('결제 금액(주문 전체)')).toBeVisible()
   await expect(page.getByText('86,000원')).toBeVisible()
-  // 배송지·운송장·타임라인·자동확정·취소·구매확정·리뷰 진입은 없다.
-  await expect(page.getByText(/자동 구매확정/)).toHaveCount(0)
+  // 배송지 스냅샷은 응답에 있으므로 그린다(연락처는 숫자열을 하이픈으로 조립).
+  await expect(page.getByText('김집사 / 010-1234-5678')).toBeVisible()
+  await expect(page.getByText('(04044) 서울 마포구 양화로 00 101동 1004호')).toBeVisible()
+  // 송장 미등록이면 가짜 운송장을 만들지 않고 안내만 한다.
+  await expect(page.getByText(/송장이 등록되면/)).toBeVisible()
+  // 배송중에는 취소·구매확정·리뷰 진입이 없다.
+  await expect(page.getByText(/자동으로 구매확정/)).toHaveCount(0)
   await expect(page.getByRole('button', { name: '주문 취소' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '구매확정' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '리뷰 쓰기' })).toHaveCount(0)
   await shot(page, `${SHOTS}/orders-03-detail.png`)
+})
+
+test('[AC-ORDER-E2E-006] 배송완료 상세는 송장·자동확정 기한을 보여주고 확인 Modal을 거쳐 구매확정한다', async ({
+  page,
+}) => {
+  await stubOrders(page, [MIXED])
+  let confirmed = false
+  const confirmCalls: string[] = []
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}/confirm`, route => {
+    if (route.request().method() === 'POST') {
+      confirmCalls.push(route.request().url())
+      confirmed = true
+    }
+    return fulfill(route, 204)
+  })
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}`, route =>
+    fulfill(route, 200, confirmed ? CONFIRMED_DETAIL : DELIVERED_DETAIL),
+  )
+  await page.goto(`/orders/${DELIVERED_DETAIL.data.orderId}`)
+
+  await expect(page.getByText('배송 조회')).toBeVisible()
+  await expect(page.getByText('CJ대한통운')).toBeVisible()
+  await expect(page.getByText('1234567890')).toBeVisible()
+  await expect(page.getByText(/자동으로 구매확정/)).toBeVisible()
+  await shot(page, `${SHOTS}/orders-07-detail-delivered.png`)
+
+  // 비가역 액션이라 바로 보내지 않고 확인 Modal을 먼저 띄운다.
+  await page.getByRole('button', { name: '구매확정' }).click()
+  await expect(page.getByText('구매확정할까요?')).toBeVisible()
+  await expect(page.getByText(/되돌릴 수 없어요/)).toBeVisible()
+  expect(confirmCalls).toHaveLength(0)
+  await shot(page, `${SHOTS}/orders-08-confirm-modal.png`)
+
+  await page.getByRole('button', { name: '확정할게요' }).click()
+  await expect(page.getByText('구매확정했어요. 적립금이 지급돼요')).toBeVisible()
+  await expect.poll(() => confirmCalls.length).toBe(1)
+  // 확정 뒤에는 버튼이 사라지고 품목별 리뷰 진입이 열린다 — 리뷰 라인이 여기서 이어진다.
+  await expect(page.getByRole('button', { name: '구매확정' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '리뷰 쓰기' })).toBeVisible()
+  await shot(page, `${SHOTS}/orders-09-confirmed.png`)
+
+  await page.getByRole('button', { name: '리뷰 쓰기' }).click()
+  await expect(page).toHaveURL(
+    new RegExp(`/reviews/write\\?.*orderItemId=${DELIVERED_DETAIL.data.items[0]!.orderItemId}`),
+  )
+})
+
+test('[AC-ORDER-E2E-007] 구매확정 거절은 이미 확정(50008)과 확정 불가(50007)를 다르게 안내한다', async ({
+  page,
+}) => {
+  await stubOrders(page, [MIXED])
+  let errorCode = 50008
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}/confirm`, route =>
+    fulfill(route, 409, { errorCode, message: 'conflict' }),
+  )
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}`, route =>
+    fulfill(route, 200, DELIVERED_DETAIL),
+  )
+  await page.goto(`/orders/${DELIVERED_DETAIL.data.orderId}`)
+
+  await page.getByRole('button', { name: '구매확정' }).click()
+  await page.getByRole('button', { name: '확정할게요' }).click()
+  await expect(page.getByText('이미 구매확정된 주문이에요')).toBeVisible()
+
+  errorCode = 50007
+  await page.getByRole('button', { name: '구매확정' }).click()
+  await page.getByRole('button', { name: '확정할게요' }).click()
+  await expect(page.getByText('구매확정할 수 없는 상태로 바뀌었어요')).toBeVisible()
+  await shot(page, `${SHOTS}/orders-10-confirm-rejected.png`)
 })
 
 test('[AC-ORDER-E2E-004] 없는 주문(404/50000)은 "찾을 수 없어요", 취소 URL은 상세로 되돌린다', async ({

@@ -6,8 +6,11 @@ import {
   OrderStatus,
   PaymentMethod,
   type CartItemStatus,
+  type OrderActiveClaimResponse,
+  type OrderDeliveryAddressResponse,
   type OrderDetailResponse,
   type OrderItemStatus,
+  type OrderShipmentResponse,
   type PaymentCompletionStatus,
   type PreparePaymentResponse,
 } from '@aechak/api'
@@ -930,6 +933,7 @@ export const CART_ITEMS_URL = `${base}/carts/items`
 export const CART_ITEM_URL = `${base}/carts/items/:cartItemId`
 export const ORDER_GROUPS_URL = `${base}/order-groups`
 export const ORDER_DETAIL_URL = `${base}/orders/:orderId`
+export const ORDER_CONFIRM_URL = `${base}/orders/:orderPublicId/confirm`
 export const PAYMENT_PREPARE_URL = `${base}/order-groups/:orderGroupId/payment/prepare`
 export const PAYMENT_COMPLETE_URL = `${base}/order-groups/:orderGroupId/payment/complete`
 
@@ -1213,6 +1217,8 @@ const cartHandlers = [
 
 // ---- 주문 목록·상세 ----------------------------------------------------------------
 export interface OrderLineRow {
+  orderItemId: number
+  productId: string
   productName: string
   thumbnailUrl: string | null
   optionName: string
@@ -1228,6 +1234,12 @@ export interface SellerOrderRow {
   /** 상세 payment.sellerShippingFee — 미지정이면 0. */
   sellerShippingFee?: number
   items: OrderLineRow[]
+  /** 상세 shipment — 미지정이면 null(송장 미등록). */
+  shipment?: OrderShipmentResponse
+  /** 상세 activeClaim — 미지정이면 null(진행 중 클레임 없음). */
+  activeClaim?: OrderActiveClaimResponse
+  /** 상세 purchaseConfirmDueAt — BE는 배송완료 시점에 부여한다(그 전에는 null). */
+  purchaseConfirmDueAt?: string
 }
 
 export interface OrderGroupRow {
@@ -1239,13 +1251,31 @@ export interface OrderGroupRow {
   usedPoint: number
   finalPaymentAmount: number
   sellerOrders: SellerOrderRow[]
+  /** 상세 deliveryAddress — 미지정이면 기본 배송지 스냅샷. 서버는 항상 내려준다(nullable 아님). */
+  deliveryAddress?: OrderDeliveryAddressResponse
 }
 
 let orderGroupRows: OrderGroupRow[] = []
 let orderDetailRows = new Map<string, OrderDetailResponse>()
 
+/** 주문 시점 배송지 스냅샷 기본값(BE OrderDeliveryAddressResponse — 연락처는 숫자만). */
+export const ORDER_DELIVERY_ADDRESS: OrderDeliveryAddressResponse = {
+  receiverName: '김집사',
+  contactNumber: '01012345678',
+  zipCode: '04044',
+  baseAddress: '서울 마포구 양화로 00',
+  detailAddress: '101동 1004호',
+  deliveryMemo: '문 앞에 놓아주세요',
+}
+
+// orderItemId는 BE에서 품목 PK라 테스트마다 고유해야 한다 — 픽스처가 지정하지 않으면 순번을 쓴다.
+let nextOrderItemId = 1
+
 export function makeOrderLineRow(overrides: Partial<OrderLineRow> = {}): OrderLineRow {
+  nextOrderItemId += 1
   return {
+    orderItemId: nextOrderItemId,
+    productId: REAL_PRODUCT_ID,
     productName: REAL_PRODUCT_DETAIL.name,
     thumbnailUrl: null,
     optionName: '기본형',
@@ -1515,29 +1545,61 @@ const orderHandlers = [
     for (const group of orderGroupRows) {
       const so = group.sellerOrders.find(s => s.orderId === orderId)
       if (!so || so.status === OrderStatus.PENDING_PAYMENT) continue
-      // sellerShippingFee만 이 셀러 몫이고 나머지 payment 금액은 주문그룹 전체 값(BE OrderDetailResult).
-      const detail: OrderDetailResponse = {
-        orderId: so.orderId,
-        orderGroupId: group.orderGroupId,
-        orderedAt: group.orderedAt,
-        status: so.status,
-        sellerName: so.sellerName,
-        items: so.items,
-        payment: {
-          sellerShippingFee: so.sellerShippingFee ?? 0,
-          totalProductAmount: group.totalProductAmount,
-          totalShippingFee: group.totalShippingFee,
-          couponDiscountAmount: group.couponDiscountAmount ?? 0,
-          usedPoint: group.usedPoint,
-          finalPaymentAmount: group.finalPaymentAmount,
-        },
-      }
-      return HttpResponse.json({ data: detail })
+      return HttpResponse.json({ data: orderDetailResponse(group, so) })
     }
     // 없음·남의 것·결제대기는 구분 없이 404 50000.
     return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
   }),
+  // BE OrderConfirmService: 배송완료 + 진행 중 클레임 없음만 확정된다. 성공은 204 No Content.
+  // 거절은 409 50008(이미 확정) / 409 50007(그 밖에 확정 불가) / 404 50000(없음·결제대기).
+  http.post(ORDER_CONFIRM_URL, ({ params }) => {
+    const orderId = String(params['orderPublicId'])
+    for (const group of orderGroupRows) {
+      const so = group.sellerOrders.find(s => s.orderId === orderId)
+      if (!so || so.status === OrderStatus.PENDING_PAYMENT) continue
+      if (so.status === OrderStatus.PURCHASE_CONFIRMED) {
+        return errorJson(409, 50008, '이미 구매확정된 주문입니다.')
+      }
+      if (so.status !== OrderStatus.DELIVERED || so.activeClaim != null) {
+        return errorJson(
+          409,
+          50007,
+          '배송완료 상태이고 진행 중 클레임이 없는 주문만 구매확정할 수 있습니다.',
+        )
+      }
+      // 확정은 비가역 — 시드 상태를 그대로 전이시켜 재조회가 구매확정을 돌려주게 한다.
+      so.status = OrderStatus.PURCHASE_CONFIRMED
+      delete so.purchaseConfirmDueAt
+      return new HttpResponse(null, { status: 204 })
+    }
+    return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+  }),
 ]
+
+// sellerShippingFee만 이 셀러 몫이고 나머지 payment 금액은 주문그룹 전체 값(BE OrderDetailResult).
+// 배송지는 주문그룹 소유이고, 송장·진행 중 클레임·구매확정 기한은 셀러 주문 단위다.
+function orderDetailResponse(group: OrderGroupRow, so: SellerOrderRow): OrderDetailResponse {
+  return {
+    orderId: so.orderId,
+    orderGroupId: group.orderGroupId,
+    orderedAt: group.orderedAt,
+    status: so.status,
+    sellerName: so.sellerName,
+    items: so.items,
+    payment: {
+      sellerShippingFee: so.sellerShippingFee ?? 0,
+      totalProductAmount: group.totalProductAmount,
+      totalShippingFee: group.totalShippingFee,
+      couponDiscountAmount: group.couponDiscountAmount ?? 0,
+      usedPoint: group.usedPoint,
+      finalPaymentAmount: group.finalPaymentAmount,
+    },
+    deliveryAddress: group.deliveryAddress ?? ORDER_DELIVERY_ADDRESS,
+    shipment: so.shipment ?? null,
+    activeClaim: so.activeClaim ?? null,
+    purchaseConfirmDueAt: so.purchaseConfirmDueAt ?? null,
+  }
+}
 
 // ---- 결제 ----------------------------------------------------------------------------
 export interface PaymentErrorSeed {
@@ -1660,14 +1722,20 @@ function markPaid(orderGroupId: string, cartItemIds: number[]): void {
       sellerName: (lines[0] as CartLineRow).storeName,
       status: OrderStatus.PAID,
       sellerShippingFee: shippingFeeOf(lines),
-      items: lines.map(line => ({
-        productName: line.productName,
-        thumbnailUrl: line.thumbnail ?? null,
-        optionName: line.selectedOptions,
-        quantity: line.quantity,
-        unitPrice: line.price,
-        itemStatus: 'ORDERED' as const,
-      })),
+      // 결제가 만든 주문 품목에도 서버처럼 품목 id와 상품 공개 id가 실린다(리뷰 작성·상품 링크의 재료).
+      items: lines.map(line => {
+        nextOrderItemId += 1
+        return {
+          orderItemId: nextOrderItemId,
+          productId: line.productId,
+          productName: line.productName,
+          thumbnailUrl: line.thumbnail ?? null,
+          optionName: line.selectedOptions,
+          quantity: line.quantity,
+          unitPrice: line.price,
+          itemStatus: 'ORDERED' as const,
+        }
+      }),
     })),
   }
   orderGroupRows = [group, ...orderGroupRows]

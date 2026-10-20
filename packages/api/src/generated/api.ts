@@ -429,7 +429,52 @@ export const OrderItemStatus = {
   EXCHANGE_REQUESTED: 'EXCHANGE_REQUESTED',
 } as const
 
+/**
+ * 클레임 유형(be ClaimType). 취소는 발송 전, 반품·교환은 배송완료 건만
+ */
+export type ClaimType = (typeof ClaimType)[keyof typeof ClaimType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClaimType = {
+  CANCEL: 'CANCEL',
+  RETURN: 'RETURN',
+  EXCHANGE: 'EXCHANGE',
+} as const
+
+/**
+ * 클레임 상태(be ClaimStatus 7종). 주문 상세 activeClaim에는 품목을 붙잡고 있는 HOLDING 5종만 실린다(REJECTED·WITHDRAWN은 품목을 풀어주므로 activeClaim이 null).
+ */
+export type ClaimStatus = (typeof ClaimStatus)[keyof typeof ClaimStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClaimStatus = {
+  CLAIM_REQUESTED: 'CLAIM_REQUESTED',
+  COLLECTING: 'COLLECTING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  ADMIN_OVERRIDDEN: 'ADMIN_OVERRIDDEN',
+  REFUND_FAILED: 'REFUND_FAILED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 환불 진행 상태(be RefundStatus). 교환은 환불이 없어 NONE
+ */
+export type RefundStatus = (typeof RefundStatus)[keyof typeof RefundStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RefundStatus = {
+  NONE: 'NONE',
+  REQUESTED: 'REQUESTED',
+  DONE: 'DONE',
+  REFUND_FAILED: 'REFUND_FAILED',
+} as const
+
 export interface OrderLineItemResponse {
+  /** 주문 품목 id. 리뷰 작성(POST /reviews)이 지목하는 대상 */
+  orderItemId: number
+  /** 상품 공개 식별자(products.public_id) — 상품 상세로 되돌아가는 링크 */
+  productId: string
   productName: string
   /** @nullable */
   thumbnailUrl: string | null
@@ -506,6 +551,67 @@ export interface OrderPaymentSummaryResponse {
   finalPaymentAmount: number
 }
 
+/**
+ * 주문 시점 배송지 스냅샷(주문그룹 소유). 수령인명·연락처는 서버가 복호한 평문
+ */
+export interface OrderDeliveryAddressResponse {
+  receiverName: string
+  /** 숫자만(하이픈 없음) — 표시 조립은 화면이 맡는다 */
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailAddress: string | null
+  /** @nullable */
+  deliveryMemo: string | null
+}
+
+/**
+ * 이 주문의 최신 배송(shipment.id 내림차순 1건) — 재발송이 있으면 그 건이 온다
+ */
+export interface OrderShipmentResponse {
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  /** @nullable */
+  dispatchedAt: string | null
+  /** @nullable */
+  deliveredAt: string | null
+  /**
+   * 택배사 추적 동기화의 최신 상태 문자열. 자유 문자열(열거형 아님)이고 동기화 경로가 아직 없어 현재는 항상 null이다 — 값이 있을 때만 그린다
+   * @nullable
+   */
+  lastTrackingStatus: string | null
+}
+
+/**
+ * @nullable
+ */
+export type OrderActiveClaimResponseRefundStatus = RefundStatus | null
+
+/**
+ * 진행 중(품목을 붙잡고 있는) 클레임 1건. 없으면 상위 필드가 null
+ */
+export interface OrderActiveClaimResponse {
+  claimPublicId: string
+  claimType: ClaimType
+  status: ClaimStatus
+  /** @nullable */
+  refundStatus: OrderActiveClaimResponseRefundStatus
+}
+
+/**
+ * 송장 등록 전에는 null
+ * @nullable
+ */
+export type OrderDetailResponseShipment = OrderShipmentResponse | null
+
+/**
+ * 진행 중 클레임이 없으면 null
+ * @nullable
+ */
+export type OrderDetailResponseActiveClaim = OrderActiveClaimResponse | null
+
 export interface OrderDetailResponse {
   orderId: string
   orderGroupId: string
@@ -515,6 +621,22 @@ export interface OrderDetailResponse {
   sellerName: string | null
   items: OrderLineItemResponse[]
   payment: OrderPaymentSummaryResponse
+  deliveryAddress: OrderDeliveryAddressResponse
+  /**
+   * 송장 등록 전에는 null
+   * @nullable
+   */
+  shipment: OrderDetailResponseShipment
+  /**
+   * 진행 중 클레임이 없으면 null
+   * @nullable
+   */
+  activeClaim: OrderDetailResponseActiveClaim
+  /**
+   * 자동 구매확정 기한. 배송완료 시점에 부여되므로 그 전 상태에서는 null
+   * @nullable
+   */
+  purchaseConfirmDueAt: string | null
 }
 
 export interface OrderDetailEnvelope {
@@ -7187,7 +7309,7 @@ export function useGetOrderGroupsSuspense<
 }
 
 /**
- * 셀러별 주문 하나의 품목과 금액. payment.sellerShippingFee만 이 셀러 주문의 몫이고 나머지 payment 금액(totalProductAmount·totalShippingFee·couponDiscountAmount·usedPoint·finalPaymentAmount)은 주문그룹 전체 값이다 — 화면에서 이 셀러의 결제액처럼 보이게 하면 안 된다. 배송지·수령인·운송장·orderItemId는 응답에 없다. 없거나 남의 것이거나 결제대기 상태면 구분 없이 404 50000.
+ * 셀러별 주문 하나의 품목과 금액. payment.sellerShippingFee만 이 셀러 주문의 몫이고 나머지 payment 금액(totalProductAmount·totalShippingFee·couponDiscountAmount·usedPoint·finalPaymentAmount)은 주문그룹 전체 값이다 — 화면에서 이 셀러의 결제액처럼 보이게 하면 안 된다. 배송지 스냅샷(deliveryAddress)·운송장(shipment)·진행 중 클레임(activeClaim)· 구매확정 기한(purchaseConfirmDueAt)과 품목 식별자(items[].orderItemId·productId)가 함께 온다. 없거나 남의 것이거나 결제대기 상태면 구분 없이 404 50000.
  * @summary 주문 상세(셀러 주문 단위)
  */
 export const getOrderDetail = (orderId: string, signal?: AbortSignal) => {
@@ -7387,6 +7509,74 @@ export function useGetOrderDetailSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 배송완료(DELIVERED)이고 진행 중 클레임이 없는 주문만 확정된다. **비가역**이다 — 확정하면 적립금이 지급되고 반품 기한·정산의 기산점이 된다. 거절 분기(be OrderErrorCode): 409 50007(배송완료가 아니거나 진행 중 클레임이 있음) / 409 50008(이미 구매확정됨 — 자동확정이 앞질렀거나 동시 요청에서 경합에 진 경우) / 404 50000(없음·남의 주문·결제대기). 성공은 204 No Content(빈 바디)다 — 서버 OpenAPI 문서는 200으로 적고 있으나 컨트롤러는 `ResponseEntity.noContent()`를 돌려준다(SCRUM-275 계열 문서 불일치).
+ * @summary 구매확정
+ */
+export const confirmPurchase = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/orders/${orderPublicId}/confirm`, method: 'POST', signal })
+}
+
+export const getConfirmPurchaseMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPurchase>>,
+    TError,
+    { orderPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmPurchase>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['confirmPurchase']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmPurchase>>,
+    { orderPublicId: string }
+  > = props => {
+    const { orderPublicId } = props ?? {}
+
+    return confirmPurchase(orderPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ConfirmPurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof confirmPurchase>>>
+
+export type ConfirmPurchaseMutationError = unknown
+
+/**
+ * @summary 구매확정
+ */
+export const useConfirmPurchase = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof confirmPurchase>>,
+      TError,
+      { orderPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof confirmPurchase>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getConfirmPurchaseMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**
