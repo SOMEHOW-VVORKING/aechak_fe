@@ -423,6 +423,29 @@ test('[AC-ORDER-E2E-006] 배송완료 상세는 송장·자동확정 기한을 �
   )
 })
 
+test('[AC-ORDER-E2E-008] 확정 뒤 상세 재조회가 실패해도 확정 성공 토스트는 남는다', async ({ page }) => {
+  await stubOrders(page, [MIXED])
+  let detailCalls = 0
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}/confirm`, route =>
+    fulfill(route, 204),
+  )
+  // 확정 자체는 성공하지만 무효화로 생긴 재조회가 500 — 비가역 처리를 조용히 삼키면 안 된다.
+  await page.route(`${API}/orders/${DELIVERED_DETAIL.data.orderId}`, route => {
+    if (route.request().method() === 'GET') detailCalls += 1
+    return detailCalls <= 1
+      ? fulfill(route, 200, DELIVERED_DETAIL)
+      : fulfill(route, 500, { errorCode: 90000, message: 'server error' })
+  })
+  await page.goto(`/orders/${DELIVERED_DETAIL.data.orderId}`)
+
+  await page.getByRole('button', { name: '구매확정' }).click()
+  await page.getByRole('button', { name: '확정할게요' }).click()
+
+  await expect(page.getByText('주문을 불러오지 못했어요', { exact: true })).toBeVisible()
+  await expect(page.getByText('구매확정했어요. 적립금이 지급돼요')).toBeVisible()
+  await shot(page, `${SHOTS}/orders-11-confirm-refetch-failed.png`)
+})
+
 test('[AC-ORDER-E2E-007] 구매확정 거절은 이미 확정(50008)과 확정 불가(50007)를 다르게 안내한다', async ({
   page,
 }) => {

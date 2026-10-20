@@ -1703,11 +1703,19 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   둘은 **형제**로 렌더한다 — 행 전체를 버튼으로 감싸고 그 안에 리뷰 쓰기 버튼을 두면 중첩 인터랙티브가 되어
   탭이 상위로 새고 포커스가 하나로 뭉친다(`ProductCard`의 찜 하트와 같은 원칙). 둘 다 optional이라 주문서·리뷰
   화면의 기존 호출부는 무변경.
+- **확인 Modal과 토스트는 조회 분기 바깥에 둔다**(codex 교차검증 지적). 구매확정 어댑터가 `onSettled`에서
+  캐시 무효화를 **await**하고 TanStack Query는 `options.onSettled`를 기다린 뒤에야 `success`를 dispatch하므로
+  (`mutation.ts`가 onSettled를 await → dispatch, 그 dispatch가 `mutationObserver`의 mutate-레벨 콜백을 깨운다),
+  **mutate 성공 콜백은 재조회가 끝난 뒤에 돈다.** 그 재조회가 실패하면 상세는 오류 분기로 떨어지는데
+  토스트를 본문 안에 두면 함께 사라져 **비가역 처리가 성공했는데 사용자는 조회 실패만 보게 된다.**
+  그래서 `screen(content)` 래퍼가 Modal·토스트를 모든 분기에 함께 그린다(`[AC-ORDER-ROUTE-022]`·
+  `[AC-ORDER-E2E-008]`이 이 조합을 잡는다). 핸들러 선언을 래퍼보다 위에 두는 이유도 같다 —
+  조기 반환 분기가 래퍼를 먼저 호출하므로 아래에 두면 TDZ가 된다.
 - 회귀: `shared/order/__tests__/order.queries.test.ts`(`[AC-ORDER-MAP-004]` 품목 식별자·배송지·null 접기,
   `[AC-ORDER-MAP-006]` 배송·클레임·기한 매핑, `[AC-ORDER-MAP-007]` 거부·철회는 진행 중 아님,
   `[AC-ORDER-MAP-008/009]` 50007·50008 분기), `features/order/__tests__/order.mock.test.ts`
   (`[AC-ORDER-009~013]` 확정·리뷰 판정·클레임 라벨·남은 시간), `features/order/__tests__/order-route.test.tsx`
-  (`[AC-ORDER-ROUTE-014~021]` 송장·확인 Modal 경유·POST 경로·거절 분기·클레임 읽기 전용·리뷰 진입 search·
-  취소 품목 제외·상품 이동), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
-  확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007]`, 캡처
-  `test-results/pr-c/orders-07~10`).
+  (`[AC-ORDER-ROUTE-014~022]` 송장·확인 Modal 경유·POST 경로·거절 분기·클레임 읽기 전용·리뷰 진입 search·
+  취소 품목 제외·상품 이동·확정 후 재조회 실패), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
+  확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007/008]`, 캡처
+  `test-results/pr-c/orders-07~11`).

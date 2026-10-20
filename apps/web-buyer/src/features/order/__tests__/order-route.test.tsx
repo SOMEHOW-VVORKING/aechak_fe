@@ -510,6 +510,30 @@ describe('/orders/$orderId 구매확정', () => {
     expect(await screen.findByText('구매확정할 수 없는 상태로 바뀌었어요')).toBeInTheDocument()
   })
 
+  it('[AC-ORDER-ROUTE-022] 확정 뒤 상세 재조회가 실패해도 확정 성공은 알린다(비가역 처리를 삼키지 않는다)', async () => {
+    seedOrderGroups([DELIVERED])
+    // 확정은 성공하지만 무효화로 생긴 재조회가 실패하는 상황. 어댑터가 onSettled에서 무효화를
+    // await하므로 성공 콜백은 이 실패 뒤에 돈다 — 토스트가 상세 오류 분기에 가려지면 안 된다.
+    let detailCalls = 0
+    server.use(
+      http.get(ORDER_DETAIL_URL, () => {
+        detailCalls += 1
+        return detailCalls === 1
+          ? undefined
+          : HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/orders/o-delivered')
+
+    await user.click(await screen.findByRole('button', { name: '구매확정' }))
+    await user.click(screen.getByRole('button', { name: '확정할게요' }))
+
+    expect(await screen.findByText('주문을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.getByText('구매확정했어요. 적립금이 지급돼요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+  })
+
   it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 읽기 전용으로 보여주고 구매확정 버튼을 두지 않는다', async () => {
     seedOrderGroups([CLAIM_IN_PROGRESS])
     renderAt('/orders/o-claim')

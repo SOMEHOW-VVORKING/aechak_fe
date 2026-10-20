@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { BadgeCheck, RotateCcw, Truck } from 'lucide-react'
 import type {
@@ -60,46 +60,6 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
   }>({ open: false, message: '', variant: 'success' })
 
   const goBack = useSafeBack({ to: '/orders' })
-  const header = <BackAppBar onBack={goBack} title="주문 상세" />
-
-  // 데이터도 에러도 없으면(첫 로딩·오프라인 paused) 스켈레톤 — '찾을 수 없어요'로 위장하지 않는다.
-  if (isPending) {
-    return (
-      <MobileScreen header={header}>
-        <div className="flex flex-col gap-3 p-4" aria-busy="true">
-          <Skeleton variant="rect" className="h-12 w-full" />
-          <Skeleton variant="rect" className="h-32 w-full" />
-          <Skeleton variant="rect" className="h-40 w-full" />
-        </div>
-      </MobileScreen>
-    )
-  }
-
-  // 없음·남의 것·결제대기는 서버가 404(50000) 하나로 통일한다. 조회는 됐지만 표시할 수 없는 상태(결제대기 null)도
-  // 같이 다룬다. 그 밖의 오류는 아래 '불러오지 못했어요 + 다시 시도'.
-  if ((isError && isOrderNotFound(error)) || (isSuccess && order == null)) {
-    return (
-      <MobileScreen header={header}>
-        <ScreenEmptyState
-          title="주문을 찾을 수 없어요"
-          description="삭제되었거나 주소가 올바르지 않은 주문이에요."
-          action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
-        />
-      </MobileScreen>
-    )
-  }
-
-  if (isError || order == null) {
-    return (
-      <MobileScreen header={header}>
-        <ScreenEmptyState
-          title="주문을 불러오지 못했어요"
-          description={orderErrorMessage(error)}
-          action={{ label: '다시 시도', onClick: refetch }}
-        />
-      </MobileScreen>
-    )
-  }
 
   const goProduct = (productId: string) =>
     navigate({ to: '/products/$productId', params: { productId } })
@@ -138,66 +98,15 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
     })
   }
 
-  return (
-    <MobileScreen header={header}>
-      <div className="flex flex-col gap-3 p-4">
-        {/* 주문번호 / 일시 / 상태 */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-caption text-text-tertiary">주문번호</p>
-            <p className="truncate tabular-nums text-body-sm text-text-primary">{order.orderId}</p>
-            <p className="mt-0.5 text-caption text-text-tertiary">
-              {formatOrderedAt(order.orderedAt)}
-            </p>
-          </div>
-          <StatusPill variant={ORDER_STATUS_VARIANT[order.status]} size="sm">
-            {ORDER_STATUS_LABEL[order.status]}
-          </StatusPill>
-        </div>
-
-        <StatusBanner status={order.status} />
-
-        {order.activeClaim && <ActiveClaimCard claim={order.activeClaim} />}
-
-        {/* 구매확정은 배송완료 직후가 쓰는 자리라 스크롤 없이 닿는 위치에 둔다(서버 판정은 isConfirmable과 동일). */}
-        {isConfirmable(order) && (
-          <ConfirmSection
-            dueAt={order.purchaseConfirmDueAt}
-            loading={isConfirming}
-            onClick={() => setConfirmTarget(order)}
-          />
-        )}
-
-        {/* 주문 상품(이 셀러 주문의 전체 품목) */}
-        <OrderItemsCard
-          storeName={order.storeName ?? '판매자 정보 없음'}
-          items={order.items.map(item => ({
-            key: String(item.orderItemId),
-            thumbnailUrl: item.thumbnailUrl,
-            name: item.name,
-            meta: itemMeta(item),
-            price: formatKRW(item.unitPrice * item.quantity),
-            onSelect: () => goProduct(item.productId),
-            selectLabel: `${item.name} 상품 보기`,
-            action: isReviewable(order, item) ? (
-              <Button variant="secondary" size="sm" onClick={() => goWriteReview(item)}>
-                리뷰 쓰기
-              </Button>
-            ) : undefined,
-          }))}
-        />
-
-        <ShipmentCard shipment={order.shipment} status={order.status} />
-
-        {order.deliveryAddress && <DeliveryAddressCard address={order.deliveryAddress} />}
-
-        <PaymentCard order={order} />
-
-        <p className="text-caption text-text-tertiary">
-          주문그룹 번호 <span className="tabular-nums">{order.orderGroupId}</span>
-          {' / '}같은 결제의 다른 판매자 주문은 주문 내역에서 볼 수 있어요.
-        </p>
-      </div>
+  /**
+   * 본문만 분기하고 확인 Modal·토스트는 **어느 분기에서도 함께 렌더**한다.
+   * 구매확정 어댑터가 onSettled에서 캐시 무효화를 await하므로 성공 콜백은 재조회가 끝난 뒤에 돈다 —
+   * 그 재조회가 실패하면 상세는 오류 분기로 떨어진다. 토스트를 본문 안에 두면 그때 함께 사라져
+   * **비가역 처리가 성공했는데 사용자는 조회 실패만 보게 된다**(codex 지적).
+   */
+  const screen = (content: ReactNode) => (
+    <MobileScreen header={<BackAppBar onBack={goBack} title="주문 상세" />}>
+      {content}
 
       {confirmTarget && (
         <Modal
@@ -219,6 +128,100 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
         onClose={() => setToast(prev => ({ ...prev, open: false }))}
       />
     </MobileScreen>
+  )
+
+  // 데이터도 에러도 없으면(첫 로딩·오프라인 paused) 스켈레톤 — '찾을 수 없어요'로 위장하지 않는다.
+  if (isPending) {
+    return screen(
+      <div className="flex flex-col gap-3 p-4" aria-busy="true">
+        <Skeleton variant="rect" className="h-12 w-full" />
+        <Skeleton variant="rect" className="h-32 w-full" />
+        <Skeleton variant="rect" className="h-40 w-full" />
+      </div>,
+    )
+  }
+
+  // 없음·남의 것·결제대기는 서버가 404(50000) 하나로 통일한다. 조회는 됐지만 표시할 수 없는 상태(결제대기 null)도
+  // 같이 다룬다. 그 밖의 오류는 아래 '불러오지 못했어요 + 다시 시도'.
+  if ((isError && isOrderNotFound(error)) || (isSuccess && order == null)) {
+    return screen(
+      <ScreenEmptyState
+        title="주문을 찾을 수 없어요"
+        description="삭제되었거나 주소가 올바르지 않은 주문이에요."
+        action={{ label: '주문 내역으로', onClick: () => navigate({ to: '/orders' }) }}
+      />,
+    )
+  }
+
+  if (isError || order == null) {
+    return screen(
+      <ScreenEmptyState
+        title="주문을 불러오지 못했어요"
+        description={orderErrorMessage(error)}
+        action={{ label: '다시 시도', onClick: refetch }}
+      />,
+    )
+  }
+
+  return screen(
+    <div className="flex flex-col gap-3 p-4">
+      {/* 주문번호 / 일시 / 상태 */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-caption text-text-tertiary">주문번호</p>
+          <p className="truncate tabular-nums text-body-sm text-text-primary">{order.orderId}</p>
+          <p className="mt-0.5 text-caption text-text-tertiary">
+            {formatOrderedAt(order.orderedAt)}
+          </p>
+        </div>
+        <StatusPill variant={ORDER_STATUS_VARIANT[order.status]} size="sm">
+          {ORDER_STATUS_LABEL[order.status]}
+        </StatusPill>
+      </div>
+
+      <StatusBanner status={order.status} />
+
+      {order.activeClaim && <ActiveClaimCard claim={order.activeClaim} />}
+
+      {/* 구매확정은 배송완료 직후가 쓰는 자리라 스크롤 없이 닿는 위치에 둔다(서버 판정은 isConfirmable과 동일). */}
+      {isConfirmable(order) && (
+        <ConfirmSection
+          dueAt={order.purchaseConfirmDueAt}
+          loading={isConfirming}
+          onClick={() => setConfirmTarget(order)}
+        />
+      )}
+
+      {/* 주문 상품(이 셀러 주문의 전체 품목) */}
+      <OrderItemsCard
+        storeName={order.storeName ?? '판매자 정보 없음'}
+        items={order.items.map(item => ({
+          key: String(item.orderItemId),
+          thumbnailUrl: item.thumbnailUrl,
+          name: item.name,
+          meta: itemMeta(item),
+          price: formatKRW(item.unitPrice * item.quantity),
+          onSelect: () => goProduct(item.productId),
+          selectLabel: `${item.name} 상품 보기`,
+          action: isReviewable(order, item) ? (
+            <Button variant="secondary" size="sm" onClick={() => goWriteReview(item)}>
+              리뷰 쓰기
+            </Button>
+          ) : undefined,
+        }))}
+      />
+
+      <ShipmentCard shipment={order.shipment} status={order.status} />
+
+      {order.deliveryAddress && <DeliveryAddressCard address={order.deliveryAddress} />}
+
+      <PaymentCard order={order} />
+
+      <p className="text-caption text-text-tertiary">
+        주문그룹 번호 <span className="tabular-nums">{order.orderGroupId}</span>
+        {' / '}같은 결제의 다른 판매자 주문은 주문 내역에서 볼 수 있어요.
+      </p>
+    </div>,
   )
 }
 
