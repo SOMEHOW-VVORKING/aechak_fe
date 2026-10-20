@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { configureApiHosts, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
+import { bootstrapApiHosts, setOnAuthExpired, setOnOnboardingRequired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { logout } from '@/shared/auth'
 import { onWishlistLogout } from '@/shared/catalog'
@@ -17,7 +17,19 @@ applyCssVariables()
 // 경로 접두(/api/v1)는 origin(env)과 분리된 서버 계약이라 configureApiHosts가 붙인다 —
 // client.ts의 401 refresh가 상대경로(/auth/web/refresh)를 쓰므로 접두가 빠지면 엉뚱한 경로로 나간다.
 // 구매자 앱은 api 모듈만 부르므로 기능 호스트(seller·admin)는 넘기지 않는다.
-configureApiHosts({ apiOrigin: import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:8080' })
+//
+// 로컬 기본값은 **개발 빌드에서만** 쓴다. 운영 빌드에 변수가 주입되지 않으면 bootstrapApiHosts가
+// 부팅을 멈추고 무엇이 비었는지 화면·콘솔에 밝힌다 — 이전에는 `?? 'http://localhost:8080'`으로
+// 조용히 되돌아가 배포된 앱이 사용자 PC를 호출했다(SCRUM-272).
+bootstrapApiHosts({
+  app: 'web-buyer',
+  isProd: import.meta.env.PROD,
+  api: {
+    name: 'VITE_API_BASE_URL',
+    value: import.meta.env['VITE_API_BASE_URL'],
+    devFallback: 'http://localhost:8080',
+  },
+})
 
 const router = createRouter({ routeTree })
 
