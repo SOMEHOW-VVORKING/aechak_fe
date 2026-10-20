@@ -1657,3 +1657,65 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   옛 형식 비재진입·라인 잔존 판정), `shared/cart/__tests__/cart-selection.store.test.ts`(`[AC-CART-SELECT-005~007]`
   해제 집합 영속화·복원·리셋), E2E `e2e/checkout.spec.ts`(`[AC-CHECKOUT-E2E-001~004]`, 캡처
   `test-results/pr-c/checkout-01~05`). 옛 바로구매 AC(016/017)는 폐기.
+
+---
+
+### 주문 상세 구매확정 + 신규 응답 필드 6종 (SCRUM-279, 2026-10-20)
+
+**리뷰 라인을 막던 마지막 조각이 풀렸다.** BE 구매확정(`POST /orders/{orderPublicId}/confirm`)은 10/19에
+배포됐는데 화면에 버튼이 없었고, 리뷰 작성은 구매확정 시각을 요구하므로(BE `ReviewErrorCode` 110007)
+실사용자는 결제해도 리뷰를 영원히 쓸 수 없었다. 이번에 주문 상세(b1-st-6)에 구매확정과 품목별 리뷰 진입을
+붙여 결제 → 구매확정 → 리뷰가 화면에서 이어진다.
+
+- **주문 상세는 처음부터 `GET /orders/{orderId}`(셀러 주문 단위)를 쓰고 있었다** — 목록 응답으로 상세를
+  그리고 있지 않았다. 신규 필드 여섯 개가 모두 이 응답에 실려 오므로 **`GET /order-groups/{orderGroupId}`
+  (주문그룹 단건)는 등재하지 않았다.** 그 응답은 그룹 status·expiresAt·배송지·orders 요약뿐이고 품목·금액
+  분해가 없어 상세 화면이 쓸 자리가 없다(결제대기 그룹을 다루는 자리에서 필요해지면 그때 등재할 것).
+- **구매확정은 비가역이라 확인 Modal을 반드시 거친다.** 라우트가 `confirmTarget` state를 소유하고 Modal은
+  자체 `useMutation`을 만들지 않는다(`loading`은 라우트의 `isPending`). Modal의 confirmLabel은 **`확정할게요`** —
+  뒤에 깔린 화면 버튼이 `구매확정`이라 라벨이 겹치면 스크린리더·자동화 모두 모호해진다.
+- **거절 분기 코드는 be `domain/.../order/error/OrderErrorCode.kt`에서 직접 읽었다**(추측 금지):
+  `ORDER_NOT_CONFIRMABLE(50007, 409)` = 배송완료가 아니거나 진행 중 클레임이 있음,
+  `ORDER_ALREADY_CONFIRMED(50008, 409)` = 이미 확정, `ORDER_NOT_FOUND(50000, 404)`.
+  **50008은 거절이지만 사용자가 원한 결과다**(자동확정 배치가 앞질렀거나 동시 요청 경합) — `isAlreadyConfirmed`로
+  갈라 error가 아니라 success 토스트로 알린다. 성공·실패 모두 `onSettled`에서 `['order-groups']`를 무효화해
+  화면이 낡은 배송완료를 들고 있지 않게 한다.
+- **성공 응답은 204 No Content다.** 서버 OpenAPI 문서는 200으로 적고 있으나 `OrderController.confirmPurchase`는
+  `ResponseEntity.noContent()`를 돌려준다(SCRUM-275 계열 문서 불일치) — 스키마에 204로 등재했다.
+- **신규 필드 여섯 개**: `shipment`(배송 조회 카드 — 택배사·송장번호·발송/배송완료 시각. `lastTrackingStatus`는
+  자유 문자열이고 BE에 추적 동기화 경로가 없어 **항상 null**이라 값이 있을 때만 행을 그린다),
+  `purchaseConfirmDueAt`(절대 시각 + `confirmDueRemaining`의 남은 시간. 배송완료 시점에 부여되므로 그 전에는 null),
+  `activeClaim`(**읽기 전용** 카드), `deliveryAddress`(주문 시점 스냅샷 — 주소록 `DeliveryAddress`와 별개 타입),
+  품목의 `orderItemId`(리뷰 작성 대상)·`productId`(상품 상세 링크).
+- **클레임 요청·철회는 넣지 않았다**(SCRUM-273 사유 코드 어휘 미확정 — 서버가 자유 문자열로 받아 검증하지 않아
+  프런트가 임의 값을 굳히면 셀러 화면에 사람이 못 읽는 코드가 남는다). 진행 중 클레임은 읽기만 한다.
+- **상태 분기는 be 열거형을 직접 읽어 전수 `Record`로 받는다**(SCRUM-274 허용값 미문서화): `ClaimType` 3종,
+  `ClaimStatus` 7종(품목을 붙잡는 HOLDING 5종만 표시하고 `REJECTED`·`WITHDRAWN`은 **null로 접어** 진행 중으로
+  오인하지 않게 한다), `RefundStatus` 4종. `Record<ServerEnum, …>`이라 서버가 값을 늘리면 스키마 갱신 시점에
+  typecheck가 깨진다.
+- **구매확정·리뷰 가능 판정은 BE 판정을 그대로 옮긴다**: `isConfirmable` = 배송완료 + 진행 중 클레임 없음
+  (be `OrderConfirmService.confirm`), `isReviewable` = 구매확정 + 품목 `ORDERED`(be `MyReviewQueryAdapter`).
+  **확정 30일 기한과 중복 작성 여부는 주문 상세 응답으로 알 수 없어** 화면이 판정하지 않는다 — 리뷰 작성 화면이
+  서버 거절(110008·110004)을 `reviewErrorMessage`로 안내한다.
+- **`deliveryAddress`는 서버 계약이 non-null인데 도메인에서는 optional로 받는다** — 이 한 필드가 비었을 때
+  주문 상세 전체가 백지가 되는 쪽이 카드 하나를 숨기는 쪽보다 나쁘다.
+- **`shared/catalog`의 `ProductLineRow`/`OrderItemsCard`에 `onSelect`(상품 이동)·`action`(행 끝 슬롯)을 추가**했다.
+  둘은 **형제**로 렌더한다 — 행 전체를 버튼으로 감싸고 그 안에 리뷰 쓰기 버튼을 두면 중첩 인터랙티브가 되어
+  탭이 상위로 새고 포커스가 하나로 뭉친다(`ProductCard`의 찜 하트와 같은 원칙). 둘 다 optional이라 주문서·리뷰
+  화면의 기존 호출부는 무변경.
+- **확인 Modal과 토스트는 조회 분기 바깥에 둔다**(codex 교차검증 지적). 구매확정 어댑터가 `onSettled`에서
+  캐시 무효화를 **await**하고 TanStack Query는 `options.onSettled`를 기다린 뒤에야 `success`를 dispatch하므로
+  (`mutation.ts`가 onSettled를 await → dispatch, 그 dispatch가 `mutationObserver`의 mutate-레벨 콜백을 깨운다),
+  **mutate 성공 콜백은 재조회가 끝난 뒤에 돈다.** 그 재조회가 실패하면 상세는 오류 분기로 떨어지는데
+  토스트를 본문 안에 두면 함께 사라져 **비가역 처리가 성공했는데 사용자는 조회 실패만 보게 된다.**
+  그래서 `screen(content)` 래퍼가 Modal·토스트를 모든 분기에 함께 그린다(`[AC-ORDER-ROUTE-022]`·
+  `[AC-ORDER-E2E-008]`이 이 조합을 잡는다). 핸들러 선언을 래퍼보다 위에 두는 이유도 같다 —
+  조기 반환 분기가 래퍼를 먼저 호출하므로 아래에 두면 TDZ가 된다.
+- 회귀: `shared/order/__tests__/order.queries.test.ts`(`[AC-ORDER-MAP-004]` 품목 식별자·배송지·null 접기,
+  `[AC-ORDER-MAP-006]` 배송·클레임·기한 매핑, `[AC-ORDER-MAP-007]` 거부·철회는 진행 중 아님,
+  `[AC-ORDER-MAP-008/009]` 50007·50008 분기), `features/order/__tests__/order.mock.test.ts`
+  (`[AC-ORDER-009~013]` 확정·리뷰 판정·클레임 라벨·남은 시간), `features/order/__tests__/order-route.test.tsx`
+  (`[AC-ORDER-ROUTE-014~022]` 송장·확인 Modal 경유·POST 경로·거절 분기·클레임 읽기 전용·리뷰 진입 search·
+  취소 품목 제외·상품 이동·확정 후 재조회 실패), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
+  확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007/008]`, 캡처
+  `test-results/pr-c/orders-07~11`).

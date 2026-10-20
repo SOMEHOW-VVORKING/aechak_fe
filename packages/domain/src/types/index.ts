@@ -121,8 +121,8 @@ export interface Order {
 // 구매자 주문 집계 도메인이다(셀러가 web-buyer 주문 상태를 다뤄야 하면 이 타입을 재사용/확장할 것).
 //
 // 서버 enum(PAID/DISPATCH_PENDING/…)은 어댑터(shared/order)가 아래 표시 상태로 접고, 원문은
-// `rawStatus`에 보존한다. 서버 응답에 없는 값(상품 id·결제수단·배송지·운송장·시각·orderItemId)은
-// 가짜 기본값으로 채우지 않고 optional로 두어 UI가 숨긴다.
+// `rawStatus`에 보존한다. 서버 응답에 없는 값(결제수단 등)은 가짜 기본값으로 채우지 않고
+// optional로 두어 UI가 숨긴다.
 export type BuyerOrderStatus =
   | 'paid' // 결제완료
   | 'preparing' // 상품준비중(출고 대기 포함)
@@ -143,10 +143,10 @@ export interface BuyerOrderItem {
   unitPrice: number
   itemStatus: BuyerOrderItemStatus
   thumbnailUrl?: string
-  /** 서버 주문 응답에 상품 id가 없어 목록/상세에서는 비어 있다(상품 링크를 만들지 않는다). */
-  productId?: ProductId
-  /** 서버 주문 품목 id. 리뷰 작성 API(POST /reviews)가 요구하지만 주문 응답에는 아직 없다. */
-  orderItemId?: number
+  /** 상품 공개 식별자(products.public_id) — 상품 상세로 되돌아가는 링크에 쓴다. */
+  productId: ProductId
+  /** 서버 주문 품목 id. 리뷰 작성 API(POST /reviews)가 지목하는 대상이다. */
+  orderItemId: number
 }
 
 // 주문그룹 안의 셀러별 주문 한 건(목록 카드 행). 상태는 셀러 주문 단위이고, 그룹에는 단일 상태가 없다.
@@ -184,6 +184,53 @@ export interface BuyerOrderGroupPayment {
   paidAmount: number
 }
 
+// 주문 시점 배송지 스냅샷(주문 상세). 주소록(`DeliveryAddress`)과 달리 id·별칭·기본 여부가 없고
+// 이후 주소록을 고쳐도 바뀌지 않는다 — 그래서 주소록 타입을 재사용하지 않는다.
+export interface BuyerOrderDeliveryAddress {
+  receiverName: string
+  /** 숫자만(하이픈 없음) — 표시 조립은 화면이 맡는다. */
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  detailAddress?: string
+  deliveryMemo?: string
+}
+
+// 이 주문의 최신 배송(송장) 정보. 송장 등록 전에는 상세에 없다.
+export interface BuyerOrderShipment {
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  dispatchedAt?: string // ISO 8601
+  deliveredAt?: string // ISO 8601
+  /** 택배사 추적 동기화의 최신 상태 문자열(열거형 아님). 동기화 경로가 없어 보통 비어 있다. */
+  lastTrackingStatus?: string
+}
+
+// 진행 중 클레임 유형·상태(서버 ClaimType/ClaimStatus 대응). 구매자 상세는 읽기만 한다 —
+// 요청·철회는 사유 코드 어휘가 미확정이라(SCRUM-273) 화면에 없다.
+export type BuyerClaimType = 'cancel' | 'return' | 'exchange'
+
+// 서버 ClaimStatus 7종 중 품목을 붙잡고 있는 5종만 상세에 실린다(거부·철회는 activeClaim이 null).
+export type BuyerClaimStatus =
+  | 'requested' // CLAIM_REQUESTED — 셀러 판단 대기
+  | 'collecting' // COLLECTING — 회수 진행
+  | 'approved' // APPROVED
+  | 'admin-overridden' // ADMIN_OVERRIDDEN — 운영자 직권 처리
+  | 'refund-failed' // REFUND_FAILED — 승인됐으나 환불 집행 실패
+
+export type BuyerClaimRefundStatus = 'none' | 'requested' | 'done' | 'failed'
+
+// 진행 중인 취소·반품·교환 1건(읽기 전용).
+export interface BuyerOrderClaim {
+  claimPublicId: string
+  claimType: BuyerClaimType
+  status: BuyerClaimStatus
+  /** 서버 상태 원문. 표시는 `status`, 미지의 값 추적이 필요하면 이 값을 본다. */
+  rawStatus: string
+  refundStatus?: BuyerClaimRefundStatus
+}
+
 // 셀러 주문 상세(GET /orders/{orderId}). `sellerShippingFee`만 이 셀러 몫이고 `groupPayment`는
 // 주문그룹 전체 값이라 화면이 라벨로 구분한다("이 주문의 배송비" vs "결제 금액(주문 전체)").
 export interface BuyerOrderDetail {
@@ -196,6 +243,17 @@ export interface BuyerOrderDetail {
   items: BuyerOrderItem[]
   sellerShippingFee: number
   groupPayment: BuyerOrderGroupPayment
+  /**
+   * 주문 시점 배송지 스냅샷. 서버 계약은 non-null이지만 optional로 받는다 —
+   * 이 한 필드가 비었을 때 주문 상세 전체가 백지가 되는 쪽이 카드 하나를 숨기는 쪽보다 나쁘다.
+   */
+  deliveryAddress?: BuyerOrderDeliveryAddress
+  /** 송장 등록 전에는 없다. */
+  shipment?: BuyerOrderShipment
+  /** 진행 중 클레임이 없으면 없다 — 있으면 구매확정을 걸어 잠근다. */
+  activeClaim?: BuyerOrderClaim
+  /** 자동 구매확정 기한(ISO 8601). 배송완료 시점에 부여되므로 그 전 상태에서는 없다. */
+  purchaseConfirmDueAt?: string
 }
 
 // ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──

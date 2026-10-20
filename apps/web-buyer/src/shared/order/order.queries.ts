@@ -1,32 +1,46 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  confirmPurchase,
   customInstance,
   errorResponse,
   getOrderDetail,
   getOrderGroups,
+  type ClaimStatus,
+  type ClaimType,
   type CreateOrderGroupEnvelope,
   type CreateOrderGroupRequest,
   type CreateOrderGroupResponse,
+  type OrderActiveClaimResponse,
+  type OrderDeliveryAddressResponse,
   type OrderDetailResponse,
   type OrderGroupItemResponse,
   type OrderItemStatus,
   type OrderLineItemResponse,
   type OrderListStatusFilter,
+  type OrderShipmentResponse,
   type OrderStatus,
+  type RefundStatus,
   type SellerOrderItemResponse,
 } from '@aechak/api'
 import type {
+  BuyerClaimRefundStatus,
+  BuyerClaimStatus,
+  BuyerClaimType,
   BuyerOrder,
+  BuyerOrderClaim,
+  BuyerOrderDeliveryAddress,
   BuyerOrderDetail,
   BuyerOrderItem,
   BuyerOrderItemStatus,
+  BuyerOrderShipment,
   BuyerOrderStatus,
   BuyerSellerOrder,
 } from '@aechak/domain'
 
-// 주문 목록(GET /order-groups)·상세(GET /orders/{orderId}) 어댑터. 생성 훅이 아니라 fetcher만 소비하고
-// 서버 enum(OrderStatus/OrderItemStatus/OrderListStatusFilter)은 이 파일 안에서 도메인 값으로 접는다.
-// 결제 성공 화면이 `ORDER_GROUPS_QUERY_KEY` 접두로 목록·상세를 함께 무효화한다.
+// 주문 목록(GET /order-groups)·상세(GET /orders/{orderId})·구매확정(POST /orders/{id}/confirm) 어댑터.
+// 생성 훅이 아니라 fetcher만 소비하고 서버 enum(OrderStatus/OrderItemStatus/OrderListStatusFilter/
+// ClaimType/ClaimStatus/RefundStatus)은 이 파일 안에서 도메인 값으로 접는다.
+// 결제 성공 화면과 구매확정이 `ORDER_GROUPS_QUERY_KEY` 접두로 목록·상세를 함께 무효화한다.
 
 export const ORDER_GROUPS_QUERY_KEY = ['order-groups'] as const
 
@@ -67,6 +81,33 @@ export function toBuyerOrderStatus(status: OrderStatus): BuyerOrderStatus | null
   return STATUS_MAP[status] ?? null
 }
 
+// 서버 ClaimType/ClaimStatus/RefundStatus → 표시 값. Record로 전수를 받아 서버가 값을 늘리면
+// 스키마 갱신 시점에 typecheck가 깨지게 둔다(상태 허용값이 문서에 없어 추측 목록을 만들면 안 된다 — SCRUM-274).
+const CLAIM_TYPE_MAP: Record<ClaimType, BuyerClaimType> = {
+  CANCEL: 'cancel',
+  RETURN: 'return',
+  EXCHANGE: 'exchange',
+}
+
+// 거부(REJECTED)·철회(WITHDRAWN)는 품목을 풀어주므로 서버가 activeClaim으로 싣지 않는다 — null로 접어
+// 화면이 "진행 중"으로 오인하지 않게 한다.
+const CLAIM_STATUS_MAP: Record<ClaimStatus, BuyerClaimStatus | null> = {
+  CLAIM_REQUESTED: 'requested',
+  COLLECTING: 'collecting',
+  APPROVED: 'approved',
+  ADMIN_OVERRIDDEN: 'admin-overridden',
+  REFUND_FAILED: 'refund-failed',
+  REJECTED: null,
+  WITHDRAWN: null,
+}
+
+const REFUND_STATUS_MAP: Record<RefundStatus, BuyerClaimRefundStatus> = {
+  NONE: 'none',
+  REQUESTED: 'requested',
+  DONE: 'done',
+  REFUND_FAILED: 'failed',
+}
+
 function toBuyerOrderItem(item: OrderLineItemResponse): BuyerOrderItem {
   return {
     name: item.productName,
@@ -75,6 +116,45 @@ function toBuyerOrderItem(item: OrderLineItemResponse): BuyerOrderItem {
     unitPrice: item.unitPrice,
     itemStatus: ITEM_STATUS_MAP[item.itemStatus] ?? 'ordered',
     thumbnailUrl: item.thumbnailUrl ?? undefined,
+    productId: item.productId,
+    orderItemId: item.orderItemId,
+  }
+}
+
+function toBuyerDeliveryAddress(
+  address: OrderDeliveryAddressResponse,
+): BuyerOrderDeliveryAddress {
+  return {
+    receiverName: address.receiverName,
+    contactNumber: address.contactNumber,
+    zipCode: address.zipCode,
+    baseAddress: address.baseAddress,
+    detailAddress: address.detailAddress ?? undefined,
+    deliveryMemo: address.deliveryMemo ?? undefined,
+  }
+}
+
+function toBuyerShipment(shipment: OrderShipmentResponse): BuyerOrderShipment {
+  return {
+    courierCode: shipment.courierCode,
+    courierName: shipment.courierName,
+    trackingNumber: shipment.trackingNumber,
+    dispatchedAt: shipment.dispatchedAt ?? undefined,
+    deliveredAt: shipment.deliveredAt ?? undefined,
+    lastTrackingStatus: shipment.lastTrackingStatus ?? undefined,
+  }
+}
+
+/** 진행 중으로 볼 수 없는 상태(거부·철회)면 null — 화면은 클레임이 없는 것으로 다룬다. */
+function toBuyerClaim(claim: OrderActiveClaimResponse): BuyerOrderClaim | null {
+  const status = CLAIM_STATUS_MAP[claim.status]
+  if (status == null) return null
+  return {
+    claimPublicId: claim.claimPublicId,
+    claimType: CLAIM_TYPE_MAP[claim.claimType] ?? 'cancel',
+    status,
+    rawStatus: claim.status,
+    refundStatus: claim.refundStatus ? REFUND_STATUS_MAP[claim.refundStatus] : undefined,
   }
 }
 
@@ -113,6 +193,7 @@ export function toBuyerOrder(group: OrderGroupItemResponse): BuyerOrder | null {
 export function toBuyerOrderDetail(detail: OrderDetailResponse): BuyerOrderDetail | null {
   const status = toBuyerOrderStatus(detail.status)
   if (status == null) return null
+  const activeClaim = detail.activeClaim ? toBuyerClaim(detail.activeClaim) : null
   return {
     orderId: detail.orderId,
     orderGroupId: detail.orderGroupId,
@@ -129,6 +210,13 @@ export function toBuyerOrderDetail(detail: OrderDetailResponse): BuyerOrderDetai
       pointsUsed: detail.payment.usedPoint,
       paidAmount: detail.payment.finalPaymentAmount,
     },
+    // 계약상 항상 오지만 방어적으로 읽는다 — 한 필드가 비어 상세 전체가 터지면 손해가 크다.
+    deliveryAddress: detail.deliveryAddress
+      ? toBuyerDeliveryAddress(detail.deliveryAddress)
+      : undefined,
+    shipment: detail.shipment ? toBuyerShipment(detail.shipment) : undefined,
+    activeClaim: activeClaim ?? undefined,
+    purchaseConfirmDueAt: detail.purchaseConfirmDueAt ?? undefined,
   }
 }
 
@@ -213,7 +301,61 @@ export function useOrderDetail(orderId: string) {
   }
 }
 
+// ---- 구매확정(POST /orders/{orderPublicId}/confirm) ----------------------------
+// be domain/.../order/error/OrderErrorCode.kt의 값을 직접 읽어 적었다(추측 금지).
+// 50007 ORDER_NOT_CONFIRMABLE(409) — 배송완료가 아니거나 진행 중 클레임이 있음
+// 50008 ORDER_ALREADY_CONFIRMED(409) — 이미 확정(자동확정이 앞질렀거나 동시 요청 경합)
+// 50000 ORDER_NOT_FOUND(404) — 없음·남의 주문·결제대기
 const ORDER_NOT_FOUND = 50000
+const ORDER_NOT_CONFIRMABLE = 50007
+const ORDER_ALREADY_CONFIRMED = 50008
+
+/**
+ * 구매확정. **비가역**이라 호출부는 확인 Modal을 거친다.
+ * 성공·실패 어느 쪽이든 서버 상태가 이미 움직였을 수 있어(50008은 확정이 끝난 상태다)
+ * 목록·상세 캐시를 함께 무효화한다 — 화면이 낡은 '배송완료'를 그대로 들고 있지 않게 한다.
+ */
+export function useConfirmPurchase() {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: (orderId: string) => confirmPurchase(orderId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ORDER_GROUPS_QUERY_KEY }),
+  })
+  return {
+    isPending: mutation.isPending,
+    confirm: (orderId: string, handlers: { onSuccess: () => void; onError: (e: unknown) => void }) =>
+      mutation.mutate(orderId, handlers),
+  }
+}
+
+/** 이미 확정된 건은 거절이지만 결과는 사용자가 원한 그것이다 — 화면이 성공처럼 다루게 구분해 준다. */
+export function isAlreadyConfirmed(error: unknown): boolean {
+  return errorResponse(error)?.data?.errorCode === ORDER_ALREADY_CONFIRMED
+}
+
+export function confirmPurchaseErrorMessage(error: unknown): string {
+  const res = errorResponse(error)
+  switch (res?.data?.errorCode) {
+    case ORDER_ALREADY_CONFIRMED:
+      return '이미 구매확정된 주문이에요'
+    // 배송완료가 아니거나 진행 중 클레임이 생긴 것 — 화면이 버튼을 띄운 뒤 상태가 바뀐 경우다.
+    // 토스트는 한 줄로 그려지므로(AppToast) 사유를 길게 늘어놓지 않고, 갱신된 상세가 이유를 보여준다.
+    case ORDER_NOT_CONFIRMABLE:
+      return '구매확정할 수 없는 상태로 바뀌었어요'
+    case ORDER_NOT_FOUND:
+      return '주문을 찾을 수 없어요'
+    default:
+      break
+  }
+  switch (res?.status) {
+    case 403:
+      return '구매확정할 권한이 없어요'
+    case 404:
+      return '주문을 찾을 수 없어요'
+    default:
+      return '구매확정하지 못했어요. 잠시 후 다시 시도해 주세요'
+  }
+}
 
 export function isOrderNotFound(error: unknown): boolean {
   const res = errorResponse(error)
