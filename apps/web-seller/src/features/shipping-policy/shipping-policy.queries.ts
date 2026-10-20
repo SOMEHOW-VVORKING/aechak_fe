@@ -18,13 +18,9 @@ export const useUpdateShippingPolicy = () => {
   })
 }
 
-export const COURIER_OPTIONS = [
-  { value: 'cj', label: 'CJ대한통운' },
-  { value: 'lotte', label: '롯데택배' },
-  { value: 'hanjin', label: '한진택배' },
-  { value: 'logen', label: '로젠택배' },
-  { value: 'post', label: '우체국택배' },
-]
+// 택배사 목록은 더 이상 여기에 없다 — 서버 마스터(GET /sellers/couriers)가 정본이고 `@/shared/couriers`가
+// 유일한 통로다. 하드코딩 배열은 코드를 소문자로 들고 있어 저장이 404/50303으로 깨졌고,
+// trackingFormatPattern(송장 형식 선검증)을 지어낼 수도 없었다.
 
 export const AVG_DISPATCH_DAY_OPTIONS = [
   { value: '1', label: '1영업일' },

@@ -13,12 +13,12 @@ describe('mockFetchShippingPolicy', () => {
 // AC-SHIPPING-POLICY-002: 배송 정책을 저장하면 변경된 값이 반영된다
 describe('mockUpdateShippingPolicy', () => {
   it('[AC-SHIPPING-POLICY-002] persists updated fee values', async () => {
-    const next = { ...MOCK_SHIPPING_POLICY, baseFee: 4500, defaultCourier: 'lotte' }
+    const next = { ...MOCK_SHIPPING_POLICY, baseFee: 4500, defaultCourier: 'LOTTE' }
 
     const result = await mockUpdateShippingPolicy(next)
 
     expect(result.baseFee).toBe(4500)
-    expect(result.defaultCourier).toBe('lotte')
+    expect(result.defaultCourier).toBe('LOTTE')
     expect(MOCK_SHIPPING_POLICY.baseFee).toBe(4500)
   })
 })

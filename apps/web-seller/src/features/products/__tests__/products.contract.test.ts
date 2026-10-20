@@ -104,6 +104,9 @@ describe('toFormValues', () => {
         thumbnailImageKey: 'products/A.png',
         additionalImageKeys: ['products/B.png'],
         detailImageKeys: [],
+        // 서버 단건 조회는 요청 DTO에 없는 두 상태를 더 준다(프리필에는 쓰지 않는다).
+        saleStatus: 'ON_SALE',
+        inspectionStatus: 'APPROVED',
       },
       [],
       key => `url:${key}`,
@@ -196,6 +199,8 @@ describe('toRegisterRequest', () => {
         thumbnailImageKey: 'products/A.png',
         additionalImageKeys: [],
         detailImageKeys: [],
+        saleStatus: 'ON_SALE',
+        inspectionStatus: 'APPROVED',
       },
       [],
       key => key,

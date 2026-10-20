@@ -11,6 +11,7 @@ import type {
   GetSellerProductsStock,
   InspectionStatus,
   SaleStatus,
+  SellerProductDetailData,
   SellerProductOptionCombinationInput,
   SellerProductOptionGroupInput,
   SellerProductRegisterRequest,
@@ -48,13 +49,26 @@ export type { SellerProductRegisterData as ProductRegisterResponse } from '@aech
 // 옵션/재고/판매 상태는 바꾸지 않는다. 이미지 키 목록은 통째로 교체(빠진 키는 삭제가 아니라 직전
 // 버전으로 닫힘)이고, 한 목록 안 중복 키는 400/90001이다(목록을 넘나드는 중복은 허용).
 // 함정: 소유 증명 집합이 대표 이미지 키 + 지금 열려 있는 이미지 행으로 한정된다 — 과거 수정으로 닫힌
-// 키나 다른 상품의 정식 키를 실으면 `tmp/` 접두가 아니어서 403/100002다.
-// 지금은 화면에서 호출하지 않는다: BE에 셀러 단건 조회(GET /sellers/me/products/{productId})가 없어
-// categoryId·description·할인 기간·추가/상세 이미지 키를 프리필할 수 없고, 부족한 프리필로 PUT하면
-// 전체 교체 규칙 때문에 기존 이미지와 할인 설정을 잃는다.
+// 키나 다른 상품의 정식 키를 실으면 `tmp/` 접두가 아니어서 403/100002다. 단건 조회가 현재 열려 있는
+// 행만 내려주므로(아래) 그 응답을 그대로 되돌려 보내는 것은 안전하다.
 
 export type ProductUpdateRequest = SellerProductUpdateRequest
 export type { SellerProductUpdateData as ProductUpdateResponse } from '@aechak/api'
+
+// ─── GET /sellers/me/products/{productId} ────────────────────────────────────
+// 수정 폼 프리필. 이미지 키는 현재 열려 있는 행에서만, 종류별 sortOrder 오름차순으로 온다.
+// 옵션은 응답에 없다 — PUT의 대상이 아니고 별도 옵션 조회가 담당한다.
+// 자격 게이트가 목록·옵션 조회와 갈린다: 이 조회만 활성 셀러 조건이라 휴점·정지 셀러는 403/40004다
+// (목록·옵션은 40006으로 휴점을 허용한다). 남의 상품·없는 상품은 모두 404/40000이다.
+//
+// **등록·수정 요청 DTO를 상속하지 않는다.** 모양이 비슷해도 세 군데가 다르다:
+// ① `thumbnailImageKey`가 nullable이다(요청 DTO는 @NotBlank non-null) — 대표 이미지 행이 없는 상품을
+//    도메인이 허용하고 서버가 500 대신 null을 보증한다. 수정 폼은 그때 재업로드를 받아야 한다.
+// ② 요청에 없는 `saleStatus`·`inspectionStatus`가 더 실린다.
+// ③ 요청의 이미지 목록은 optional/nullable이지만 응답은 항상 배열이다(빈 배열).
+
+/** 수정 폼 프리필 — BE SellerProductDetailResponse 1:1. */
+export type SellerProductDetail = SellerProductDetailData
 
 // ─── PATCH /sellers/me/products/{productId}/status ──────────────────────────
 // BE가 받는 값은 ON_SALE/SUSPENDED뿐이다(나머지는 400/90001). 현재 상태는 검사하지 않고, ON_SALE인데
@@ -114,12 +128,7 @@ export const DEFAULT_PAGE_SIZE = 20
 export const PRODUCT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
 // ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 수정 폼 프리필용 단건 조회, 임시저장은 BE에 아직 없다. products.mock.ts의 같은 이름 구역과 짝이다.
-
-/** 수정 폼 프리필. PUT 본문에 필요한 값만 담는다(이미지는 저장 키). */
-export interface SellerProductDetail extends ProductUpdateRequest {
-  productId: string
-}
+// 임시저장은 BE에 아직 없다. products.mock.ts의 같은 이름 구역과 짝이다.
 
 /** 임시저장은 미완성 조합도 담는다. 비운 칸만 빠진다. */
 export type DraftOptionCombination = Pick<OptionCombinationRequest, 'optionValues'> &

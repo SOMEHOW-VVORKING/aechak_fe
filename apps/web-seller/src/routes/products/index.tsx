@@ -37,10 +37,9 @@ import {
 } from '@/features/products'
 
 // BE에 없는 기능의 진입점은 이 화면에서 뺐다 — 자세한 사정은 각 자리의 주석에 적었다.
-// · 상품 수정: 셀러 단건 조회(GET /sellers/me/products/{productId})가 없어 프리필이 불가능하고,
-//   PUT은 이미지 목록을 통째로 교체하므로 부족한 프리필로 보내면 기존 이미지·할인 설정을 잃는다.
 // · 임시저장: BE에 개념 자체가 없다(ProductDraft grep 0건). 구현과 테스트는 목업에 남겼다.
 // · 삭제: BE에 DELETE가 없고 판매 중지가 노출 제어를 담당한다 — 코드째 지웠다.
+// 상품 수정은 셀러 단건 조회(GET /sellers/me/products/{productId})가 생겨 '처리' 열로 되살렸다.
 
 export interface ProductsSearch {
   saved?: 'created' | 'updated'
@@ -319,7 +318,25 @@ function ProductsRoute() {
       align: 'right',
       render: p => <span className="tabular-nums">{p.createdAt.slice(0, 10)}</span>,
     },
-    // '처리'(수정·삭제) 열은 뺐다 — 수정은 서버 단건 조회가 없어 막았고 삭제는 BE에 없다.
+    {
+      // 삭제는 BE에 DELETE가 없어 여전히 없다 — 이 열에는 수정 하나만 둔다.
+      key: 'actions',
+      label: '처리',
+      render: p => (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<Pencil className="size-3.5" />}
+            aria-label={`${p.name} 수정`}
+            disabled={isMutating}
+            onClick={() => navigate({ to: '/products/$productId/edit', params: { productId: p.productId } })}
+          >
+            수정
+          </Button>
+        </div>
+      ),
+    },
   ]
 
   const totalPages = data?.totalPages ?? 0
@@ -451,7 +468,7 @@ function ProductsRoute() {
         />
       </div>
       <p className="mt-2 text-caption text-text-tertiary">
-        상품 정보 수정은 준비 중이에요. 지금은 등록과 재고/판매 상태 변경만 할 수 있어요.
+        옵션 구성과 상품 삭제는 아직 바꿀 수 없어요. 옵션별 재고와 판매 여부는 재고 열에서 바꿀 수 있어요.
       </p>
 
       {totalPages > 1 && (

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -9,10 +9,12 @@ import {
   SELLER_PRODUCTS_URL,
   currentSellerProducts,
   lastSellerProductRegisterBody,
+  lastSellerProductUpdateBody,
+  makeSellerProductWire,
   seedSellerProducts,
   server,
 } from '@/testing/msw/server'
-import { MOCK_CATEGORY_TREE, mockFetchProductDrafts, resetProductsMock } from '../products.mock'
+import { MOCK_CATEGORY_TREE, leafIdOf, mockFetchProductDrafts, resetProductsMock } from '../products.mock'
 import { routeTree } from '../../../routeTree.gen'
 
 // 등록은 실 API(POST /sellers/me/products)로 나가고 이미지는 presigned 발급 → S3 PUT을 실제로 탄다
@@ -28,7 +30,8 @@ function renderAt(path: string) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return router
+  // queryClient도 돌려준다 — 백그라운드 재조회(창 포커스 복귀) 실패를 테스트가 직접 일으킬 창구다.
+  return { router, queryClient }
 }
 
 const drafts = async () => (await mockFetchProductDrafts()).data
@@ -106,7 +109,7 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
 
   it('[AC-SPRD-032] 필수값을 채워 등록하면 presigned 키를 실어 POST하고 목록 맨 앞에 판매중으로 나타난다', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/products/new')
+    const { router } = renderAt('/products/new')
 
     await fillRequired(user, '원목 스크래쳐 L')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
@@ -281,7 +284,7 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
         ),
       ),
     )
-    const router = renderAt('/products/new')
+    const { router } = renderAt('/products/new')
 
     await fillRequired(user, '가격 위반 상품')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
@@ -428,11 +431,149 @@ describe('/products/new?draftId= 이어쓰기 (목업 전용 — BE 임시저장
     expect((await drafts()).map(d => d.productId)).not.toContain('01JMOCKDRAFT00000000000001')
   })
 
-  it('[AC-SPRD-037] 상품 수정 화면은 서버 단건 조회가 없어 폼 대신 안내만 보여준다', async () => {
-    renderAt('/products/ANY_PRODUCT_ID/edit')
+})
 
-    expect(await screen.findByText('상품 수정은 아직 준비 중이에요')).toBeInTheDocument()
+// 수정 폼은 실 API(GET /sellers/me/products/{productId} → PUT 같은 경로)로 돈다. 프리필에 필요한
+// categoryId·description·할인 기간·추가/상세 이미지 키는 목록 응답에 없으므로 단건 조회만이 유일한
+// 출처이고, PUT이 이미지 목록을 통째로 교체하므로 "조회 응답을 그대로 되돌려 보낸다"가 계약이다.
+describe('/products/$productId/edit 수정 폼 (SCRUM-254)', () => {
+  const FEEDER_DETAIL = {
+    categoryId: leafIdOf('고양이 > 식기/급수기 > 자동 급식기'),
+    description: '5L 대용량',
+    discountPrice: 59000,
+    // 날짜 입력에는 시각이 없다 — 날짜를 안 바꾸면 이 시각까지 그대로 되돌려 보내야 한다.
+    discountStartAt: '2026-10-01T15:30:00',
+    discountEndAt: '2026-10-31T18:00:00',
+    thumbnailImageKey: 'products/THUMB.png',
+    additionalImageKeys: ['products/ADD1.png', 'products/ADD2.png'],
+    detailImageKeys: ['products/DETAIL1.png'],
+  }
+
+  const FEEDER = makeSellerProductWire({
+    name: '고양이 자동 급식기 스마트 5L',
+    regularPrice: 64000,
+    discountPrice: 59000,
+    thumbnailImageKey: 'products/THUMB.png',
+  })
+
+  const editPath = `/products/${FEEDER.productId}/edit`
+
+  beforeEach(() => {
+    seedSellerProducts([{ product: FEEDER, detail: FEEDER_DETAIL }])
+    resetProductsMock()
+  })
+
+  it('[AC-SPRD-058] 목록에 없는 값(카테고리·설명·할인 기간·추가/상세 이미지)까지 서버 단건 조회로 프리필한다', async () => {
+    renderAt(editPath)
+
+    expect(await screen.findByLabelText('상품명')).toHaveValue('고양이 자동 급식기 스마트 5L')
+    expect(screen.getByLabelText('소분류')).toHaveDisplayValue('자동 급식기')
+    expect(screen.getByLabelText('상세 설명')).toHaveValue('5L 대용량')
+    expect(screen.getByLabelText('정가')).toHaveValue('64000')
+    expect(screen.getByLabelText('할인가')).toHaveValue('59000')
+    expect(screen.getByLabelText('할인 시작일')).toHaveValue('2026-10-01')
+    expect(screen.getByLabelText('할인 종료일')).toHaveValue('2026-10-31')
+    // 이미지 슬롯은 종류별 개수로 센다(저장 키 자체는 PUT 본문에서 단언한다).
+    const slotCount = (groupName: string) =>
+      within(screen.getByRole('group', { name: groupName })).getAllByRole('button', { name: '사진 삭제' }).length
+    expect(slotCount('대표 썸네일')).toBe(1)
+    expect(slotCount('추가 썸네일')).toBe(2)
+    expect(slotCount('상품 상세 이미지')).toBe(1)
+  })
+
+  it('[AC-SPRD-059] 아무것도 고치지 않고 저장하면 조회 응답의 저장 키와 할인 시각을 그대로 되돌려 보낸다', async () => {
+    const user = userEvent.setup()
+    renderAt(editPath)
+
+    await user.click(await screen.findByRole('button', { name: '수정 완료' }))
+
+    await waitFor(() => expect(lastSellerProductUpdateBody()).not.toBeNull())
+    // 닫힌 과거 키를 섞으면 403/100002이고, 빠뜨리면 그 이미지가 직전 버전으로 닫힌다 — 왕복이 계약이다.
+    expect(lastSellerProductUpdateBody()).toEqual({
+      categoryId: FEEDER_DETAIL.categoryId,
+      productName: '고양이 자동 급식기 스마트 5L',
+      description: '5L 대용량',
+      regularPrice: 64000,
+      discountPrice: 59000,
+      discountStartAt: '2026-10-01T15:30:00',
+      discountEndAt: '2026-10-31T18:00:00',
+      thumbnailImageKey: 'products/THUMB.png',
+      additionalImageKeys: ['products/ADD1.png', 'products/ADD2.png'],
+      detailImageKeys: ['products/DETAIL1.png'],
+    })
+  })
+
+  it('[AC-SPRD-060] 없는 상품·남의 상품(404 errorCode 40000)은 찾을 수 없다고 끝낸다', async () => {
+    renderAt('/products/01JNOTEXISTNOTEXISTNOTEX/edit')
+
+    expect(await screen.findByText('상품을 찾을 수 없어요')).toBeInTheDocument()
     expect(screen.queryByLabelText('상품명')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '수정 완료' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '목록으로' })).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-061] 휴점·정지 셀러(403 errorCode 40004)는 "없는 상품"이 아니라 사유를 보여준다', async () => {
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId`, () =>
+        HttpResponse.json(
+          { errorCode: 40004, message: '활성 상태의 셀러만 상품을 등록할 수 있습니다.' },
+          { status: 403 },
+        ),
+      ),
+    )
+    renderAt(editPath)
+
+    expect(await screen.findByText('상품을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.getByText('판매 활동이 가능한 계정이 아니라 처리할 수 없어요.')).toBeInTheDocument()
+    expect(screen.queryByText('상품을 찾을 수 없어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-064] 프리필 뒤 재조회가 실패해도 작성 중인 입력을 버리지 않고 경고만 띄운다', async () => {
+    const user = userEvent.setup()
+    const { queryClient } = renderAt(editPath)
+
+    await user.clear(await screen.findByLabelText('상품명'))
+    await user.type(screen.getByLabelText('상품명'), '작성 중인 이름')
+
+    // react-query는 캐시가 있으면 재조회 실패에도 직전 data를 남긴다 — 그걸 보지 않고 폼을
+    // 언마운트하면 창 포커스 한 번으로 입력이 사라진다(staleTime 60초 + refetchOnWindowFocus).
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId`, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    await act(() => queryClient.refetchQueries({ queryKey: ['products', 'detail'] }))
+
+    expect(
+      await screen.findByText('최신 상품 정보를 다시 불러오지 못했어요. 저장 전에 새로고침해 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('상품명')).toHaveValue('작성 중인 이름')
+  })
+
+  it('[AC-SPRD-065] 옵션 조회만 실패하면 영구 로딩이 아니라 불러오지 못했다고 보여준다', async () => {
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId/options`, () =>
+        HttpResponse.json({ errorCode: 40007, message: '조회할 수 없는 상품입니다.' }, { status: 403 }),
+      ),
+    )
+    renderAt(editPath)
+
+    await screen.findByLabelText('상품명')
+
+    expect(await screen.findByText('옵션/재고를 불러오지 못했어요.')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('내 상품이 아니라 조회할 수 없어요.')
+  })
+
+  it('[AC-SPRD-062] 서버가 thumbnailImageKey를 null로 주면 폼을 열고 재업로드를 안내한다', async () => {
+    seedSellerProducts([
+      {
+        product: makeSellerProductWire({ ...FEEDER, thumbnailImageKey: null }),
+        detail: { ...FEEDER_DETAIL, thumbnailImageKey: null },
+      },
+    ])
+    renderAt(`/products/${FEEDER.productId}/edit`)
+
+    expect(await screen.findByText('대표 썸네일이 없는 상품이에요. 저장하려면 썸네일을 다시 올려 주세요.')).toBeInTheDocument()
+    // 폼 자체는 열린다 — 재업로드가 유일한 복구 경로다.
+    expect(screen.getByLabelText('상품명')).toHaveValue('고양이 자동 급식기 스마트 5L')
   })
 })

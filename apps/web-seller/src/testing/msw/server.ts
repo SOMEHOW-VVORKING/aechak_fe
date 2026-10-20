@@ -20,6 +20,7 @@ const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
 export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
+export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -255,10 +256,33 @@ export interface SellerOptionCombinationWire {
   isActive: boolean
 }
 
+/**
+ * 단건 조회(GET /sellers/me/products/{productId}) 응답 모양. 목록 응답과 겹치는 필드가 있어도 별도로
+ * 들고 있는다 — 목록에 없는 값(categoryId·description·할인 기간·추가/상세 이미지 키)이 프리필의 본질이고,
+ * `thumbnailImageKey`는 서버가 null을 낼 수 있다.
+ */
+export interface SellerProductDetailWire {
+  productId: string
+  categoryId: number
+  productName: string
+  description: string | null
+  regularPrice: number
+  discountPrice: number | null
+  discountStartAt: string | null
+  discountEndAt: string | null
+  thumbnailImageKey: string | null
+  additionalImageKeys: string[]
+  detailImageKeys: string[]
+  saleStatus: SellerProductSummaryWire['saleStatus']
+  inspectionStatus: SellerProductSummaryWire['inspectionStatus']
+}
+
 let sellerProducts: SellerProductSummaryWire[] = []
 let sellerProductOptions = new Map<string, SellerOptionCombinationWire[]>()
+let sellerProductDetails = new Map<string, SellerProductDetailWire>()
 let lastProductsQuery: string | null = null
 let lastRegisterBody: unknown = null
+let lastProductUpdateBody: unknown = null
 let productIdSeq = 0
 let combinationIdSeq = 0
 
@@ -296,12 +320,36 @@ export function makeSellerOptionCombinationWire(
   }
 }
 
+/** 목록 행에서 단건 조회 응답을 파생한다 — 목록에 없는 값은 비워 두고 테스트가 `detail`로 덮는다. */
+function defaultDetailWire(product: SellerProductSummaryWire): SellerProductDetailWire {
+  return {
+    productId: product.productId,
+    categoryId: 1,
+    productName: product.name,
+    description: null,
+    regularPrice: product.regularPrice,
+    discountPrice: product.discountPrice,
+    discountStartAt: null,
+    discountEndAt: null,
+    thumbnailImageKey: product.thumbnailImageKey,
+    additionalImageKeys: [],
+    detailImageKeys: [],
+    saleStatus: product.saleStatus,
+    inspectionStatus: product.inspectionStatus,
+  }
+}
+
 /**
  * 테스트마다 상품 목록과 옵션 조합을 세운다. `options`를 주지 않은 상품은 총재고와 같은 재고를 가진
- * `기본` 조합 하나로 채운다(옵션 없이 등록한 상품의 BE 응답 모양).
+ * `기본` 조합 하나로 채운다(옵션 없이 등록한 상품의 BE 응답 모양). `detail`을 주면 단건 조회 응답의
+ * 그 필드만 덮는다(목록에 없는 categoryId·description·할인 기간·이미지 키들).
  */
 export function seedSellerProducts(
-  rows: { product: SellerProductSummaryWire; options?: SellerOptionCombinationWire[] }[] = [],
+  rows: {
+    product: SellerProductSummaryWire
+    options?: SellerOptionCombinationWire[]
+    detail?: Partial<SellerProductDetailWire>
+  }[] = [],
 ): void {
   sellerProducts = rows.map(row => ({ ...row.product }))
   sellerProductOptions = new Map(
@@ -312,8 +360,20 @@ export function seedSellerProducts(
       })),
     ]),
   )
+  sellerProductDetails = new Map(
+    rows.map(row => [
+      row.product.productId,
+      { ...defaultDetailWire(row.product), ...row.detail },
+    ]),
+  )
   lastProductsQuery = null
   lastRegisterBody = null
+  lastProductUpdateBody = null
+}
+
+/** PUT 핸들러가 받은 마지막 요청 본문 — 조회 응답을 그대로 되돌려 보내는지 단언할 때 쓴다. */
+export function lastSellerProductUpdateBody(): unknown {
+  return lastProductUpdateBody
 }
 
 /** 목록 핸들러가 받은 마지막 쿼리 문자열(`?` 제외). 빈 값 제거·반복 파라미터 단언에 쓴다. */
@@ -471,6 +531,13 @@ const sellerProductHandlers = [
       { status: 201 },
     )
   }),
+  // 단건 조회 — 수정 폼 프리필. 없는 상품과 남의 상품을 같은 404/40000으로 가린다.
+  // 자격 게이트(403/40004)는 목록·옵션(40006)과 갈리므로 테스트가 server.use로 따로 덮는다.
+  http.get(`${SELLER_PRODUCTS_URL}/:productId`, ({ params }) => {
+    const detail = sellerProductDetails.get(params['productId'] as string)
+    if (!detail) return productNotFound()
+    return HttpResponse.json({ data: { ...detail } })
+  }),
   http.get(`${SELLER_PRODUCTS_URL}/:productId/options`, ({ params }) => {
     const combinations = sellerProductOptions.get(params['productId'] as string)
     if (!combinations) {
@@ -498,9 +565,40 @@ const sellerProductHandlers = [
   http.put(`${SELLER_PRODUCTS_URL}/:productId`, async ({ params, request }) => {
     const product = sellerProducts.find(p => p.productId === params['productId'])
     if (!product) return productNotFound()
-    const body = (await request.json()) as { productName: string; regularPrice: number }
+    const body = (await request.json()) as {
+      categoryId: number
+      productName: string
+      description?: string | null
+      regularPrice: number
+      discountPrice?: number | null
+      discountStartAt?: string | null
+      discountEndAt?: string | null
+      thumbnailImageKey: string
+      additionalImageKeys?: string[] | null
+      detailImageKeys?: string[] | null
+    }
+    lastProductUpdateBody = body
     product.name = body.productName
     product.regularPrice = body.regularPrice
+    product.discountPrice = body.discountPrice ?? null
+    product.thumbnailImageKey = body.thumbnailImageKey
+    // 이미지 목록은 통째로 교체다 — 다음 프리필이 저장 결과를 그대로 보여야 왕복이 성립한다.
+    const detail = sellerProductDetails.get(product.productId)
+    if (detail) {
+      sellerProductDetails.set(product.productId, {
+        ...detail,
+        categoryId: body.categoryId,
+        productName: body.productName,
+        description: body.description ?? null,
+        regularPrice: body.regularPrice,
+        discountPrice: body.discountPrice ?? null,
+        discountStartAt: body.discountStartAt ?? null,
+        discountEndAt: body.discountEndAt ?? null,
+        thumbnailImageKey: body.thumbnailImageKey,
+        additionalImageKeys: body.additionalImageKeys ?? [],
+        detailImageKeys: body.detailImageKeys ?? [],
+      })
+    }
     return HttpResponse.json({
       data: { productId: product.productId, saleStatus: product.saleStatus, updatedAt: '2026-10-07T11:00:00' },
     })
@@ -541,5 +639,37 @@ const sellerProductHandlers = [
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: MOCK_CATEGORY_TREE })),
 ]
 
-export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers]
+// ─── 택배사 마스터 (seller 호스트 /sellers/couriers) ──────────────────────────
+// BE 시드 그대로의 대문자 코드와 서버 정렬(courierName 오름차순 → courierCode 오름차순)을 재현한다.
+// FE가 코드를 소문자로 바꾸거나 자체 정렬을 끼우는 회귀를 테스트가 이 순서로 잡는다.
+
+export interface CourierWire {
+  courierCode: string
+  courierName: string
+  trackingFormatPattern: string | null
+}
+
+/** V27 시드와 같은 5종. 정렬은 BE 쿼리와 같은 한국어 이름 오름차순이다. */
+export const DEFAULT_COURIERS: CourierWire[] = [
+  { courierCode: 'CJ', courierName: 'CJ대한통운', trackingFormatPattern: '^\\d{10,12}$' },
+  { courierCode: 'LOGEN', courierName: '로젠택배', trackingFormatPattern: null },
+  { courierCode: 'LOTTE', courierName: '롯데택배', trackingFormatPattern: null },
+  { courierCode: 'POST', courierName: '우체국택배', trackingFormatPattern: '^\\d{13}$' },
+  { courierCode: 'HANJIN', courierName: '한진택배', trackingFormatPattern: null },
+]
+
+let couriers: CourierWire[] = DEFAULT_COURIERS
+
+/** 인자 없이 부르면 기본 5종으로 되돌린다. */
+export function seedCouriers(rows: CourierWire[] = DEFAULT_COURIERS): void {
+  couriers = rows.map(row => ({ ...row }))
+}
+
+const courierHandlers = [
+  http.get(SELLER_COURIERS_URL, () =>
+    HttpResponse.json({ data: { items: couriers.map(row => ({ ...row })) } }),
+  ),
+]
+
+export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers, ...courierHandlers]
 export const server = setupServer(...handlers)

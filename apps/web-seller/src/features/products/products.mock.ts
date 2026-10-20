@@ -25,7 +25,6 @@ import {
   type SaleStatusChangeRequest,
   type SaleStatusChangeResponse,
   type SellerOptionCombination,
-  type SellerProductDetail,
   type SellerProductListResponse,
   type SellerProductOptionsResponse,
   type SellerProductSearchParams,
@@ -147,7 +146,8 @@ export const MOCK_CATEGORY_TREE: CategoryNode[] = LARGE_CATEGORIES.map((large, l
   )
 })
 
-function leafIdOf(label: string): number {
+/** 라벨 경로로 소분류 id를 찾는다 — 시드와 테스트가 같은 트리를 보게 하는 창구다. */
+export function leafIdOf(label: string): number {
   const [large, middle, leaf] = label.split(' > ')
   const found = MOCK_CATEGORY_TREE.find(n => n.name === large)
     ?.children.find(n => n.name === middle)
@@ -219,7 +219,14 @@ interface MockCombination extends SellerOptionCombination {
   signature: string
 }
 
-interface MockProduct extends SellerProductDetail {
+/**
+ * 목업 BE가 들고 있는 상품 저장 모양 — 실 단건 조회 응답 타입(생성물 `SellerProductDetailData`)과
+ * 섞지 않는다. 등록이 썸네일 키를 필수(@NotBlank)로 받으므로 이 저장소에는 null 썸네일이 없고,
+ * 할인·설명 필드의 nullability도 요청 DTO 쪽(optional nullable)을 따른다.
+ */
+type MockProductFields = ProductUpdateRequest & { productId: string }
+
+interface MockProduct extends MockProductFields {
   /** 내부 PK. 목록 기본 정렬(latest)이 id desc다. */
   seq: number
   saleStatus: WireSaleStatus
@@ -736,13 +743,16 @@ export function mockChangeOptionCombination(
 }
 
 // ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 아래 기능은 origin/develop SellerProductController에 대응하는 API가 없다: 단건 조회(수정 폼 프리필)와
-// 임시저장. 운영 화면의 진입점은 막아 두었고(수정 버튼·임시저장 버튼·초안 Drawer) 서버가 생겼을 때
-// 그대로 이어 붙일 수 있게 구현과 테스트만 남긴다.
+// 아래 기능은 origin/develop SellerProductController에 대응하는 API가 없다: 임시저장.
+// 운영 화면의 진입점은 막아 두었고(임시저장 버튼·초안 Drawer) 서버가 생겼을 때 그대로 이어 붙일 수
+// 있게 구현과 테스트만 남긴다.
 // 삭제는 보존하지 않고 지웠다 — BE에 DELETE가 없고 판매 중지가 노출 제어를 담당하므로 생길 계획이 없다.
 
-/** 수정 폼 프리필 — BE에 셀러 단건 조회가 없다. PUT 본문에 필요한 값만 돌려준다. */
-export function mockFetchProductDetail(productId: string): Promise<ApiResponse<SellerProductDetail>> {
+/**
+ * 목업 BE의 단건 조회 — 화면은 더 이상 쓰지 않는다(실 `GET /sellers/me/products/{productId}`로 교체).
+ * 이 목업 BE의 PUT 왕복 테스트가 저장 결과를 읽는 창구라 남겨 둔다.
+ */
+export function mockFetchProductDetail(productId: string): Promise<ApiResponse<MockProductFields>> {
   return respond(() => {
     const p = findProduct(productId)
     return structuredClone({

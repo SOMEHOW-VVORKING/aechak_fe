@@ -484,17 +484,22 @@ const OPTION_COLUMNS: Column<SellerOptionCombination>[] = [
 
 // 수정(PUT)은 옵션/재고를 바꾸지 않는다 — 지금 값만 보여주고 목록의 재고 Drawer로 안내한다.
 function OptionStockReadOnly({ productId }: { productId: string }) {
-  const { data } = useProductOptions(productId)
+  // 단건 조회가 성공해도 옵션 조회는 따로 실패할 수 있다(남의 상품 403/40007, 조회 불가 셀러
+  // 403/40006, 5xx). `loading={!data}`로 두면 재시도가 끝난 뒤에도 표가 영원히 로딩으로 남아
+  // "불러오지 못함"이 화면에 드러나지 않는다 — 실패는 실패로 보여 준다.
+  const { data, isPending, isError, error } = useProductOptions(productId)
   return (
     <div className="flex flex-col gap-3">
       <p className="text-caption text-text-tertiary">
         옵션 구성은 수정할 수 없어요. 재고와 옵션별 판매 여부는 상품 목록의 재고 버튼에서 바꿀 수 있어요.
       </p>
+      {isError && <FieldError>{productErrorMessage(error)}</FieldError>}
       <DataTable
         columns={OPTION_COLUMNS}
         rows={data?.optionCombinations ?? []}
         rowKey={c => String(c.optionCombinationId)}
-        loading={!data}
+        loading={isPending}
+        emptyLabel={isError ? '옵션/재고를 불러오지 못했어요.' : '등록된 옵션이 없어요.'}
       />
     </div>
   )

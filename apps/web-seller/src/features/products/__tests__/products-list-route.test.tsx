@@ -412,15 +412,26 @@ describe('/products 목록 (SCRUM-119)', () => {
     ).toBeInTheDocument()
   })
 
-  it('[AC-SPRD-044] BE에 없는 기능(수정·삭제·임시저장)의 진입점은 목록에 없다', async () => {
+  it('[AC-SPRD-044] BE에 없는 기능(삭제·임시저장)의 진입점은 목록에 없다', async () => {
     renderAt('/products')
     await rowOf(FEEDER.name)
 
-    expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '삭제' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /임시저장/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: '처리' })).not.toBeInTheDocument()
-    expect(screen.getByText(/상품 정보 수정은 준비 중이에요/)).toBeInTheDocument()
+    expect(screen.getByText(/옵션 구성과 상품 삭제는 아직 바꿀 수 없어요/)).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-063] 처리 열의 수정 버튼이 그 상품의 수정 화면으로 이동한다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/products')
+    const row = await rowOf(FEEDER.name)
+
+    expect(screen.getByRole('columnheader', { name: '처리' })).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: `${FEEDER.name} 수정` }))
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(`/products/${FEEDER.productId}/edit`),
+    )
   })
 
   it('[AC-SPRD-049] 등록일 열이 서버 createdAt을 날짜로 보여준다', async () => {

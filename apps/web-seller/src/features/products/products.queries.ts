@@ -3,6 +3,7 @@ import {
   changeSellerProductOptionCombination,
   changeSellerProductSaleStatus,
   getCategories,
+  getSellerProductDetail,
   getSellerProductOptions,
   getSellerProducts,
   registerSellerProduct,
@@ -19,7 +20,6 @@ import type {
 } from './products.contract'
 import {
   mockDeleteProductDraft,
-  mockFetchProductDetail,
   mockFetchProductDraft,
   mockFetchProductDrafts,
   mockSaveProductDraft,
@@ -124,11 +124,15 @@ function useProductsMutation<TVariables, TData>(mutationFn: (variables: TVariabl
   })
 }
 
-/**
- * PUT 배선 — 스펙에 등재된 fetcher이므로 queries 층까지는 이어 두되 화면에서 호출하지 않는다.
- * BE에 셀러 단건 조회가 없어 수정 폼을 제대로 프리필할 수 없고, 이미지 목록이 전체 교체라 부족한
- * 프리필로 PUT하면 기존 이미지와 할인 설정을 잃는다(routes/products/$productId/edit.tsx 참고).
- */
+/** 수정 폼 프리필. 단건 조회가 현재 열려 있는 이미지 키만 주므로 응답을 그대로 되돌려 보내도 된다. */
+export const useProductDetail = (productId: string | null | undefined) =>
+  useQuery({
+    queryKey: [...PRODUCTS_QUERY_KEY, 'detail', productId],
+    queryFn: productId
+      ? ({ signal }) => getSellerProductDetail(productId, signal).then(r => r.data)
+      : skipToken,
+  })
+
 export const useUpdateProduct = () =>
   useProductsMutation(({ productId, body }: { productId: string; body: ProductUpdateRequest }) =>
     updateSellerProduct(productId, body),
@@ -179,15 +183,8 @@ export const useRegisterProduct = () =>
   })
 
 // ─── BE 엔드포인트 없음(목업 전용) — products.mock.ts의 같은 구역과 짝 ─────────────
-// 아래 훅은 BE에 대응 API가 없어 목업으로만 동작한다. 운영 화면의 진입점은 막아 두었고(수정 화면·
-// 임시저장) 개발 검증과 폼 구현 보존을 위해 배선만 남긴다.
-
-/** 수정 폼 프리필. GET /sellers/me/products/{productId}가 생기면 이 훅만 바꿔 끼운다. */
-export const useProductDetail = (productId: string | null | undefined) =>
-  useQuery({
-    queryKey: [...PRODUCTS_QUERY_KEY, 'detail', productId],
-    queryFn: productId ? () => mockFetchProductDetail(productId).then(r => r.data) : skipToken,
-  })
+// 아래 훅은 BE에 대응 API가 없어 목업으로만 동작한다. 임시저장은 운영 화면의 진입점을 막아 두었고
+// 개발 검증과 폼 구현 보존을 위해 배선만 남긴다.
 
 export const useProductDrafts = () =>
   useQuery({

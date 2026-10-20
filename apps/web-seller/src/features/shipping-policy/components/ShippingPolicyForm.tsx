@@ -1,7 +1,8 @@
 import type { ShippingPolicy } from '@aechak/domain'
-import { Checkbox, FormSection, Input, NumberInput, Select } from '@aechak/design-system/web'
+import { Alert, Checkbox, FormSection, Input, NumberInput, Select } from '@aechak/design-system/web'
 import { Field } from '@/shared/components/Field'
-import { AVG_DISPATCH_DAY_OPTIONS, COURIER_OPTIONS } from '../shipping-policy.queries'
+import { COURIER_LOAD_ERROR_MESSAGE, courierSelectOptions, useCouriers } from '@/shared/couriers'
+import { AVG_DISPATCH_DAY_OPTIONS } from '../shipping-policy.queries'
 
 interface ShippingPolicyFormProps {
   value: ShippingPolicy
@@ -30,13 +31,18 @@ function MoneyField({
 }
 
 export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps) {
+  // 택배사는 서버 마스터가 정본이다 — 코드를 그대로 저장해야 저장 시 404/50303이 나지 않는다.
+  const couriers = useCouriers()
   return (
     <div className="flex flex-col gap-4">
+      {/* 조회 실패 시 하드코딩 폴백을 부활시키지 않는다 — 고를 수 없는 이유를 그대로 알린다. */}
+      {couriers.isError && <Alert variant="error">{COURIER_LOAD_ERROR_MESSAGE}</Alert>}
       <FormSection title="기본 배송 정책">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Select
             label="기본 택배사"
-            options={COURIER_OPTIONS}
+            placeholder={couriers.isPending ? '불러오는 중' : '선택'}
+            options={courierSelectOptions(couriers.data)}
             value={value.defaultCourier}
             onChange={defaultCourier => onChange({ defaultCourier })}
           />
