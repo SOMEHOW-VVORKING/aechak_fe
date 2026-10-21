@@ -58,7 +58,7 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     renderAt('/mypage/sns-relations')
 
     await screen.findByText('광고계정01')
-    await user.click(within(rows()[1]!).getByRole('button', { name: '차단 해제' }))
+    await user.click(screen.getByRole('button', { name: '광고계정01 차단 해제' }))
     expect(await screen.findByText('차단을 해제할까요?')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '해제' }))
 
@@ -73,7 +73,7 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
 
     await user.click(await screen.findByRole('tab', { name: /뮤트/ }))
     expect(await screen.findByText('뮤트 / 게시물 비노출')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '뮤트 해제' }))
+    await user.click(screen.getByRole('button', { name: '토리네 뮤트 해제' }))
     expect(await screen.findByText('뮤트를 해제할까요?')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '취소' }))
 
@@ -95,7 +95,7 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     const user = userEvent.setup()
     const router = renderAt('/mypage/sns-relations')
 
-    await user.click(await screen.findByRole('button', { name: '차단 해제' }))
+    await user.click(await screen.findByRole('button', { name: '차단러 차단 해제' }))
     await user.click(await screen.findByRole('button', { name: '해제' }))
     expect(await screen.findByText('차단한 계정이 없어요')).toBeInTheDocument()
 
@@ -109,14 +109,32 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     renderAt('/mypage/sns-relations')
 
     await user.click(await screen.findByRole('tab', { name: /뮤트/ }))
-    await user.click(await screen.findByRole('button', { name: '뮤트 해제' }))
+    await user.click(await screen.findByRole('button', { name: '토리네 뮤트 해제' }))
     await user.click(await screen.findByRole('button', { name: '해제' }))
 
     expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
     expect(screen.getByText('토리네')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /뮤트\s*1/ })).toBeInTheDocument()
     // 다시 보낼 수 있다.
-    expect(screen.getByRole('button', { name: '뮤트 해제' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '토리네 뮤트 해제' })).toBeEnabled()
+  })
+
+  it('[AC-SNS01-026] 뮤트 해제 응답이 실패로 왔지만 서버는 반영했으면 목록을 다시 읽어 행을 뺀다', async () => {
+    server.use(
+      http.delete(SNS_MUTE_URL, () => {
+        seedSns({ ...currentSns(), mutes: [] })
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 502 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/mypage/sns-relations')
+
+    await user.click(await screen.findByRole('tab', { name: /뮤트/ }))
+    await user.click(await screen.findByRole('button', { name: '토리네 뮤트 해제' }))
+    await user.click(await screen.findByRole('button', { name: '해제' }))
+
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    expect(await screen.findByText('뮤트한 계정이 없어요')).toBeInTheDocument()
   })
 
   it('[AC-SNS01-027] 차단 목록과 뮤트 목록이 비어 있으면 빈 목록 안내를 보여준다', async () => {

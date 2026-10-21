@@ -144,10 +144,13 @@ export function FollowListScreen({
                 </span>
               </button>
               {!item.isMe && (
+                // 요청 중에는 다른 행 버튼을 잠근다. 한 mutation을 행끼리 나눠 쓰므로 겹치면 앞 요청의 실패 안내가 빠진다.
                 <FollowButton
                   following={item.following}
                   loading={toggle.isPending && toggle.variables?.publicId === item.publicId}
+                  disabled={toggle.isPending}
                   onClick={() => follow(item)}
+                  ariaLabel={`${item.nickname} ${item.following ? '팔로잉' : '팔로우'}`}
                 />
               )}
             </li>

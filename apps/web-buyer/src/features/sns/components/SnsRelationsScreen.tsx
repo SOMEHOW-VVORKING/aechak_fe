@@ -123,7 +123,12 @@ export function SnsRelationsScreen() {
                   <p className="truncate text-body font-medium text-text-primary">{item.nickname}</p>
                   <p className="truncate text-caption text-text-tertiary">{copy.sub(item)}</p>
                 </div>
-                <Button size="sm" variant="secondary" onClick={() => setTarget({ kind: tab, item })}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label={`${item.nickname} ${copy.action}`}
+                  onClick={() => setTarget({ kind: tab, item })}
+                >
                   {copy.action}
                 </Button>
               </li>

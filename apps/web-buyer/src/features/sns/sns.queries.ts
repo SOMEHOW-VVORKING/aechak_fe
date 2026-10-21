@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryKey,
 } from '@tanstack/react-query'
 import {
   blockUser,
@@ -133,11 +134,22 @@ const TOGGLE_FETCHERS: Record<SnsToggleKind, [(id: string) => Promise<unknown>, 
   mute: [muteUser, unmuteUser],
 }
 
-// 켜기와 끄기는 화면에서 수를 직접 더하지 않고 성공 뒤 서버 값을 다시 읽는다(design 6절 8).
-// 실패하면 요청 전 화면을 그대로 두고, 대상 프로필만 다시 읽어 following/blockedByMe/mutedByMe로 버튼을 맞춘다
-// (응답을 받지 못했거나 그사이 볼 수 없게 된 경우까지 한 번에 맞춘다).
+// 켜기, 끄기 뒤 다시 읽을 캐시(design 6절 8). 팔로우는 대상과 목록 주인의 수가 바뀌어 열려 있는 프로필 전부와
+// 내 프로필, 차단은 두 방향 팔로우가 지워져 팔로우 목록까지, 뮤트는 대상 프로필과 뮤트 목록만 다시 읽는다.
+const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
+  follow: () => [snsKeys.profiles, snsKeys.me],
+  block: publicId => [snsKeys.profile(publicId), snsKeys.me, snsKeys.follows, snsKeys.relations('blocks')],
+  mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes')],
+}
+
+// 켜기와 끄기는 화면에서 수를 직접 더하지 않고 성공 뒤 서버 값을 다시 읽는다.
+// 실패하면 요청 전 화면을 그대로 두고, 요청을 낸 화면(프로필, 팔로우 목록, 관리 목록)을 다시 읽어
+// following/blockedByMe/mutedByMe로 버튼을 맞춘다. 응답을 받지 못했지만 서버는 반영한 경우와 그사이 볼 수 없게 된
+// 경우까지 한 번에 맞춘다(design 6절 6).
 export function useSnsToggle() {
   const queryClient = useQueryClient()
+  const refetch = (keys: QueryKey[]) =>
+    Promise.all(keys.map(queryKey => queryClient.invalidateQueries({ queryKey })))
   return useMutation({
     mutationFn: ({ kind, publicId, on }: SnsToggleInput) =>
       TOGGLE_FETCHERS[kind][on ? 0 : 1](publicId),
@@ -153,29 +165,15 @@ export function useSnsToggle() {
             })),
           },
         )
-        // 대상과 목록 주인의 수가 바뀌므로 열려 있는 프로필과 내 프로필을 다시 읽는다.
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: snsKeys.profiles }),
-          queryClient.invalidateQueries({ queryKey: snsKeys.me }),
-        ])
-        return
       }
-      if (kind === 'block') {
-        // 차단은 두 방향 팔로우를 지워 수와 목록이 바뀐다.
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: snsKeys.profile(publicId) }),
-          queryClient.invalidateQueries({ queryKey: snsKeys.me }),
-          queryClient.invalidateQueries({ queryKey: snsKeys.follows }),
-          queryClient.invalidateQueries({ queryKey: snsKeys.relations('blocks') }),
-        ])
-        return
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: snsKeys.profile(publicId) }),
-        queryClient.invalidateQueries({ queryKey: snsKeys.relations('mutes') }),
-      ])
+      await refetch(REFETCH_AFTER[kind](publicId))
     },
-    onError: (_error, { publicId }) => queryClient.invalidateQueries({ queryKey: snsKeys.profile(publicId) }),
+    onError: (_error, { kind, publicId }) =>
+      refetch([
+        ...REFETCH_AFTER[kind](publicId),
+        // 성공 때는 행을 남기려고 목록을 다시 읽지 않지만, 실패하면 목록 행도 서버 값으로 맞춘다.
+        ...(kind === 'follow' ? [snsKeys.follows] : []),
+      ]),
   })
 }
 

@@ -5,13 +5,18 @@ import { Button } from '@aechak/design-system/web'
 export function FollowButton({
   following,
   loading,
+  disabled,
   onClick,
   className,
+  ariaLabel,
 }: {
   following: boolean
   loading: boolean
+  disabled?: boolean
   onClick: () => void
   className?: string
+  /** 목록처럼 버튼이 여럿이면 누구에 대한 버튼인지 닉네임을 넣는다 */
+  ariaLabel?: string
 }) {
   return (
     <Button
@@ -19,7 +24,9 @@ export function FollowButton({
       variant={following ? 'secondary' : 'primary'}
       leftIcon={following ? <Check className="size-4" /> : undefined}
       loading={loading}
+      disabled={disabled}
       onClick={onClick}
+      aria-label={ariaLabel}
       className={className}
     >
       {following ? '팔로잉' : '팔로우'}

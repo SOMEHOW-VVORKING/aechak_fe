@@ -10,6 +10,8 @@ import {
   SNS_CHOCO,
   SNS_COCO,
   SNS_FOLLOWERS_URL,
+  SNS_FOLLOW_URL,
+  currentSns,
   SNS_ME,
   SNS_MONG,
   SNS_SPAM,
@@ -47,11 +49,46 @@ describe('/sns/users/$publicId/follows 목록', () => {
     const router = renderAt(`/sns/users/${SNS_COCO}/follows`)
 
     await screen.findByText('몽이아빠')
-    await user.click(within(row('몽이아빠')).getByRole('button', { name: '팔로우' }))
+    await user.click(screen.getByRole('button', { name: '몽이아빠 팔로우' }))
 
-    expect(await within(row('몽이아빠')).findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
-    expect(within(row('초코맘')).getByRole('button', { name: '팔로우' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '몽이아빠 팔로잉' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '초코맘 팔로우' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}/follows`)
+  })
+
+  it('[AC-SNS01-026] 행 팔로우 응답이 실패로 왔지만 서버는 반영했으면 목록을 다시 읽어 버튼을 맞추고 실패 안내를 띄운다', async () => {
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => {
+        // 서버는 팔로우를 반영했는데 응답이 실패로 돌아온 경우(게이트웨이 오류 등)
+        const now = currentSns()
+        seedSns({ ...now, follows: [...now.follows, snsRelation(SNS_ME, SNS_MONG)] })
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 502 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+
+    await user.click(await screen.findByRole('button', { name: '몽이아빠 팔로우' }))
+
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '몽이아빠 팔로잉' })).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-026] 한 행의 팔로우 요청 중에는 다른 행 버튼을 잠근다', async () => {
+    let release: () => void = () => {}
+    server.use(
+      http.post(SNS_FOLLOW_URL, async () => {
+        await new Promise<void>(resolve => (release = resolve))
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+
+    await user.click(await screen.findByRole('button', { name: '몽이아빠 팔로우' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '초코맘 팔로우' })).toBeDisabled())
+    release()
+    await waitFor(() => expect(screen.getByRole('button', { name: '초코맘 팔로우' })).toBeEnabled())
   })
 
   it('[AC-SNS01-015] 행을 누르면 그 사용자 프로필로 가고 본인 행은 내 프로필로 가며 본인 행에는 팔로우 버튼이 없다', async () => {
@@ -62,11 +99,11 @@ describe('/sns/users/$publicId/follows 목록', () => {
     await screen.findByText('보리언니')
     expect(within(row('보리언니')).queryByRole('button', { name: /팔로우|팔로잉/ })).not.toBeInTheDocument()
 
-    await user.click(within(row('보리언니')).getByRole('button', { name: /보리언니/ }))
+    await user.click(within(row('보리언니')).getByText('보리언니'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/sns/me'))
 
     router.history.back()
-    await user.click(await screen.findByRole('button', { name: /몽이아빠/ }))
+    await user.click(await screen.findByText('몽이아빠'))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/users/${SNS_MONG}`))
   })
 
