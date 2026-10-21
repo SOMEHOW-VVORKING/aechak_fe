@@ -86,7 +86,7 @@ export function SnsRelationsScreen() {
         onSelect={key => setTab(key as RelationKind)}
         className="px-2"
       />
-      <p className="flex items-start gap-1.5 px-4 py-3 text-caption text-text-secondary">
+      <p className="flex items-start gap-1.5 break-keep px-4 py-3 text-caption text-text-secondary">
         {tab === 'blocks' ? (
           <Info className="mt-px size-3.5 flex-none" />
         ) : (
