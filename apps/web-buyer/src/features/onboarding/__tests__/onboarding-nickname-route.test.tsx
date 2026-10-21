@@ -7,6 +7,9 @@ import { setAccessToken } from '@aechak/api'
 import { HttpResponse, http } from 'msw'
 import {
   NICKNAME_CHECK_URL,
+  SNS_COCO,
+  SNS_ME,
+  currentSns,
   seedConsentsSubmitted,
   seedTakenNicknames,
   seedTerms,
@@ -98,6 +101,24 @@ describe('/onboarding/nickname', () => {
 
     await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
+  it('[AC-SNS01-011] 로그인 안내 시트에서 가입했으면 완료 CTA가 보던 프로필로 돌아가 팔로우를 다시 실행한다', async () => {
+    const user = userEvent.setup()
+    setAccessToken('onboarding-token')
+    // 프로필의 로그인 안내 시트가 남긴 대기 행동(신규 사용자는 /login/complete에서 꺼내지 않고 여기까지 들고 온다).
+    sessionStorage.setItem(
+      'aechak.pendingAction',
+      JSON.stringify({ kind: 'follow', publicId: SNS_COCO, returnTo: `/sns/users/${SNS_COCO}`, createdAt: Date.now() }),
+    )
+    const router = renderNicknameRoute()
+
+    await fillNicknameAndSubmit(user, '초코집사')
+    await user.click(await screen.findByRole('button', { name: '보던 화면으로 가기' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}`))
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+    expect(currentSns().follows.some(r => r.from === SNS_ME && r.to === SNS_COCO)).toBe(true)
   })
 
   it('[AC-ONBOARD-013] 온보딩으로 확정한 닉네임이 계정 스토어(마이/리뷰 화면 소스)에 반영된다', async () => {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
 import {
@@ -12,12 +12,13 @@ import {
   Skeleton,
   Tabs,
 } from '@aechak/design-system/web'
-import { LoginGate, useLoginGate } from '@/shared/auth'
+import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
+  SNS_SELF_FOLLOW,
   SNS_UNAVAILABLE,
   snsErrorCode,
   snsToggleErrorMessage,
@@ -51,7 +52,9 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   const goBack = useSafeBack({ to: '/sns' })
   const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
   const toggle = useSnsToggle()
-  const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
+  const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
+  const loggedIn = useIsLoggedIn()
+  const mutateToggle = toggle.mutate
   const [moreOpen, setMoreOpen] = useState(false)
   // 확인 Modal의 타겟은 라우트(이 화면)가 소유한다. Modal은 자체 mutation을 만들지 않는다.
   const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
@@ -64,17 +67,53 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(차단당했거나 탈퇴, A7).
   const unavailable = snsErrorCode(error) === SNS_UNAVAILABLE
 
+  // 로그인 뒤 다시 실행(A26). 로그인 안내 시트에서 남긴 행동을 이 프로필을 다시 읽은 뒤 한 번만 꺼낸다.
+  // 팔로우는 확인 없이 켜기 요청을 보내고(이미 팔로우 중이어도 201) 차단, 뮤트는 확인 Modal이나 시트만 다시 연다.
+  useEffect(() => {
+    if (!publicId || !loggedIn) return
+    if (unavailable) {
+      // 그사이 상대가 나를 차단했거나 탈퇴했다. 실행하지 않고 볼 수 없는 계정 안내만 남긴다.
+      takePendingAction(publicId)
+      return
+    }
+    if (!profile) return
+    const pending = takePendingAction(publicId)
+    if (!pending) return
+    if (profile.isMe) {
+      void navigate({ to: '/sns/me', replace: true })
+      return
+    }
+    if (profile.blockedByMe) return
+    if (pending.kind === 'follow') {
+      mutateToggle(
+        { kind: 'follow', publicId, on: true },
+        {
+          onError: e => {
+            if (snsErrorCode(e) === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
+            else setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+          },
+        },
+      )
+    } else if (pending.kind === 'block') setConfirm('block')
+    else if (pending.kind === 'mute') setMoreOpen(true)
+  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle])
+
   const follow = (target: SnsProfile) =>
-    requireAuth('follow', () =>
-      toggle.mutate(
-        { kind: 'follow', publicId: target.publicId, on: !target.following },
-        { onError: e => showToast(snsToggleErrorMessage(e), 'error') },
-      ),
+    requireAuth(
+      'follow',
+      () =>
+        toggle.mutate(
+          { kind: 'follow', publicId: target.publicId, on: !target.following },
+          { onError: e => showToast(snsToggleErrorMessage(e), 'error') },
+        ),
+      { kind: 'follow', publicId: target.publicId },
     )
 
   const openList = (target: SnsProfile, tab: FollowDirection) =>
-    requireAuth('follows', () =>
-      navigate({ to: '/sns/users/$publicId/follows', params: { publicId: target.publicId }, search: { tab } }),
+    requireAuth(
+      'follows',
+      () => navigate({ to: '/sns/users/$publicId/follows', params: { publicId: target.publicId }, search: { tab } }),
+      { kind: 'open', publicId: target.publicId },
     )
 
   const share = async (target: SnsProfile) => {
@@ -137,7 +176,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
             title="차단하기"
             onClick={() => {
               setMoreOpen(false)
-              requireAuth('block', () => setConfirm('block'))
+              requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId: profile.publicId })
             }}
           />
           <ListItem
@@ -149,14 +188,17 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
                 setConfirm('unmute')
                 return
               }
-              requireAuth('mute', () =>
-                toggle.mutate(
-                  { kind: 'mute', publicId: profile.publicId, on: true },
-                  {
-                    onSuccess: () => showToast('뮤트했어요'),
-                    onError: e => showToast(snsToggleErrorMessage(e), 'error'),
-                  },
-                ),
+              requireAuth(
+                'mute',
+                () =>
+                  toggle.mutate(
+                    { kind: 'mute', publicId: profile.publicId, on: true },
+                    {
+                      onSuccess: () => showToast('뮤트했어요'),
+                      onError: e => showToast(snsToggleErrorMessage(e), 'error'),
+                    },
+                  ),
+                { kind: 'mute', publicId: profile.publicId },
               )
             }}
           />
@@ -176,7 +218,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         />
       )}
 
-      <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} />
+      <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}
         message={toast.message}

@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { MobileScreen } from '@aechak/design-system/web'
 import { bootstrapSession } from '@/features/onboarding'
-import { login } from '@/shared/auth'
+import { clearPendingAction, login, resumeReturnPath } from '@/shared/auth'
 
 // 서버 콜백 로그인의 복귀 라우트 — 이 주소는 서버의 return 화이트리스트에 등록되어 있다.
 // 성공: ?status=&isNew= 쿼리 + refresh 쿠키(httpOnly). access는 쿼리로 오지 않으므로
@@ -26,19 +26,25 @@ export const Route = createFileRoute('/login/complete')({
     }
   },
   beforeLoad: async ({ search }) => {
+    // 실패하면 로그인 뒤 다시 실행할 행동(A26)을 버린다. 다시 로그인해도 예전 행동이 실행되지 않게 한다.
     if (search.error !== undefined) {
+      clearPendingAction()
       throw redirect({ to: '/onboarding/login', search: { error: search.error }, replace: true })
     }
     try {
       await bootstrapSession()
     } catch {
       // 쿠키 부재·만료 등 — 처음부터 다시 (20002 = 유효하지 않은 토큰)
+      clearPendingAction()
       throw redirect({ to: '/onboarding/login', search: { error: 20002 }, replace: true })
     }
     login()
+    // 신규 사용자는 SNS 요청이 403 20006이라 대기 행동을 온보딩(닉네임)을 마친 뒤 꺼낸다.
     if (search.status === 'PENDING_ONBOARDING') {
       throw redirect({ to: '/onboarding/terms', replace: true })
     }
+    const returnTo = resumeReturnPath()
+    if (returnTo) throw redirect({ href: returnTo, replace: true })
     throw redirect({ to: '/', replace: true })
   },
   component: LoginCompleteRoute,

@@ -11,6 +11,7 @@ import {
   useSetNickname,
 } from '@/features/onboarding'
 import { setNickname as syncAccountNickname } from '@/shared/account'
+import { peekPendingAction, resumeReturnPath } from '@/shared/auth'
 
 const DEBOUNCE_MS = 400
 
@@ -89,11 +90,17 @@ function NicknameSetupRoute() {
   // 완료 화면 — 사용자가 매듭을 짓고 스스로 홈으로 들어가게 한다(자동 이동/타이머 없음).
   // 헤더(뒤로가기) 없음: 완료 후 온보딩으로 되돌아갈 지점이 아니다. replace로 히스토리에서도 뺀다.
   if (completed) {
+    // 로그인 안내 시트에서 가입했으면(A26) 보던 화면으로 돌아가 그 화면이 대기 행동을 꺼낸다.
+    const goNext = () => {
+      const returnTo = resumeReturnPath()
+      if (returnTo) navigate({ href: returnTo, replace: true })
+      else navigate({ to: '/', replace: true })
+    }
     return (
       <MobileScreen
         footer={
           <BottomFixedAction
-            primary={{ label: '홈으로 가기', onClick: () => navigate({ to: '/', replace: true }) }}
+            primary={{ label: peekPendingAction() ? '보던 화면으로 가기' : '홈으로 가기', onClick: goNext }}
           />
         }
         contentClassName="flex flex-col items-center justify-center gap-3 px-6 text-center"

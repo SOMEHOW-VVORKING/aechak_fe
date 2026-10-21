@@ -70,7 +70,7 @@ export function FollowListScreen({
   const screen = (content: ReactNode) => (
     <MobileScreen header={<BackAppBar onBack={goBack} title={profile.data?.nickname} />}>
       {content}
-      <LoginGate open={!loggedIn} feature="follows" onClose={goBack} />
+      <LoginGate open={!loggedIn} feature="follows" onClose={goBack} resume={{ kind: 'open', publicId }} />
       <AppToast
         open={errorToast != null}
         message={errorToast ?? ''}

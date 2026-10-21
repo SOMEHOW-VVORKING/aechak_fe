@@ -3,4 +3,11 @@
 export { getIsLoggedIn, login, logout, resetAuth, useIsLoggedIn } from './auth.store'
 export { endServerSession } from './auth.session'
 export { LoginGate, useLoginGate } from './LoginGate'
-export type { GateFeature, LoginGateProps, UseLoginGate } from './LoginGate'
+export type { GateFeature, GateResume, LoginGateProps, UseLoginGate } from './LoginGate'
+export {
+  clearPendingAction,
+  peekPendingAction,
+  resumeReturnPath,
+  takePendingAction,
+} from './pending-action'
+export type { PendingAction } from './pending-action'
