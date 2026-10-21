@@ -110,3 +110,15 @@ describe('/mypage 적립금 표시 행', () => {
     expect(await screen.findByText('—')).toBeInTheDocument()
   })
 })
+
+describe('/mypage SNS 진입 행 게이트', () => {
+  it('[AC-SNS01-006] SNS BE가 배포되기 전(SNS_SERVER_AVAILABLE=false)에는 SNS 진입 행을 숨긴다', async () => {
+    seedAccount({ nickname: '코코집사' })
+    renderAt('/mypage')
+
+    expect(await screen.findByText('코코집사')).toBeInTheDocument()
+    expect(screen.getByText('주문 내역')).toBeInTheDocument()
+    expect(screen.queryByText('내 SNS 프로필')).not.toBeInTheDocument()
+    expect(screen.queryByText('차단/뮤트 관리')).not.toBeInTheDocument()
+  })
+})
