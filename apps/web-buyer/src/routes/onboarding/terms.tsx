@@ -16,6 +16,7 @@ import {
   useTerms,
   type OnboardingTerm,
 } from '@/features/onboarding'
+import { peekPendingAction } from '@/shared/auth'
 
 export const Route = createFileRoute('/onboarding/terms')({
   component: TermsAgreementRoute,
@@ -98,7 +99,10 @@ function TermsAgreementRoute() {
     <MobileScreen
       header={
         <OnboardingHeader
-          onBack={() => navigate({ to: '/onboarding/login' })}
+          // 로그인 안내 시트에서 가입 중이면(A26) 로그인 화면이 대기 행동을 지우지 않게 resume을 넘긴다.
+          onBack={() =>
+            navigate({ to: '/onboarding/login', search: peekPendingAction() ? { resume: true } : {} })
+          }
           step={{ current: 1, total: 2 }}
         />
       }

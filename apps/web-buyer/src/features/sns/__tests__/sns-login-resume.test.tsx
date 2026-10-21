@@ -175,6 +175,35 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     resetAccount()
   })
 
+  it('[AC-SNS01-011] 신규 가입 중 약관에서 뒤로 갔다가 다시 로그인해도 대기 행동이 남아 팔로우를 한 번만 실행한다', async () => {
+    seedTerms()
+    const user = await startAsGuest(SNS_COCO, pressFollow)
+
+    const first = completeLogin({}, 'PENDING_ONBOARDING')
+    await waitFor(() => expect(first.state.location.pathname).toBe('/onboarding/terms'))
+    await user.click(await screen.findByRole('button', { name: '뒤로 가기' }))
+    await waitFor(() => expect(first.state.location.pathname).toBe('/onboarding/login'))
+    await screen.findByText('카카오로 시작하기')
+    expect(sessionStorage.length).toBe(1)
+    cleanup()
+
+    // 다시 로그인한다(로그인 화면은 페이지 전체를 이동한다).
+    const router = completeLogin({}, 'PENDING_ONBOARDING')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/onboarding/terms'))
+    seedConsentsSubmitted(true)
+    await router.navigate({ to: '/onboarding/nickname' })
+    await user.type(await screen.findByLabelText(/닉네임/), '초코집사')
+    const submit = screen.getByRole('button', { name: '애착 시작하기' })
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 3000 })
+    await user.click(submit)
+    await user.click(await screen.findByRole('button', { name: '보던 화면으로 가기' }))
+
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+    expect(followPosts).toBe(1)
+    expect(sessionStorage.length).toBe(0)
+    resetAccount()
+  })
+
   it('[AC-SNS01-011] 로그인한 계정이 그 프로필 본인이면 다시 실행하지 않고 내 프로필로 간다', async () => {
     await startAsGuest(SNS_ME, pressFollow)
 
