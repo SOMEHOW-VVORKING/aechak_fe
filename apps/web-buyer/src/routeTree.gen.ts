@@ -19,6 +19,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SearchIndexRouteImport } from './routes/search/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
+import { Route as SnsMeRouteImport } from './routes/sns/me'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings/notifications'
 import { Route as SettingsInquiryRouteImport } from './routes/settings/inquiry'
@@ -48,6 +49,7 @@ import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/pr
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
 import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
+import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
 
 const WishlistRoute = WishlistRouteImport.update({
   id: '/wishlist',
@@ -97,6 +99,11 @@ const TabsIndexRoute = TabsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => TabsRoute,
+} as any)
+const SnsMeRoute = SnsMeRouteImport.update({
+  id: '/sns/me',
+  path: '/sns/me',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
   id: '/settings/privacy',
@@ -243,6 +250,11 @@ const MypagePetsNewRoute = MypagePetsNewRouteImport.update({
   path: '/mypage/pets/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsUsersPublicIdIndexRoute = SnsUsersPublicIdIndexRouteImport.update({
+  id: '/sns/users/$publicId/',
+  path: '/sns/users/$publicId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
@@ -273,6 +285,7 @@ export interface FileRoutesByFullPath {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/me': typeof SnsMeRoute
   '/orders/': typeof OrdersIndexRoute
   '/search/': typeof SearchIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -283,6 +296,7 @@ export interface FileRoutesByFullPath {
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/addresses': typeof AddressesRoute
@@ -312,6 +326,7 @@ export interface FileRoutesByTo {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/me': typeof SnsMeRoute
   '/': typeof TabsIndexRoute
   '/orders': typeof OrdersIndexRoute
   '/search': typeof SearchIndexRoute
@@ -323,6 +338,7 @@ export interface FileRoutesByTo {
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
+  '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -354,6 +370,7 @@ export interface FileRoutesById {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/me': typeof SnsMeRoute
   '/_tabs/': typeof TabsIndexRoute
   '/orders/': typeof OrdersIndexRoute
   '/search/': typeof SearchIndexRoute
@@ -365,6 +382,7 @@ export interface FileRoutesById {
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -397,6 +415,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/me'
     | '/orders/'
     | '/search/'
     | '/settings/'
@@ -407,6 +426,7 @@ export interface FileRouteTypes {
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/sns/users/$publicId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/addresses'
@@ -436,6 +456,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/me'
     | '/'
     | '/orders'
     | '/search'
@@ -447,6 +468,7 @@ export interface FileRouteTypes {
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
+    | '/sns/users/$publicId'
   id:
     | '__root__'
     | '/_tabs'
@@ -477,6 +499,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/me'
     | '/_tabs/'
     | '/orders/'
     | '/search/'
@@ -488,6 +511,7 @@ export interface FileRouteTypes {
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/sns/users/$publicId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -515,6 +539,7 @@ export interface RootRouteChildren {
   SettingsInquiryRoute: typeof SettingsInquiryRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SnsMeRoute: typeof SnsMeRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
   SearchIndexRoute: typeof SearchIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -525,6 +550,7 @@ export interface RootRouteChildren {
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
+  SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -598,6 +624,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof TabsIndexRouteImport
       parentRoute: typeof TabsRoute
+    }
+    '/sns/me': {
+      id: '/sns/me'
+      path: '/sns/me'
+      fullPath: '/sns/me'
+      preLoaderRoute: typeof SnsMeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/settings/privacy': {
       id: '/settings/privacy'
@@ -802,6 +835,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypagePetsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/users/$publicId/': {
+      id: '/sns/users/$publicId/'
+      path: '/sns/users/$publicId'
+      fullPath: '/sns/users/$publicId/'
+      preLoaderRoute: typeof SnsUsersPublicIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -848,6 +888,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsInquiryRoute: SettingsInquiryRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SnsMeRoute: SnsMeRoute,
   OrdersIndexRoute: OrdersIndexRoute,
   SearchIndexRoute: SearchIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
@@ -858,6 +899,7 @@ const rootRouteChildren: RootRouteChildren = {
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
+  SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

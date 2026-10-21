@@ -8,7 +8,17 @@ import { getIsLoggedIn } from './auth.store'
 // BottomSheet 오버레이 — 회원 전용 액션(찜/장바구니/구매/작성/채팅)을 비회원이 시도하면 뜬다.
 // 탐색·검색·열람은 게이트 없이 허용된다.
 
-export type GateFeature = 'wish' | 'cart' | 'buy' | 'write' | 'chat' | 'review'
+export type GateFeature =
+  | 'wish'
+  | 'cart'
+  | 'buy'
+  | 'write'
+  | 'chat'
+  | 'review'
+  | 'follow'
+  | 'follows'
+  | 'block'
+  | 'mute'
 
 const FEATURE_COPY: Record<GateFeature, string> = {
   wish: '찜은 로그인한 회원만 이용할 수 있어요.',
@@ -17,6 +27,10 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   write: '글 작성은 로그인한 회원만 이용할 수 있어요.',
   chat: '채팅은 로그인한 회원만 이용할 수 있어요.',
   review: '리뷰는 로그인한 회원만 볼 수 있어요.',
+  follow: '팔로우는 로그인한 회원만 이용할 수 있어요.',
+  follows: '팔로워/팔로잉 목록은 로그인한 회원만 볼 수 있어요.',
+  block: '차단은 로그인한 회원만 이용할 수 있어요.',
+  mute: '뮤트는 로그인한 회원만 이용할 수 있어요.',
 }
 
 export interface UseLoginGate {
