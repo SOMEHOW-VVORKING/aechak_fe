@@ -2,7 +2,8 @@ import { http, HttpResponse } from 'msw'
 import { axiosInstance, type SnsPetResult } from '@aechak/api'
 
 // SNS-01 계약(spec/contracts/sns.yaml) 상태형 MSW. 사용자와 팔로우, 차단, 뮤트 관계를 메모리에 두고 계약의 판정
-// 순서를 그대로 흉내 낸다. 테스트는 Authorization 헤더를 싣지 않으므로 보는 사람은 seedSns({ viewer })로 정한다.
+// 순서를 그대로 흉내 낸다. 보는 사람은 Authorization 헤더가 있을 때만 seedSns({ viewer })의 사용자이고
+// 헤더가 없으면 비로그인이다(프로필은 관계 필드가 모두 false, 나머지는 401 20004).
 const base = axiosInstance.defaults.baseURL ?? ''
 export const SNS_PROFILE_URL = `${base}/sns/users/:publicId`
 export const SNS_ME_URL = `${base}/sns/me`
@@ -94,6 +95,8 @@ export function currentSns(): SnsSeed {
 
 export { rel as snsRelation }
 
+const viewerOf = (request: Request) => (request.headers.get('Authorization') ? state.viewer : null)
+
 const has = (list: Relation[], from: string, to: string) => list.some(r => r.from === from && r.to === to)
 const without = (list: Relation[], from: string, to: string) => list.filter(r => !(r.from === from && r.to === to))
 const now = () => `2026-10-21T10:${String(clock++ % 60).padStart(2, '0')}:00`
@@ -139,7 +142,7 @@ function page<T>(items: T[], url: URL, withTotal: boolean) {
 
 function followList(direction: 'followers' | 'followings') {
   return ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
-    const viewer = state.viewer
+    const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
     const owner = String(params['publicId'])
     if (!USERS[owner]) return unavailable()
@@ -170,7 +173,7 @@ function followList(direction: 'followers' | 'followings') {
 
 function relationList(key: 'blocks' | 'mutes') {
   return ({ request }: { request: Request }) => {
-    const viewer = state.viewer
+    const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
     const items = state[key]
       .filter(r => r.from === viewer && USERS[r.to])
@@ -187,8 +190,8 @@ function relationList(key: 'blocks' | 'mutes') {
 
 // 켜기(POST 201)와 끄기(DELETE 204). 이미 그 상태여도 같은 코드로 응답한다.
 function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
-  const on = ({ params }: { params: Record<string, unknown> }) => {
-    const viewer = state.viewer
+  const on = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
     const target = String(params['publicId'])
     if (!USERS[target]) return unavailable()
@@ -202,8 +205,8 @@ function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
     if (key === 'blocks') state.follows = without(without(state.follows, viewer, target), target, viewer)
     return new HttpResponse(null, { status: 201 })
   }
-  const off = ({ params }: { params: Record<string, unknown> }) => {
-    const viewer = state.viewer
+  const off = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
     const target = String(params['publicId'])
     if (!USERS[target]) return unavailable()
@@ -218,16 +221,17 @@ const [block, unblock] = toggle('blocks', 130100)
 const [mute, unmute] = toggle('mutes', 130200)
 
 export const snsHandlers = [
-  http.get(SNS_ME_URL, () =>
-    state.viewer == null ? unauthenticated() : HttpResponse.json({ data: profile(state.viewer, state.viewer) }),
-  ),
+  http.get(SNS_ME_URL, ({ request }) => {
+    const viewer = viewerOf(request)
+    return viewer == null ? unauthenticated() : HttpResponse.json({ data: profile(viewer, viewer) })
+  }),
   http.get(SNS_MY_BLOCKS_URL, relationList('blocks')),
   http.get(SNS_MY_MUTES_URL, relationList('mutes')),
   http.get(SNS_FOLLOWERS_URL, followList('followers')),
   http.get(SNS_FOLLOWINGS_URL, followList('followings')),
-  http.get(SNS_PROFILE_URL, ({ params }) => {
+  http.get(SNS_PROFILE_URL, ({ params, request }) => {
     const target = String(params['publicId'])
-    const viewer = state.viewer
+    const viewer = viewerOf(request)
     if (!USERS[target]) return unavailable()
     if (viewer != null && viewer !== target && has(state.blocks, target, viewer)) return unavailable()
     return HttpResponse.json({ data: profile(target, viewer) })

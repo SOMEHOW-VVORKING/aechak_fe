@@ -13,11 +13,13 @@ import {
   SNS_MONG,
   SNS_SPAM,
   SNS_TORI,
+  WEB_REFRESH_URL,
   currentSns,
   seedSns,
   server,
   snsRelation,
 } from '@/testing/msw/server'
+import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -35,11 +37,14 @@ const stat = (label: string) => screen.getByText(label).previousElementSibling?.
 
 function asGuest() {
   logout()
+  setAccessToken(null)
   seedSns({ viewer: null })
 }
 
+// 로그인 사용자는 메모리 access 토큰이 있는 상태로 시작한다(SNS MSW는 Authorization 헤더로 보는 사람을 정한다).
 beforeEach(() => {
   resetAuth()
+  setAccessToken('test-token')
 })
 
 describe('/sns/users/$publicId 프로필 머리말', () => {
@@ -266,5 +271,57 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     await user.click(await screen.findByRole('button', { name: '차단하기' }))
     await user.click(await screen.findByRole('button', { name: '차단' }))
     await waitFor(() => expect(calls).toBe(2))
+  })
+})
+
+describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토큰 없음)', () => {
+  beforeEach(() => {
+    setAccessToken(null)
+  })
+
+  it('[AC-SNS01-005] refresh 쿠키가 살아 있으면 세션을 먼저 복원해 관계 필드가 채워진 프로필을 보여준다', async () => {
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 } }),
+      ),
+    )
+    seedSns({ follows: [snsRelation(SNS_ME, SNS_COCO)], mutes: [snsRelation(SNS_ME, SNS_COCO)] })
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+    expect(screen.getByText('뮤트한 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-021] 세션을 복원하면 나를 차단한 사용자의 링크도 볼 수 없는 계정 안내다', async () => {
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 } }),
+      ),
+    )
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-010] refresh 쿠키가 없으면 비로그인으로 보여주고 팔로우를 누르면 요청 없이 로그인 안내 시트를 연다', async () => {
+    let posts = 0
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'POST' && request.url.includes('/sns/')) posts += 1
+    })
+    const user = userEvent.setup()
+    const router = renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '팔로우' }))
+    expect(await screen.findByText(/팔로우는 로그인한 회원만 이용할 수 있어요/)).toBeInTheDocument()
+    expect(posts).toBe(0)
+    expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}`)
+    server.events.removeAllListeners()
+  })
+
+  it('[AC-SNS01-029] refresh 쿠키 없이 목록 경로로 들어오면 로그인 화면으로 보내지 않고 로그인 안내 시트를 연다', async () => {
+    const router = renderAt(`/sns/users/${SNS_COCO}/follows`)
+
+    expect(await screen.findByText(/팔로워\/팔로잉 목록은 로그인한 회원만 볼 수 있어요/)).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}/follows`)
   })
 })

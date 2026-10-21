@@ -25,6 +25,7 @@ import {
   type SnsUserItemResult,
   type SnsUserPageResult,
 } from '@aechak/api'
+import { useIsLoggedIn } from '@/shared/auth'
 
 // SNS-01(프로필, 팔로우, 차단, 뮤트)을 spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라
 // fetcher만 소비하고 여기서 자체 useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
@@ -68,8 +69,10 @@ function retryTransient(failureCount: number, error: unknown): boolean {
 
 /** publicId가 없으면 내 프로필(GET /sns/me, 로그인 필요)을 읽는다. 다른 사용자 프로필은 비로그인도 된다. */
 export function useSnsProfile(publicId?: string) {
+  // 같은 프로필도 비로그인 응답과 로그인 응답의 관계 필드가 다르다. 세션 상태가 바뀌면 캐시를 다시 쓰지 않는다.
+  const loggedIn = useIsLoggedIn()
   return useQuery({
-    queryKey: publicId ? snsKeys.profile(publicId) : snsKeys.me,
+    queryKey: publicId ? [...snsKeys.profile(publicId), loggedIn] : snsKeys.me,
     queryFn: async ({ signal }) =>
       (publicId ? await getSnsProfile(publicId, signal) : await getMySnsProfile(signal)).data,
     retry: retryTransient,

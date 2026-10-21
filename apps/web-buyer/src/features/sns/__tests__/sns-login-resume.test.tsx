@@ -5,7 +5,7 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
-import { logout, resetAuth } from '@/shared/auth'
+import { resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
   SNS_ME,
@@ -31,11 +31,11 @@ function renderAt(path: string) {
 
 const stat = (label: string) => screen.getByText(label).previousElementSibling?.textContent
 
-// 비로그인으로 프로필에서 행동을 누르고 로그인 / 회원가입까지 간다. 로그인 화면은 페이지 전체를 이동하므로
-// 화면을 내리고(cleanup) 서버 상태를 로그인한 계정으로 바꾼 뒤 /login/complete로 새로 연다.
+// 공유 링크로 처음 들어온 비로그인 사용자에서 시작한다. 로그인 플래그는 기본값(true)이지만 메모리 토큰도
+// refresh 쿠키도 없어(MSW 기본 401) 라우트가 세션 복원에 실패하고 비로그인으로 이어 간다.
+// 로그인 / 회원가입까지 누른 뒤에는 로그인 화면이 페이지 전체를 이동하므로 화면을 내리고(cleanup)
+// 쿠키가 생긴 상태(refresh 200)로 /login/complete를 새로 연다.
 async function startAsGuest(publicId: string, press: (user: ReturnType<typeof userEvent.setup>) => Promise<void>) {
-  logout()
-  seedSns({ viewer: null })
   const user = userEvent.setup()
   const router = renderAt(`/sns/users/${publicId}`)
   await press(user)
@@ -45,9 +45,14 @@ async function startAsGuest(publicId: string, press: (user: ReturnType<typeof us
   return user
 }
 
-function completeLogin(viewerSeed: Parameters<typeof seedSns>[0] = {}) {
+function completeLogin(viewerSeed: Parameters<typeof seedSns>[0] = {}, status = 'ACTIVE') {
+  server.use(
+    http.post(WEB_REFRESH_URL, () =>
+      HttpResponse.json({ data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 } }),
+    ),
+  )
   seedSns({ viewer: SNS_ME, ...viewerSeed })
-  return renderAt('/login/complete?status=ACTIVE')
+  return renderAt(`/login/complete?status=${status}`)
 }
 
 const pressFollow = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -59,11 +64,6 @@ let followPosts = 0
 beforeEach(() => {
   resetAuth()
   followPosts = 0
-  server.use(
-    http.post(WEB_REFRESH_URL, () =>
-      HttpResponse.json({ data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 } }),
-    ),
-  )
   server.events.on('request:start', ({ request }) => {
     if (request.method === 'POST' && /\/sns\/users\/[^/]+\/follow$/.test(request.url)) followPosts += 1
   })

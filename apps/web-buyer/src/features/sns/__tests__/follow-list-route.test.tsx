@@ -18,6 +18,7 @@ import {
   server,
   snsRelation,
 } from '@/testing/msw/server'
+import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -34,8 +35,10 @@ function renderAt(path: string) {
 const rows = () => within(screen.getByRole('list')).getAllByRole('listitem')
 const row = (nickname: string) => rows().find(li => li.textContent?.includes(nickname))!
 
+// 로그인 사용자는 메모리 access 토큰이 있는 상태로 시작한다(SNS MSW는 Authorization 헤더로 보는 사람을 정한다).
 beforeEach(() => {
   resetAuth()
+  setAccessToken('test-token')
 })
 
 describe('/sns/users/$publicId/follows 목록', () => {
@@ -147,6 +150,7 @@ describe('/sns/users/$publicId/follows 목록', () => {
 describe('/sns/users/$publicId/follows 비로그인', () => {
   it('[AC-SNS01-029] 비로그인으로 팔로워 수를 누르면 로그인 안내 시트가 열리고 목록으로 가지 않는다', async () => {
     logout()
+    setAccessToken(null)
     seedSns({ viewer: null })
     const user = userEvent.setup()
     const router = renderAt(`/sns/users/${SNS_COCO}`)
@@ -158,6 +162,7 @@ describe('/sns/users/$publicId/follows 비로그인', () => {
 
   it('[AC-SNS01-029] 비로그인으로 목록 경로에 바로 들어오면 로그인 안내 시트를 열고 목록 쿼리를 보내지 않는다', async () => {
     logout()
+    setAccessToken(null)
     seedSns({ viewer: null })
     const listRequests: string[] = []
     server.events.on('request:start', ({ request }) => {

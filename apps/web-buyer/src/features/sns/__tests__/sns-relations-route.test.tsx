@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   SNS_BLOCKER,
   SNS_ME,
@@ -15,6 +15,7 @@ import {
   server,
   snsRelation,
 } from '@/testing/msw/server'
+import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -27,6 +28,11 @@ function renderAt(path: string) {
   )
   return router
 }
+
+// 로그인 사용자는 메모리 access 토큰이 있는 상태로 시작한다(SNS MSW는 Authorization 헤더로 보는 사람을 정한다).
+beforeEach(() => {
+  setAccessToken('test-token')
+})
 
 const rows = () => within(screen.getByRole('list')).getAllByRole('listitem')
 
