@@ -36,6 +36,7 @@ import { Route as OnboardingNicknameRouteImport } from './routes/onboarding/nick
 import { Route as OnboardingLoginRouteImport } from './routes/onboarding/login'
 import { Route as MypageWithdrawRouteImport } from './routes/mypage/withdraw'
 import { Route as MypageVerifyRouteImport } from './routes/mypage/verify'
+import { Route as MypageSnsRelationsRouteImport } from './routes/mypage/sns-relations'
 import { Route as MypageProfileRouteImport } from './routes/mypage/profile'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
@@ -186,6 +187,11 @@ const MypageVerifyRoute = MypageVerifyRouteImport.update({
   path: '/mypage/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MypageSnsRelationsRoute = MypageSnsRelationsRouteImport.update({
+  id: '/mypage/sns-relations',
+  path: '/mypage/sns-relations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MypageProfileRoute = MypageProfileRouteImport.update({
   id: '/mypage/profile',
   path: '/mypage/profile',
@@ -275,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
@@ -317,6 +324,7 @@ export interface FileRoutesByTo {
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
@@ -362,6 +370,7 @@ export interface FileRoutesById {
   '/_tabs/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
   '/mypage/profile': typeof MypageProfileRoute
+  '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
   '/mypage/withdraw': typeof MypageWithdrawRoute
   '/onboarding/login': typeof OnboardingLoginRoute
@@ -408,6 +417,7 @@ export interface FileRouteTypes {
     | '/sns'
     | '/login/complete'
     | '/mypage/profile'
+    | '/mypage/sns-relations'
     | '/mypage/verify'
     | '/mypage/withdraw'
     | '/onboarding/login'
@@ -450,6 +460,7 @@ export interface FileRouteTypes {
     | '/sns'
     | '/login/complete'
     | '/mypage/profile'
+    | '/mypage/sns-relations'
     | '/mypage/verify'
     | '/mypage/withdraw'
     | '/onboarding/login'
@@ -494,6 +505,7 @@ export interface FileRouteTypes {
     | '/_tabs/sns'
     | '/login/complete'
     | '/mypage/profile'
+    | '/mypage/sns-relations'
     | '/mypage/verify'
     | '/mypage/withdraw'
     | '/onboarding/login'
@@ -535,6 +547,7 @@ export interface RootRouteChildren {
   WishlistRoute: typeof WishlistRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   MypageProfileRoute: typeof MypageProfileRoute
+  MypageSnsRelationsRoute: typeof MypageSnsRelationsRoute
   MypageVerifyRoute: typeof MypageVerifyRoute
   MypageWithdrawRoute: typeof MypageWithdrawRoute
   OnboardingLoginRoute: typeof OnboardingLoginRoute
@@ -757,6 +770,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypageVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mypage/sns-relations': {
+      id: '/mypage/sns-relations'
+      path: '/mypage/sns-relations'
+      fullPath: '/mypage/sns-relations'
+      preLoaderRoute: typeof MypageSnsRelationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mypage/profile': {
       id: '/mypage/profile'
       path: '/mypage/profile'
@@ -892,6 +912,7 @@ const rootRouteChildren: RootRouteChildren = {
   WishlistRoute: WishlistRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   MypageProfileRoute: MypageProfileRoute,
+  MypageSnsRelationsRoute: MypageSnsRelationsRoute,
   MypageVerifyRoute: MypageVerifyRoute,
   MypageWithdrawRoute: MypageWithdrawRoute,
   OnboardingLoginRoute: OnboardingLoginRoute,
