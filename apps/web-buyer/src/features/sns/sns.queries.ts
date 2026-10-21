@@ -168,12 +168,14 @@ export function useSnsToggle() {
       }
       await refetch(REFETCH_AFTER[kind](publicId))
     },
-    onError: (_error, { kind, publicId }) =>
-      refetch([
+    // 재조회를 기다리지 않는다. 실패 안내와 행 잠금 해제가 재조회(와 그 재시도)에 묶이지 않게 한다.
+    onError: (_error, { kind, publicId }) => {
+      void refetch([
         ...REFETCH_AFTER[kind](publicId),
         // 성공 때는 행을 남기려고 목록을 다시 읽지 않지만, 실패하면 목록 행도 서버 값으로 맞춘다.
         ...(kind === 'follow' ? [snsKeys.follows] : []),
-      ]),
+      ])
+    },
   })
 }
 

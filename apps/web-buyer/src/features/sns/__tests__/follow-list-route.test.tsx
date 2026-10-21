@@ -9,6 +9,7 @@ import {
   SNS_BLOCKER,
   SNS_CHOCO,
   SNS_COCO,
+  SNS_FOLLOWERS_URL,
   SNS_FOLLOW_URL,
   currentSns,
   SNS_ME,
@@ -25,7 +26,8 @@ import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // retryDelay 0: SNS 목록은 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -72,6 +74,29 @@ describe('/sns/users/$publicId/follows 목록', () => {
 
     expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '몽이아빠 팔로잉' })).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-026] 행 팔로우가 실패하고 목록 재조회까지 실패해도 불러온 행은 그대로이고 실패 안내가 뜬다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+    await screen.findByText('몽이아빠')
+
+    let listCalls = 0
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })),
+      http.get(SNS_FOLLOWERS_URL, () => {
+        listCalls += 1
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '몽이아빠 팔로우' }))
+
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    // 재조회와 그 재시도(5xx 1회)가 모두 실패한 뒤에도 행이 남는다.
+    await waitFor(() => expect(listCalls).toBe(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: '몽이아빠 팔로우' })).toBeEnabled())
+    expect(screen.getByText('초코맘')).toBeInTheDocument()
+    expect(screen.queryByText('목록을 불러오지 못했어요')).not.toBeInTheDocument()
   })
 
   it('[AC-SNS01-026] 한 행의 팔로우 요청 중에는 다른 행 버튼을 잠근다', async () => {

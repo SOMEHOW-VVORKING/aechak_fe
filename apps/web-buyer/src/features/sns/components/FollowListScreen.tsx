@@ -106,7 +106,8 @@ export function FollowListScreen({
         <Skeleton className="h-12" />
       </div>
     )
-  } else if (list.isError) {
+  } else if (!list.data) {
+    // 이미 불러온 목록은 재조회가 실패해도 그대로 둔다(v5는 재조회 실패에도 data를 남긴다).
     body = (
       <div className="py-10">
         <EmptyState

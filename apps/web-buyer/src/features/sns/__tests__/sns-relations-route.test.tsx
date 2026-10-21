@@ -9,6 +9,7 @@ import {
   SNS_ME,
   SNS_MONG,
   SNS_MUTE_URL,
+  SNS_MY_MUTES_URL,
   SNS_NEIGHBORS,
   SNS_SPAM,
   SNS_TORI,
@@ -22,7 +23,8 @@ import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // retryDelay 0: SNS 목록은 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -170,6 +172,29 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
 
     expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
     expect(await screen.findByText('뮤트한 계정이 없어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-026] 뮤트 해제가 실패하고 목록 재조회까지 실패해도 불러온 행은 그대로이고 실패 안내가 뜬다', async () => {
+    const user = userEvent.setup()
+    renderAt('/mypage/sns-relations')
+    await user.click(await screen.findByRole('tab', { name: /뮤트/ }))
+    await screen.findByText('토리네')
+
+    let listCalls = 0
+    server.use(
+      http.delete(SNS_MUTE_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })),
+      http.get(SNS_MY_MUTES_URL, () => {
+        listCalls += 1
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '토리네 뮤트 해제' }))
+    await user.click(await screen.findByRole('button', { name: '해제' }))
+
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    await waitFor(() => expect(listCalls).toBe(2))
+    expect(screen.getByText('토리네')).toBeInTheDocument()
+    expect(screen.queryByText('목록을 불러오지 못했어요')).not.toBeInTheDocument()
   })
 
   it('[AC-SNS01-027] 차단 목록과 뮤트 목록이 비어 있으면 빈 목록 안내를 보여준다', async () => {

@@ -101,7 +101,8 @@ export function SnsRelationsScreen() {
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
-      ) : list.isError ? (
+      ) : !list.data ? (
+        // 이미 불러온 목록은 재조회가 실패해도 그대로 둔다.
         <div className="py-10">
           <EmptyState
             title="목록을 불러오지 못했어요"
