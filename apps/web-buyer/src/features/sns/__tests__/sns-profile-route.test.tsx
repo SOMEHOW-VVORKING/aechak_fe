@@ -259,7 +259,7 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     )
 
     expect(await screen.findByText(status === 404 ? '볼 수 없는 계정이에요' : '프로필을 불러오지 못했어요')).toBeInTheDocument()
-    await new Promise(resolve => setTimeout(resolve, 50))
+    // 오류 화면은 재시도를 모두 마친 뒤에 뜨므로 이 시점의 호출 수가 최종 값이다.
     expect(calls).toBe(expected)
   })
 
