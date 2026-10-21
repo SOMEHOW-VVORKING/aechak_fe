@@ -6,6 +6,7 @@ import {
   seedCart,
   seedOrderGroups,
   seedPaymentState,
+  seedSns,
   server,
 } from './testing/msw/server'
 import { resetWishlistState } from './shared/catalog'
@@ -34,5 +35,8 @@ afterEach(() => {
   seedCart()
   seedOrderGroups()
   seedPaymentState()
+  seedSns()
+  // A26 대기 행동(sessionStorage)도 테스트 사이에 이어지지 않게 지운다.
+  sessionStorage.clear()
 })
 afterAll(() => server.close())

@@ -2012,6 +2012,136 @@ export interface RejectAdminSellerApplicationRequest {
   reason?: string | null
 }
 
+export interface SnsPetResult {
+  breedLabel: string
+  /**
+   * 생년월(yyyy-MM). 없으면 null(FE는 품종만 표시)
+   * @nullable
+   * @pattern ^\d{4}-\d{2}$
+   */
+  birthYearMonth: string | null
+}
+
+/**
+ * 목록 행의 펫 요약. 대표 펫 품종과 ACTIVE 펫 수(대표 포함)
+ */
+export interface SnsPetSummaryResult {
+  breedLabel: string
+  /** @minimum 1 */
+  activePetCount: number
+}
+
+export interface SnsProfileResult {
+  publicId: string
+  nickname: string
+  /** @nullable */
+  profileImageUrl: string | null
+  /**
+   * 비었거나 blockedByMe=true면 null
+   * @maxLength 150
+   * @nullable
+   */
+  bio: string | null
+  /**
+   * 대표 펫부터 ACTIVE 펫 전체. 없으면 빈 배열, blockedByMe=true면 null
+   * @nullable
+   */
+  pets: SnsPetResult[] | null
+  /** @nullable */
+  postCount: number | null
+  /** @nullable */
+  followerCount: number | null
+  /** @nullable */
+  followingCount: number | null
+  isMe: boolean
+  following: boolean
+  blockedByMe: boolean
+  mutedByMe: boolean
+}
+
+export interface SnsProfileResponse {
+  data: SnsProfileResult
+}
+
+/**
+ * 펫이 없으면 null
+ * @nullable
+ */
+export type SnsUserItemResultPetSummary = SnsPetSummaryResult | null
+
+/**
+ * 팔로워, 팔로잉 목록의 사용자 행
+ */
+export interface SnsUserItemResult {
+  publicId: string
+  nickname: string
+  /** @nullable */
+  profileImageUrl: string | null
+  /**
+   * 펫이 없으면 null
+   * @nullable
+   */
+  petSummary: SnsUserItemResultPetSummary
+  isMe: boolean
+  following: boolean
+}
+
+export interface SnsUserPageResult {
+  items: SnsUserItemResult[]
+  /**
+   * 팔로워, 팔로잉 목록은 항상 null
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsUserPageResponse {
+  data: SnsUserPageResult
+}
+
+/**
+ * 차단, 뮤트 관리 목록의 행
+ */
+export interface SnsRelationItemResult {
+  publicId: string
+  nickname: string
+  /** @nullable */
+  profileImageUrl: string | null
+  /** 차단 또는 뮤트한 시각. ISO LocalDateTime(KST, 오프셋 없음) */
+  createdAt: string
+}
+
+export interface SnsRelationPageResult {
+  items: SnsRelationItemResult[]
+  /**
+   * 첫 페이지에만, 이후 null
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsRelationPageResponse {
+  data: SnsRelationPageResult
+}
+
+/**
+ * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
+ */
+export type SnsCursorParameter = string
+
+export type SnsSizeParameter = number
+
+/**
+ * 닉네임 부분 일치. 서버가 trim + NFC 정규화하고 검색어로는 400을 내지 않는다
+ */
+export type SnsNicknameParameter = string
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -2141,6 +2271,62 @@ export type GetOrderGroupsParams = {
 
 export type CheckNicknameParams = {
   nickname: string
+}
+
+export type GetFollowersParams = {
+  /**
+   * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
+   */
+  cursor?: SnsCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+  /**
+   * 닉네임 부분 일치. 서버가 trim + NFC 정규화하고 검색어로는 400을 내지 않는다
+   */
+  nickname?: SnsNicknameParameter
+}
+
+export type GetFollowingsParams = {
+  /**
+   * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
+   */
+  cursor?: SnsCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+  /**
+   * 닉네임 부분 일치. 서버가 trim + NFC 정규화하고 검색어로는 400을 내지 않는다
+   */
+  nickname?: SnsNicknameParameter
+}
+
+export type GetMyBlocksParams = {
+  /**
+   * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
+   */
+  cursor?: SnsCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type GetMyMutesParams = {
+  /**
+   * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
+   */
+  cursor?: SnsCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
 }
 
 export type GetSellerProductsParams = {
@@ -8465,6 +8651,1606 @@ export const useSubmitInquiry = <TError = unknown, TContext = unknown>(
   const mutationOptions = getSubmitInquiryMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 비로그인이면 관계 필드(following, blockedByMe, mutedByMe, isMe)가 모두 false다. 볼 수 없는 사용자(없음·탈퇴· 온보딩 전·나를 차단)는 404 130000 하나로 온다. 내가 차단한 사용자는 200 + blockedByMe=true이고 bio·pets·세 수가 null이다. 토큰을 보냈을 때만 401 20004 / 403 20005 / 403 20006이 난다.
+ * @summary 다른 사용자의 SNS 프로필(비로그인 허용)
+ */
+export const getSnsProfile = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsProfileResponse>({
+    url: `/sns/users/${publicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSnsProfileQueryKey = (publicId?: string) => {
+  return [`/sns/users/${publicId}`] as const
+}
+
+export const getGetSnsProfileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsProfileQueryKey(publicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsProfile>>> = ({ signal }) =>
+    getSnsProfile(publicId, signal)
+
+  return { queryKey, queryFn, enabled: !!publicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsProfile>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getSnsProfile>>>
+export type GetSnsProfileQueryError = unknown
+
+export function useGetSnsProfile<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsProfile>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsProfile<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsProfile>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsProfile<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 다른 사용자의 SNS 프로필(비로그인 허용)
+ */
+
+export function useGetSnsProfile<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsProfileQueryOptions(publicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsProfileSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsProfileQueryKey(publicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsProfile>>> = ({ signal }) =>
+    getSnsProfile(publicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsProfile>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsProfileSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsProfile>>
+>
+export type GetSnsProfileSuspenseQueryError = unknown
+
+export function useGetSnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 다른 사용자의 SNS 프로필(비로그인 허용)
+ */
+
+export function useGetSnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getSnsProfile>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsProfileSuspenseQueryOptions(publicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 다른 사용자 프로필과 같은 형태이고 isMe=true, 관계 필드는 모두 false다. 통계가 없으면 세 수는 0이다.
+ * @summary 내 SNS 프로필
+ */
+export const getMySnsProfile = (signal?: AbortSignal) => {
+  return customInstance<SnsProfileResponse>({ url: `/sns/me`, method: 'GET', signal })
+}
+
+export const getGetMySnsProfileQueryKey = () => {
+  return [`/sns/me`] as const
+}
+
+export const getGetMySnsProfileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMySnsProfileQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMySnsProfile>>> = ({ signal }) =>
+    getMySnsProfile(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMySnsProfile>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMySnsProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getMySnsProfile>>>
+export type GetMySnsProfileQueryError = unknown
+
+export function useGetMySnsProfile<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMySnsProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getMySnsProfile>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMySnsProfile<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMySnsProfile>>,
+          TError,
+          Awaited<ReturnType<typeof getMySnsProfile>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMySnsProfile<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 SNS 프로필
+ */
+
+export function useGetMySnsProfile<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMySnsProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMySnsProfileSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMySnsProfileQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMySnsProfile>>> = ({ signal }) =>
+    getMySnsProfile(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMySnsProfile>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMySnsProfileSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMySnsProfile>>
+>
+export type GetMySnsProfileSuspenseQueryError = unknown
+
+export function useGetMySnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMySnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMySnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 SNS 프로필
+ */
+
+export function useGetMySnsProfileSuspense<
+  TData = Awaited<ReturnType<typeof getMySnsProfile>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMySnsProfile>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMySnsProfileSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 404 130000(주인 없음·나를 차단), 403 130001(내가 주인을 차단). 차단 관계 행은 빠지고 뮤트한 사용자는 그대로 나온다. totalCount는 항상 null이다(탭 수는 프로필의 수). 맞지 않거나 12자를 넘는 검색어는 200과 빈 목록이다.
+ * @summary 팔로워 목록(최근 팔로우순, 닉네임 검색)
+ */
+export const getFollowers = (
+  publicId: string,
+  params?: GetFollowersParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsUserPageResponse>({
+    url: `/sns/users/${publicId}/followers`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetFollowersQueryKey = (publicId?: string, params?: GetFollowersParams) => {
+  return [`/sns/users/${publicId}/followers`, ...(params ? [params] : [])] as const
+}
+
+export const getGetFollowersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetFollowersQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFollowers>>> = ({ signal }) =>
+    getFollowers(publicId, params, signal)
+
+  return { queryKey, queryFn, enabled: !!publicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFollowers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFollowersQueryResult = NonNullable<Awaited<ReturnType<typeof getFollowers>>>
+export type GetFollowersQueryError = unknown
+
+export function useGetFollowers<TData = Awaited<ReturnType<typeof getFollowers>>, TError = unknown>(
+  publicId: string,
+  params: undefined | GetFollowersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFollowers>>,
+          TError,
+          Awaited<ReturnType<typeof getFollowers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowers<TData = Awaited<ReturnType<typeof getFollowers>>, TError = unknown>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFollowers>>,
+          TError,
+          Awaited<ReturnType<typeof getFollowers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowers<TData = Awaited<ReturnType<typeof getFollowers>>, TError = unknown>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 팔로워 목록(최근 팔로우순, 닉네임 검색)
+ */
+
+export function useGetFollowers<TData = Awaited<ReturnType<typeof getFollowers>>, TError = unknown>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFollowersQueryOptions(publicId, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetFollowersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetFollowersQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFollowers>>> = ({ signal }) =>
+    getFollowers(publicId, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getFollowers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFollowersSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getFollowers>>>
+export type GetFollowersSuspenseQueryError = unknown
+
+export function useGetFollowersSuspense<
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params: undefined | GetFollowersParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowersSuspense<
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowersSuspense<
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 팔로워 목록(최근 팔로우순, 닉네임 검색)
+ */
+
+export function useGetFollowersSuspense<
+  TData = Awaited<ReturnType<typeof getFollowers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFollowersSuspenseQueryOptions(publicId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 판정과 숨김 규칙, 응답 형태는 팔로워 목록과 같다.
+ * @summary 팔로잉 목록(최근 팔로우순, 닉네임 검색)
+ */
+export const getFollowings = (
+  publicId: string,
+  params?: GetFollowingsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsUserPageResponse>({
+    url: `/sns/users/${publicId}/followings`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetFollowingsQueryKey = (publicId?: string, params?: GetFollowingsParams) => {
+  return [`/sns/users/${publicId}/followings`, ...(params ? [params] : [])] as const
+}
+
+export const getGetFollowingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetFollowingsQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFollowings>>> = ({ signal }) =>
+    getFollowings(publicId, params, signal)
+
+  return { queryKey, queryFn, enabled: !!publicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFollowings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFollowingsQueryResult = NonNullable<Awaited<ReturnType<typeof getFollowings>>>
+export type GetFollowingsQueryError = unknown
+
+export function useGetFollowings<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params: undefined | GetFollowingsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFollowings>>,
+          TError,
+          Awaited<ReturnType<typeof getFollowings>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowings<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFollowings>>,
+          TError,
+          Awaited<ReturnType<typeof getFollowings>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowings<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 팔로잉 목록(최근 팔로우순, 닉네임 검색)
+ */
+
+export function useGetFollowings<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFollowingsQueryOptions(publicId, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetFollowingsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetFollowingsQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFollowings>>> = ({ signal }) =>
+    getFollowings(publicId, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getFollowings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFollowingsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFollowings>>
+>
+export type GetFollowingsSuspenseQueryError = unknown
+
+export function useGetFollowingsSuspense<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params: undefined | GetFollowingsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowingsSuspense<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFollowingsSuspense<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 팔로잉 목록(최근 팔로우순, 닉네임 검색)
+ */
+
+export function useGetFollowingsSuspense<
+  TData = Awaited<ReturnType<typeof getFollowings>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetFollowingsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getFollowings>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFollowingsSuspenseQueryOptions(publicId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이미 팔로우 중이어도 201. 404 130000(볼 수 없음), 403 130001(내가 차단), 400 130300(본인).
+ * @summary 팔로우(멱등 켜기)
+ */
+export const followUser = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/follow`, method: 'POST', signal })
+}
+
+export const getFollowUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof followUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof followUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['followUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof followUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return followUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type FollowUserMutationResult = NonNullable<Awaited<ReturnType<typeof followUser>>>
+
+export type FollowUserMutationError = unknown
+
+/**
+ * @summary 팔로우(멱등 켜기)
+ */
+export const useFollowUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof followUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof followUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getFollowUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 팔로우하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * @summary 언팔로우(멱등 끄기)
+ */
+export const unfollowUser = (publicId: string) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/follow`, method: 'DELETE' })
+}
+
+export const getUnfollowUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unfollowUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unfollowUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['unfollowUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unfollowUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return unfollowUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnfollowUserMutationResult = NonNullable<Awaited<ReturnType<typeof unfollowUser>>>
+
+export type UnfollowUserMutationError = unknown
+
+/**
+ * @summary 언팔로우(멱등 끄기)
+ */
+export const useUnfollowUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unfollowUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unfollowUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getUnfollowUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 이미 차단 중이어도 201. 두 방향 팔로우를 지운다. 404 130000(볼 수 없음), 400 130100(본인).
+ * @summary 차단(멱등 켜기)
+ */
+export const blockUser = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/block`, method: 'POST', signal })
+}
+
+export const getBlockUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof blockUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof blockUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['blockUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof blockUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return blockUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type BlockUserMutationResult = NonNullable<Awaited<ReturnType<typeof blockUser>>>
+
+export type BlockUserMutationError = unknown
+
+/**
+ * @summary 차단(멱등 켜기)
+ */
+export const useBlockUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof blockUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof blockUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getBlockUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 차단 때 지운 팔로우는 되살리지 않는다. 차단하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * @summary 차단 해제(멱등 끄기)
+ */
+export const unblockUser = (publicId: string) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/block`, method: 'DELETE' })
+}
+
+export const getUnblockUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unblockUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unblockUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['unblockUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unblockUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return unblockUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnblockUserMutationResult = NonNullable<Awaited<ReturnType<typeof unblockUser>>>
+
+export type UnblockUserMutationError = unknown
+
+/**
+ * @summary 차단 해제(멱등 끄기)
+ */
+export const useUnblockUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unblockUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unblockUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getUnblockUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 이미 뮤트 중이어도 201. 팔로우와 수는 바꾸지 않는다. 404 130000(볼 수 없음), 400 130200(본인).
+ * @summary 뮤트(멱등 켜기)
+ */
+export const muteUser = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/mute`, method: 'POST', signal })
+}
+
+export const getMuteUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof muteUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof muteUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['muteUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof muteUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return muteUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type MuteUserMutationResult = NonNullable<Awaited<ReturnType<typeof muteUser>>>
+
+export type MuteUserMutationError = unknown
+
+/**
+ * @summary 뮤트(멱등 켜기)
+ */
+export const useMuteUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof muteUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof muteUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getMuteUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 뮤트하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * @summary 뮤트 해제(멱등 끄기)
+ */
+export const unmuteUser = (publicId: string) => {
+  return customInstance<void>({ url: `/sns/users/${publicId}/mute`, method: 'DELETE' })
+}
+
+export const getUnmuteUserMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmuteUser>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unmuteUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['unmuteUser']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unmuteUser>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return unmuteUser(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnmuteUserMutationResult = NonNullable<Awaited<ReturnType<typeof unmuteUser>>>
+
+export type UnmuteUserMutationError = unknown
+
+/**
+ * @summary 뮤트 해제(멱등 끄기)
+ */
+export const useUnmuteUser = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unmuteUser>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unmuteUser>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getUnmuteUserMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 첫 페이지에만 totalCount를 싣고 이후 페이지는 null이다. createdAt은 차단일이다.
+ * @summary 차단 관리 목록(최근 차단순)
+ */
+export const getMyBlocks = (params?: GetMyBlocksParams, signal?: AbortSignal) => {
+  return customInstance<SnsRelationPageResponse>({
+    url: `/sns/me/blocks`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetMyBlocksQueryKey = (params?: GetMyBlocksParams) => {
+  return [`/sns/me/blocks`, ...(params ? [params] : [])] as const
+}
+
+export const getGetMyBlocksQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyBlocksQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBlocks>>> = ({ signal }) =>
+    getMyBlocks(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyBlocks>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBlocks>>>
+export type GetMyBlocksQueryError = unknown
+
+export function useGetMyBlocks<TData = Awaited<ReturnType<typeof getMyBlocks>>, TError = unknown>(
+  params: undefined | GetMyBlocksParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyBlocks>>,
+          TError,
+          Awaited<ReturnType<typeof getMyBlocks>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyBlocks<TData = Awaited<ReturnType<typeof getMyBlocks>>, TError = unknown>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyBlocks>>,
+          TError,
+          Awaited<ReturnType<typeof getMyBlocks>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyBlocks<TData = Awaited<ReturnType<typeof getMyBlocks>>, TError = unknown>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 차단 관리 목록(최근 차단순)
+ */
+
+export function useGetMyBlocks<TData = Awaited<ReturnType<typeof getMyBlocks>>, TError = unknown>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyBlocksQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMyBlocksSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyBlocksQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBlocks>>> = ({ signal }) =>
+    getMyBlocks(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMyBlocks>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyBlocksSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBlocks>>>
+export type GetMyBlocksSuspenseQueryError = unknown
+
+export function useGetMyBlocksSuspense<
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params: undefined | GetMyBlocksParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyBlocksSuspense<
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyBlocksSuspense<
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 차단 관리 목록(최근 차단순)
+ */
+
+export function useGetMyBlocksSuspense<
+  TData = Awaited<ReturnType<typeof getMyBlocks>>,
+  TError = unknown,
+>(
+  params?: GetMyBlocksParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyBlocks>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyBlocksSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 규칙은 차단 관리 목록과 같다. 뮤트한 상대가 나를 차단해도 목록에 남는다.
+ * @summary 뮤트 관리 목록(최근 뮤트순)
+ */
+export const getMyMutes = (params?: GetMyMutesParams, signal?: AbortSignal) => {
+  return customInstance<SnsRelationPageResponse>({
+    url: `/sns/me/mutes`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetMyMutesQueryKey = (params?: GetMyMutesParams) => {
+  return [`/sns/me/mutes`, ...(params ? [params] : [])] as const
+}
+
+export const getGetMyMutesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyMutesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyMutes>>> = ({ signal }) =>
+    getMyMutes(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyMutes>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyMutesQueryResult = NonNullable<Awaited<ReturnType<typeof getMyMutes>>>
+export type GetMyMutesQueryError = unknown
+
+export function useGetMyMutes<TData = Awaited<ReturnType<typeof getMyMutes>>, TError = unknown>(
+  params: undefined | GetMyMutesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyMutes>>,
+          TError,
+          Awaited<ReturnType<typeof getMyMutes>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyMutes<TData = Awaited<ReturnType<typeof getMyMutes>>, TError = unknown>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyMutes>>,
+          TError,
+          Awaited<ReturnType<typeof getMyMutes>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyMutes<TData = Awaited<ReturnType<typeof getMyMutes>>, TError = unknown>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 뮤트 관리 목록(최근 뮤트순)
+ */
+
+export function useGetMyMutes<TData = Awaited<ReturnType<typeof getMyMutes>>, TError = unknown>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyMutesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMyMutesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyMutesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyMutes>>> = ({ signal }) =>
+    getMyMutes(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMyMutes>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyMutesSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getMyMutes>>>
+export type GetMyMutesSuspenseQueryError = unknown
+
+export function useGetMyMutesSuspense<
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params: undefined | GetMyMutesParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyMutesSuspense<
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyMutesSuspense<
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 뮤트 관리 목록(최근 뮤트순)
+ */
+
+export function useGetMyMutesSuspense<
+  TData = Awaited<ReturnType<typeof getMyMutes>>,
+  TError = unknown,
+>(
+  params?: GetMyMutesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyMutes>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyMutesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }
 
 /**
