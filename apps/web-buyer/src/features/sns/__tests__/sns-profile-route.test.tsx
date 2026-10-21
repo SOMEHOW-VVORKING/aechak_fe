@@ -208,6 +208,19 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(screen.queryByRole('button', { name: /팔로우|더보기/ })).not.toBeInTheDocument()
   })
 
+  it('[AC-SNS01-021] 볼 수 없는 계정(404 130000)은 다시 보내지 않는다', async () => {
+    let calls = 0
+    server.events.on('request:start', ({ request }) => {
+      if (request.url.endsWith(`/sns/users/${SNS_BLOCKER}`)) calls += 1
+    })
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(calls).toBe(1)
+    server.events.removeAllListeners()
+  })
+
   it('[AC-SNS01-025] 뮤트한 사용자의 프로필에 뮤트 상태가 보이고 확인 모달을 거쳐 해제한다', async () => {
     const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_TORI}`)
