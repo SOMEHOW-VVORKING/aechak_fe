@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_BLOCKER,
@@ -47,6 +47,10 @@ beforeEach(() => {
   setAccessToken('test-token')
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('/sns/users/$publicId 프로필 머리말', () => {
   it('[AC-SNS01-001] 비로그인으로 프로필을 열면 닉네임, 이미지, 소개글, 펫, 세 수가 보인다', async () => {
     asGuest()
@@ -82,10 +86,11 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
   })
 
   it('[AC-SNS01-003] 펫이 여럿이면 대표 펫을 먼저 품종과 나이로 쓰고 생년월 없는 펫은 품종만 쓴다', async () => {
+    vi.setSystemTime(new Date(2026, 6, 15))
     renderAt(`/sns/users/${SNS_COCO}`)
 
     const pets = within(await screen.findByRole('list', { name: '펫' })).getAllByRole('listitem')
-    // 2021-03생은 세션 고정 오늘(2026년 7월) 기준 5살.
+    // 2021-03생은 고정한 오늘(2026년 7월) 기준 5살.
     expect(pets.map(p => p.textContent)).toEqual(['골든리트리버 / 5살', '말티즈'])
   })
 

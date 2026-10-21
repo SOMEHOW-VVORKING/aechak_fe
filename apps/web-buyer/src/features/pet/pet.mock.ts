@@ -1,11 +1,14 @@
 import type { PetProfile, PetSpecies } from '@aechak/domain'
 import type { SegmentedControlOption, SelectOption } from '@aechak/design-system/web'
-import { CURRENT_YEAR, petAge } from '@/shared/pet'
+import { petAge } from '@/shared/pet'
 
 export { petAge }
 
 // 펫 프로필(b10-st-3 관리 / b10-st-8 작성) 공용 상수·파생 로직. 실제 펫 데이터는 shared/pet
 // 스토어가 단일 소스이고, 여기서는 라벨/옵션/표기 파생만 다룬다.
+
+// 생년 선택지의 기준 연도(세션 고정값. new Date() 미사용).
+const CURRENT_YEAR = 2026
 
 export const SPECIES_LABEL: Record<PetSpecies, string> = {
   dog: '강아지',

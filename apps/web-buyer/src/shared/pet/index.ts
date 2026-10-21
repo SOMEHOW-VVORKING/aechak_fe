@@ -23,4 +23,4 @@ export {
   MAX_PHOTO_BYTES,
   OVERSIZED_PHOTO_MESSAGE,
 } from './pet.upload'
-export { CURRENT_YEAR, petAge } from './pet-age'
+export { petAge } from './pet-age'
