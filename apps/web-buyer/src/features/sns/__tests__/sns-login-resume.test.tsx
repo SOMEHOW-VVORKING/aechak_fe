@@ -141,6 +141,21 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     expect(sessionStorage.length).toBe(0)
   })
 
+  it('[AC-SNS01-011] 로그인 화면에서 물러났다가 다른 길로 로그인하면 예전 대기 행동을 실행하지 않는다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    expect(sessionStorage.length).toBe(1)
+
+    // 찜 게이트, 세션 만료, 홈 가드처럼 대기 행동 없이 로그인 화면으로 들어온다.
+    renderAt('/onboarding/login')
+    await screen.findByText('카카오로 시작하기')
+    expect(sessionStorage.length).toBe(0)
+    cleanup()
+
+    const router = completeLogin()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    expect(followPosts).toBe(0)
+  })
+
   it('[AC-SNS01-011] 대기 행동이 없으면 로그인 뒤 홈으로 간다', async () => {
     const router = completeLogin()
 

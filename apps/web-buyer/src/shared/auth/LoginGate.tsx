@@ -105,7 +105,7 @@ export function LoginGate({ open, feature, onClose, resume }: LoginGateProps) {
   // onClose는 부르지 않는다. 시트는 화면과 함께 사라지고, 화면에 따라 onClose가 뒤로 가기라 이동이 겹친다.
   const goLogin = () => {
     if (resume) savePendingAction({ ...resume, returnTo: href })
-    navigate({ to: '/onboarding/login' })
+    navigate({ to: '/onboarding/login', search: resume ? { resume: true } : {} })
   }
 
   return (
