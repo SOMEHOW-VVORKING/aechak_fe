@@ -10,6 +10,7 @@ import {
   SNS_BLOCK_URL,
   SNS_COCO,
   SNS_ME,
+  SNS_PROFILE_URL,
   SNS_MONG,
   SNS_SPAM,
   SNS_TORI,
@@ -22,9 +23,11 @@ import {
 import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+function renderAt(
+  path: string,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -132,7 +135,21 @@ describe('/sns/users/$publicId 팔로우', () => {
     expect(stat('팔로워')).toBe('2')
   })
 
-  it('[AC-SNS01-009] 이미 팔로우한 상태에서 다시 팔로우해도 오류 없이 수가 그대로다', async () => {
+  it('[AC-SNS01-009] 이미 팔로우한 사용자를 다시 팔로우해도 오류 없이 수가 한 번 팔로우한 것과 같다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+    expect(await screen.findByRole('button', { name: '팔로우' })).toBeInTheDocument()
+
+    // 다른 기기에서 이미 팔로우했는데 화면은 팔로우인 상태 → 켜기를 다시 보내도 201이고 수는 늘지 않는다.
+    seedSns({ follows: [...currentSns().follows, snsRelation(SNS_ME, SNS_COCO)] })
+    await user.click(screen.getByRole('button', { name: '팔로우' }))
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+    expect(stat('팔로워')).toBe('3')
+    expect(currentSns().follows.filter(r => r.from === SNS_ME && r.to === SNS_COCO)).toHaveLength(1)
+    expect(screen.queryByText(/처리하지 못했어요/)).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-009] 팔로우하지 않은 사용자를 언팔로우해도 오류 없이 수가 그대로다', async () => {
     seedSns({ follows: [snsRelation(SNS_ME, SNS_COCO), snsRelation(SNS_MONG, SNS_COCO)] })
     const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_COCO}`)
@@ -151,9 +168,14 @@ describe('/sns/users/$publicId 팔로우', () => {
     const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_COCO}`)
 
+    let posts = 0
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'POST' && request.url.endsWith(`/sns/users/${SNS_COCO}/follow`)) posts += 1
+    })
     await user.click(await screen.findByRole('button', { name: '팔로우' }))
     expect(await screen.findByText(/팔로우는 로그인한 회원만 이용할 수 있어요/)).toBeInTheDocument()
-    expect(currentSns().follows.some(r => r.to === SNS_COCO && r.from === SNS_ME)).toBe(false)
+    expect(posts).toBe(0)
+    server.events.removeAllListeners()
   })
 
   it('[AC-SNS01-029] 비로그인으로 차단을 누르면 로그인 안내 시트가 열리고 공유는 로그인 없이 된다', async () => {
@@ -189,6 +211,7 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(screen.getByRole('button', { name: '차단 해제' })).toBeInTheDocument()
     expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
     expect(screen.queryByText('코코와 삽니다')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /팔로우|팔로잉|더보기|공유/ })).not.toBeInTheDocument()
     // 서로 팔로우하던 사이였어도 두 방향 팔로우가 지워진다.
     expect(currentSns().follows.filter(r => [r.from, r.to].includes(SNS_COCO) && [r.from, r.to].includes(SNS_ME))).toEqual([])
   })
@@ -218,17 +241,26 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(screen.queryByRole('button', { name: /팔로우|더보기/ })).not.toBeInTheDocument()
   })
 
-  it('[AC-SNS01-021] 볼 수 없는 계정(404 130000)은 다시 보내지 않는다', async () => {
+  // 앱 기본(main.tsx)처럼 재시도를 켠 QueryClient로 SNS 조회의 재시도 판정만 본다(retryDelay 0으로 바로 재시도).
+  it.each([
+    ['404 130000', 404, 130000, 1],
+    ['500', 500, 90000, 2],
+  ])('[AC-SNS01-021] 프로필 조회가 %s면 4xx는 다시 보내지 않고 5xx만 한 번 더 보낸다', async (_, status, errorCode, expected) => {
     let calls = 0
-    server.events.on('request:start', ({ request }) => {
-      if (request.url.endsWith(`/sns/users/${SNS_BLOCKER}`)) calls += 1
-    })
-    renderAt(`/sns/users/${SNS_BLOCKER}`)
+    server.use(
+      http.get(SNS_PROFILE_URL, () => {
+        calls += 1
+        return HttpResponse.json({ errorCode, message: '' }, { status })
+      }),
+    )
+    renderAt(
+      `/sns/users/${SNS_COCO}`,
+      new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 0 } } }),
+    )
 
-    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    expect(await screen.findByText(status === 404 ? '볼 수 없는 계정이에요' : '프로필을 불러오지 못했어요')).toBeInTheDocument()
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(calls).toBe(1)
-    server.events.removeAllListeners()
+    expect(calls).toBe(expected)
   })
 
   it('[AC-SNS01-025] 뮤트한 사용자의 프로필에 뮤트 상태가 보이고 확인 모달을 거쳐 해제한다', async () => {

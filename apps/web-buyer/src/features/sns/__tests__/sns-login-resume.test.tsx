@@ -5,13 +5,17 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
+import { resetAccount } from '@/shared/account'
 import { resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
+  SNS_FOLLOW_URL,
   SNS_ME,
   SNS_MONG,
   WEB_REFRESH_URL,
   currentSns,
+  seedConsentsSubmitted,
+  seedTerms,
   seedSns,
   server,
   snsRelation,
@@ -107,6 +111,68 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
     expect(followPosts).toBe(0)
     expect(sessionStorage.length).toBe(0)
+  })
+
+  // 프로필은 200으로 열렸는데 그사이 상태가 바뀌어 다시 실행한 POST가 실패하는 경우. 서버 상태도 함께 바꿔
+  // 실패 뒤 다시 읽은 프로필이 실제와 같게 한다.
+  it.each([
+    ['404 130000(그사이 상대가 나를 차단)', 404, 130000, snsRelation(SNS_COCO, SNS_ME), '볼 수 없는 계정이에요'],
+    ['403 130001(그사이 내가 상대를 차단)', 403, 130001, snsRelation(SNS_ME, SNS_COCO), '차단한 계정이에요'],
+  ])('[AC-SNS01-013] 다시 실행한 팔로우가 %s로 실패하면 안내를 보여주고 팔로잉으로 바뀌지 않는다', async (_, status, errorCode, block, notice) => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => {
+        const now = currentSns()
+        seedSns({ ...now, blocks: [...now.blocks, block] })
+        return HttpResponse.json({ errorCode, message: '' }, { status })
+      }),
+    )
+
+    completeLogin()
+
+    expect((await screen.findAllByText(notice)).length).toBeGreaterThan(0)
+    expect(followPosts).toBe(1)
+    expect(screen.queryByRole('button', { name: '팔로잉' })).not.toBeInTheDocument()
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-011] 다시 실행한 팔로우가 400 130300(본인)이면 대기 행동을 버리고 내 프로필로 간다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => HttpResponse.json({ errorCode: 130300, message: '' }, { status: 400 })),
+    )
+
+    const router = completeLogin()
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/me'))
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-011] 신규 가입이면 /login/complete에서 실행하지 않고 온보딩(닉네임)을 마친 뒤 프로필로 돌아와 팔로우한다', async () => {
+    seedTerms()
+    const user = await startAsGuest(SNS_COCO, pressFollow)
+
+    // 온보딩 전 계정은 SNS 요청이 403 20006이라 여기서 꺼내면 안 된다.
+    const router = completeLogin({}, 'PENDING_ONBOARDING')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/onboarding/terms'))
+    expect(followPosts).toBe(0)
+    expect(sessionStorage.length).toBe(1)
+
+    // 약관 동의를 마친 상태로 닉네임 단계에 들어간다(약관 화면 동작은 온보딩 테스트가 본다).
+    seedConsentsSubmitted(true)
+    await router.navigate({ to: '/onboarding/nickname' })
+    await user.type(await screen.findByLabelText(/닉네임/), '초코집사')
+    const submit = screen.getByRole('button', { name: '애착 시작하기' })
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 3000 })
+    await user.click(submit)
+    await user.click(await screen.findByRole('button', { name: '보던 화면으로 가기' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}`))
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+    expect(followPosts).toBe(1)
+    expect(sessionStorage.length).toBe(0)
+    // 온보딩 완료가 계정 스토어에 남지 않게 시드로 되돌린다.
+    resetAccount()
   })
 
   it('[AC-SNS01-011] 로그인한 계정이 그 프로필 본인이면 다시 실행하지 않고 내 프로필로 간다', async () => {
