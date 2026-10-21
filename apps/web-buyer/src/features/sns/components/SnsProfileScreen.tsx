@@ -72,6 +72,11 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
       ),
     )
 
+  const openList = (target: SnsProfile, tab: FollowDirection) =>
+    requireAuth('follows', () =>
+      navigate({ to: '/sns/users/$publicId/follows', params: { publicId: target.publicId }, search: { tab } }),
+    )
+
   const share = async (target: SnsProfile) => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/sns/users/${target.publicId}`)
@@ -248,7 +253,14 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
                   <span className="text-caption text-text-secondary">{stat.label}</span>
                 </>
               )
-              return <div key={stat.label}>{body}</div>
+              const list = stat.list
+              return list ? (
+                <button key={stat.label} type="button" onClick={() => openList(profile, list)}>
+                  {body}
+                </button>
+              ) : (
+                <div key={stat.label}>{body}</div>
+              )
             })}
           </div>
         </div>
