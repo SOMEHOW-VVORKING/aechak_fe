@@ -9,10 +9,10 @@ import {
   SNS_BLOCKER,
   SNS_CHOCO,
   SNS_COCO,
-  SNS_FOLLOWERS_URL,
   SNS_FOLLOW_URL,
   currentSns,
   SNS_ME,
+  SNS_NEIGHBORS,
   SNS_MONG,
   SNS_SPAM,
   SNS_TORI,
@@ -175,12 +175,29 @@ describe('/sns/users/$publicId/follows 목록', () => {
   })
 
   it('[AC-SNS01-019] 목록을 연 뒤 주인이 나를 차단하면 다시 불러올 때 볼 수 없는 계정 안내로 바뀐다', async () => {
-    server.use(
-      http.get(SNS_FOLLOWERS_URL, () => HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })),
-    )
+    const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_COCO}/follows`)
+    await screen.findByText('몽이아빠')
+
+    const now = currentSns()
+    seedSns({ ...now, blocks: [...now.blocks, snsRelation(SNS_COCO, SNS_ME)] })
+    // 검색어를 바꾸면 첫 페이지부터 다시 부른다.
+    await user.type(screen.getByRole('searchbox', { name: '닉네임 검색' }), '몽')
 
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-017] 20명을 넘으면 더보기로 다음 페이지를 붙인다(커서는 목록과 검색어에 묶인다)', async () => {
+    seedSns({ follows: SNS_NEIGHBORS.map(id => snsRelation(id, SNS_COCO)) })
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+
+    await screen.findByText('이웃25')
+    expect(rows()).toHaveLength(20)
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    await screen.findByText('이웃1')
+    expect(rows()).toHaveLength(25)
+    expect(screen.getByRole('tab', { name: /팔로워\s*25/ })).toBeInTheDocument()
   })
 })
 

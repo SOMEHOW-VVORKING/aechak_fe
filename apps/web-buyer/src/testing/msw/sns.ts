@@ -57,6 +57,12 @@ const USERS: Record<string, SnsUserFixture> = {
   [SNS_BLOCKER]: { nickname: '차단러', profileImageUrl: null, bio: null, pets: [] },
 }
 
+/** 페이지 크기(20)를 넘는 목록을 만들 때 쓰는 사용자 25명(닉네임 이웃1~이웃25) */
+export const SNS_NEIGHBORS = Array.from({ length: 25 }, (_, i) => `01JN${String(i + 1).padStart(22, '0')}`)
+SNS_NEIGHBORS.forEach((id, i) => {
+  USERS[id] = { nickname: `이웃${i + 1}`, profileImageUrl: null, bio: null, pets: [] }
+})
+
 interface Relation {
   from: string
   to: string
@@ -125,16 +131,20 @@ function profile(target: string, viewer: string | null) {
   }
 }
 
-function page<T>(items: T[], url: URL, withTotal: boolean) {
-  const start = Number(url.searchParams.get('cursor') ?? 0)
+// 커서는 목록 범위(종류, 주인, 정규화한 검색어)에 묶인다(D1). 범위가 다른 커서는 400 90002, size가 1~100 밖이면 400 90001.
+function page<T>(items: T[], url: URL, withTotal: boolean, scope: string) {
   const size = Number(url.searchParams.get('size') ?? 20)
+  if (!Number.isInteger(size) || size < 1 || size > 100) return error(400, 90001)
+  const cursor = url.searchParams.get('cursor')
+  if (cursor != null && !cursor.startsWith(`${scope}|`)) return error(400, 90002)
+  const start = cursor == null ? 0 : Number(cursor.slice(scope.length + 1))
   const slice = items.slice(start, start + size)
   const hasNext = start + size < items.length
   return HttpResponse.json({
     data: {
       items: slice,
       totalCount: withTotal && start === 0 ? items.length : null,
-      nextCursor: hasNext ? String(start + size) : null,
+      nextCursor: hasNext ? `${scope}|${start + size}` : null,
       hasNext,
     },
   })
@@ -167,7 +177,7 @@ function followList(direction: 'followers' | 'followings') {
         following: id !== viewer && has(state.follows, viewer, id),
       }
     })
-    return page(items, url, false)
+    return page(items, url, false, `${direction === 'followers' ? 'fw' : 'fg'}:${owner}:${nickname}`)
   }
 }
 
@@ -184,7 +194,7 @@ function relationList(key: 'blocks' | 'mutes') {
         profileImageUrl: USERS[r.to]!.profileImageUrl,
         createdAt: r.createdAt,
       }))
-    return page(items, new URL(request.url), true)
+    return page(items, new URL(request.url), true, `${key === 'blocks' ? 'bk' : 'mt'}:${viewer}`)
   }
 }
 

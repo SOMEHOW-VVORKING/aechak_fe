@@ -9,7 +9,9 @@ import {
   SNS_ME,
   SNS_MONG,
   SNS_MUTE_URL,
+  SNS_NEIGHBORS,
   SNS_SPAM,
+  SNS_TORI,
   currentSns,
   seedSns,
   server,
@@ -65,6 +67,39 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     await waitFor(() => expect(screen.queryByText('광고계정01')).not.toBeInTheDocument())
     expect(screen.getByRole('tab', { name: /차단\s*1/ })).toBeInTheDocument()
     expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-022] 뮤트 해제는 확인 모달을 거치고 해제하면 행이 빠지고 탭 수가 1 준다', async () => {
+    seedSns({ mutes: [snsRelation(SNS_ME, SNS_TORI), snsRelation(SNS_ME, SNS_MONG)] })
+    const user = userEvent.setup()
+    renderAt('/mypage/sns-relations')
+
+    await user.click(await screen.findByRole('tab', { name: /뮤트\s*2/ }))
+    await user.click(await screen.findByRole('button', { name: '토리네 뮤트 해제' }))
+    expect(await screen.findByText('뮤트를 해제할까요?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '해제' }))
+
+    await waitFor(() => expect(screen.queryByText('토리네')).not.toBeInTheDocument())
+    expect(screen.getByText('몽이아빠')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /뮤트\s*1/ })).toBeInTheDocument()
+    expect(await screen.findByText('뮤트를 해제했어요')).toBeInTheDocument()
+    expect(currentSns().mutes.map(r => r.to)).toEqual([SNS_MONG])
+  })
+
+  it('[AC-SNS01-022] 20명을 넘으면 더보기로 다음 페이지를 붙이고 탭 수는 첫 페이지 totalCount를 그대로 쓴다', async () => {
+    seedSns({ blocks: SNS_NEIGHBORS.map(id => snsRelation(SNS_ME, id)) })
+    const user = userEvent.setup()
+    renderAt('/mypage/sns-relations')
+
+    await screen.findByText('이웃25')
+    expect(rows()).toHaveLength(20)
+    expect(screen.getByRole('tab', { name: /차단\s*25/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    await screen.findByText('이웃1')
+    expect(rows()).toHaveLength(25)
+    expect(screen.getByRole('tab', { name: /차단\s*25/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS01-022] 뮤트 해제 모달에서 취소하면 아무것도 바뀌지 않는다', async () => {
