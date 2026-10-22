@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import type { PetProfile } from '@aechak/domain'
 import { formatPetMeta, petAge } from '../pet.mock'
 
@@ -13,8 +13,16 @@ function makePet(over: Partial<PetProfile>): PetProfile {
 }
 
 describe('pet.mock: 파생 표기', () => {
+  // petAge는 오늘 날짜로 계산한다. 아래 기대값은 오늘을 2026년 7월로 고정해 둔 것이다.
+  beforeAll(() => {
+    vi.setSystemTime(new Date(2026, 6, 15))
+  })
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
   it('[AC-PET-001] 생년으로 나이를 파생한다(생월 없으면 연도만, 생년 없으면 undefined)', () => {
-    // 세션 고정 오늘: 2026년 7월
+    // 고정한 오늘: 2026년 7월
     expect(petAge(2023)).toBe(3)
     expect(petAge(undefined)).toBeUndefined()
   })

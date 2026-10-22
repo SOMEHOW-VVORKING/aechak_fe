@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   AlertCircle,
+  Ban,
   ChevronRight,
   Coins,
   Heart,
@@ -11,6 +12,7 @@ import {
   Settings,
   ShieldCheck,
   Star,
+  Users,
   UserX,
 } from 'lucide-react'
 import { Avatar, Card, EmptyState, ListItem, Skeleton, StatusPill } from '@aechak/design-system/web'
@@ -45,6 +47,8 @@ export function MyPageHubScreen() {
     wishlist: <Heart className="size-[22px]" />,
     reviews: <Star className="size-[22px]" />,
     addresses: <MapPin className="size-[22px]" />,
+    'sns-profile': <Users className="size-[22px]" />,
+    'sns-relations': <Ban className="size-[22px]" />,
     pets: <PawPrint className="size-[22px]" />,
     verify: <ShieldCheck className="size-[22px]" />,
     settings: <Settings className="size-[22px]" />,
@@ -55,6 +59,8 @@ export function MyPageHubScreen() {
     wishlist: () => navigate({ to: '/wishlist' }),
     reviews: () => navigate({ to: '/reviews/mine' }),
     addresses: () => navigate({ to: '/addresses' }),
+    'sns-profile': () => navigate({ to: '/sns/me' }),
+    'sns-relations': () => navigate({ to: '/mypage/sns-relations' }),
     pets: () => navigate({ to: '/mypage/pets' }),
     verify: () => navigate({ to: '/mypage/verify' }),
     settings: () => navigate({ to: '/settings' }),

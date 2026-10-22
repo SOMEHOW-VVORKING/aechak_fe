@@ -1,0 +1,364 @@
+import { useEffect, useState, type ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
+import {
+  Avatar,
+  BottomSheet,
+  Button,
+  EmptyState,
+  ListItem,
+  MobileScreen,
+  Modal,
+  Skeleton,
+  Tabs,
+} from '@aechak/design-system/web'
+import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import { AppToast } from '@/shared/components/AppToast'
+import { BackAppBar } from '@/shared/components/BackAppBar'
+import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
+import { useSafeBack } from '@/shared/useSafeBack'
+import {
+  SNS_SELF_FOLLOW,
+  SNS_UNAVAILABLE,
+  snsErrorCode,
+  snsToggleErrorMessage,
+  useSnsProfile,
+  useSnsToggle,
+  type FollowDirection,
+  type SnsProfile,
+} from '../sns.queries'
+import { RELATION_CONFIRM, type RelationConfirm } from '../sns.copy'
+import { petTagLabel } from '../sns.format'
+import { FollowButton } from './FollowButton'
+
+// 프로필 탭(A22). 글은 SNS-03 이후 패키지에서 붙으므로 지금은 탭 틀과 빈 상태만 그린다. 저장됨은 본인만.
+const POST_TABS = [
+  { key: 'grid', label: '그리드', empty: '아직 게시물이 없어요' },
+  { key: 'video', label: '영상', empty: '아직 영상이 없어요' },
+  { key: 'repost', label: '리포스트', empty: '아직 리포스트가 없어요' },
+  { key: 'saved', label: '저장됨', empty: '저장한 게시물이 없어요' },
+]
+
+interface ToastState {
+  open: boolean
+  message: string
+  variant: 'success' | 'error'
+}
+
+// SNS 프로필(b7-st-4). publicId가 없으면 내 프로필(GET /sns/me)이다. 다른 사용자 프로필은 비로그인도 본다(A9).
+// 메시지 버튼, 알림 버튼(R1-18), 페르소나 배지는 이번 범위에 없다.
+export function SnsProfileScreen({ publicId }: { publicId?: string }) {
+  const navigate = useNavigate()
+  const goBack = useSafeBack({ to: '/sns' })
+  const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
+  const toggle = useSnsToggle()
+  const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
+  const loggedIn = useIsLoggedIn()
+  const mutateToggle = toggle.mutate
+  const [moreOpen, setMoreOpen] = useState(false)
+  // 확인 Modal의 타겟은 라우트(이 화면)가 소유한다. Modal은 자체 mutation을 만들지 않는다.
+  const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
+  const [tab, setTab] = useState('grid')
+  const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
+
+  const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
+    setToast({ open: true, message, variant })
+
+  // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(차단당했거나 탈퇴, A7).
+  const unavailable = snsErrorCode(error) === SNS_UNAVAILABLE
+
+  // 로그인 뒤 다시 실행(A26). 로그인 안내 시트에서 남긴 행동을 이 프로필을 다시 읽은 뒤 한 번만 꺼낸다.
+  // 팔로우는 확인 없이 켜기 요청을 보내고(이미 팔로우 중이어도 201) 차단, 뮤트는 확인 Modal이나 시트만 다시 연다.
+  useEffect(() => {
+    if (!publicId || !loggedIn) return
+    if (unavailable) {
+      // 그사이 상대가 나를 차단했거나 탈퇴했다. 실행하지 않고 볼 수 없는 계정 안내만 남긴다.
+      takePendingAction(publicId)
+      return
+    }
+    if (!profile) return
+    const pending = takePendingAction(publicId)
+    if (!pending) return
+    if (profile.isMe) {
+      void navigate({ to: '/sns/me', replace: true })
+      return
+    }
+    if (profile.blockedByMe) return
+    if (pending.kind === 'follow') {
+      mutateToggle(
+        { kind: 'follow', publicId, on: true },
+        {
+          onError: e => {
+            if (snsErrorCode(e) === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
+            else setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+          },
+        },
+      )
+    } else if (pending.kind === 'block') setConfirm('block')
+    else if (pending.kind === 'mute') setMoreOpen(true)
+  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle])
+
+  const follow = (target: SnsProfile) =>
+    requireAuth(
+      'follow',
+      () =>
+        toggle.mutate(
+          { kind: 'follow', publicId: target.publicId, on: !target.following },
+          { onError: e => showToast(snsToggleErrorMessage(e), 'error') },
+        ),
+      { kind: 'follow', publicId: target.publicId },
+    )
+
+  const openList = (target: SnsProfile, tab: FollowDirection) =>
+    requireAuth(
+      'follows',
+      () => navigate({ to: '/sns/users/$publicId/follows', params: { publicId: target.publicId }, search: { tab } }),
+      { kind: 'open', publicId: target.publicId },
+    )
+
+  const share = async (target: SnsProfile) => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/sns/users/${target.publicId}`)
+      showToast('프로필 링크를 복사했어요')
+    } catch {
+      showToast('링크를 복사하지 못했어요', 'error')
+    }
+  }
+
+  const handleConfirm = () => {
+    if (!confirm || !profile) return
+    const copy = RELATION_CONFIRM[confirm]
+    toggle.mutate(
+      { kind: copy.kind, publicId: profile.publicId, on: copy.on },
+      {
+        onSuccess: () => {
+          setConfirm(null)
+          showToast(copy.done)
+        },
+        onError: e => {
+          setConfirm(null)
+          showToast(snsToggleErrorMessage(e), 'error')
+        },
+      },
+    )
+  }
+
+  const showMore = profile != null && !unavailable && !profile.isMe && !profile.blockedByMe
+
+  // 본문만 분기하고 Modal, 시트, 토스트는 어느 분기에서도 함께 렌더한다(차단 직후 본문이 바뀌어도 토스트가 남는다).
+  const screen = (content: ReactNode) => (
+    <MobileScreen
+      header={
+        <BackAppBar
+          onBack={goBack}
+          title={unavailable ? undefined : profile?.nickname}
+          actions={
+            showMore && (
+              <button
+                type="button"
+                aria-label="더보기"
+                onClick={() => setMoreOpen(true)}
+                className="flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
+              >
+                <MoreHorizontal className="size-[22px]" />
+              </button>
+            )
+          }
+        />
+      }
+    >
+      {content}
+
+      {profile && (
+        <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)}>
+          <ListItem
+            leading={<Ban className="size-5" />}
+            title="차단하기"
+            onClick={() => {
+              setMoreOpen(false)
+              requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId: profile.publicId })
+            }}
+          />
+          <ListItem
+            leading={<EyeOff className="size-5" />}
+            title={profile.mutedByMe ? '뮤트 해제' : '뮤트하기'}
+            onClick={() => {
+              setMoreOpen(false)
+              if (profile.mutedByMe) {
+                setConfirm('unmute')
+                return
+              }
+              requireAuth(
+                'mute',
+                () =>
+                  toggle.mutate(
+                    { kind: 'mute', publicId: profile.publicId, on: true },
+                    {
+                      onSuccess: () => showToast('뮤트했어요'),
+                      onError: e => showToast(snsToggleErrorMessage(e), 'error'),
+                    },
+                  ),
+                { kind: 'mute', publicId: profile.publicId },
+              )
+            }}
+          />
+        </BottomSheet>
+      )}
+
+      {confirm && profile && (
+        <Modal
+          open
+          onClose={() => setConfirm(null)}
+          title={RELATION_CONFIRM[confirm].title}
+          description={RELATION_CONFIRM[confirm].description(profile.nickname)}
+          confirmLabel={RELATION_CONFIRM[confirm].confirmLabel}
+          confirmVariant={RELATION_CONFIRM[confirm].danger ? 'danger' : 'primary'}
+          onConfirm={handleConfirm}
+          loading={toggle.isPending}
+        />
+      )}
+
+      <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
+      <AppToast
+        open={toast.open}
+        message={toast.message}
+        variant={toast.variant}
+        onClose={() => setToast(prev => ({ ...prev, open: false }))}
+      />
+    </MobileScreen>
+  )
+
+  if (unavailable) {
+    return screen(
+      <ScreenEmptyState
+        icon={<UserX className="size-6" />}
+        title="볼 수 없는 계정이에요"
+        description="계정이 없거나 지금은 볼 수 없어요."
+      />,
+    )
+  }
+
+  if (!profile) {
+    if (isPending) {
+      return screen(
+        <div className="flex flex-col gap-3 p-4">
+          <Skeleton className="h-20" />
+          <Skeleton variant="text" className="w-1/2" />
+        </div>,
+      )
+    }
+    return screen(
+      <ScreenEmptyState
+        title="프로필을 불러오지 못했어요"
+        description="잠시 후 다시 시도해 주세요."
+        action={{ label: '다시 시도', onClick: () => void refetch() }}
+      />,
+    )
+  }
+
+  // 내가 차단한 계정(P11): 닉네임과 이미지만 오고 수, 소개글, 펫은 null이다. 안내와 차단 해제 버튼만 그린다.
+  if (profile.blockedByMe) {
+    return screen(
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+        <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />
+        <div className="flex flex-col gap-1">
+          <p className="text-subheading font-semibold text-text-primary">차단한 계정이에요</p>
+          <p className="text-body-sm text-text-secondary">차단을 해제하면 프로필을 다시 볼 수 있어요.</p>
+        </div>
+        <Button variant="secondary" onClick={() => setConfirm('unblock')}>
+          차단 해제
+        </Button>
+      </div>,
+    )
+  }
+
+  const tabs = POST_TABS.filter(t => t.key !== 'saved' || profile.isMe)
+  const activeTab = tabs.find(t => t.key === tab) ?? tabs[0]!
+  const stats: { label: string; value: number | null; list?: FollowDirection }[] = [
+    { label: '게시물', value: profile.postCount },
+    { label: '팔로워', value: profile.followerCount, list: 'followers' },
+    { label: '팔로잉', value: profile.followingCount, list: 'followings' },
+  ]
+
+  return screen(
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-3 px-4 pb-4 pt-2">
+        <div className="flex items-center gap-4">
+          <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />
+          <div className="grid flex-1 grid-cols-3 text-center">
+            {stats.map(stat => {
+              const body = (
+                <>
+                  <span className="block text-subheading font-semibold tabular-nums text-text-primary">
+                    {(stat.value ?? 0).toLocaleString('ko-KR')}
+                  </span>
+                  <span className="text-caption text-text-secondary">{stat.label}</span>
+                </>
+              )
+              const list = stat.list
+              return list ? (
+                <button key={stat.label} type="button" onClick={() => openList(profile, list)}>
+                  {body}
+                </button>
+              ) : (
+                <div key={stat.label}>{body}</div>
+              )
+            })}
+          </div>
+        </div>
+
+        <p className="text-subheading font-semibold text-text-primary">{profile.nickname}</p>
+        {/* 펫이 없거나 소개글이 비면 그 줄을 숨긴다(P1). 대표 펫이 먼저 온다. */}
+        {profile.pets && profile.pets.length > 0 && (
+          <ul aria-label="펫" className="flex flex-wrap gap-1.5">
+            {profile.pets.map((pet, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-1 rounded-chip bg-surface-sunken px-2 py-1 text-caption text-text-secondary"
+              >
+                <PawPrint className="size-3" />
+                {petTagLabel(pet)}
+              </li>
+            ))}
+          </ul>
+        )}
+        {profile.bio && (
+          <p className="whitespace-pre-line text-body-sm leading-relaxed text-text-primary">{profile.bio}</p>
+        )}
+
+        {profile.mutedByMe && (
+          <div className="flex items-center gap-2 rounded-card bg-surface-sunken px-3 py-2.5">
+            <EyeOff className="size-4 flex-none text-icon-muted" />
+            <p className="flex-1 text-body-sm text-text-secondary">뮤트한 계정이에요</p>
+            <Button size="sm" variant="secondary" onClick={() => setConfirm('unmute')}>
+              뮤트 해제
+            </Button>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          {profile.isMe ? (
+            <Button size="sm" variant="secondary" className="flex-1" onClick={() => navigate({ to: '/mypage/profile' })}>
+              프로필 수정
+            </Button>
+          ) : (
+            <FollowButton
+              following={profile.following}
+              loading={toggle.isPending && toggle.variables?.kind === 'follow'}
+              onClick={() => follow(profile)}
+              className="flex-1"
+            />
+          )}
+          <Button size="sm" variant="secondary" className="flex-1" onClick={() => void share(profile)}>
+            공유
+          </Button>
+        </div>
+      </div>
+
+      <Tabs tabs={tabs} activeKey={activeTab.key} onSelect={setTab} className="px-2" />
+      <div className="py-10">
+        <EmptyState title={activeTab.empty} />
+      </div>
+    </div>,
+  )
+}

@@ -1,11 +1,13 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
+import { setAccessToken } from '@aechak/api'
 import {
   resetLikedProducts,
   resetSearchFixtures,
   seedCart,
   seedOrderGroups,
   seedPaymentState,
+  seedSns,
   server,
 } from './testing/msw/server'
 import { resetWishlistState } from './shared/catalog'
@@ -34,5 +36,10 @@ afterEach(() => {
   seedCart()
   seedOrderGroups()
   seedPaymentState()
+  seedSns()
+  // A26 대기 행동(sessionStorage)도 테스트 사이에 이어지지 않게 지운다.
+  sessionStorage.clear()
+  // access 토큰은 client.ts 모듈 메모리라 테스트 사이에 이어진다. SNS MSW는 Authorization 헤더로 보는 사람을 정한다.
+  setAccessToken(null)
 })
 afterAll(() => server.close())

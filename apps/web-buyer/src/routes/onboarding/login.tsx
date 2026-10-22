@@ -6,6 +6,7 @@ import {
   socialLoginRedirectUrl,
   type SocialProvider,
 } from '@/features/onboarding'
+import { clearPendingAction } from '@/shared/auth'
 
 // TODO: placeholder brand marks (colored initial badges) — swap for
 // licensed Kakao/Google/Apple logos before shipping; sourcing/recreating
@@ -29,12 +30,22 @@ const SOCIAL_OPTIONS: {
 export interface LoginSearch {
   /** 로그인 실패 시 /login/complete가 되돌려주는 서버 에러코드 */
   error?: number
+  /** 로그인 안내 시트가 로그인 뒤 다시 실행할 행동(A26)을 남기고 보냈으면 true */
+  resume?: boolean
 }
 
 export const Route = createFileRoute('/onboarding/login')({
   validateSearch: (search: Record<string, unknown>): LoginSearch => {
     const error = Number(search['error'])
-    return Number.isFinite(error) && error > 0 ? { error } : {}
+    return {
+      ...(Number.isFinite(error) && error > 0 ? { error } : {}),
+      ...(search['resume'] === true || search['resume'] === 'true' ? { resume: true } : {}),
+    }
+  },
+  // 대기 행동은 그것을 남긴 시트에서 바로 시작한 로그인에서만 다시 실행한다. 다른 길(찜 게이트, 세션 만료,
+  // 홈 가드, 로그인 화면에서 뒤로 갔다가 다시 온 경우)로 들어온 로그인이 예전 행동을 실행하지 않게 지운다.
+  beforeLoad: ({ search }) => {
+    if (!search.resume) clearPendingAction()
   },
   component: SocialLoginRoute,
 })

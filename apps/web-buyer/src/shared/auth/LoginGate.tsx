@@ -1,14 +1,34 @@
 import { useCallback, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Lock } from 'lucide-react'
 import { BottomSheet, Button } from '@aechak/design-system/web'
 import { getIsLoggedIn } from './auth.store'
+import { savePendingAction, type PendingActionKind } from './pending-action'
 
 // 비회원 로그인 유도 게이트(b13-st-2). 독립 화면이 아니라 어느 화면 위에서든 재사용하는
 // BottomSheet 오버레이 — 회원 전용 액션(찜/장바구니/구매/작성/채팅)을 비회원이 시도하면 뜬다.
 // 탐색·검색·열람은 게이트 없이 허용된다.
 
-export type GateFeature = 'wish' | 'cart' | 'buy' | 'write' | 'chat' | 'review'
+export type GateFeature =
+  | 'wish'
+  | 'cart'
+  | 'buy'
+  | 'write'
+  | 'chat'
+  | 'review'
+  | 'follow'
+  | 'follows'
+  | 'block'
+  | 'mute'
+
+// SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
+const SNS_FEATURES = new Set<GateFeature>(['follow', 'follows', 'block', 'mute'])
+
+/** 로그인 뒤 다시 실행할 행동. 게이트가 열린 화면의 경로와 함께 sessionStorage에 남긴다. */
+export interface GateResume {
+  kind: PendingActionKind
+  publicId: string
+}
 
 const FEATURE_COPY: Record<GateFeature, string> = {
   wish: '찜은 로그인한 회원만 이용할 수 있어요.',
@@ -17,6 +37,10 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   write: '글 작성은 로그인한 회원만 이용할 수 있어요.',
   chat: '채팅은 로그인한 회원만 이용할 수 있어요.',
   review: '리뷰는 로그인한 회원만 볼 수 있어요.',
+  follow: '팔로우는 로그인한 회원만 이용할 수 있어요.',
+  follows: '팔로워/팔로잉 목록은 로그인한 회원만 볼 수 있어요.',
+  block: '차단은 로그인한 회원만 이용할 수 있어요.',
+  mute: '뮤트는 로그인한 회원만 이용할 수 있어요.',
 }
 
 export interface UseLoginGate {
@@ -24,47 +48,64 @@ export interface UseLoginGate {
   gateOpen: boolean
   /** 현재 게이트가 안내 중인 기능(문구 결정). */
   gateFeature: GateFeature
+  /** 로그인 뒤 다시 실행할 행동. LoginGate의 `resume`으로 넘긴다. */
+  gateResume: GateResume | undefined
   /**
    * 로그인 필요 액션을 감싼다. 로그인 상태면 `action`을 즉시 실행하고 `true`를 반환,
-   * 비회원이면 게이트를 열고 `false`를 반환한다(액션은 실행하지 않음).
+   * 비회원이면 게이트를 열고 `false`를 반환한다(액션은 실행하지 않음). `resume`을 주면
+   * 로그인 / 회원가입을 누를 때 그 행동과 지금 경로를 보관한다(A26).
    */
-  requireAuth: (feature: GateFeature, action: () => void) => boolean
+  requireAuth: (feature: GateFeature, action: () => void, resume?: GateResume) => boolean
   /** 게이트를 닫는다("둘러보기 계속하기"). */
   closeGate: () => void
 }
 
 export function useLoginGate(): UseLoginGate {
-  const [state, setState] = useState<{ open: boolean; feature: GateFeature }>({
+  const [state, setState] = useState<{ open: boolean; feature: GateFeature; resume?: GateResume }>({
     open: false,
     feature: 'wish',
   })
 
-  const requireAuth = useCallback((feature: GateFeature, action: () => void): boolean => {
-    if (getIsLoggedIn()) {
-      action()
-      return true
-    }
-    setState({ open: true, feature })
-    return false
-  }, [])
+  const requireAuth = useCallback(
+    (feature: GateFeature, action: () => void, resume?: GateResume): boolean => {
+      if (getIsLoggedIn()) {
+        action()
+        return true
+      }
+      setState({ open: true, feature, resume })
+      return false
+    },
+    [],
+  )
 
   const closeGate = useCallback(() => setState(s => ({ ...s, open: false })), [])
 
-  return { gateOpen: state.open, gateFeature: state.feature, requireAuth, closeGate }
+  return {
+    gateOpen: state.open,
+    gateFeature: state.feature,
+    gateResume: state.resume,
+    requireAuth,
+    closeGate,
+  }
 }
 
 export interface LoginGateProps {
   open: boolean
   feature: GateFeature
   onClose: () => void
+  /** 로그인 뒤 돌아와 다시 실행할 행동(A26). 없으면 로그인 뒤 홈으로 간다. */
+  resume?: GateResume
 }
 
-export function LoginGate({ open, feature, onClose }: LoginGateProps) {
+export function LoginGate({ open, feature, onClose, resume }: LoginGateProps) {
   const navigate = useNavigate()
+  const href = useRouterState({ select: s => s.location.href })
 
+  // 로그인 화면은 페이지 전체를 이동하므로 행동과 돌아올 경로를 sessionStorage에 남긴다.
+  // onClose는 부르지 않는다. 시트는 화면과 함께 사라지고, 화면에 따라 onClose가 뒤로 가기라 이동이 겹친다.
   const goLogin = () => {
-    onClose()
-    navigate({ to: '/onboarding/login' })
+    if (resume) savePendingAction({ ...resume, returnTo: href })
+    navigate({ to: '/onboarding/login', search: resume ? { resume: true } : {} })
   }
 
   return (
@@ -78,7 +119,9 @@ export function LoginGate({ open, feature, onClose }: LoginGateProps) {
           <p className="text-body-sm leading-relaxed text-text-secondary">
             {FEATURE_COPY[feature]}
             <br />
-            로그인하면 찜/주문 내역을 이어서 볼 수 있어요.
+            {SNS_FEATURES.has(feature)
+              ? '로그인하면 보던 화면으로 돌아와 이어서 할 수 있어요.'
+              : '로그인하면 찜/주문 내역을 이어서 볼 수 있어요.'}
           </p>
         </div>
         <div className="mt-2 flex w-full flex-col gap-2.5">
