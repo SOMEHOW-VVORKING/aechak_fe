@@ -2,16 +2,19 @@ import { useMemo } from 'react'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
-import { ClipboardCheck, LayoutDashboard, ShieldCheck, UserCog } from 'lucide-react'
+import { ClipboardCheck, LayoutDashboard, ShieldCheck, Sparkles, UserCog } from 'lucide-react'
+import { useOpenInspectionCount } from '@/features/ai-review-queue'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
 
 const APPLICATIONS_NAV_KEY = '/sellers/applications'
+const AI_QUEUE_NAV_KEY = '/products/ai-queue'
 
-// nav에는 admin 모듈에 API가 있는 화면(입점 심사)과 홈만 둔다. 셀러 관리/회원 관리/상품 검수/AI 검수 큐는
-// 목업 배열뿐이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이 없던
-// 14개 항목과 상수 배지(7·12·9·15·6·3·2)는 죽은 nav·장식 UI라 함께 뺐다. BE가 생기면 항목을 되돌린다.
+// nav에는 admin 모듈에 API가 있는 화면(입점 심사·관리자 관리·AI 검수 큐)과 홈만 둔다.
+// 셀러 관리/회원 관리/상품 검수는 아직 목업 배열뿐이라 라우트는 보존하되 진입점을 빼고(각 라우트가
+// "준비 중" 안내), 라우트 파일이 없던 14개 항목과 상수 배지(7·12·9·15·6·3·2)는 죽은 nav·장식 UI라
+// 함께 뺐다. BE가 생기면 항목을 되돌린다.
 const navGroups: NavGroup[] = [
   {
     key: 'operations',
@@ -27,21 +30,28 @@ const navGroups: NavGroup[] = [
       },
       // 관리자 명부는 admin 모듈에 EP 3종(GET·POST·DELETE /admin/admins)이 있어 nav에 올린다.
       { key: '/admins', label: '관리자 관리', icon: <UserCog className={iconClass} /> },
+      {
+        // AI 검수 큐도 EP 4종(/admin/content-inspections 목록·상세·approve·reject)이 생겨 올린다.
+        // 배지는 처리 대기(OPEN) 건수를 서버에서 받아 채운다.
+        key: AI_QUEUE_NAV_KEY,
+        label: 'AI 검수 큐',
+        icon: <Sparkles className={iconClass} />,
+      },
     ],
   },
 ]
 
 /**
- * 입점 신청 배지만 서버 값으로 채운다. 같은 queryKey를 심사 화면도 쓰므로 조회가 중복되지 않고,
+ * 배지는 서버 값으로만 채운다. 같은 queryKey를 해당 화면도 쓰므로 조회가 중복되지 않고,
  * 권한이 없거나 조회가 실패하면 null이 와서 배지 자체가 사라진다(틀린 숫자를 띄우지 않는다).
  */
-function withPendingBadge(groups: NavGroup[], pendingCount: number | null): NavGroup[] {
-  if (pendingCount == null) return groups
+function withBadges(groups: NavGroup[], counts: Record<string, number | null>): NavGroup[] {
   return groups.map(group => ({
     ...group,
-    items: group.items.map(item =>
-      item.key === APPLICATIONS_NAV_KEY ? { ...item, badge: pendingCount } : item,
-    ),
+    items: group.items.map(item => {
+      const count = counts[item.key]
+      return count == null ? item : { ...item, badge: count }
+    }),
   }))
 }
 
@@ -51,7 +61,7 @@ function AdminShell() {
   // SideNav 없이 단독 렌더링한다. 셸 안의 usePendingApplicationCount가 로그인 전에 심사 조회를
   // 발사해 401/403을 만들지 않도록, 훅보다 **먼저** 돌려보낸다(조건을 훅 아래로 내리면 안 된다).
   // 로그인 플로우 밖에서 SideNav-less 라우트가 또 생기면 조건을 더하지 말고 pathless layout으로
-  // 전환할 것(web-seller AppShell과 같은 지시).
+  // 전환할 것(web-seller AppShell과 같은 지시). 배지 조회가 둘로 늘어난 뒤에도 같은 자리다.
   if (pathname === '/login' || pathname === '/login/' || pathname.startsWith('/login/')) {
     return <Outlet />
   }
@@ -61,7 +71,15 @@ function AdminShell() {
 function AdminNavShell({ pathname }: { pathname: string }) {
   const navigate = useNavigate()
   const pendingCount = usePendingApplicationCount()
-  const groups = useMemo(() => withPendingBadge(navGroups, pendingCount), [pendingCount])
+  const openInspectionCount = useOpenInspectionCount()
+  const groups = useMemo(
+    () =>
+      withBadges(navGroups, {
+        [APPLICATIONS_NAV_KEY]: pendingCount,
+        [AI_QUEUE_NAV_KEY]: openInspectionCount,
+      }),
+    [pendingCount, openInspectionCount],
+  )
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base">

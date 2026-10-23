@@ -509,30 +509,10 @@ export interface Settlement {
   refundDeduction?: number
 }
 
-export type AiReviewTargetType = 'product-image' | 'product-description' | 'review' | 'sns-post'
-export type AiReviewDetectionStage = 1 | 2
-export type AiReviewStatus =
-  | 'pending'
-  | 'auto-blinded'
-  | 'admin-approved'
-  | 'admin-rejected'
-  | 'admin-deleted'
-
-export interface AiReviewQueueItem {
-  id: string
-  targetType: AiReviewTargetType
-  detectionReason: string
-  detectionStage: AiReviewDetectionStage
-  sellerName?: string
-  productName?: string
-  autoBlindedAt: string
-  reviewStatus: AiReviewStatus
-  aiReasoning?: string
-  reviewHistory: { actor: 'ai' | 'admin'; label: string; date: string }[]
-  processReason?: string
-  sellerNotice?: string
-  internalMemo?: string
-}
+// AI 검수 큐 타입(AiReviewQueueItem 등 4종)은 목업 화면의 모양이었다. 실 API에는 대상 유형
+// 4종도 탐지 단계(1·2단계)도 자동 블라인드 시각도 없어서, 서버 계약으로 갈아타면서
+// apps/web-admin/src/features/ai-review-queue가 쓰는 뷰 타입으로 옮겼다 — 서버 enum·필드는
+// feature 안에 가두는 것이 규약이고, 이 타입들은 다른 앱이 쓰지 않았다.
 
 // 구매자 상품 신고(b8-st-1-product). 제출 시 운영 검수 큐로 넘어가는 신고 사유·상세를 담는다.
 // (신고자는 비공개 보호되므로 신고자 식별 정보는 이 타입에 두지 않는다.) SNS 게시물/유저
