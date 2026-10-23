@@ -1993,6 +1993,146 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /admin/content-inspections:
+    get:
+      summary: "어드민 AI 검수 큐 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004,
+        비ADMIN 403 errorCode 20011). 큐에 올라온 검수만 실린다 — `adminReviewState`가 NULL인
+        검수(사람이 볼 필요가 없던 건)는 아예 조회되지 않는다. 정렬은 최신 검수 먼저로 서버가
+        고정하고 page/size 형식 오류는 서버가 보정한다(page<0→0, size는 1~100 절삭).
+        `reason=SELLER_APPEAL`은 **이유 축이 아니라 이의 축(appealState)으로 번역돼** 이의가 걸린
+        행 전부를 돌려준다. 이의는 이미 큐에 올라온 행에도 붙고 그때 등재 이유는 바뀌지 않으므로
+        (`adminReviewReason`은 최초 이유를 보존한다), 이유로만 거르면 셀러 이의가 목록에서 사라진다.
+        그래서 그 필터의 행은 `adminReviewReason`이 SELLER_APPEAL이 아닐 수 있다.
+        큐 등재 시각 컬럼이 없다 — 대기 시간은 `appealedAt ?? settledAt ?? requestedAt`에서
+        화면이 계산해야 한다.
+      operationId: "getAdminContentInspections"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/AdminReviewState"
+          description: "처리 상태. 생략하면 OPEN·RESOLVED 전체"
+        - name: reason
+          in: query
+          schema:
+            $ref: "#/components/schemas/AdminReviewReason"
+          description: "등재 이유. SELLER_APPEAL만 이의 축으로 번역된다"
+        - name: targetType
+          in: query
+          schema:
+            $ref: "#/components/schemas/InspectionTargetType"
+          description: "대상 종류. 지금 큐에 쌓이는 것은 PRODUCT뿐이다(리뷰 검수 어드민은 미구현)"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInspectionListResponse"
+  /admin/content-inspections/{inspectionId}:
+    get:
+      summary: "어드민 AI 검수 큐 상세"
+      description: >-
+        목록 행 + 관점별 결과(`findings`) + 모델 호출 원장(`calls`) + 사람이 남긴 메모.
+        `findings[].violations`는 **타입화하지 않은 JSON 문자열**이다(서버가 저장된 JSON 칼럼을
+        그대로 내려보낸다) — 화면이 파싱해야 하고, 파싱 실패를 "위반 없음"으로 접으면 안 된다.
+        한 관점에 한 행이고 같은 판정이 재전달돼도 누적되지 않는다.
+        `calls[].perspective`는 호출이 어느 관점이었는지이고 **비평·수정문구는 둘 다 ALL로 적힌다** —
+        그 둘은 원장만으로는 갈라지지 않는다(모델 id로 추정할 수밖에 없다).
+        위반 상세 열람은 서버가 감사 로그로 남긴다. 없는 검수는 404 errorCode 40500.
+      operationId: "getAdminContentInspectionDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inspectionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInspectionDetailResponse"
+  /admin/content-inspections/{inspectionId}/approve:
+    post:
+      summary: "어드민 AI 검수 허용"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 요청 본문은 **선택**이고(메모만 담는다) 아예 보내지
+        않아도 204다. 허용은 상품 노출을 되돌리고 그 결정을 상품 행에 적어 이후 AI 판정이
+        뒤집지 못하게 한다 — 결정은 **노출 게이트 스위치를 보지 않는다**.
+        409 errorCode 40501 — 이미 처리한 검수(동시 결정 두 건은 한쪽만 204이고 다른 쪽이 이것이다).
+        409 errorCode 40508 — 셀러가 그 사이 내용을 고쳐 이 검수로는 결정할 수 없다. 묵은 판단이
+        최신 상품에 박히는 것을 서버가 막는 자리이고, 결정 자체가 남지 않는다(상품·검수 양쪽 무변경).
+        404 errorCode 40500 — 없는 검수. 400 errorCode 90001 — 메모 500자 초과.
+      operationId: "approveAdminContentInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inspectionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveAdminContentInspectionRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/content-inspections/{inspectionId}/reject:
+    post:
+      summary: "어드민 AI 검수 차단"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 차단은 상품을 반려로 굳히고, 셀러가 내용을 고쳐
+        재검수가 통과해도 되살아나지 않는다.
+        사유는 필수다 — 누락·공백은 400 errorCode 40502이고, 500자 초과는 400 errorCode 90001이다.
+        409 errorCode 40501(이미 처리)과 409 errorCode 40508(내용이 바뀜)은 허용과 같다.
+        **사유 검사가 상태 가드보다 먼저다** — 이미 처리된 검수에 빈 사유로 차단하면 40501이
+        아니라 40502다(입점 심사 반려와 순서가 반대다).
+      operationId: "rejectAdminContentInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inspectionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectAdminContentInspectionRequest"
+      responses:
+        "204":
+          description: "No Content"
 components:
   schemas:
     Species:
@@ -4653,6 +4793,262 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    AdminReviewState:
+      type: string
+      enum: [OPEN, RESOLVED]
+      description: "어드민 큐의 처리 상태. 응답에서 null이면 큐에 올라온 적이 없다는 뜻이지만, 목록은 큐에 오른 행만 돌려주므로 목록 행에서는 비지 않는다"
+    AdminReviewReason:
+      type: string
+      enum: [VERDICT_FAILED, UNJUDGED, MODEL_UNVERIFIED, CRITIC_OVERTURNED, OVERBLOCK_SUSPECT, SELLER_APPEAL]
+      description: >-
+        큐에 올라온 **최초** 이유. 한 번 적히면 덮지 않는다 — 과탐 의심으로 올라온 행에 셀러
+        이의가 붙어도 이 값은 그대로이고 이의 사실은 appealState가 들고 있다.
+        VERDICT_FAILED·UNJUDGED·MODEL_UNVERIFIED는 모델이 그 내용을 읽지 않은 경로이고,
+        CRITIC_OVERTURNED·OVERBLOCK_SUSPECT·SELLER_APPEAL은 읽은 경로다(서버가 허용의 면제
+        범위를 그 구분으로 가른다)
+    InspectionTargetType:
+      type: string
+      enum: [PRODUCT, REVIEW]
+      description: "검수 대상 종류. 상품은 노출 전 관문이고 리뷰는 사후 제재다"
+    InspectionJudgment:
+      type: string
+      enum: [PASS, FLAG, UNJUDGED, FAILED]
+      description: >-
+        최종 판정. 모델이 낼 수 있는 값은 PASS·FLAG뿐이고 반려는 없다.
+        UNJUDGED는 기한이 지나 판정을 못 받은 것이고 FAILED는 판정 과정이 실패한 것이다 —
+        **둘 다 통과가 아니다**. 판정 전이면 null
+    AppealState:
+      type: string
+      enum: [OPEN, ACCEPTED, REJECTED]
+      description: "셀러 이의의 상태. null이면 이의를 제기하지 않았다. 사람의 결정이 곧 이의의 답이다(허용=수용, 차단=기각)"
+    AdminDecision:
+      type: string
+      enum: [ALLOWED, BLOCKED]
+      description: "사람이 내린 결정. 노출 축(InspectionStatus)과 분리된 별개의 축이다"
+    AdminInspectionDecision:
+      type: string
+      enum: [ALLOWED, BLOCKED]
+      description: >-
+        상품 행에 박힌 사람의 결정. 검수 행이 아니라 상품 행이어야 하는 이유는, 셀러가 설명에
+        공백 한 칸만 더해도 내용 해시가 바뀌어 새 검수가 돌고 AI 통과가 어드민 차단을 되돌리기
+        때문이다. null이면 사람이 이 상품을 결정한 적이 없다
+    InspectionPerspectiveKind:
+      type: string
+      enum: [ALL, DISPLAY_ADS, CONDUCT_TRADE, RULE, TRIAGE]
+      description: >-
+        관점. RULE은 정규식·네거티브 리스트가 낸 결정론적 결과이고 TRIAGE는 선별 단계다.
+        **그 둘은 "모델이 봤는가" 집계에서 빠진다** — 규칙이 못 잡았다는 사실도, 선별이
+        넘겼다는 사실도 내용을 통과시키는 근거가 되지 못한다.
+        ALL은 관점을 쪼개지 않은 단일 판정이고 비평·수정문구 호출도 이 값으로 원장에 적힌다
+    PerspectiveOutcome:
+      type: string
+      enum: [VIOLATION, CLEAR, UNCHECKED]
+      description: >-
+        관점별 결과. **통과(CLEAR)와 미검사(UNCHECKED)를 반드시 구분한다** — 뭉개면 모델이
+        레이트 리밋으로 보지 못한 것이 "문제 없음"으로 기록되고 그 상품이 검수를 통과한 것처럼
+        노출된다. UNCHECKED에는 skipReason이 함께 온다
+    AdminInspectionSummary:
+      type: object
+      required: [inspectionId, targetType, targetRef, requestedAt]
+      description: >-
+        큐 목록 한 행. 상품 쪽 필드(productId·productName·storeName 등)는 대상이 리뷰이거나
+        상품이 지워진 경우 비어 온다(왼쪽 조인)
+      properties:
+        inspectionId:
+          type: integer
+          format: int64
+        targetType:
+          $ref: "#/components/schemas/InspectionTargetType"
+        targetRef:
+          type: integer
+          format: int64
+          description: "대상의 내부 숫자 id(상품이면 products.id). 화면이 쓰는 공개 id는 productId다"
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+        reasonCode:
+          type: string
+          nullable: true
+          description: >-
+            **첫 위반의 분류 하나뿐**이다(ViolationCategory 이름). 금지 성분과 연락처가 함께
+            잡힌 상품은 이 값이 순서 운에 따라 달라지므로, 과탐 판단을 이 값으로 하면 안 된다 —
+            서버도 그래서 판정 적용 시점의 위반 전수를 본다
+        reasonSummary:
+          type: string
+          nullable: true
+          description: "첫 위반의 인용구(최대 500자). 셀러가 직접 쓴 문장이다"
+        adminReviewReason:
+          allOf:
+            - $ref: "#/components/schemas/AdminReviewReason"
+          nullable: true
+        adminReviewState:
+          allOf:
+            - $ref: "#/components/schemas/AdminReviewState"
+          nullable: true
+        appealState:
+          allOf:
+            - $ref: "#/components/schemas/AppealState"
+          nullable: true
+        adminDecision:
+          allOf:
+            - $ref: "#/components/schemas/AdminDecision"
+          nullable: true
+        appealedAt:
+          type: string
+          nullable: true
+          description: "이의 접수 시각, 오프셋 없는 LocalDateTime"
+        requestedAt:
+          type: string
+          description: "최초 검수 요청 시각. 재시도로 갱신되지 않는다"
+        settledAt:
+          type: string
+          nullable: true
+          description: "판정이 적힌(또는 기한으로 닫힌) 시각. 판정 전이면 null"
+        productId:
+          type: string
+          nullable: true
+          description: "상품 공개 id. 대상이 리뷰이거나 상품이 지워졌으면 null"
+        productName:
+          type: string
+          nullable: true
+        productInspectionStatus:
+          allOf:
+            - $ref: "#/components/schemas/InspectionStatus"
+          nullable: true
+          description: "상품의 현재 노출 상태. PENDING은 구매자 조회 여섯 곳에서 전부 빠진다(=사람 확인 중에는 어디에도 안 보인다)"
+        productAdminDecision:
+          allOf:
+            - $ref: "#/components/schemas/AdminInspectionDecision"
+          nullable: true
+        sellerId:
+          type: integer
+          format: int64
+          nullable: true
+        storeName:
+          type: string
+          nullable: true
+    AdminInspectionListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInspectionSummary"
+        totalCount:
+          type: integer
+          format: int64
+          description: "현재 필터 기준 전체 건수"
+    AdminInspectionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminInspectionListData"
+    AdminInspectionFinding:
+      type: object
+      required: [perspective, outcome]
+      description: "한 관점이 무엇을 봤는지. 검수 한 건에 관점마다 한 행이다"
+      properties:
+        perspective:
+          $ref: "#/components/schemas/InspectionPerspectiveKind"
+        outcome:
+          $ref: "#/components/schemas/PerspectiveOutcome"
+        skipReason:
+          type: string
+          nullable: true
+          description: >-
+            미검사일 때 그 이유. **호출이 죽어서 못 본 것(TIMEOUT·RATE_LIMITED·BUDGET_EXHAUSTED
+            ·ERROR·SCHEMA_INVALID·TRUNCATED·REFUSED·LLM_DISABLED·EVIDENCE_UNVERIFIED)과
+            선별이 일부러 안 본 것(TRIAGE_CLEAR)은
+            둘 다 미검사지만 뜻이 정반대다** — 서버도 그 사유로 통과 수용 여부를 가른다.
+            선별 행 자신의 사유로는 RULE_HIT(규칙 적중으로 선별을 건너뛰고 승급)과
+            PROMOTED(선별이 더 보라고 넘겼다)가 온다
+        violations:
+          type: string
+          nullable: true
+          description: >-
+            위반 상세 **JSON 문자열**(타입화되지 않은 원문). 배열이고 원소는
+            `{category, perspective, spanStart, spanEnd, quote, suggestion, confidence}`다.
+            위반이 없으면 null
+    AdminInspectionCall:
+      type: object
+      required: [modelId, outcome, costMicroUsd, latencyMs]
+      description: "모델 호출 한 건의 요약. 재시도와 단계 승격마다 한 건씩 늘어난다"
+      properties:
+        perspective:
+          type: string
+          nullable: true
+          description: >-
+            호출의 관점(InspectionPerspectiveKind 이름). **비평과 수정문구는 둘 다 ALL로
+            적히므로 원장만으로 갈라지지 않는다.** 열거로 좁히지 않는 이유는 원장 칼럼이
+            타입 없는 문자열이고 AI 쪽이 값을 더할 수 있어서다
+        modelId:
+          type: string
+          description: "실제로 부른 모델 id. 선별은 haiku, 관점·수정문구는 sonnet, 비평은 opus 계열이다"
+        outcome:
+          type: string
+          description: "SUCCESS, TIMEOUT, RATE_LIMITED, BUDGET_EXHAUSTED, REFUSED, SCHEMA_INVALID, TRUNCATED, ERROR"
+        costMicroUsd:
+          type: integer
+          format: int64
+          description: "백만분의 1 달러. 단가표에 없는 모델은 0으로 적히므로 0이 곧 공짜는 아니다"
+        latencyMs:
+          type: integer
+    AdminInspectionDetailData:
+      type: object
+      required: [summary, findings, calls, totalCostMicroUsd]
+      properties:
+        summary:
+          $ref: "#/components/schemas/AdminInspectionSummary"
+        appealReason:
+          type: string
+          nullable: true
+          description: "셀러가 쓴 이의 사유(최대 500자). 이의가 없으면 null"
+        adminDecidedBy:
+          type: integer
+          format: int64
+          nullable: true
+          description: "결정한 운영자의 내부 숫자 id. 닉네임은 이 응답에 없다"
+        adminDecidedAt:
+          type: string
+          nullable: true
+        adminNote:
+          type: string
+          nullable: true
+          description: "허용 시의 메모 또는 차단 사유. 본문 없는 허용은 null이다"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInspectionFinding"
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInspectionCall"
+        totalCostMicroUsd:
+          type: integer
+          format: int64
+    AdminInspectionDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminInspectionDetailData"
+    ApproveAdminContentInspectionRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          nullable: true
+          description: "선택. 500자 초과는 400 errorCode 90001"
+    RejectAdminContentInspectionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          description: "필수. 누락·공백은 400 errorCode 40502, 500자 초과는 400 errorCode 90001"
   parameters:
     SnsPublicId:
       name: publicId

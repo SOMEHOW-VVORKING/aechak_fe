@@ -2131,6 +2131,301 @@ export interface SnsRelationPageResponse {
 }
 
 /**
+ * 어드민 큐의 처리 상태. 응답에서 null이면 큐에 올라온 적이 없다는 뜻이지만, 목록은 큐에 오른 행만 돌려주므로 목록 행에서는 비지 않는다
+ */
+export type AdminReviewState = (typeof AdminReviewState)[keyof typeof AdminReviewState]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewState = {
+  OPEN: 'OPEN',
+  RESOLVED: 'RESOLVED',
+} as const
+
+/**
+ * 큐에 올라온 **최초** 이유. 한 번 적히면 덮지 않는다 — 과탐 의심으로 올라온 행에 셀러 이의가 붙어도 이 값은 그대로이고 이의 사실은 appealState가 들고 있다. VERDICT_FAILED·UNJUDGED·MODEL_UNVERIFIED는 모델이 그 내용을 읽지 않은 경로이고, CRITIC_OVERTURNED·OVERBLOCK_SUSPECT·SELLER_APPEAL은 읽은 경로다(서버가 허용의 면제 범위를 그 구분으로 가른다)
+ */
+export type AdminReviewReason = (typeof AdminReviewReason)[keyof typeof AdminReviewReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewReason = {
+  VERDICT_FAILED: 'VERDICT_FAILED',
+  UNJUDGED: 'UNJUDGED',
+  MODEL_UNVERIFIED: 'MODEL_UNVERIFIED',
+  CRITIC_OVERTURNED: 'CRITIC_OVERTURNED',
+  OVERBLOCK_SUSPECT: 'OVERBLOCK_SUSPECT',
+  SELLER_APPEAL: 'SELLER_APPEAL',
+} as const
+
+/**
+ * 검수 대상 종류. 상품은 노출 전 관문이고 리뷰는 사후 제재다
+ */
+export type InspectionTargetType = (typeof InspectionTargetType)[keyof typeof InspectionTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionTargetType = {
+  PRODUCT: 'PRODUCT',
+  REVIEW: 'REVIEW',
+} as const
+
+/**
+ * 최종 판정. 모델이 낼 수 있는 값은 PASS·FLAG뿐이고 반려는 없다. UNJUDGED는 기한이 지나 판정을 못 받은 것이고 FAILED는 판정 과정이 실패한 것이다 — **둘 다 통과가 아니다**. 판정 전이면 null
+ */
+export type InspectionJudgment = (typeof InspectionJudgment)[keyof typeof InspectionJudgment]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionJudgment = {
+  PASS: 'PASS',
+  FLAG: 'FLAG',
+  UNJUDGED: 'UNJUDGED',
+  FAILED: 'FAILED',
+} as const
+
+/**
+ * 셀러 이의의 상태. null이면 이의를 제기하지 않았다. 사람의 결정이 곧 이의의 답이다(허용=수용, 차단=기각)
+ */
+export type AppealState = (typeof AppealState)[keyof typeof AppealState]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AppealState = {
+  OPEN: 'OPEN',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+} as const
+
+/**
+ * 사람이 내린 결정. 노출 축(InspectionStatus)과 분리된 별개의 축이다
+ */
+export type AdminDecision = (typeof AdminDecision)[keyof typeof AdminDecision]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminDecision = {
+  ALLOWED: 'ALLOWED',
+  BLOCKED: 'BLOCKED',
+} as const
+
+/**
+ * 상품 행에 박힌 사람의 결정. 검수 행이 아니라 상품 행이어야 하는 이유는, 셀러가 설명에 공백 한 칸만 더해도 내용 해시가 바뀌어 새 검수가 돌고 AI 통과가 어드민 차단을 되돌리기 때문이다. null이면 사람이 이 상품을 결정한 적이 없다
+ */
+export type AdminInspectionDecision =
+  (typeof AdminInspectionDecision)[keyof typeof AdminInspectionDecision]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminInspectionDecision = {
+  ALLOWED: 'ALLOWED',
+  BLOCKED: 'BLOCKED',
+} as const
+
+/**
+ * 관점. RULE은 정규식·네거티브 리스트가 낸 결정론적 결과이고 TRIAGE는 선별 단계다. **그 둘은 "모델이 봤는가" 집계에서 빠진다** — 규칙이 못 잡았다는 사실도, 선별이 넘겼다는 사실도 내용을 통과시키는 근거가 되지 못한다. ALL은 관점을 쪼개지 않은 단일 판정이고 비평·수정문구 호출도 이 값으로 원장에 적힌다
+ */
+export type InspectionPerspectiveKind =
+  (typeof InspectionPerspectiveKind)[keyof typeof InspectionPerspectiveKind]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionPerspectiveKind = {
+  ALL: 'ALL',
+  DISPLAY_ADS: 'DISPLAY_ADS',
+  CONDUCT_TRADE: 'CONDUCT_TRADE',
+  RULE: 'RULE',
+  TRIAGE: 'TRIAGE',
+} as const
+
+/**
+ * 관점별 결과. **통과(CLEAR)와 미검사(UNCHECKED)를 반드시 구분한다** — 뭉개면 모델이 레이트 리밋으로 보지 못한 것이 "문제 없음"으로 기록되고 그 상품이 검수를 통과한 것처럼 노출된다. UNCHECKED에는 skipReason이 함께 온다
+ */
+export type PerspectiveOutcome = (typeof PerspectiveOutcome)[keyof typeof PerspectiveOutcome]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PerspectiveOutcome = {
+  VIOLATION: 'VIOLATION',
+  CLEAR: 'CLEAR',
+  UNCHECKED: 'UNCHECKED',
+} as const
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryJudgment = InspectionJudgment | null
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryAdminReviewReason = AdminReviewReason | null
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryAdminReviewState = AdminReviewState | null
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryAppealState = AppealState | null
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryAdminDecision = AdminDecision | null
+
+/**
+ * 상품의 현재 노출 상태. PENDING은 구매자 조회 여섯 곳에서 전부 빠진다(=사람 확인 중에는 어디에도 안 보인다)
+ * @nullable
+ */
+export type AdminInspectionSummaryProductInspectionStatus = InspectionStatus | null
+
+/**
+ * @nullable
+ */
+export type AdminInspectionSummaryProductAdminDecision = AdminInspectionDecision | null
+
+/**
+ * 큐 목록 한 행. 상품 쪽 필드(productId·productName·storeName 등)는 대상이 리뷰이거나 상품이 지워진 경우 비어 온다(왼쪽 조인)
+ */
+export interface AdminInspectionSummary {
+  inspectionId: number
+  targetType: InspectionTargetType
+  /** 대상의 내부 숫자 id(상품이면 products.id). 화면이 쓰는 공개 id는 productId다 */
+  targetRef: number
+  /** @nullable */
+  judgment?: AdminInspectionSummaryJudgment
+  /**
+   * **첫 위반의 분류 하나뿐**이다(ViolationCategory 이름). 금지 성분과 연락처가 함께 잡힌 상품은 이 값이 순서 운에 따라 달라지므로, 과탐 판단을 이 값으로 하면 안 된다 — 서버도 그래서 판정 적용 시점의 위반 전수를 본다
+   * @nullable
+   */
+  reasonCode?: string | null
+  /**
+   * 첫 위반의 인용구(최대 500자). 셀러가 직접 쓴 문장이다
+   * @nullable
+   */
+  reasonSummary?: string | null
+  /** @nullable */
+  adminReviewReason?: AdminInspectionSummaryAdminReviewReason
+  /** @nullable */
+  adminReviewState?: AdminInspectionSummaryAdminReviewState
+  /** @nullable */
+  appealState?: AdminInspectionSummaryAppealState
+  /** @nullable */
+  adminDecision?: AdminInspectionSummaryAdminDecision
+  /**
+   * 이의 접수 시각, 오프셋 없는 LocalDateTime
+   * @nullable
+   */
+  appealedAt?: string | null
+  /** 최초 검수 요청 시각. 재시도로 갱신되지 않는다 */
+  requestedAt: string
+  /**
+   * 판정이 적힌(또는 기한으로 닫힌) 시각. 판정 전이면 null
+   * @nullable
+   */
+  settledAt?: string | null
+  /**
+   * 상품 공개 id. 대상이 리뷰이거나 상품이 지워졌으면 null
+   * @nullable
+   */
+  productId?: string | null
+  /** @nullable */
+  productName?: string | null
+  /**
+   * 상품의 현재 노출 상태. PENDING은 구매자 조회 여섯 곳에서 전부 빠진다(=사람 확인 중에는 어디에도 안 보인다)
+   * @nullable
+   */
+  productInspectionStatus?: AdminInspectionSummaryProductInspectionStatus
+  /** @nullable */
+  productAdminDecision?: AdminInspectionSummaryProductAdminDecision
+  /** @nullable */
+  sellerId?: number | null
+  /** @nullable */
+  storeName?: string | null
+}
+
+export interface AdminInspectionListData {
+  items: AdminInspectionSummary[]
+  /** 현재 필터 기준 전체 건수 */
+  totalCount: number
+}
+
+export interface AdminInspectionListResponse {
+  data: AdminInspectionListData
+}
+
+/**
+ * 한 관점이 무엇을 봤는지. 검수 한 건에 관점마다 한 행이다
+ */
+export interface AdminInspectionFinding {
+  perspective: InspectionPerspectiveKind
+  outcome: PerspectiveOutcome
+  /**
+   * 미검사일 때 그 이유. **호출이 죽어서 못 본 것(TIMEOUT·RATE_LIMITED·BUDGET_EXHAUSTED ·ERROR·SCHEMA_INVALID·TRUNCATED·REFUSED·LLM_DISABLED·EVIDENCE_UNVERIFIED)과 선별이 일부러 안 본 것(TRIAGE_CLEAR)은 둘 다 미검사지만 뜻이 정반대다** — 서버도 그 사유로 통과 수용 여부를 가른다. 선별 행 자신의 사유로는 RULE_HIT(규칙 적중으로 선별을 건너뛰고 승급)과 PROMOTED(선별이 더 보라고 넘겼다)가 온다
+   * @nullable
+   */
+  skipReason?: string | null
+  /**
+   * 위반 상세 **JSON 문자열**(타입화되지 않은 원문). 배열이고 원소는 `{category, perspective, spanStart, spanEnd, quote, suggestion, confidence}`다. 위반이 없으면 null
+   * @nullable
+   */
+  violations?: string | null
+}
+
+/**
+ * 모델 호출 한 건의 요약. 재시도와 단계 승격마다 한 건씩 늘어난다
+ */
+export interface AdminInspectionCall {
+  /**
+   * 호출의 관점(InspectionPerspectiveKind 이름). **비평과 수정문구는 둘 다 ALL로 적히므로 원장만으로 갈라지지 않는다.** 열거로 좁히지 않는 이유는 원장 칼럼이 타입 없는 문자열이고 AI 쪽이 값을 더할 수 있어서다
+   * @nullable
+   */
+  perspective?: string | null
+  /** 실제로 부른 모델 id. 선별은 haiku, 관점·수정문구는 sonnet, 비평은 opus 계열이다 */
+  modelId: string
+  /** SUCCESS, TIMEOUT, RATE_LIMITED, BUDGET_EXHAUSTED, REFUSED, SCHEMA_INVALID, TRUNCATED, ERROR */
+  outcome: string
+  /** 백만분의 1 달러. 단가표에 없는 모델은 0으로 적히므로 0이 곧 공짜는 아니다 */
+  costMicroUsd: number
+  latencyMs: number
+}
+
+export interface AdminInspectionDetailData {
+  summary: AdminInspectionSummary
+  /**
+   * 셀러가 쓴 이의 사유(최대 500자). 이의가 없으면 null
+   * @nullable
+   */
+  appealReason?: string | null
+  /**
+   * 결정한 운영자의 내부 숫자 id. 닉네임은 이 응답에 없다
+   * @nullable
+   */
+  adminDecidedBy?: number | null
+  /** @nullable */
+  adminDecidedAt?: string | null
+  /**
+   * 허용 시의 메모 또는 차단 사유. 본문 없는 허용은 null이다
+   * @nullable
+   */
+  adminNote?: string | null
+  findings: AdminInspectionFinding[]
+  calls: AdminInspectionCall[]
+  totalCostMicroUsd: number
+}
+
+export interface AdminInspectionDetailResponse {
+  data: AdminInspectionDetailData
+}
+
+export interface ApproveAdminContentInspectionRequest {
+  /**
+   * 선택. 500자 초과는 400 errorCode 90001
+   * @nullable
+   */
+  note?: string | null
+}
+
+export interface RejectAdminContentInspectionRequest {
+  /** 필수. 누락·공백은 400 errorCode 40502, 500자 초과는 400 errorCode 90001 */
+  reason: string
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -2412,6 +2707,30 @@ export type GetAdminSellerApplicationsParams = {
    * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
    */
   status?: ApplicationStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminContentInspectionsParams = {
+  /**
+   * 처리 상태. 생략하면 OPEN·RESOLVED 전체
+   */
+  state?: AdminReviewState
+  /**
+   * 등재 이유. SELLER_APPEAL만 이의 축으로 번역된다
+   */
+  reason?: AdminReviewReason
+  /**
+   * 대상 종류. 지금 큐에 쌓이는 것은 PRODUCT뿐이다(리뷰 검수 어드민은 미구현)
+   */
+  targetType?: InspectionTargetType
   /**
    * @minimum 0
    */
@@ -12755,6 +13074,642 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
   TContext
 > => {
   const mutationOptions = getRejectAdminSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 큐에 올라온 검수만 실린다 — `adminReviewState`가 NULL인 검수(사람이 볼 필요가 없던 건)는 아예 조회되지 않는다. 정렬은 최신 검수 먼저로 서버가 고정하고 page/size 형식 오류는 서버가 보정한다(page<0→0, size는 1~100 절삭). `reason=SELLER_APPEAL`은 **이유 축이 아니라 이의 축(appealState)으로 번역돼** 이의가 걸린 행 전부를 돌려준다. 이의는 이미 큐에 올라온 행에도 붙고 그때 등재 이유는 바뀌지 않으므로 (`adminReviewReason`은 최초 이유를 보존한다), 이유로만 거르면 셀러 이의가 목록에서 사라진다. 그래서 그 필터의 행은 `adminReviewReason`이 SELLER_APPEAL이 아닐 수 있다. 큐 등재 시각 컬럼이 없다 — 대기 시간은 `appealedAt ?? settledAt ?? requestedAt`에서 화면이 계산해야 한다.
+ * @summary 어드민 AI 검수 큐 목록
+ */
+export const getAdminContentInspections = (
+  params?: GetAdminContentInspectionsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminInspectionListResponse>({
+    url: `/admin/content-inspections`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminContentInspectionsQueryKey = (
+  params?: GetAdminContentInspectionsParams,
+) => {
+  return [`/admin/content-inspections`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminContentInspectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminContentInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminContentInspections>>> = ({
+    signal,
+  }) => getAdminContentInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminContentInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminContentInspectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminContentInspections>>
+>
+export type GetAdminContentInspectionsQueryError = unknown
+
+export function useGetAdminContentInspections<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminContentInspectionsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminContentInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminContentInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspections<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminContentInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminContentInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspections<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 큐 목록
+ */
+
+export function useGetAdminContentInspections<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminContentInspectionsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminContentInspectionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminContentInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminContentInspections>>> = ({
+    signal,
+  }) => getAdminContentInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminContentInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminContentInspectionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminContentInspections>>
+>
+export type GetAdminContentInspectionsSuspenseQueryError = unknown
+
+export function useGetAdminContentInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminContentInspectionsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 큐 목록
+ */
+
+export function useGetAdminContentInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminContentInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminContentInspectionsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행 + 관점별 결과(`findings`) + 모델 호출 원장(`calls`) + 사람이 남긴 메모. `findings[].violations`는 **타입화하지 않은 JSON 문자열**이다(서버가 저장된 JSON 칼럼을 그대로 내려보낸다) — 화면이 파싱해야 하고, 파싱 실패를 "위반 없음"으로 접으면 안 된다. 한 관점에 한 행이고 같은 판정이 재전달돼도 누적되지 않는다. `calls[].perspective`는 호출이 어느 관점이었는지이고 **비평·수정문구는 둘 다 ALL로 적힌다** — 그 둘은 원장만으로는 갈라지지 않는다(모델 id로 추정할 수밖에 없다). 위반 상세 열람은 서버가 감사 로그로 남긴다. 없는 검수는 404 errorCode 40500.
+ * @summary 어드민 AI 검수 큐 상세
+ */
+export const getAdminContentInspectionDetail = (inspectionId: number, signal?: AbortSignal) => {
+  return customInstance<AdminInspectionDetailResponse>({
+    url: `/admin/content-inspections/${inspectionId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminContentInspectionDetailQueryKey = (inspectionId?: number) => {
+  return [`/admin/content-inspections/${inspectionId}`] as const
+}
+
+export const getGetAdminContentInspectionDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminContentInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>> = ({
+    signal,
+  }) => getAdminContentInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, enabled: !!inspectionId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminContentInspectionDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminContentInspectionDetail>>
+>
+export type GetAdminContentInspectionDetailQueryError = unknown
+
+export function useGetAdminContentInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminContentInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminContentInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 큐 상세
+ */
+
+export function useGetAdminContentInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminContentInspectionDetailQueryOptions(inspectionId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminContentInspectionDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAdminContentInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminContentInspectionDetail>>> = ({
+    signal,
+  }) => getAdminContentInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminContentInspectionDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminContentInspectionDetail>>
+>
+export type GetAdminContentInspectionDetailSuspenseQueryError = unknown
+
+export function useGetAdminContentInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminContentInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 큐 상세
+ */
+
+export function useGetAdminContentInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminContentInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminContentInspectionDetailSuspenseQueryOptions(inspectionId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 요청 본문은 **선택**이고(메모만 담는다) 아예 보내지 않아도 204다. 허용은 상품 노출을 되돌리고 그 결정을 상품 행에 적어 이후 AI 판정이 뒤집지 못하게 한다 — 결정은 **노출 게이트 스위치를 보지 않는다**. 409 errorCode 40501 — 이미 처리한 검수(동시 결정 두 건은 한쪽만 204이고 다른 쪽이 이것이다). 409 errorCode 40508 — 셀러가 그 사이 내용을 고쳐 이 검수로는 결정할 수 없다. 묵은 판단이 최신 상품에 박히는 것을 서버가 막는 자리이고, 결정 자체가 남지 않는다(상품·검수 양쪽 무변경). 404 errorCode 40500 — 없는 검수. 400 errorCode 90001 — 메모 500자 초과.
+ * @summary 어드민 AI 검수 허용
+ */
+export const approveAdminContentInspection = (
+  inspectionId: number,
+  approveAdminContentInspectionRequest?: ApproveAdminContentInspectionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/content-inspections/${inspectionId}/approve`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: approveAdminContentInspectionRequest,
+    signal,
+  })
+}
+
+export const getApproveAdminContentInspectionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveAdminContentInspection>>,
+    TError,
+    { inspectionId: number; data: ApproveAdminContentInspectionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveAdminContentInspection>>,
+  TError,
+  { inspectionId: number; data: ApproveAdminContentInspectionRequest },
+  TContext
+> => {
+  const mutationKey = ['approveAdminContentInspection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveAdminContentInspection>>,
+    { inspectionId: number; data: ApproveAdminContentInspectionRequest }
+  > = props => {
+    const { inspectionId, data } = props ?? {}
+
+    return approveAdminContentInspection(inspectionId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ApproveAdminContentInspectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveAdminContentInspection>>
+>
+export type ApproveAdminContentInspectionMutationBody = ApproveAdminContentInspectionRequest
+export type ApproveAdminContentInspectionMutationError = unknown
+
+/**
+ * @summary 어드민 AI 검수 허용
+ */
+export const useApproveAdminContentInspection = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveAdminContentInspection>>,
+      TError,
+      { inspectionId: number; data: ApproveAdminContentInspectionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveAdminContentInspection>>,
+  TError,
+  { inspectionId: number; data: ApproveAdminContentInspectionRequest },
+  TContext
+> => {
+  const mutationOptions = getApproveAdminContentInspectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 차단은 상품을 반려로 굳히고, 셀러가 내용을 고쳐 재검수가 통과해도 되살아나지 않는다. 사유는 필수다 — 누락·공백은 400 errorCode 40502이고, 500자 초과는 400 errorCode 90001이다. 409 errorCode 40501(이미 처리)과 409 errorCode 40508(내용이 바뀜)은 허용과 같다. **사유 검사가 상태 가드보다 먼저다** — 이미 처리된 검수에 빈 사유로 차단하면 40501이 아니라 40502다(입점 심사 반려와 순서가 반대다).
+ * @summary 어드민 AI 검수 차단
+ */
+export const rejectAdminContentInspection = (
+  inspectionId: number,
+  rejectAdminContentInspectionRequest: RejectAdminContentInspectionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/content-inspections/${inspectionId}/reject`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: rejectAdminContentInspectionRequest,
+    signal,
+  })
+}
+
+export const getRejectAdminContentInspectionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectAdminContentInspection>>,
+    TError,
+    { inspectionId: number; data: RejectAdminContentInspectionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectAdminContentInspection>>,
+  TError,
+  { inspectionId: number; data: RejectAdminContentInspectionRequest },
+  TContext
+> => {
+  const mutationKey = ['rejectAdminContentInspection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectAdminContentInspection>>,
+    { inspectionId: number; data: RejectAdminContentInspectionRequest }
+  > = props => {
+    const { inspectionId, data } = props ?? {}
+
+    return rejectAdminContentInspection(inspectionId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RejectAdminContentInspectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectAdminContentInspection>>
+>
+export type RejectAdminContentInspectionMutationBody = RejectAdminContentInspectionRequest
+export type RejectAdminContentInspectionMutationError = unknown
+
+/**
+ * @summary 어드민 AI 검수 차단
+ */
+export const useRejectAdminContentInspection = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectAdminContentInspection>>,
+      TError,
+      { inspectionId: number; data: RejectAdminContentInspectionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectAdminContentInspection>>,
+  TError,
+  { inspectionId: number; data: RejectAdminContentInspectionRequest },
+  TContext
+> => {
+  const mutationOptions = getRejectAdminContentInspectionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
