@@ -13,7 +13,7 @@ import {
   Toast,
 } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
-import type { AdminReviewReason, AdminReviewState } from '@aechak/api'
+import { AdminReviewReason, type AdminReviewState } from '@aechak/api'
 import {
   DECISION_NOTE_MAX_LENGTH,
   DEFAULT_PAGE_SIZE,
@@ -182,17 +182,18 @@ function AiReviewQueuePage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
 
-  const { rows, totalCount, isLoading, isError, error } = useAiReviewQueue({
+  const { rows, totalCount, dataUpdatedAt, isLoading, isError, error } = useAiReviewQueue({
     state: stateFilter === ALL ? null : stateFilter,
     reason: reasonFilter === ALL ? null : reasonFilter,
     page,
   })
 
-  // 대기 시간 기준 시각. 렌더마다 Date.now()를 읽으면 같은 목록이 매 렌더 다른 값을 보여
-  // 주므로 응답이 바뀔 때만 다시 잡는다(1분 단위 라벨이라 이 정밀도로 충분하다).
-  const now = useMemo(() => Date.now(), [rows])
+  // 대기 시간 기준 시각은 목록을 받은 시각이다. Date.now()를 렌더에서 읽으면 값이 매 렌더
+  // 달라져 컬럼 정의가 계속 새로 만들어지고(rows도 매 렌더 새 배열이라 useMemo로 못 막는다),
+  // 표가 통째로 다시 그려진다. 라벨이 분 단위라 재조회 간격만큼의 오차는 보이지 않는다.
+  const now = dataUpdatedAt
 
-  // 상품명·상품 id 검색은 서버 파라미터가 없다(state·reason·targetType·page·size뿐) —
+  // 상품명·상품 id·검수 id 검색은 서버 파라미터가 없다(state·reason·targetType·page·size뿐) —
   // 현재 페이지 안에서만 거르고 그 사실을 표 아래 안내로 밝힌다.
   const filtered = useMemo(() => {
     const keyword = search.trim()
@@ -313,7 +314,7 @@ function AiReviewQueuePage() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="상품명 / 상품 ID 검색"
+            placeholder="상품명 / 상품 ID / 검수 ID 검색"
             className="w-64"
           />
         </FilterBar>
@@ -328,7 +329,7 @@ function AiReviewQueuePage() {
       {/* 셀러 이의 필터는 서버가 이의 축으로 번역해 돌려준다 — 그 행의 등재 사유는
           최초 이유(과탐 의심 등)로 남아 있어 '셀러 이의'가 아닐 수 있다. 그 사실을 적지 않으면
           운영자가 필터가 고장 났다고 읽는다. */}
-      {reasonFilter === 'SELLER_APPEAL' && (
+      {reasonFilter === AdminReviewReason.SELLER_APPEAL && (
         <Alert variant="info" className="mb-3.5">
           이의가 걸린 건 전부를 보여 줘요. 등재 사유는 처음 큐에 올라온 까닭이 남아 있어 셀러
           이의가 아닐 수 있어요.
@@ -377,7 +378,7 @@ function AiReviewQueuePage() {
 
       {search.trim() !== '' && (
         <p className="mt-1.5 text-caption text-text-tertiary">
-          상품명 / 상품 ID 검색은 서버 조건이 없어 현재 페이지 안에서만 걸러져요.
+          상품명 / 상품 ID / 검수 ID 검색은 서버 조건이 없어 현재 페이지 안에서만 걸러져요.
         </p>
       )}
 

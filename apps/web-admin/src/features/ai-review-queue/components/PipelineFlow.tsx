@@ -81,9 +81,10 @@ export function PipelineFlow({ stages }: PipelineFlowProps) {
 
             {stage.calls.length > 0 && (
               <ul className="space-y-0.5 border-t border-border-subtle pt-2">
-                {stage.calls.map(call => (
+                {stage.calls.map((call, callIndex) => (
                   <li
-                    key={`${call.modelId}-${call.outcome}-${call.latencyMs}`}
+                    // 같은 모델·결과·지연의 호출이 한 단계에 둘 올 수 있어 인덱스를 섞는다.
+                    key={`${callIndex}-${call.modelId}-${call.outcome}`}
                     className="flex flex-wrap items-center gap-x-2 text-caption text-text-tertiary"
                   >
                     <span className="font-mono">{call.modelId}</span>

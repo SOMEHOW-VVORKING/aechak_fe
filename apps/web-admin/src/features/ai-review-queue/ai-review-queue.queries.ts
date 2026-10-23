@@ -43,6 +43,14 @@ export interface QueueListParams {
 export interface QueueListResult {
   rows: QueueRowView[]
   totalCount: number
+  /**
+   * 이 목록을 서버에서 받은 시각(epoch ms). 대기 시간의 기준 시각으로 쓴다.
+   *
+   * 화면이 `Date.now()`를 직접 읽으면 렌더마다 값이 달라 같은 목록의 컬럼이 매 렌더
+   * 다시 그려진다. 응답 시각은 재조회할 때만 바뀌고 "마지막으로 받은 시점 기준 대기 시간"이라는
+   * 뜻도 분명하다. 첫 조회 전에는 0이다(그때는 그릴 행도 없다).
+   */
+  dataUpdatedAt: number
   isLoading: boolean
   isError: boolean
   error: unknown
@@ -78,6 +86,7 @@ export function useAiReviewQueue(params: QueueListParams): QueueListResult {
   return {
     rows: (query.data?.items ?? []).map(toQueueRow),
     totalCount: query.data?.totalCount ?? 0,
+    dataUpdatedAt: query.dataUpdatedAt,
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
