@@ -55,9 +55,8 @@ export function BreakevenMeter({ promotion }: BreakevenMeterProps) {
           <StatusPill variant={over ? 'error' : 'success'} dot>
             {over ? '손익분기 초과' : '손익분기 아래'}
           </StatusPill>
-          <p className="text-caption text-text-tertiary">
-            기준 {formatRate(promotion.breakevenRate)} (서버 설정)
-          </p>
+          {/* 숫자는 기준선 라벨이 이미 적는다 — 여기서는 그 값이 어디서 왔는지만 말한다. */}
+          <p className="text-caption text-text-tertiary">기준선은 서버 설정 값이에요</p>
         </div>
       </div>
 

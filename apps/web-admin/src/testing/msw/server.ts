@@ -793,6 +793,7 @@ export interface AdminInspectionMetricsWire {
     sampledCount: number
     reviewedCount: number
     violationFoundCount: number
+    undecidedCount?: number
     missRate?: number | null
     lastSampledAt?: string | null
     populationCount?: number | null
@@ -937,6 +938,7 @@ export function makeAdminInspectionMetricsWire(
       sampledCount: 60,
       reviewedCount: 48,
       violationFoundCount: 2,
+      undecidedCount: 3,
       missRate: 0.0417,
       lastSampledAt: '2026-10-23T04:00:00',
       populationCount: 402,

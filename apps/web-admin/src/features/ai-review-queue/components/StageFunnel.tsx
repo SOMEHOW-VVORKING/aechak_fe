@@ -115,7 +115,7 @@ function FunnelRow({ stage }: { stage: FunnelStageView }) {
             </span>
           )}
         </p>
-        <p className="text-caption text-text-tertiary">({stage.rateBasis})</p>
+        <p className="break-keep text-caption text-text-tertiary">{stage.rateBasis}</p>
       </div>
 
       <p className="break-keep text-caption text-text-tertiary">{stage.caption}</p>

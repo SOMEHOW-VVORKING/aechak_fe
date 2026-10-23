@@ -443,7 +443,7 @@ function AiReviewMetricsPage() {
                       // 세어진다 — 적지 않으면 표가 잘못됐다고 읽힌다.
                       <p className="break-keep text-caption text-text-tertiary">
                         사유별 합이 유입 건수보다 적어요. 등재 사유는 처음 큐에 올라온 까닭만
-                        남고, 나중에 붙은 이의는 이의 유입으로 따로 세요.
+                        남고, 나중에 붙은 이의는 이의 유입으로 따로 세고 있어요.
                       </p>
                     )}
                   </div>
