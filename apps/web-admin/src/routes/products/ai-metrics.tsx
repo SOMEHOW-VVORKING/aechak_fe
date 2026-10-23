@@ -60,10 +60,12 @@ function AiReviewMetricsPage() {
   }
 
   function reload() {
-    // 기간 창을 지금 시각으로 다시 계산한다 — 창이 바뀌지 않는 '서버 기본 창'에서는
-    // 쿼리 키가 같으므로 refetch가 실제 재조회를 맡는다.
-    setRange(periodToQuery(preset, Date.now()))
-    refetch()
+    // 기간 창을 지금 시각으로 다시 계산한다. 창이 달라지면 쿼리 키가 달라져 조회가 저절로
+    // 나가므로 refetch를 겹쳐 부르지 않는다 — 창 하나를 전수 집계하는 조회라 왕복을 공짜로
+    // 늘릴 자리가 아니다. '서버 기본 창'은 창이 늘 같아 refetch가 재조회를 맡는다.
+    const next = periodToQuery(preset, Date.now())
+    if (next.from === range.from && next.to === range.to) refetch()
+    else setRange(next)
   }
 
   const windowLabel = view

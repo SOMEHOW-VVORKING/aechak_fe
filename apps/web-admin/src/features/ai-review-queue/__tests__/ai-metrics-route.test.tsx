@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { delay, http, HttpResponse } from 'msw'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import {
   ADMIN_INSPECTION_METRICS_URL,
@@ -296,5 +297,61 @@ describe('/products/ai-metrics', () => {
     const terminals = within(note.parentElement as HTMLElement)
     expect(terminals.getByText('판정 실패')).toBeInTheDocument()
     expect(terminals.getByText('미판정')).toBeInTheDocument()
+  })
+
+  it('[AC-AI-METRICS-016] 재조회 중에 보이는 이전 창의 숫자를 두고 어긋남 안내를 띄우지 않는다', async () => {
+    const user = userEvent.setup()
+    seedAdminInspectionMetrics(makeAdminInspectionMetricsWire(), { honorsWindow: true })
+    renderAt('/products/ai-metrics')
+    await screen.findByText('1단 룰')
+
+    // 두 번째 조회를 늦춰 "응답을 기다리는 동안"을 붙잡는다.
+    server.use(
+      http.get(ADMIN_INSPECTION_METRICS_URL, async ({ request }) => {
+        await delay(150)
+        const from = new URL(request.url).searchParams.get('from')
+        const wire = makeAdminInspectionMetricsWire()
+        return HttpResponse.json({
+          data: { ...wire, window: { ...wire.window!, from: from ?? wire.window!.from } },
+        })
+      }),
+    )
+    await user.selectOptions(screen.getByRole('combobox', { name: '집계 기간' }), '7d')
+
+    // 이 순간 화면에 있는 숫자는 24시간 창의 이전 응답이다(이전 결과를 유지하므로). 그것을
+    // 방금 요청한 7일 창과 맞춰 보면 서버가 선택을 무시했다고 잘못 판정한다 — 서버는 멀쩡하다.
+    expect(screen.queryByText(/서버가 기간 선택을 반영하지 않았어요/)).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByText(/서버가 기간 선택을 반영하지 않았어요/)).not.toBeInTheDocument(),
+    )
+  })
+
+  it('[AC-AI-METRICS-017] 다시 불러오기는 창이 달라져도 조회를 한 번만 더 보낸다', async () => {
+    const user = userEvent.setup()
+    seedAdminInspectionMetrics(makeAdminInspectionMetricsWire(), { honorsWindow: true })
+    const requested = recordMetricsRequests()
+    // 다시 불러오기는 창을 '지금'으로 다시 계산한다. 기간을 고른 그 초에 누르면 창이 같아
+    // 결함이 드러나지 않으므로 시계를 두 시간 앞으로 옮긴 뒤 누른다.
+    const base = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base)
+    try {
+      renderAt('/products/ai-metrics')
+      await screen.findByText('1단 룰')
+      await user.selectOptions(screen.getByRole('combobox', { name: '집계 기간' }), '7d')
+      await waitFor(() =>
+        expect(requested.some(url => new URL(url).searchParams.has('from'))).toBe(true),
+      )
+
+      const before = requested.length
+      nowSpy.mockReturnValue(base + 2 * 60 * 60 * 1000)
+      await user.click(screen.getByRole('button', { name: '다시 불러오기' }))
+      // 창을 다시 계산하면서 refetch까지 부르면 새 창과 이전 창으로 두 번 나간다. 창 하나를
+      // 전수 집계하는 조회라 왕복을 공짜로 늘릴 자리가 아니다.
+      await waitFor(() => expect(requested.length).toBeGreaterThan(before))
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(requested.length - before).toBe(1)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })

@@ -4,7 +4,12 @@ import {
   type AdminInspectionMetricsData,
   type GetAdminInspectionMetricsParams,
 } from '@aechak/api'
-import { toMetricsView, type InspectionMetricsView, type MetricsQuery } from './ai-review-metrics.map'
+import {
+  EMPTY_METRICS_QUERY,
+  toMetricsView,
+  type InspectionMetricsView,
+  type MetricsQuery,
+} from './ai-review-metrics.map'
 
 // 운영 지표 1종(`GET /admin/inspection-metrics`)을 실서버에 붙이는 얇은 어댑터. 생성된
 // react-query 훅이 아니라 fetcher만 소비하고 이 파일이 자체 useQuery로 감싼다(AGENTS 규약).
@@ -40,10 +45,15 @@ export function useInspectionMetrics(query: MetricsQuery): MetricsResult {
     // 띄우면 카드 높이가 튀면서 읽던 숫자가 사라진다).
     placeholderData: keepPreviousData,
   })
+  // 재조회 중에 화면에 남아 있는 숫자는 **이전 조회의 응답**이다(keepPreviousData). 그 응답이
+  // 밝힌 창을 방금 요청한 창과 맞춰 보면 늘 어긋나므로, 멀쩡한 서버를 두고 "선택을 반영하지
+  // 않았어요"가 한 번 번쩍인다. 자리를 메우는 동안에는 어긋남을 묻지 않는다.
+  const describedBy = result.isPlaceholderData ? EMPTY_METRICS_QUERY : query
+
   return {
     // 뷰 변환이 질의 창을 함께 받는 이유: "요청한 창"과 "서버가 집계한 창"을 맞춰 봐야
     // 서버가 선택을 무시했다는 사실을 화면이 알 수 있다.
-    view: result.data ? toMetricsView(result.data, query) : null,
+    view: result.data ? toMetricsView(result.data, describedBy) : null,
     isLoading: result.isLoading,
     isFetching: result.isFetching,
     isError: result.isError,
