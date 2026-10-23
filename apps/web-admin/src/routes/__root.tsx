@@ -2,7 +2,14 @@ import { useMemo } from 'react'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
-import { ClipboardCheck, LayoutDashboard, ShieldCheck, Sparkles, UserCog } from 'lucide-react'
+import {
+  ChartNoAxesColumn,
+  ClipboardCheck,
+  LayoutDashboard,
+  ShieldCheck,
+  Sparkles,
+  UserCog,
+} from 'lucide-react'
 import { useOpenInspectionCount } from '@/features/ai-review-queue'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
@@ -10,6 +17,7 @@ const iconClass = 'size-full'
 
 const APPLICATIONS_NAV_KEY = '/sellers/applications'
 const AI_QUEUE_NAV_KEY = '/products/ai-queue'
+const AI_METRICS_NAV_KEY = '/products/ai-metrics'
 
 // nav에는 admin 모듈에 API가 있는 화면(입점 심사·관리자 관리·AI 검수 큐)과 홈만 둔다.
 // 셀러 관리/회원 관리/상품 검수는 아직 목업 배열뿐이라 라우트는 보존하되 진입점을 빼고(각 라우트가
@@ -36,6 +44,13 @@ const navGroups: NavGroup[] = [
         key: AI_QUEUE_NAV_KEY,
         label: 'AI 검수 큐',
         icon: <Sparkles className={iconClass} />,
+      },
+      {
+        // 운영 지표는 EP 1종(/admin/inspection-metrics)이 있어 올린다. 배지는 두지 않는다 —
+        // 지표에는 "처리해야 할 N건" 같은 단일 수가 없고, 경보 여부는 화면 상단 배너가 전한다.
+        key: AI_METRICS_NAV_KEY,
+        label: 'AI 검수 지표',
+        icon: <ChartNoAxesColumn className={iconClass} />,
       },
     ],
   },

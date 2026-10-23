@@ -17,6 +17,7 @@ import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as SellersApplicationsRouteImport } from './routes/sellers/applications'
 import { Route as ProductsReviewRouteImport } from './routes/products/review'
 import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
+import { Route as ProductsAiMetricsRouteImport } from './routes/products/ai-metrics'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 
 const MembersRoute = MembersRouteImport.update({
@@ -59,6 +60,11 @@ const ProductsAiQueueRoute = ProductsAiQueueRouteImport.update({
   path: '/products/ai-queue',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsAiMetricsRoute = ProductsAiMetricsRouteImport.update({
+  id: '/products/ai-metrics',
+  path: '/products/ai-metrics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginCompleteRoute = LoginCompleteRouteImport.update({
   id: '/login/complete',
   path: '/login/complete',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/ai-metrics': typeof ProductsAiMetricsRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/ai-metrics': typeof ProductsAiMetricsRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/admins': typeof AdminsRoute
   '/members': typeof MembersRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/products/ai-metrics': typeof ProductsAiMetricsRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/admins'
     | '/members'
     | '/login/complete'
+    | '/products/ai-metrics'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/admins'
     | '/members'
     | '/login/complete'
+    | '/products/ai-metrics'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/admins'
     | '/members'
     | '/login/complete'
+    | '/products/ai-metrics'
     | '/products/ai-queue'
     | '/products/review'
     | '/sellers/applications'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   AdminsRoute: typeof AdminsRoute
   MembersRoute: typeof MembersRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
+  ProductsAiMetricsRoute: typeof ProductsAiMetricsRoute
   ProductsAiQueueRoute: typeof ProductsAiQueueRoute
   ProductsReviewRoute: typeof ProductsReviewRoute
   SellersApplicationsRoute: typeof SellersApplicationsRoute
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsAiQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/ai-metrics': {
+      id: '/products/ai-metrics'
+      path: '/products/ai-metrics'
+      fullPath: '/products/ai-metrics'
+      preLoaderRoute: typeof ProductsAiMetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/complete': {
       id: '/login/complete'
       path: '/login/complete'
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminsRoute: AdminsRoute,
   MembersRoute: MembersRoute,
   LoginCompleteRoute: LoginCompleteRoute,
+  ProductsAiMetricsRoute: ProductsAiMetricsRoute,
   ProductsAiQueueRoute: ProductsAiQueueRoute,
   ProductsReviewRoute: ProductsReviewRoute,
   SellersApplicationsRoute: SellersApplicationsRoute,

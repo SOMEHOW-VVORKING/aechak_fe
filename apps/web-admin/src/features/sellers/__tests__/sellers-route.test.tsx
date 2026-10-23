@@ -35,6 +35,9 @@ describe('/sellers', () => {
     // AI 검수 큐는 admin 모듈에 EP 4종(/admin/content-inspections)이 생겨 nav로 올라왔다 —
     // 이 항목이 금지 목록에 있던 것은 화면이 목업 배열로 돌던 시절의 사실이다.
     expect(screen.getByRole('button', { name: 'AI 검수 큐' })).toBeInTheDocument()
+    // 운영 지표도 EP 1종(/admin/inspection-metrics)이 있어 nav로 올라왔다. 배지는 두지 않는다 —
+    // 지표에는 '처리해야 할 N건' 같은 단일 수가 없다.
+    expect(screen.getByRole('button', { name: 'AI 검수 지표' })).toBeInTheDocument()
     // 아직 목업뿐인 화면과 라우트 없던 항목(상수 배지가 붙어 있던 것 포함)은 nav에서 빠진다.
     for (const label of ['셀러 관리', '일반 회원 관리', '상품 검수 관리', '신고 제재 관리', '정산 관리']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
