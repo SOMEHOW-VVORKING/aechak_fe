@@ -19,6 +19,7 @@ import {
 import { useToast } from '@/shared/hooks/useToast'
 import {
   INSPECTION_STATUS_LABEL,
+  InspectionDrawer,
   InventoryDrawer,
   KEYWORD_MAX,
   SALE_STATUS_LABEL,
@@ -163,6 +164,7 @@ function ProductsRoute() {
 
   const [suspendTarget, setSuspendTarget] = useState<SellerProductSummary | null>(null)
   const [inventoryProductId, setInventoryProductId] = useState<string | null>(null)
+  const [inspectionProductId, setInspectionProductId] = useState<string | null>(null)
   // 등록/수정 완료 알림은 state로 옮기고 URL에서 바로 지운다 — URL에 남기면 다른 토스트가 닫힌 뒤 다시 뜬다.
   const toast = useToast(saved ? { message: SAVED_MESSAGE[saved], variant: 'success' } : null)
   useEffect(() => {
@@ -304,10 +306,18 @@ function ProductsRoute() {
       key: 'inspectionStatus',
       label: '검수 상태',
       align: 'center',
+      // 승인된 상품도 수정하면 다시 검수를 받으므로 상태와 상관없이 모든 행에서 진행 Drawer를 연다.
       render: p => (
-        <StatusPill variant={INSPECTION_STATUS_VARIANT[p.inspectionStatus]}>
-          {INSPECTION_STATUS_LABEL[p.inspectionStatus]}
-        </StatusPill>
+        <button
+          type="button"
+          aria-label={`${p.name} 검수 진행 보기`}
+          className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          onClick={() => setInspectionProductId(p.productId)}
+        >
+          <StatusPill variant={INSPECTION_STATUS_VARIANT[p.inspectionStatus]}>
+            {INSPECTION_STATUS_LABEL[p.inspectionStatus]}
+          </StatusPill>
+        </button>
       ),
     },
     {
@@ -514,6 +524,12 @@ function ProductsRoute() {
         productId={inventoryProductId}
         onClose={() => setInventoryProductId(null)}
         onSaved={message => toast.show(message)}
+      />
+
+      <InspectionDrawer
+        productId={inspectionProductId}
+        onClose={() => setInspectionProductId(null)}
+        onEdit={productId => navigate({ to: '/products/$productId/edit', params: { productId } })}
       />
 
       {/* 임시저장 Drawer 진입점은 BE에 임시저장이 없어 뺐다(위 주석; 구현은 목업에 보존). */}

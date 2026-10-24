@@ -509,31 +509,6 @@ export interface Settlement {
   refundDeduction?: number
 }
 
-export type AiReviewTargetType = 'product-image' | 'product-description' | 'review' | 'sns-post'
-export type AiReviewDetectionStage = 1 | 2
-export type AiReviewStatus =
-  | 'pending'
-  | 'auto-blinded'
-  | 'admin-approved'
-  | 'admin-rejected'
-  | 'admin-deleted'
-
-export interface AiReviewQueueItem {
-  id: string
-  targetType: AiReviewTargetType
-  detectionReason: string
-  detectionStage: AiReviewDetectionStage
-  sellerName?: string
-  productName?: string
-  autoBlindedAt: string
-  reviewStatus: AiReviewStatus
-  aiReasoning?: string
-  reviewHistory: { actor: 'ai' | 'admin'; label: string; date: string }[]
-  processReason?: string
-  sellerNotice?: string
-  internalMemo?: string
-}
-
 // 구매자 상품 신고(b8-st-1-product). 제출 시 운영 검수 큐로 넘어가는 신고 사유·상세를 담는다.
 // (신고자는 비공개 보호되므로 신고자 식별 정보는 이 타입에 두지 않는다.) SNS 게시물/유저
 // 신고는 이번 범위 밖이라 상품 신고 사유만 모델링한다.
