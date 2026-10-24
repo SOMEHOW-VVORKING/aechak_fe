@@ -1871,6 +1871,33 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /sellers/me/products/{productId}/inspection:
+    get:
+      summary: "내 상품 검수 진행 단계와 사유"
+      description: >-
+        progressStep은 서버가 계산한다. 가장 최근 검수가 QUEUED면 REQUESTED, IN_FLIGHT면
+        AI_REVIEWING이다. 관리자가 반려한 상품을 고쳐 AI를 통과해 관리자 재확인을 기다리면
+        ADMIN_REVIEWING이고, 그 밖에는 상품 inspectionStatus(APPROVED, REJECTED)를 따르며 PENDING이면
+        REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께
+        reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다.
+        rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를
+        타지 않은 상품은 inspectionStatus와 progressStep만 채워진다. 남의 상품·없는 상품은 404 errorCode 40000.
+      operationId: "getMyProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductInspectionResponse"
   /admin/seller-applications:
     get:
       summary: "어드민 셀러 심사 목록"
@@ -1990,6 +2017,113 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RejectAdminSellerApplicationRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/product-inspections:
+    get:
+      summary: "어드민 상품 검토 큐 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용이며 권한 없음은 403 errorCode 20011. AI가 위반으로 반려한 상품과,
+        관리자가 반려한 상품을 고쳐 AI를 통과한 상품이 PENDING_REVIEW로 쌓인다. 오프셋 페이지네이션이고
+        정렬은 판정 시각(blindedAt) 내림차순·id 내림차순이다. status를 주지 않으면 전체다.
+        page 음수는 0으로, size는 1~100으로 서버가 보정한다.
+      operationId: "getAdminProductInspections"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ReviewQueueStatus"
+          description: "대문자 enum 이름을 그대로 보낸다. 생략하면 전체"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductInspectionListResponse"
+  /admin/product-inspections/{productId}:
+    get:
+      summary: "어드민 상품 검토 상세"
+      description: >-
+        productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로,
+        설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는
+        상품이 한 번도 검수를 타지 않았으면 null이다. 없는 상품은 404 errorCode 40000.
+      operationId: "getAdminProductInspectionDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductInspectionDetailResponse"
+  /admin/product-inspections/{productId}/approve:
+    post:
+      summary: "어드민 상품 검토 승인"
+      description: >-
+        성공은 204 No Content(빈 바디)다. AI 반려가 오탐이면 승인한다. 상품을 APPROVED로 바꾸고 열린
+        검토 행을 승인으로 닫는다.
+        열린 검토 행이 없으면 409 errorCode 40500 — 셀러가 고친 내용이 먼저 AI를 통과해 행이
+        닫혔거나 다른 관리자가 먼저 처리한 경우라 클라이언트는 목록을 다시 조회하면 된다.
+        없는 상품은 404 errorCode 40000.
+      operationId: "approveAdminProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content"
+  /admin/product-inspections/{productId}/reject:
+    post:
+      summary: "어드민 상품 검토 반려"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 상품을 REJECTED로 확정하고 사유를 남긴다. 사유는 셀러 검수
+        조회의 rejectReason으로 그대로 보인다. 이후 셀러가 고친 내용이 AI를 통과해도 관리자가 다시
+        확인할 때까지 REJECTED로 남는다. 사유 누락·공백·500자 초과는 400 errorCode 90001.
+        열린 검토 행이 없으면 409 errorCode 40500. 없는 상품은 404 errorCode 40000.
+      operationId: "rejectAdminProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectAdminProductInspectionRequest"
       responses:
         "204":
           description: "No Content"
@@ -3810,8 +3944,9 @@ components:
       type: string
       enum: [DRAFT, PENDING, APPROVED, REJECTED]
       description: >-
-        상품 심사 상태. 지금 서버는 등록 즉시 APPROVED를 매기고 DRAFT·PENDING·REJECTED로 가는
-        경로가 없다(심사 기능 확장 대비 정의만 존재)
+        상품 심사 상태. 검수 게이트가 꺼져 있으면 등록 즉시 APPROVED다. 켜져 있으면 PENDING으로
+        등록되어 AI 판정이나 관리자 승인 뒤 APPROVED가 된다. REJECTED는 관리자 반려로만 생긴다.
+        DRAFT로 가는 경로는 없다
     SellerAssignableSaleStatus:
       type: string
       enum: [ON_SALE, SUSPENDED]
@@ -4653,6 +4788,187 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    InspectionProgressStep:
+      type: string
+      enum: [REQUESTED, AI_REVIEWING, ADMIN_REVIEWING, APPROVED, REJECTED]
+    InspectionProcessingState:
+      type: string
+      enum: [QUEUED, IN_FLIGHT, SETTLED]
+    InspectionJudgment:
+      type: string
+      enum: [PASS, FLAG, UNJUDGED, FAILED]
+      description: "AI 판정. UNJUDGED는 기한 안에 판정을 받지 못한 것, FAILED는 판정 과정이 실패한 것"
+    ReviewQueueStatus:
+      type: string
+      enum: [PENDING_REVIEW, APPROVED, REJECTED, SUPERSEDED]
+      description: "관리자 검토 행 상태. SUPERSEDED는 셀러가 고친 내용이 AI를 통과해 관리자 확인 없이 닫힌 것"
+    SellerProductInspectionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductInspection"
+    SellerProductInspection:
+      type: object
+      required: [productId, inspectionStatus, progressStep]
+      properties:
+        productId:
+          type: string
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        progressStep:
+          $ref: "#/components/schemas/InspectionProgressStep"
+        processingState:
+          allOf:
+            - $ref: "#/components/schemas/InspectionProcessingState"
+          nullable: true
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+        reasonCode:
+          type: string
+          nullable: true
+        reasonSummary:
+          type: string
+          nullable: true
+          description: "셀러가 쓴 문장 중 걸린 구절"
+        sellerNotice:
+          type: string
+          nullable: true
+          description: "AI가 제안한 수정 방향"
+        rejectReason:
+          type: string
+          nullable: true
+          description: "관리자 반려 사유. 관리자가 반려한 상품일 때만 온다. AI가 반려했으면 null"
+        requestedAt:
+          type: string
+          nullable: true
+        settledAt:
+          type: string
+          nullable: true
+    AdminProductInspectionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminProductInspectionListData"
+    AdminProductInspectionListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProductInspectionSummary"
+        totalCount:
+          type: integer
+          format: int64
+    AdminProductInspectionSummary:
+      type: object
+      required: [productId, productName, sellerName, status, latestJudgment, blindedAt]
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        sellerName:
+          type: string
+        status:
+          $ref: "#/components/schemas/ReviewQueueStatus"
+        latestJudgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+          description: "상품의 가장 최근 검수 판정. 셀러가 고친 내용을 AI가 아직 보는 중이면 null"
+        blindedAt:
+          type: string
+          description: "이 행을 열었거나 다시 연 판정의 시각"
+    AdminProductInspectionDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminProductInspectionDetail"
+    AdminProductInspectionDetail:
+      type: object
+      required:
+        [productId, productName, sellerName, categoryNames, description, representativeImageUrl, optionNames,
+         inspectionStatus, awaitingAdminReview, processingState, judgment, reasonCode, reasonSummary, sellerNotice,
+         requestedAt, settledAt, rejections]
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        sellerName:
+          type: string
+        categoryNames:
+          type: array
+          items:
+            type: string
+          description: "대분류부터 소분류 순"
+        description:
+          type: string
+          nullable: true
+        representativeImageUrl:
+          type: string
+          nullable: true
+        optionNames:
+          type: array
+          items:
+            type: string
+          description: "그룹명 뒤에 그 그룹의 값 이름들을 붙여 늘어놓는다"
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        awaitingAdminReview:
+          type: boolean
+          description: "열린 검토 행이 있는가. false면 승인·반려가 409 errorCode 40500"
+        processingState:
+          allOf:
+            - $ref: "#/components/schemas/InspectionProcessingState"
+          nullable: true
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+        reasonCode:
+          type: string
+          nullable: true
+        reasonSummary:
+          type: string
+          nullable: true
+        sellerNotice:
+          type: string
+          nullable: true
+        requestedAt:
+          type: string
+          nullable: true
+        settledAt:
+          type: string
+          nullable: true
+        rejections:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProductRejection"
+          description: "이전 관리자 반려. 최근 것부터"
+    AdminProductRejection:
+      type: object
+      required: [reason, rejectedAt]
+      properties:
+        reason:
+          type: string
+        rejectedAt:
+          type: string
+    RejectAdminProductInspectionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: "셀러에게 그대로 보이는 반려 사유. 공백만이면 400 errorCode 90001"
   parameters:
     SnsPublicId:
       name: publicId

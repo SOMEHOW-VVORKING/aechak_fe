@@ -1513,7 +1513,7 @@ export interface SubmitInquiryResponse {
 }
 
 /**
- * 상품 심사 상태. 지금 서버는 등록 즉시 APPROVED를 매기고 DRAFT·PENDING·REJECTED로 가는 경로가 없다(심사 기능 확장 대비 정의만 존재)
+ * 상품 심사 상태. 검수 게이트가 꺼져 있으면 등록 즉시 APPROVED다. 켜져 있으면 PENDING으로 등록되어 AI 판정이나 관리자 승인 뒤 APPROVED가 된다. REJECTED는 관리자 반려로만 생긴다. DRAFT로 가는 경로는 없다
  */
 export type InspectionStatus = (typeof InspectionStatus)[keyof typeof InspectionStatus]
 
@@ -2130,6 +2130,189 @@ export interface SnsRelationPageResponse {
   data: SnsRelationPageResult
 }
 
+export type InspectionProgressStep =
+  (typeof InspectionProgressStep)[keyof typeof InspectionProgressStep]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionProgressStep = {
+  REQUESTED: 'REQUESTED',
+  AI_REVIEWING: 'AI_REVIEWING',
+  ADMIN_REVIEWING: 'ADMIN_REVIEWING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const
+
+export type InspectionProcessingState =
+  (typeof InspectionProcessingState)[keyof typeof InspectionProcessingState]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionProcessingState = {
+  QUEUED: 'QUEUED',
+  IN_FLIGHT: 'IN_FLIGHT',
+  SETTLED: 'SETTLED',
+} as const
+
+/**
+ * AI 판정. UNJUDGED는 기한 안에 판정을 받지 못한 것, FAILED는 판정 과정이 실패한 것
+ */
+export type InspectionJudgment = (typeof InspectionJudgment)[keyof typeof InspectionJudgment]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionJudgment = {
+  PASS: 'PASS',
+  FLAG: 'FLAG',
+  UNJUDGED: 'UNJUDGED',
+  FAILED: 'FAILED',
+} as const
+
+/**
+ * 관리자 검토 행 상태. SUPERSEDED는 셀러가 고친 내용이 AI를 통과해 관리자 확인 없이 닫힌 것
+ */
+export type ReviewQueueStatus = (typeof ReviewQueueStatus)[keyof typeof ReviewQueueStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReviewQueueStatus = {
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  SUPERSEDED: 'SUPERSEDED',
+} as const
+
+export interface SellerProductInspectionResponse {
+  data: SellerProductInspection
+}
+
+/**
+ * @nullable
+ */
+export type SellerProductInspectionProcessingState = InspectionProcessingState | null
+
+/**
+ * @nullable
+ */
+export type SellerProductInspectionJudgment = InspectionJudgment | null
+
+export interface SellerProductInspection {
+  productId: string
+  inspectionStatus: InspectionStatus
+  progressStep: InspectionProgressStep
+  /** @nullable */
+  processingState?: SellerProductInspectionProcessingState
+  /** @nullable */
+  judgment?: SellerProductInspectionJudgment
+  /** @nullable */
+  reasonCode?: string | null
+  /**
+   * 셀러가 쓴 문장 중 걸린 구절
+   * @nullable
+   */
+  reasonSummary?: string | null
+  /**
+   * AI가 제안한 수정 방향
+   * @nullable
+   */
+  sellerNotice?: string | null
+  /**
+   * 관리자 반려 사유. 관리자가 반려한 상품일 때만 온다. AI가 반려했으면 null
+   * @nullable
+   */
+  rejectReason?: string | null
+  /** @nullable */
+  requestedAt?: string | null
+  /** @nullable */
+  settledAt?: string | null
+}
+
+export interface AdminProductInspectionListResponse {
+  data: AdminProductInspectionListData
+}
+
+export interface AdminProductInspectionListData {
+  items: AdminProductInspectionSummary[]
+  totalCount: number
+}
+
+/**
+ * 상품의 가장 최근 검수 판정. 셀러가 고친 내용을 AI가 아직 보는 중이면 null
+ * @nullable
+ */
+export type AdminProductInspectionSummaryLatestJudgment = InspectionJudgment | null
+
+export interface AdminProductInspectionSummary {
+  productId: string
+  productName: string
+  sellerName: string
+  status: ReviewQueueStatus
+  /**
+   * 상품의 가장 최근 검수 판정. 셀러가 고친 내용을 AI가 아직 보는 중이면 null
+   * @nullable
+   */
+  latestJudgment: AdminProductInspectionSummaryLatestJudgment
+  /** 이 행을 열었거나 다시 연 판정의 시각 */
+  blindedAt: string
+}
+
+export interface AdminProductInspectionDetailResponse {
+  data: AdminProductInspectionDetail
+}
+
+/**
+ * @nullable
+ */
+export type AdminProductInspectionDetailProcessingState = InspectionProcessingState | null
+
+/**
+ * @nullable
+ */
+export type AdminProductInspectionDetailJudgment = InspectionJudgment | null
+
+export interface AdminProductInspectionDetail {
+  productId: string
+  productName: string
+  sellerName: string
+  /** 대분류부터 소분류 순 */
+  categoryNames: string[]
+  /** @nullable */
+  description: string | null
+  /** @nullable */
+  representativeImageUrl: string | null
+  /** 그룹명 뒤에 그 그룹의 값 이름들을 붙여 늘어놓는다 */
+  optionNames: string[]
+  inspectionStatus: InspectionStatus
+  /** 열린 검토 행이 있는가. false면 승인·반려가 409 errorCode 40500 */
+  awaitingAdminReview: boolean
+  /** @nullable */
+  processingState: AdminProductInspectionDetailProcessingState
+  /** @nullable */
+  judgment: AdminProductInspectionDetailJudgment
+  /** @nullable */
+  reasonCode: string | null
+  /** @nullable */
+  reasonSummary: string | null
+  /** @nullable */
+  sellerNotice: string | null
+  /** @nullable */
+  requestedAt: string | null
+  /** @nullable */
+  settledAt: string | null
+  /** 이전 관리자 반려. 최근 것부터 */
+  rejections: AdminProductRejection[]
+}
+
+export interface AdminProductRejection {
+  reason: string
+  rejectedAt: string
+}
+
+export interface RejectAdminProductInspectionRequest {
+  /**
+   * 셀러에게 그대로 보이는 반려 사유. 공백만이면 400 errorCode 90001
+   * @minLength 1
+   * @maxLength 500
+   */
+  reason: string
+}
+
 /**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
@@ -2412,6 +2595,22 @@ export type GetAdminSellerApplicationsParams = {
    * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
    */
   status?: ApplicationStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminProductInspectionsParams = {
+  /**
+   * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
+   */
+  status?: ReviewQueueStatus
   /**
    * @minimum 0
    */
@@ -12127,6 +12326,225 @@ export const useDemoteAdmin = <TError = unknown, TContext = unknown>(
 }
 
 /**
+ * progressStep은 서버가 계산한다. 가장 최근 검수가 QUEUED면 REQUESTED, IN_FLIGHT면 AI_REVIEWING이다. 관리자가 반려한 상품을 고쳐 AI를 통과해 관리자 재확인을 기다리면 ADMIN_REVIEWING이고, 그 밖에는 상품 inspectionStatus(APPROVED, REJECTED)를 따르며 PENDING이면 REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께 reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다. rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를 타지 않은 상품은 inspectionStatus와 progressStep만 채워진다. 남의 상품·없는 상품은 404 errorCode 40000.
+ * @summary 내 상품 검수 진행 단계와 사유
+ */
+export const getMyProductInspection = (productId: string, signal?: AbortSignal) => {
+  return customInstance<SellerProductInspectionResponse>({
+    url: `/sellers/me/products/${productId}/inspection`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetMyProductInspectionQueryKey = (productId?: string) => {
+  return [`/sellers/me/products/${productId}/inspection`] as const
+}
+
+export const getGetMyProductInspectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyProductInspectionQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyProductInspection>>> = ({ signal }) =>
+    getMyProductInspection(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyProductInspection>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyProductInspectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyProductInspection>>
+>
+export type GetMyProductInspectionQueryError = unknown
+
+export function useGetMyProductInspection<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyProductInspection>>,
+          TError,
+          Awaited<ReturnType<typeof getMyProductInspection>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInspection<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyProductInspection>>,
+          TError,
+          Awaited<ReturnType<typeof getMyProductInspection>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInspection<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 상품 검수 진행 단계와 사유
+ */
+
+export function useGetMyProductInspection<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyProductInspectionQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMyProductInspectionSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyProductInspectionQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyProductInspection>>> = ({ signal }) =>
+    getMyProductInspection(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMyProductInspection>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyProductInspectionSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyProductInspection>>
+>
+export type GetMyProductInspectionSuspenseQueryError = unknown
+
+export function useGetMyProductInspectionSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInspectionSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInspectionSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 상품 검수 진행 단계와 사유
+ */
+
+export function useGetMyProductInspectionSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInspection>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInspection>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyProductInspectionSuspenseQueryOptions(productId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
  * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(권한 없음은 403 errorCode 20011). 오프셋 페이지네이션이고 커서가 아니다. 정렬은 서버가 제출일 내림차순·id 내림차순으로 고정하며 제출 전(submittedAt=null) 건은 뒤로 밀린다. status를 주지 않으면 DRAFT·CANCELLED까지 포함한 전체가 totalCount에 잡힌다. 미지 status는 400 errorCode 90001 message "status: 잘못된 값입니다." page 음수는 0으로, size는 1~100으로 서버가 보정한다(거절하지 않는다).
  * @summary 어드민 셀러 심사 목록
  */
@@ -12755,6 +13173,634 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
   TContext
 > => {
   const mutationOptions = getRejectAdminSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 권한 없음은 403 errorCode 20011. AI가 위반으로 반려한 상품과, 관리자가 반려한 상품을 고쳐 AI를 통과한 상품이 PENDING_REVIEW로 쌓인다. 오프셋 페이지네이션이고 정렬은 판정 시각(blindedAt) 내림차순·id 내림차순이다. status를 주지 않으면 전체다. page 음수는 0으로, size는 1~100으로 서버가 보정한다.
+ * @summary 어드민 상품 검토 큐 목록
+ */
+export const getAdminProductInspections = (
+  params?: GetAdminProductInspectionsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminProductInspectionListResponse>({
+    url: `/admin/product-inspections`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminProductInspectionsQueryKey = (
+  params?: GetAdminProductInspectionsParams,
+) => {
+  return [`/admin/product-inspections`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminProductInspectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProductInspections>>> = ({
+    signal,
+  }) => getAdminProductInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProductInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductInspectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminProductInspections>>
+>
+export type GetAdminProductInspectionsQueryError = unknown
+
+export function useGetAdminProductInspections<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminProductInspectionsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProductInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProductInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspections<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProductInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProductInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspections<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 검토 큐 목록
+ */
+
+export function useGetAdminProductInspections<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductInspectionsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminProductInspectionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProductInspections>>> = ({
+    signal,
+  }) => getAdminProductInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProductInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductInspectionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminProductInspections>>
+>
+export type GetAdminProductInspectionsSuspenseQueryError = unknown
+
+export function useGetAdminProductInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminProductInspectionsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 검토 큐 목록
+ */
+
+export function useGetAdminProductInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductInspectionsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로, 설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는 상품이 한 번도 검수를 타지 않았으면 null이다. 없는 상품은 404 errorCode 40000.
+ * @summary 어드민 상품 검토 상세
+ */
+export const getAdminProductInspectionDetail = (productId: string, signal?: AbortSignal) => {
+  return customInstance<AdminProductInspectionDetailResponse>({
+    url: `/admin/product-inspections/${productId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminProductInspectionDetailQueryKey = (productId?: string) => {
+  return [`/admin/product-inspections/${productId}`] as const
+}
+
+export const getGetAdminProductInspectionDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductInspectionDetailQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>> = ({
+    signal,
+  }) => getAdminProductInspectionDetail(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductInspectionDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminProductInspectionDetail>>
+>
+export type GetAdminProductInspectionDetailQueryError = unknown
+
+export function useGetAdminProductInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProductInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProductInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 검토 상세
+ */
+
+export function useGetAdminProductInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductInspectionDetailQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminProductInspectionDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductInspectionDetailQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProductInspectionDetail>>> = ({
+    signal,
+  }) => getAdminProductInspectionDetail(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductInspectionDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminProductInspectionDetail>>
+>
+export type GetAdminProductInspectionDetailSuspenseQueryError = unknown
+
+export function useGetAdminProductInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 검토 상세
+ */
+
+export function useGetAdminProductInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+  TError = unknown,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminProductInspectionDetail>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductInspectionDetailSuspenseQueryOptions(productId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. AI 반려가 오탐이면 승인한다. 상품을 APPROVED로 바꾸고 열린 검토 행을 승인으로 닫는다. 열린 검토 행이 없으면 409 errorCode 40500 — 셀러가 고친 내용이 먼저 AI를 통과해 행이 닫혔거나 다른 관리자가 먼저 처리한 경우라 클라이언트는 목록을 다시 조회하면 된다. 없는 상품은 404 errorCode 40000.
+ * @summary 어드민 상품 검토 승인
+ */
+export const approveAdminProductInspection = (productId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/admin/product-inspections/${productId}/approve`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getApproveAdminProductInspectionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveAdminProductInspection>>,
+    TError,
+    { productId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveAdminProductInspection>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationKey = ['approveAdminProductInspection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveAdminProductInspection>>,
+    { productId: string }
+  > = props => {
+    const { productId } = props ?? {}
+
+    return approveAdminProductInspection(productId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ApproveAdminProductInspectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveAdminProductInspection>>
+>
+
+export type ApproveAdminProductInspectionMutationError = unknown
+
+/**
+ * @summary 어드민 상품 검토 승인
+ */
+export const useApproveAdminProductInspection = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveAdminProductInspection>>,
+      TError,
+      { productId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveAdminProductInspection>>,
+  TError,
+  { productId: string },
+  TContext
+> => {
+  const mutationOptions = getApproveAdminProductInspectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 상품을 REJECTED로 확정하고 사유를 남긴다. 사유는 셀러 검수 조회의 rejectReason으로 그대로 보인다. 이후 셀러가 고친 내용이 AI를 통과해도 관리자가 다시 확인할 때까지 REJECTED로 남는다. 사유 누락·공백·500자 초과는 400 errorCode 90001. 열린 검토 행이 없으면 409 errorCode 40500. 없는 상품은 404 errorCode 40000.
+ * @summary 어드민 상품 검토 반려
+ */
+export const rejectAdminProductInspection = (
+  productId: string,
+  rejectAdminProductInspectionRequest: RejectAdminProductInspectionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/product-inspections/${productId}/reject`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: rejectAdminProductInspectionRequest,
+    signal,
+  })
+}
+
+export const getRejectAdminProductInspectionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectAdminProductInspection>>,
+    TError,
+    { productId: string; data: RejectAdminProductInspectionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectAdminProductInspection>>,
+  TError,
+  { productId: string; data: RejectAdminProductInspectionRequest },
+  TContext
+> => {
+  const mutationKey = ['rejectAdminProductInspection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectAdminProductInspection>>,
+    { productId: string; data: RejectAdminProductInspectionRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return rejectAdminProductInspection(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RejectAdminProductInspectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectAdminProductInspection>>
+>
+export type RejectAdminProductInspectionMutationBody = RejectAdminProductInspectionRequest
+export type RejectAdminProductInspectionMutationError = unknown
+
+/**
+ * @summary 어드민 상품 검토 반려
+ */
+export const useRejectAdminProductInspection = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectAdminProductInspection>>,
+      TError,
+      { productId: string; data: RejectAdminProductInspectionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectAdminProductInspection>>,
+  TError,
+  { productId: string; data: RejectAdminProductInspectionRequest },
+  TContext
+> => {
+  const mutationOptions = getRejectAdminProductInspectionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
