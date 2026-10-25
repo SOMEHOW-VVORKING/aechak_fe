@@ -1,0 +1,299 @@
+// 셀러 대시보드 집계 BE(origin/develop `boot/seller/.../dashboard/**`, SCRUM-269·SCRUM-278)와
+// 화면 사이의 순수 타입·매핑·규칙. 와이어 타입은 전부 생성물(@aechak/api)에서 가져오고 이 파일은
+// FE 쪽 이름과 표시 규칙만 붙인다 — OpenAPI 스펙이 바뀌면 생성물을 재생성하는 것만으로 여기서
+// 타입 오류가 드러난다(products.contract·store-settings.contract 관례).
+import type {
+  SellerDashboardMetric,
+  SellerDashboardMetrics,
+  SellerDashboardPeriod,
+  SellerDashboardSummaryData,
+} from '@aechak/api'
+
+export type {
+  SellerDashboardMetric,
+  SellerDashboardMetrics,
+  SellerDashboardPeriod,
+  SellerDashboardProductStatuses,
+  SellerDashboardSettlementSummary,
+  SellerDashboardSummaryData,
+} from '@aechak/api'
+
+/** 응답 `metrics`의 키 그대로 — 지표가 늘면 생성물이 바뀌어 아래 표에서 타입 오류가 난다. */
+export type DashboardMetricKey = keyof SellerDashboardMetrics
+
+// ─── 기간 필터 ───────────────────────────────────────────────────────────────
+// 서버 기간은 응답 기준 시각(now)을 끝으로 하는 시각 단위 반개구간이다(`7d` = `[now-7일, now)`).
+// 목록 화면의 기간 필터는 날짜 단위라 이 구간을 그대로 재현할 수 없다 — 그래서 카드에서 목록으로
+// 넘어갈 때 기간을 넘기지 않는다(아래 MetricTarget 주석).
+
+export const DASHBOARD_PERIOD_OPTIONS: { value: SellerDashboardPeriod; label: string }[] = [
+  { value: 'all', label: '전체 기간' },
+  { value: '7d', label: '최근 7일' },
+  { value: '30d', label: '최근 30일' },
+  { value: '90d', label: '최근 90일' },
+]
+
+/** 직전 구간을 말로 가리킬 때 쓰는 길이 — `all`은 직전 구간이 없어 빠진다. */
+const PERIOD_LENGTH_LABEL: Record<Exclude<SellerDashboardPeriod, 'all'>, string> = {
+  '7d': '7일',
+  '30d': '30일',
+  '90d': '90일',
+}
+
+// ─── 목적지 목록 화면이 받는 쿼리 어휘 ──────────────────────────────────────
+// 주문·클레임 목록 화면은 다른 작업에서 실서버에 붙고 있어 이 feature가 그 코드를 읽지 않는다
+// (feature → feature import 금지). 여기 어휘는 BE 요청 DTO에서 그대로 옮겼다 —
+// `SellerOrderStatusFilter.code`와 `SellerClaimPendingStage`/`ClaimType`의 enum 이름이다.
+// 두 목록이 `packages/api` 스펙에 올라오면 이 타입들을 생성물로 갈아타고 여기서 지운다.
+
+/** `GET /sellers/me/orders`의 `status` 세그먼트 어휘. 한 세그먼트가 주문 상태 여러 개를 묶는다. */
+export type SellerOrderStatusSegment =
+  | 'all'
+  | 'new'
+  | 'awaiting-dispatch'
+  | 'shipping'
+  | 'delivered'
+  | 'cancelled'
+
+/** `GET /sellers/me/claims`의 `pendingStage` — 셀러가 할 일이 남은 단계 축. */
+export type SellerClaimPendingStage =
+  | 'DECISION_PENDING'
+  | 'COLLECTION_INVOICE_PENDING'
+  | 'COLLECTION_COMPLETION_PENDING'
+  | 'RESHIP_PENDING'
+
+/** `GET /sellers/me/claims`의 `claimType`. */
+export type SellerClaimTypeCode = 'CANCEL' | 'RETURN' | 'EXCHANGE'
+
+/**
+ * 카드를 눌렀을 때 열 목록과 그 목록에 실어 보낼 쿼리.
+ *
+ * **기간을 싣지 않는다.** 카드의 기간 축은 `now` 기준 시각 단위 반개구간이고 목록 필터
+ * (`orderedFrom`/`orderedTo`·`requestedFrom`/`requestedTo`)는 날짜 단위(시작일 00:00 ~ 종료일
+ * 다음 날 00:00)라, 기간을 함께 넘기면 목록이 양쪽 경계에서 더 넓게 잡아 카드 숫자와 어긋난다.
+ * 단계·상태 축만 넘기면 판정이 서버 한 곳(`SellerClaimPendingStage`)에서 나오므로 어긋나지 않는다.
+ * 대신 기간을 고른 상태에서 카드를 누르면 목록이 카드보다 많이 보이므로, 화면이 그 사실을 미리 알린다.
+ *
+ * `target`이 null이면 목적지가 없는 지표다(집계 불가 — 카드를 누를 수 없다).
+ */
+export type DashboardMetricTarget =
+  | { screen: '/orders'; search: { status: SellerOrderStatusSegment } }
+  | {
+      screen: '/claims'
+      search: { pendingStage: SellerClaimPendingStage; claimType?: SellerClaimTypeCode }
+    }
+
+/** 지표가 "언제 생긴 일인지"를 세는 축 — 직전 기간 문구의 낱말이 여기서 갈린다. */
+export type DashboardOccurrenceAxis = 'ordered' | 'requested'
+
+export type DashboardMetricIconKey =
+  | 'shopping-bag'
+  | 'package'
+  | 'truck'
+  | 'x-circle'
+  | 'rotate-ccw'
+  | 'repeat'
+  | 'scan-line'
+  | 'package-check'
+  | 'send'
+  | 'message-circle'
+
+export type DashboardSectionKey = 'orders' | 'claim-requests' | 'claim-after-approval' | 'inquiries'
+
+export interface DashboardMetricMeta {
+  key: DashboardMetricKey
+  label: string
+  icon: DashboardMetricIconKey
+  section: DashboardSectionKey
+  axis: DashboardOccurrenceAxis
+  /** 이 숫자를 줄이려면 셀러가 다음에 할 일. */
+  nextAction: string
+  /** 발송 기한을 넘긴 건처럼 먼저 눈에 들어와야 하는 지표. */
+  urgent?: boolean
+  target: DashboardMetricTarget | null
+}
+
+/**
+ * 지표 10종의 표시 규칙. 순서가 화면 순서다.
+ *
+ * 승인 이후 세 지표(회수 송장 등록 대기·회수 완료 처리 대기·재발송 대기)를 한 칸에 합치지 않는다 —
+ * 회수 중(COLLECTING) 한 상태에 송장 등록과 완료 처리라는 서로 다른 할 일이 들어 있어, 합쳐 세면
+ * 셀러가 숫자를 보고도 무엇을 해야 할지 모른다(BE가 단계를 나눠 센 이유와 같다).
+ */
+export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
+  {
+    key: 'newOrders',
+    label: '신규 주문',
+    icon: 'shopping-bag',
+    section: 'orders',
+    axis: 'ordered',
+    nextAction: '발주 확인',
+    target: { screen: '/orders', search: { status: 'new' } },
+  },
+  {
+    key: 'awaitingShipment',
+    label: '발송 대기',
+    icon: 'package',
+    section: 'orders',
+    axis: 'ordered',
+    nextAction: '송장 등록',
+    target: { screen: '/orders', search: { status: 'awaiting-dispatch' } },
+  },
+  {
+    // 발송 기한을 넘긴 건이고 발송 대기의 부분집합이다 — 두 카드의 합은 전체가 아니다.
+    // 목록에는 지연만 걸러내는 필터가 없어 같은 발송 대기 목록으로 보낸다(숫자가 더 많다).
+    key: 'shippingDelayed',
+    label: '발송 지연',
+    icon: 'truck',
+    section: 'orders',
+    axis: 'ordered',
+    nextAction: '지연 처리',
+    urgent: true,
+    target: { screen: '/orders', search: { status: 'awaiting-dispatch' } },
+  },
+  {
+    key: 'cancelRequests',
+    label: '취소 요청',
+    icon: 'x-circle',
+    section: 'claim-requests',
+    axis: 'requested',
+    nextAction: '승인 여부 판단',
+    target: {
+      screen: '/claims',
+      search: { pendingStage: 'DECISION_PENDING', claimType: 'CANCEL' },
+    },
+  },
+  {
+    key: 'returnRequests',
+    label: '반품 요청',
+    icon: 'rotate-ccw',
+    section: 'claim-requests',
+    axis: 'requested',
+    nextAction: '승인 여부 판단',
+    target: {
+      screen: '/claims',
+      search: { pendingStage: 'DECISION_PENDING', claimType: 'RETURN' },
+    },
+  },
+  {
+    key: 'exchangeRequests',
+    label: '교환 요청',
+    icon: 'repeat',
+    section: 'claim-requests',
+    axis: 'requested',
+    nextAction: '승인 여부 판단',
+    target: {
+      screen: '/claims',
+      search: { pendingStage: 'DECISION_PENDING', claimType: 'EXCHANGE' },
+    },
+  },
+  {
+    key: 'collectionInvoicePending',
+    label: '회수 송장 등록 대기',
+    icon: 'scan-line',
+    section: 'claim-after-approval',
+    axis: 'requested',
+    nextAction: '회수 송장 등록',
+    target: { screen: '/claims', search: { pendingStage: 'COLLECTION_INVOICE_PENDING' } },
+  },
+  {
+    key: 'collectionCompletionPending',
+    label: '회수 완료 처리 대기',
+    icon: 'package-check',
+    section: 'claim-after-approval',
+    axis: 'requested',
+    nextAction: '물건 도착 확정',
+    target: { screen: '/claims', search: { pendingStage: 'COLLECTION_COMPLETION_PENDING' } },
+  },
+  {
+    // 단계 조건에 교환이 이미 들어 있어(반품의 환불 대기는 셀러가 할 일이 없다) 유형을 덧붙이지 않는다.
+    key: 'reshipPending',
+    label: '재발송 대기',
+    icon: 'send',
+    section: 'claim-after-approval',
+    axis: 'requested',
+    nextAction: '교환품 재발송',
+    target: { screen: '/claims', search: { pendingStage: 'RESHIP_PENDING' } },
+  },
+  {
+    // supported=false로 내려온다 — 셀러에 귀속되는 문의 모델이 아직 없다(admin_inquiries는 어드민용).
+    // 목적지 화면도 없어 카드를 누를 수 없다.
+    key: 'unansweredInquiries',
+    label: '미응답 문의',
+    icon: 'message-circle',
+    section: 'inquiries',
+    axis: 'requested',
+    nextAction: '문의 답변',
+    target: null,
+  },
+]
+
+export interface DashboardSectionMeta {
+  key: DashboardSectionKey
+  title: string
+  description?: string
+}
+
+export const DASHBOARD_SECTIONS: DashboardSectionMeta[] = [
+  { key: 'orders', title: '주문', description: '발송 지연은 발송 대기 가운데 기한을 넘긴 건이에요.' },
+  { key: 'claim-requests', title: '요청 대기', description: '승인 여부를 아직 판단하지 않은 건이에요.' },
+  {
+    key: 'claim-after-approval',
+    title: '승인 이후 처리 대기',
+    description: '승인한 뒤로도 회수 송장 등록 / 회수 완료 처리 / 재발송이 차례로 셀러 몫이에요.',
+  },
+  { key: 'inquiries', title: '문의' },
+]
+
+// ─── 증감 표기 ───────────────────────────────────────────────────────────────
+
+/**
+ * 직전 기간 값 설명 문구. **증감률을 만들지 않는다.**
+ *
+ * `previousValue`는 "직전 기간 말에 남아 있던 잔량"이 아니라 "직전 구간에 발생했고 **지금도** 그
+ * 단계인 건수"다. 집계 스냅샷 테이블이 없어 서버가 지금 상태를 기간만 과거로 옮겨 다시 세기 때문이다.
+ * 그래서 두 값의 비율은 업무 흐름과 방향이 거꾸로다 — 셀러가 묵은 건을 전부 처리하면 직전 값이 0으로
+ * 내려가 증감률이 폭등하고, 반대로 묵은 건을 방치하면 증감률이 얌전해진다. "지난주보다 N% 늘었어요"로
+ * 읽히는 표기는 뜻이 틀리므로 비율·화살표를 쓰지 않고, 그 숫자가 실제로 가리키는 것(**아직 처리되지
+ * 않은 묵은 건수**)을 그대로 적는다.
+ *
+ * null이면 표시할 것이 없다 — `period=all`은 비교할 직전 구간이 없어 `previousValue`도 null이다
+ * (0으로 내려오지 않으므로 "직전에 0건"과 혼동되지 않는다).
+ */
+export function previousValueHint(
+  metric: SellerDashboardMetric,
+  period: SellerDashboardPeriod,
+  axis: DashboardOccurrenceAxis,
+): string | null {
+  if (!metric.supported) return null
+  if (period === 'all' || metric.previousValue == null) return null
+  const length = PERIOD_LENGTH_LABEL[period]
+  const occurrence = axis === 'ordered' ? '주문분' : '요청분'
+  return metric.previousValue === 0
+    ? `직전 ${length} ${occurrence}은 남지 않았어요`
+    : `직전 ${length} ${occurrence} 중 ${metric.previousValue.toLocaleString('ko-KR')}건 남음`
+}
+
+// ─── 기간 무관 스냅샷 ───────────────────────────────────────────────────────
+
+export interface DashboardProductStatusPill {
+  key: keyof SellerDashboardSummaryData['productStatuses']
+  label: string
+  /** 비활성/휴면이 아닌 대등한 상태에는 muted를 쓰지 않는다(DS 규약). */
+  variant: 'neutral' | 'error' | 'danger' | 'warning'
+}
+
+/**
+ * 상품 상태 4종. 서로 배타적이지 않다 — 판매 중지 상품의 재고가 0이면 중지와 품절에 함께 센다.
+ * 합이 상품 수와 같을 필요가 없는 요약이다.
+ */
+export const DASHBOARD_PRODUCT_STATUSES: DashboardProductStatusPill[] = [
+  { key: 'awaitingInspection', label: '검수 대기', variant: 'neutral' },
+  { key: 'rejected', label: '반려', variant: 'error' },
+  { key: 'suspended', label: '판매 중지', variant: 'danger' },
+  { key: 'soldOut', label: '품절', variant: 'warning' },
+]
+
+export function formatWon(amount: number): string {
+  return `${amount.toLocaleString('ko-KR')}원`
+}
