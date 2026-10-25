@@ -8,18 +8,45 @@ export {
   createOrderGroupErrorCode,
   createOrderGroupErrorMessage,
   createOrderGroupWithKey,
+  holdsOrderItem,
   isAlreadyConfirmed,
+  isOrderGroupNotFound,
   isOrderNotFound,
   orderErrorMessage,
   toBuyerOrder,
   toBuyerOrderDetail,
+  toBuyerOrderGroupDetail,
   toBuyerOrderStatus,
   useConfirmPurchase,
   useCreateOrderGroup,
   useOrderDetail,
+  useOrderGroup,
   useOrderGroups,
 } from './order.queries'
 export type { CreateOrderGroupInput, OrderSegment } from './order.queries'
+// 클레임(취소·반품·교환) — 내역·요청·철회·사유 선택지. 요청·철회가 ORDER_GROUPS_QUERY_KEY 접두를
+// 무효화하므로 주문 목록·상세·내역이 함께 갱신된다.
+export {
+  CLAIM_REASONS_QUERY_KEY,
+  RETURN_WINDOW_DAYS,
+  canRequestClaim,
+  claimListErrorMessage,
+  claimReasonsErrorMessage,
+  isClaimAlreadyInProgress,
+  isClaimOrderNotFound,
+  isWithdrawable,
+  needsReasonDetail,
+  requestClaimErrorMessage,
+  toBuyerClaimReasonCatalog,
+  toBuyerClaimRecord,
+  toKstInstant,
+  useClaimReasons,
+  useOrderClaims,
+  useRequestClaim,
+  useWithdrawClaim,
+  withdrawClaimErrorMessage,
+} from './claim.queries'
+export type { RequestClaimInput, WithdrawClaimInput } from './claim.queries'
 export {
   ORDER_ATTEMPT_STORAGE_KEY,
   buildOrderFingerprint,
