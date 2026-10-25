@@ -2,6 +2,7 @@
 // 화면 사이의 순수 타입·매핑·규칙. 와이어 타입은 전부 생성물(@aechak/api)에서 가져오고 이 파일은
 // FE 쪽 이름과 표시 규칙만 붙인다 — OpenAPI 스펙이 바뀌면 생성물을 재생성하는 것만으로 여기서
 // 타입 오류가 드러난다(products.contract·store-settings.contract 관례).
+import { errorResponse } from '@aechak/api'
 import type {
   SellerDashboardMetric,
   SellerDashboardMetrics,
@@ -18,7 +19,7 @@ export type {
   SellerDashboardSummaryData,
 } from '@aechak/api'
 
-/** 응답 `metrics`의 키 그대로 — 지표가 늘면 생성물이 바뀌어 아래 표에서 타입 오류가 난다. */
+/** 응답 `metrics`의 키 그대로. 지표가 늘면 아래 표(Record)에서 키 누락으로 컴파일 오류가 난다. */
 export type DashboardMetricKey = keyof SellerDashboardMetrics
 
 // ─── 기간 필터 ───────────────────────────────────────────────────────────────
@@ -83,6 +84,9 @@ export type DashboardMetricTarget =
       search: { pendingStage: SellerClaimPendingStage; claimType?: SellerClaimTypeCode }
     }
 
+/** 카드가 열 수 있는 목록 화면. 그 화면이 아직 목업 차단 상태면 카드를 누를 수 없게 둔다. */
+export type DashboardListScreen = DashboardMetricTarget['screen']
+
 /** 지표가 "언제 생긴 일인지"를 세는 축 — 직전 기간 문구의 낱말이 여기서 갈린다. */
 export type DashboardOccurrenceAxis = 'ordered' | 'requested'
 
@@ -100,8 +104,12 @@ export type DashboardMetricIconKey =
 
 export type DashboardSectionKey = 'orders' | 'claim-requests' | 'claim-after-approval' | 'inquiries'
 
-export interface DashboardMetricMeta {
+export interface DashboardMetricMeta extends DashboardMetricDisplay {
   key: DashboardMetricKey
+}
+
+/** 키를 뺀 표시 규칙 — 표가 `Record<DashboardMetricKey, …>`라 키는 표의 자리에서 나온다. */
+export interface DashboardMetricDisplay {
   label: string
   icon: DashboardMetricIconKey
   section: DashboardSectionKey
@@ -114,15 +122,17 @@ export interface DashboardMetricMeta {
 }
 
 /**
- * 지표 10종의 표시 규칙. 순서가 화면 순서다.
+ * 지표 10종의 표시 규칙.
+ *
+ * **Record라서 생성물에 지표가 늘면 여기서 컴파일 오류가 난다** — 배열이면 늘어난 지표를 조용히
+ * 빠뜨린 채 타입 검사와 테스트를 모두 통과하고, 화면에서만 사라진다.
  *
  * 승인 이후 세 지표(회수 송장 등록 대기·회수 완료 처리 대기·재발송 대기)를 한 칸에 합치지 않는다 —
  * 회수 중(COLLECTING) 한 상태에 송장 등록과 완료 처리라는 서로 다른 할 일이 들어 있어, 합쳐 세면
  * 셀러가 숫자를 보고도 무엇을 해야 할지 모른다(BE가 단계를 나눠 센 이유와 같다).
  */
-export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
-  {
-    key: 'newOrders',
+export const DASHBOARD_METRIC_DISPLAY: Record<DashboardMetricKey, DashboardMetricDisplay> = {
+  newOrders: {
     label: '신규 주문',
     icon: 'shopping-bag',
     section: 'orders',
@@ -130,8 +140,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '발주 확인',
     target: { screen: '/orders', search: { status: 'new' } },
   },
-  {
-    key: 'awaitingShipment',
+  awaitingShipment: {
     label: '발송 대기',
     icon: 'package',
     section: 'orders',
@@ -139,10 +148,9 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '송장 등록',
     target: { screen: '/orders', search: { status: 'awaiting-dispatch' } },
   },
-  {
+  shippingDelayed: {
     // 발송 기한을 넘긴 건이고 발송 대기의 부분집합이다 — 두 카드의 합은 전체가 아니다.
     // 목록에는 지연만 걸러내는 필터가 없어 같은 발송 대기 목록으로 보낸다(숫자가 더 많다).
-    key: 'shippingDelayed',
     label: '발송 지연',
     icon: 'truck',
     section: 'orders',
@@ -151,8 +159,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     urgent: true,
     target: { screen: '/orders', search: { status: 'awaiting-dispatch' } },
   },
-  {
-    key: 'cancelRequests',
+  cancelRequests: {
     label: '취소 요청',
     icon: 'x-circle',
     section: 'claim-requests',
@@ -163,8 +170,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
       search: { pendingStage: 'DECISION_PENDING', claimType: 'CANCEL' },
     },
   },
-  {
-    key: 'returnRequests',
+  returnRequests: {
     label: '반품 요청',
     icon: 'rotate-ccw',
     section: 'claim-requests',
@@ -175,8 +181,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
       search: { pendingStage: 'DECISION_PENDING', claimType: 'RETURN' },
     },
   },
-  {
-    key: 'exchangeRequests',
+  exchangeRequests: {
     label: '교환 요청',
     icon: 'repeat',
     section: 'claim-requests',
@@ -187,8 +192,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
       search: { pendingStage: 'DECISION_PENDING', claimType: 'EXCHANGE' },
     },
   },
-  {
-    key: 'collectionInvoicePending',
+  collectionInvoicePending: {
     label: '회수 송장 등록 대기',
     icon: 'scan-line',
     section: 'claim-after-approval',
@@ -196,8 +200,7 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '회수 송장 등록',
     target: { screen: '/claims', search: { pendingStage: 'COLLECTION_INVOICE_PENDING' } },
   },
-  {
-    key: 'collectionCompletionPending',
+  collectionCompletionPending: {
     label: '회수 완료 처리 대기',
     icon: 'package-check',
     section: 'claim-after-approval',
@@ -205,9 +208,8 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '물건 도착 확정',
     target: { screen: '/claims', search: { pendingStage: 'COLLECTION_COMPLETION_PENDING' } },
   },
-  {
+  reshipPending: {
     // 단계 조건에 교환이 이미 들어 있어(반품의 환불 대기는 셀러가 할 일이 없다) 유형을 덧붙이지 않는다.
-    key: 'reshipPending',
     label: '재발송 대기',
     icon: 'send',
     section: 'claim-after-approval',
@@ -215,10 +217,9 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '교환품 재발송',
     target: { screen: '/claims', search: { pendingStage: 'RESHIP_PENDING' } },
   },
-  {
+  unansweredInquiries: {
     // supported=false로 내려온다 — 셀러에 귀속되는 문의 모델이 아직 없다(admin_inquiries는 어드민용).
     // 목적지 화면도 없어 카드를 누를 수 없다.
-    key: 'unansweredInquiries',
     label: '미응답 문의',
     icon: 'message-circle',
     section: 'inquiries',
@@ -226,7 +227,30 @@ export const DASHBOARD_METRICS: DashboardMetricMeta[] = [
     nextAction: '문의 답변',
     target: null,
   },
+}
+
+/**
+ * 화면에 그리는 순서. 표의 키를 빠짐없이 한 번씩 담는지는 contract 테스트가 검사한다 —
+ * 순서까지 타입으로 강제하려면 "모든 키를 정확히 한 번" 담는 튜플 타입이 필요해 읽기가 더 나빠진다.
+ */
+export const DASHBOARD_METRIC_ORDER: readonly DashboardMetricKey[] = [
+  'newOrders',
+  'awaitingShipment',
+  'shippingDelayed',
+  'cancelRequests',
+  'returnRequests',
+  'exchangeRequests',
+  'collectionInvoicePending',
+  'collectionCompletionPending',
+  'reshipPending',
+  'unansweredInquiries',
 ]
+
+/** 표와 순서를 합친 화면용 목록. 순서가 화면 순서다. */
+export const DASHBOARD_METRICS: DashboardMetricMeta[] = DASHBOARD_METRIC_ORDER.map(key => ({
+  key,
+  ...DASHBOARD_METRIC_DISPLAY[key],
+}))
 
 export interface DashboardSectionMeta {
   key: DashboardSectionKey
@@ -272,6 +296,23 @@ export function previousValueHint(
   return metric.previousValue === 0
     ? `직전 ${length} ${occurrence}은 남지 않았어요`
     : `직전 ${length} ${occurrence} 중 ${metric.previousValue.toLocaleString('ko-KR')}건 남음`
+}
+
+// ─── 조회 실패 분류 ─────────────────────────────────────────────────────────
+
+/**
+ * 셀러센터 조회 자격이 없다는 거절인지(403). BE `SellerDashboardFacade.requireDashboardReadableSeller`가
+ * ACTIVE·PAUSED·WITHDRAWAL_REQUESTED 밖의 셀러를 `SELLER_CENTER_READ_FORBIDDEN`(errorCode 10003)으로
+ * 막는다. 같은 셀러가 다시 보내도 같은 답이므로 **재시도로 풀리지 않는다.**
+ *
+ * 그래서 화면이 네트워크 실패와 같이 다루면 두 가지가 틀어진다 — (1) 직전에 받은 숫자를 "방금 못
+ * 불러왔다"는 안내와 함께 계속 보여주면 자격이 남아 있는 것처럼 읽히고, (2) 재시도 버튼이 영원히
+ * 실패하는 버튼이 된다. errorCode가 아니라 status로 가르는 이유는 자격 거절 코드가 10003 하나가
+ * 아니기 때문이다(SELLER_NOT_ACTIVE 10002도 403이고, 둘 다 셀러센터를 열 수 없다는 뜻이다).
+ * 미로그인 401은 여기 오지 않는다 — 공유 클라이언트가 refresh 뒤 로그인 화면으로 보낸다.
+ */
+export function isSellerCenterForbidden(error: unknown): boolean {
+  return errorResponse(error)?.status === 403
 }
 
 // ─── 기간 무관 스냅샷 ───────────────────────────────────────────────────────

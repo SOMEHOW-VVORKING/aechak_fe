@@ -14,14 +14,15 @@ import {
   type ClaimActionTarget,
 } from '@/features/claims'
 import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { SERVER_CLAIMS_AVAILABLE } from '@/shared/serverAvailability'
 
 export const Route = createFileRoute('/claims/')({
   component: ClaimsGate,
 })
 
-// 운영 진입 차단 스위치. seller 모듈에 클레임 API가 없어 승인·거부·환불·메모가 전부 목업이다 —
-// 주소로 들어와도 열지 않는다. 아래 ClaimsRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
-const SERVER_CLAIMS_AVAILABLE = false
+// 운영 진입 차단 스위치는 shared에 있다 — 대시보드 카드처럼 이 화면으로 보내는 진입점이 같은 값을
+// 봐야 "목록이 열려요"라고 안내하고 준비 중 화면으로 보내는 일이 생기지 않는다.
+// 아래 ClaimsRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
 
 function ClaimsGate() {
   if (!SERVER_CLAIMS_AVAILABLE) {

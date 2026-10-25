@@ -4,14 +4,15 @@ import type { Order } from '@aechak/domain'
 import { FilterBar, FilterChipGroup, PageHeader, SearchInput } from '@aechak/design-system/web'
 import { OrdersTable, ShipmentModal, useOrders } from '@/features/orders'
 import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { SERVER_ORDERS_AVAILABLE } from '@/shared/serverAvailability'
 
 export const Route = createFileRoute('/orders/')({
   component: OrdersGate,
 })
 
-// 운영 진입 차단 스위치. seller 모듈에 주문 API가 없어 목록·발송 처리가 전부 목업이다 — 주소로
-// 들어와도 열지 않는다. 아래 OrdersRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
-const SERVER_ORDERS_AVAILABLE = false
+// 운영 진입 차단 스위치는 shared에 있다 — 대시보드 카드처럼 이 화면으로 보내는 진입점이 같은 값을
+// 봐야 "목록이 열려요"라고 안내하고 준비 중 화면으로 보내는 일이 생기지 않는다.
+// 아래 OrdersRoute는 서버가 생기면 queries 층만 바꿔 그대로 살릴 배선.
 
 function OrdersGate() {
   if (!SERVER_ORDERS_AVAILABLE) {
