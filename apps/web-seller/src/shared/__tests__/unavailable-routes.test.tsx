@@ -18,17 +18,10 @@ function renderAt(path: string) {
   return router
 }
 
-// seller 모듈에 API가 없는 화면(대시보드/주문/클레임/정산/배송 정책)은 목업만 있어 운영 진입을 막는다 —
+// seller 모듈에 API가 없는 화면(주문/클레임/정산/배송 정책)은 목업만 있어 운영 진입을 막는다 —
 // nav에서 빠지고, 주소로 직접 들어와도 "준비 중" 안내만 보여주며 목업 데이터·저장 버튼을 그리지 않는다.
+// 대시보드는 집계 API가 올라와 차단을 걷었다(dashboard-route.test.tsx가 실 연동을 고정한다).
 describe('목업 화면 진입 차단', () => {
-  it('[AC-SELLER-GATE-001] 대시보드(/)는 준비 중 안내와 상품 관리 이동만 보여주고 목업 지표를 그리지 않는다', async () => {
-    renderAt('/')
-
-    expect(await screen.findByText('대시보드는 준비 중이에요')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '상품 관리로' })).toBeInTheDocument()
-    expect(screen.queryByText(/최근 7일/)).not.toBeInTheDocument()
-  })
-
   it.each([
     ['/orders', '주문/배송 관리는 준비 중이에요', '발송 처리'],
     ['/claims', '취소/반품/교환 관리는 준비 중이에요', '취소'],
@@ -47,13 +40,13 @@ describe('목업 화면 진입 차단', () => {
     },
   )
 
-  it('[AC-SELLER-GATE-003] SideNav에는 서버가 있는 화면(상품 관리·스토어 설정)만 남는다', async () => {
-    renderAt('/')
+  it('[AC-SELLER-GATE-003] SideNav에는 서버가 있는 화면(대시보드·상품 관리·스토어 설정)만 남는다', async () => {
+    renderAt('/products')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '스토어 설정' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '대시보드' })).toBeInTheDocument()
     for (const label of [
-      '대시보드',
       '주문/배송 관리',
       '취소/반품/교환',
       '배송 정책',

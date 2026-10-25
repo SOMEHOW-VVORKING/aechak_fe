@@ -21,6 +21,7 @@ export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
+export const SELLER_DASHBOARD_SUMMARY_URL = `${sellerBase}/sellers/me/dashboard/summary`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -671,5 +672,134 @@ const courierHandlers = [
   ),
 ]
 
-export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers, ...courierHandlers]
+// ─── 셀러 대시보드 집계 (seller 호스트 /sellers/me/dashboard/summary) ────────
+// 지표 10종·정산 3금액·상품 상태 4건수를 한 번에 내린다. `previousValue`는 "직전 기간 말의 잔량"이
+// 아니라 "직전 구간에 발생했고 지금도 그 단계인 건수"이고, period=all이면 비교할 구간이 없어 null이다.
+// supported=false는 값이 아니라 "집계 불가"다(unansweredInquiries).
+
+export interface DashboardMetricWire {
+  value: number
+  previousValue: number | null
+  supported: boolean
+}
+
+export interface DashboardSummaryWire {
+  metrics: Record<string, DashboardMetricWire>
+  settlement: { totalAmount: number; pendingAmount: number; onHoldAmount: number }
+  productStatuses: {
+    awaitingInspection: number
+    rejected: number
+    suspended: number
+    soldOut: number
+  }
+}
+
+const DASHBOARD_METRIC_KEYS = [
+  'newOrders',
+  'awaitingShipment',
+  'shippingDelayed',
+  'cancelRequests',
+  'returnRequests',
+  'exchangeRequests',
+  'collectionInvoicePending',
+  'collectionCompletionPending',
+  'reshipPending',
+  'unansweredInquiries',
+] as const
+
+/**
+ * 기본 응답. 지표마다 값을 다르게 둬서 화면이 키를 뒤섞어 꽂으면 테스트가 잡는다.
+ * `previousValue`는 기간이 있을 때만 의미가 있으므로 period=all이면 핸들러가 null로 바꿔 내린다.
+ */
+export function makeDashboardSummaryWire(
+  overrides: Partial<DashboardSummaryWire> = {},
+): DashboardSummaryWire {
+  const base: DashboardSummaryWire = {
+    metrics: {
+      newOrders: { value: 7, previousValue: 2, supported: true },
+      awaitingShipment: { value: 6, previousValue: 1, supported: true },
+      shippingDelayed: { value: 2, previousValue: 0, supported: true },
+      cancelRequests: { value: 5, previousValue: 3, supported: true },
+      returnRequests: { value: 4, previousValue: 1, supported: true },
+      exchangeRequests: { value: 3, previousValue: 1, supported: true },
+      collectionInvoicePending: { value: 9, previousValue: 4, supported: true },
+      collectionCompletionPending: { value: 8, previousValue: 2, supported: true },
+      reshipPending: { value: 11, previousValue: 5, supported: true },
+      unansweredInquiries: { value: 0, previousValue: null, supported: false },
+    },
+    settlement: { totalAmount: 360_000, pendingAmount: 312_000, onHoldAmount: 48_000 },
+    productStatuses: { awaitingInspection: 2, rejected: 1, suspended: 1, soldOut: 3 },
+  }
+  return { ...base, ...overrides }
+}
+
+let dashboardSummary: DashboardSummaryWire = makeDashboardSummaryWire()
+let dashboardError: { status: number; errorCode: number; message: string } | null = null
+let lastDashboardPeriod: string | null | undefined
+
+/** 인자 없이 부르면 기본 응답으로 되돌린다. */
+export function seedDashboardSummary(
+  state: DashboardSummaryWire = makeDashboardSummaryWire(),
+): void {
+  dashboardSummary = state
+  dashboardError = null
+}
+
+/** 집계 조회를 실패로 세운다(자격 게이트 403/10003이나 5xx). */
+export function seedDashboardSummaryError(
+  error: { status: number; errorCode: number; message: string } = {
+    status: 500,
+    errorCode: 90000,
+    message: '서버 오류가 발생했습니다.',
+  },
+): void {
+  dashboardError = error
+}
+
+/** 마지막 요청에 실린 period — undefined면 파라미터 자체를 보내지 않았다는 뜻이다. */
+export function lastDashboardSummaryPeriod(): string | null | undefined {
+  return lastDashboardPeriod
+}
+
+export function resetDashboardSummaryPeriod(): void {
+  lastDashboardPeriod = undefined
+}
+
+const DASHBOARD_PERIODS = ['all', '7d', '30d', '90d']
+
+const dashboardHandlers = [
+  http.get(SELLER_DASHBOARD_SUMMARY_URL, ({ request }) => {
+    const period = new URL(request.url).searchParams.get('period')
+    lastDashboardPeriod = period
+    if (period != null && !DASHBOARD_PERIODS.includes(period)) {
+      return badRequest('period: 지원하지 않는 값입니다.')
+    }
+    if (dashboardError) {
+      return HttpResponse.json(
+        { errorCode: dashboardError.errorCode, message: dashboardError.message },
+        { status: dashboardError.status },
+      )
+    }
+    // 전체 기간에는 비교할 직전 구간이 없다 — 0이 아니라 null이어야 화면이 두 경우를 가른다.
+    const isAll = period == null || period === 'all'
+    const metrics = Object.fromEntries(
+      DASHBOARD_METRIC_KEYS.map(key => {
+        const metric = dashboardSummary.metrics[key] ?? {
+          value: 0,
+          previousValue: null,
+          supported: true,
+        }
+        return [key, { ...metric, previousValue: isAll ? null : metric.previousValue }]
+      }),
+    )
+    return HttpResponse.json({ data: { ...dashboardSummary, metrics } })
+  }),
+]
+
+export const handlers = [
+  ...sellerApplicationHandlers,
+  ...sellerProductHandlers,
+  ...courierHandlers,
+  ...dashboardHandlers,
+]
 export const server = setupServer(...handlers)
