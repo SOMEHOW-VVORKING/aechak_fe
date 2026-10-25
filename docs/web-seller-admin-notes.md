@@ -777,4 +777,51 @@ web-admin은 spec이 0개"라고 적고 있었는데, 셀러 spec 2개가 두 �
 - **web-seller**: 대시보드(`/`)·주문(`/orders`)·클레임(`/claims`)·정산(`/settlements`)·배송 정책(`/shipping-policy`)은 라우트 파일 상단의 `SERVER_*_AVAILABLE = false` 게이트로 "준비 중" `UnavailableScreen`만 렌더한다(`/products/$productId/edit`의 `SERVER_PRODUCT_DETAIL_AVAILABLE` 선례). 원 컴포넌트·목업 queries·mutation 훅은 파일로 보존했지만 어떤 경로에서도 도달하지 않는다. nav는 상품 관리·스토어 설정 두 항목만 남겼고, 라우트 파일이 없던 항목(문의/리뷰/쿠폰/공지/계정)도 함께 뺐다. 대시보드는 로그인 복귀 URL이 `/`라 redirect 대신 안내 + "상품 관리로" 버튼으로 두었다. 상품 등록·수정 폼의 목업 배송 정책 요약은 `ShippingPolicyNotice`(준비 중 카드)로 바꿨다.
 - **web-admin**: 회원 관리·상품 검수·AI 검수 큐·셀러 계정 관리 네 화면을 같은 방식으로 게이트했고, nav는 홈·셀러 입점 심사(서버 배지)만 남겼다. 라우트가 없는 nav 14개와 상수 배지 7곳을 제거했다. BE에 없는 `POST /auth/login`을 부르던 `features/auth/auth.queries.ts`는 고아 코드라 삭제했고(`LoginForm`·`auth.store`는 보존), 어드민 실로그인은 BE가 ADMIN 역할을 세우는 운영 코드를 갖춘 뒤 web-seller의 카카오 웹 로그인을 이식하는 방향이다.
 - **되살리는 법**: 해당 BE API가 머지되면 라우트의 상수를 올리고 nav 항목을 복원한 뒤 `features/*/queries`의 목업 `queryFn`을 생성 fetcher로 바꾼다. 테스트는 `shared/__tests__/unavailable-routes.test.tsx`(seller)와 각 라우트 테스트의 게이트 AC를 그때 반전시킨다.
+- **주문(`/orders`)은 이 목록에서 빠졌다** — 셀러 주문 API가 올라와 게이트를 걷어냈다(아래 "셀러 주문 관리 실연동" 절). 위 목록은 2026-10-17 시점의 기록이다.
 
+
+## 셀러 주문 관리 실연동 (2026-10-25, SCRUM-291)
+
+셀러 주문 API 5경로가 seller 모듈에 올라와(`GET /sellers/me/orders`, `GET …/{orderPublicId}`,
+`POST …/accept`, `POST …/shipment`, `POST …/delivery-complete`) `/orders`의
+`SERVER_ORDERS_AVAILABLE` 게이트를 걷어내고 nav 항목을 되돌렸다. 위 "목업 화면 진입 차단"이 적어 둔
+되살리는 절차를 처음으로 실행한 자리다.
+
+**주문 상태는 서버 열거형이 정본이다.** 문서에 허용값이 빠져 있다고 보고된 자리(SCRUM-274)라
+be `domain/.../order/enums/OrderStatus.kt`를 직접 읽어 8종(`PENDING_PAYMENT` `PAID` `PREPARING`
+`DISPATCH_PENDING` `SHIPPING` `DELIVERED` `PURCHASE_CONFIRMED` `CANCELLED`)을 옮겼다. 확인해 보니 dev
+`/v3/api-docs`에도 8종이 다 실려 있어 이번에는 문서와 코드가 어긋나지 않았다.
+
+**함정 셋.**
+
+1. **목록 `status` 파라미터는 enum 이름이 아니라 세그먼트 어휘다.** be `SellerOrderStatusFilter`의
+   code(`all`·`new`·`awaiting-dispatch`·`shipping`·`delivered`·`cancelled`)를 보내야 하고 하나가 상태
+   여러 개를 묶는다(`awaiting-dispatch` = PREPARING + DISPATCH_PENDING, `delivered` = DELIVERED +
+   PURCHASE_CONFIRMED). `all`에도 `PENDING_PAYMENT`가 없다 — 결제 전 주문이 테이블에 남는 모델이라
+   셀러에게 미결제 건을 보이지 않는다. `PAID`처럼 enum 이름을 보내면 400/90001이다.
+2. **송장 등록 경로는 단수 `shipment`이고 정정 경로가 아니다.** 이미 최초 배송 행이 있으면
+   409/50302라서, 목업 시절의 "송장 수정" 버튼을 되살리면 셀러가 눌러도 반드시 실패한다 — 버튼을
+   지우고 `canRegisterShipment(status, hasShipment)`가 송장 유무까지 본다. Modal 문구도 "등록한 송장은
+   셀러센터에서 바꿀 수 없어요"로 알린다.
+3. **`PREPARING`에서 송장을 등록하면 서버가 2단 전이한다**(PREPARING → DISPATCH_PENDING → SHIPPING,
+   enum이 직행을 막는다). 응답 `orderStatus`가 SHIPPING으로 오는 이유이고, FE가 중간 상태를 따로
+   만들어 보낼 필요가 없다.
+
+**수령인명·연락처는 서버가 평문으로 준다**(be `SellerOrderSummaryResponse` 주석: "마스킹은 화면이
+한다"). 셀러는 송장을 붙이려면 둘 다 온전히 봐야 하므로 지울 수는 없다 — 목록에서만 연락처 가운데를
+가리고(`maskContactNumber`) 실제로 발송을 준비하는 상세 Drawer에서는 그대로 보여준다. 수령인명은 송장에
+찍히고 목록에서 주문을 분간하는 기준이라 가리지 않는다.
+
+**택배사는 `shared/couriers`가 이미 서버 마스터를 읽고 있었다**(`GET /sellers/couriers`, 배송 정책 화면이
+깔아둔 것). 하드코딩하지 않고 그대로 재사용했고 `courierCode`는 응답 값을 대소문자 그대로 보낸다
+(소문자는 404/50303).
+
+**되돌릴 수 없는 전이 둘(발주 확인·배송 완료)은 확인 Modal을 거친다.** 전이표가 PREPARING → PAID를
+막고 배송 완료는 구매확정 시계를 시작한다. AGENTS 4절대로 뮤테이션은 Modal이 아니라 라우트가 소유해
+그 `isPending`으로 목록의 다른 행 버튼까지 잠근다 — `action → {title,description,confirmLabel}` Record
+하나로 Modal을 공유한다.
+
+**`packages/domain`의 셀러 `Order`/`OrderStatus`를 지웠다.** 위 231행이 적어 둔 Batch 5 플레이스홀더
+재구성의 결과물인데, web-seller가 와이어 타입을 바로 쓰게 되면서 참조가 0건이 됐다. 서버에 없는 필드
+(`purchaseConfirmDeadline: 'D-5'`)를 들고 있어 남겨 두면 새 코드가 지어낸 필드를 다시 요구한다
+(AGENTS 6-10). 구매자 쪽 `BuyerOrder*`는 상태머신이 다른 집계 도메인이라 그대로 남는다.
