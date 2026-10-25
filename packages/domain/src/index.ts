@@ -37,7 +37,6 @@ export type {
   ClaimType,
   ClaimStatus,
   ClaimResponsibleParty,
-  ShippingPolicy,
   PaginatedResponse,
   HistoryEntry,
   SellerApplicationStatus,

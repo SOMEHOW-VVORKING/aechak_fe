@@ -338,21 +338,6 @@ export interface Claim {
   createdAt: string
 }
 
-export interface ShippingPolicy {
-  sellerId: SellerId
-  defaultCourier: string
-  baseFee: number
-  freeShippingThreshold: number
-  originAddress: string
-  returnAddress: string
-  sameAsOrigin: boolean
-  jejuExtraFee: number
-  remoteAreaExtraFee: number
-  returnFee: number
-  exchangeFee: number
-  avgDispatchDays: number
-}
-
 export interface PaginatedResponse<T> {
   data: T[]
   total: number

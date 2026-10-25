@@ -21,6 +21,7 @@ export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
+export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-policy`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -671,5 +672,136 @@ const courierHandlers = [
   ),
 ]
 
-export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers, ...courierHandlers]
+
+// ─── 배송 정책 (seller 호스트 /sellers/me/shipping-policy) ────────────────────
+// BE ShippingPolicyResponse/UpdateRequest 모양 그대로. 서버 쪽 두 규칙을 재현한다.
+// 1. 저장한 적 없는 셀러도 404가 아니라 컬럼 기본값을 받는다(0원·2영업일·반품지 동일).
+// 2. PUT은 전체 덮어쓰기이고 204(바디 없음)이며, returnSameAsOrigin=true면 반품지 3필드를
+//    저장하지 않고 null로 떨어뜨린다 — 화면이 저장 직후 그 소거를 반영하는지 테스트가 본다.
+
+export interface ShippingPolicyWire {
+  defaultCourierCode: string | null
+  baseShippingFee: number
+  freeShippingThreshold: number | null
+  originZipCode: string | null
+  originRoadAddress: string | null
+  originDetailAddress: string | null
+  returnSameAsOrigin: boolean
+  returnZipCode: string | null
+  returnRoadAddress: string | null
+  returnDetailAddress: string | null
+  jejuExtraFee: number
+  remoteAreaExtraFee: number
+  returnFee: number
+  exchangeFee: number
+  avgDispatchDays: number
+  shippingPolicyText: string | null
+}
+
+/** V32 컬럼 기본값 — 배송 정책을 한 번도 저장하지 않은 셀러가 보는 값. */
+export const DEFAULT_SHIPPING_POLICY: ShippingPolicyWire = {
+  defaultCourierCode: null,
+  baseShippingFee: 0,
+  freeShippingThreshold: null,
+  originZipCode: null,
+  originRoadAddress: null,
+  originDetailAddress: null,
+  returnSameAsOrigin: true,
+  returnZipCode: null,
+  returnRoadAddress: null,
+  returnDetailAddress: null,
+  jejuExtraFee: 0,
+  remoteAreaExtraFee: 0,
+  returnFee: 0,
+  exchangeFee: 0,
+  avgDispatchDays: 2,
+  shippingPolicyText: null,
+}
+
+let shippingPolicy: ShippingPolicyWire = { ...DEFAULT_SHIPPING_POLICY }
+
+export function makeShippingPolicyWire(
+  overrides: Partial<ShippingPolicyWire> = {},
+): ShippingPolicyWire {
+  return { ...DEFAULT_SHIPPING_POLICY, ...overrides }
+}
+
+/** 인자 없이 부르면 컬럼 기본값으로 되돌린다. */
+export function seedShippingPolicy(state: ShippingPolicyWire = DEFAULT_SHIPPING_POLICY): void {
+  shippingPolicy = { ...state }
+}
+
+/** 핸들러가 저장한 현재 정책 — 테스트가 PUT 본문 반영을 단언할 때 읽는다. */
+export function currentShippingPolicy(): ShippingPolicyWire {
+  return { ...shippingPolicy }
+}
+
+const shippingPolicyHandlers = [
+  http.get(SELLER_SHIPPING_POLICY_URL, () => HttpResponse.json({ data: { ...shippingPolicy } })),
+  http.put(SELLER_SHIPPING_POLICY_URL, async ({ request }) => {
+    const body = (await request.json()) as ShippingPolicyUpdateBody
+    const fees = [
+      body.baseShippingFee,
+      body.jejuExtraFee,
+      body.remoteAreaExtraFee,
+      body.returnFee,
+      body.exchangeFee,
+    ]
+    // Seller.validateShippingPolicy 미러 — 음수·상한·자기모순·발송일 범위는 전부 10005다.
+    if (fees.some(fee => fee < 0 || fee > 1_000_000)) return invalidShippingPolicy()
+    if (body.freeShippingThreshold != null) {
+      if (body.freeShippingThreshold < 0 || body.freeShippingThreshold > 100_000_000) {
+        return invalidShippingPolicy()
+      }
+      if (body.freeShippingThreshold < body.baseShippingFee) return invalidShippingPolicy()
+    }
+    if (body.avgDispatchDays < 1 || body.avgDispatchDays > 7) return invalidShippingPolicy()
+    // 셀러 게이트가 택배사 검증보다 앞서지만 여기서는 셀러가 늘 활성이라 택배사만 본다.
+    if (body.defaultCourierCode != null && !couriers.some(c => c.courierCode === body.defaultCourierCode)) {
+      return errorAt(404, 50303, '택배사를 찾을 수 없습니다.')
+    }
+    const sameAsOrigin = body.returnSameAsOrigin
+    shippingPolicy = {
+      defaultCourierCode: body.defaultCourierCode ?? null,
+      baseShippingFee: body.baseShippingFee,
+      freeShippingThreshold: body.freeShippingThreshold ?? null,
+      originZipCode: body.originZipCode ?? null,
+      originRoadAddress: body.originRoadAddress ?? null,
+      originDetailAddress: body.originDetailAddress ?? null,
+      returnSameAsOrigin: sameAsOrigin,
+      returnZipCode: sameAsOrigin ? null : (body.returnZipCode ?? null),
+      returnRoadAddress: sameAsOrigin ? null : (body.returnRoadAddress ?? null),
+      returnDetailAddress: sameAsOrigin ? null : (body.returnDetailAddress ?? null),
+      jejuExtraFee: body.jejuExtraFee,
+      remoteAreaExtraFee: body.remoteAreaExtraFee,
+      returnFee: body.returnFee,
+      exchangeFee: body.exchangeFee,
+      avgDispatchDays: body.avgDispatchDays,
+      shippingPolicyText: body.shippingPolicyText ?? null,
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
+type ShippingPolicyUpdateBody = Partial<Omit<ShippingPolicyWire, 'returnSameAsOrigin'>> &
+  Pick<
+    ShippingPolicyWire,
+    | 'baseShippingFee'
+    | 'returnSameAsOrigin'
+    | 'jejuExtraFee'
+    | 'remoteAreaExtraFee'
+    | 'returnFee'
+    | 'exchangeFee'
+    | 'avgDispatchDays'
+  >
+
+const invalidShippingPolicy = () =>
+  errorAt(400, 10005, '배송 정책 값이 올바르지 않습니다.')
+
+export const handlers = [
+  ...sellerApplicationHandlers,
+  ...sellerProductHandlers,
+  ...courierHandlers,
+  ...shippingPolicyHandlers,
+]
 export const server = setupServer(...handlers)
