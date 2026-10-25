@@ -106,6 +106,14 @@ describe('에러 문구', () => {
     expect(at(50005)).toContain('발송 처리')
     expect(at(50302)).toContain('이미 송장이 등록된')
     expect(at(50303)).toContain('택배사')
+    // 자격 거절은 50003 하나로 조회·처리 양쪽에서 오므로 둘 다에서 읽히는 문구여야 한다.
+    expect(at(50003)).toContain('보거나 처리할 수 있는 계정이 아니에요')
+    // 배송완료 거절은 "배송 행 없음"과 "이미 완료/전이 실패"로 갈린다 — 50002가 아니다.
+    expect(at(50300)).toContain('배송 정보가 없어')
+    expect(at(50301)).toContain('이미 배송완료로 처리됐거나')
+    // 40004·40006은 ProductErrorCode라 주문 경로로 오지 않는다 — 매핑에 남겨 두면 닿지 않는 문구가 된다.
+    expect(at(40004)).toBe('요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.')
+    expect(at(40006)).toBe('요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.')
     expect(at(99999)).toBe('요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.')
     expect(orderErrorMessage(new Error('network'))).toBe(
       '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.',

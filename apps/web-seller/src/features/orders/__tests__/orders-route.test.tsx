@@ -46,17 +46,18 @@ const NEW_ORDER = makeSellerOrderWire({
 const PREPARING = makeSellerOrderWire({ status: 'PREPARING', recipientName: '이수민' })
 // 발송 대기(DISPATCH_PENDING)도 송장 등록을 받는다 — 세그먼트가 PREPARING과 함께 묶인다.
 const DISPATCH_PENDING = makeSellerOrderWire({ status: 'DISPATCH_PENDING', recipientName: '박지훈' })
+const CJ_SHIPMENT = {
+  courierCode: 'CJ',
+  courierName: 'CJ대한통운',
+  trackingNumber: '601234567890',
+  dispatchedAt: '2026-10-24T14:00:00',
+  deliveredAt: null,
+  lastTrackingStatus: '간선상차',
+}
 const SHIPPING = makeSellerOrderWire({
   status: 'SHIPPING',
   recipientName: '최은영',
-  shipment: {
-    courierCode: 'CJ',
-    courierName: 'CJ대한통운',
-    trackingNumber: '601234567890',
-    dispatchedAt: '2026-10-24T14:00:00',
-    deliveredAt: null,
-    lastTrackingStatus: '간선상차',
-  },
+  shipment: CJ_SHIPMENT,
 })
 const DELIVERED = makeSellerOrderWire({
   status: 'DELIVERED',
@@ -150,14 +151,19 @@ describe('셀러 주문 목록 실연동', () => {
   })
 
   it('[AC-SORDER-006] 조회 실패는 빈 상태가 아니라 오류 안내와 다시 시도로 드러낸다', async () => {
+    // 자격 거절은 403 errorCode **50003** 하나다(be SellerOrderFacade.requireOrderReadableSeller).
+    // 상품 화면의 40006은 ProductErrorCode라 이 경로로 오지 않는다 — 그걸로 스텁하면 실제로는
+    // 닿지 않는 문구를 테스트가 지켜 준다.
     server.use(
       http.get(SELLER_ORDERS_URL, () =>
-        HttpResponse.json({ errorCode: 40006, message: '조회 권한이 없습니다.' }, { status: 403 }),
+        HttpResponse.json({ errorCode: 50003, message: '셀러 주문을 처리할 권한이 없습니다.' }, { status: 403 }),
       ),
     )
     renderOrders()
 
-    expect(await screen.findByText('주문을 조회할 수 있는 계정이 아니에요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('주문을 보거나 처리할 수 있는 계정이 아니에요. 고객센터에 문의해 주세요.'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
     // "조건에 맞는 주문이 없어요"로 떨어지면 셀러가 필터를 의심한다.
     expect(screen.getByText('목록을 불러오지 못했어요.')).toBeInTheDocument()
@@ -266,6 +272,25 @@ describe('셀러 주문 처리 실연동', () => {
     expect(
       await screen.findByText('결제완료 상태의 주문만 발주 확인할 수 있어요. 목록을 새로고침해 주세요.'),
     ).toBeInTheDocument()
+  })
+
+  it('[AC-SORDER-016] 이미 배송완료된 배송은 50002가 아니라 50301로 거절된다', async () => {
+    const user = userEvent.setup()
+    // 서버는 배송 행의 deliveredAt과 조건부 UPDATE 실패를 한 코드로 묶는다(be OrderDeliveryService).
+    const alreadyDelivered = makeSellerOrderWire({
+      status: 'SHIPPING',
+      recipientName: '최은영',
+      shipment: { ...CJ_SHIPMENT, deliveredAt: '2026-10-25T09:00:00' },
+    })
+    seedSellerOrders([{ order: alreadyDelivered }])
+    renderOrders()
+
+    const row = await rowOf(alreadyDelivered.orderId)
+    await user.click(within(row).getByRole('button', { name: `주문 ${alreadyDelivered.orderId} 배송 완료` }))
+    await screen.findByText('배송 완료로 처리할까요?')
+    await user.click(screen.getByRole('button', { name: '배송 완료' }))
+
+    expect(await screen.findByText(/이미 배송완료로 처리됐거나/)).toBeInTheDocument()
   })
 })
 

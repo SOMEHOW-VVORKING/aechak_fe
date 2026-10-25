@@ -11571,7 +11571,7 @@ export const useRegisterSellerOrderShipment = <TError = unknown, TContext = unkn
 }
 
 /**
- * SHIPPING → DELIVERED. 구매확정 기한(`purchaseConfirmDueAt`)이 이때 부여된다. 전이표가 SHIPPING에서만 DELIVERED를 허용하므로 그 밖은 409 errorCode 50002이고, 이미 배송완료로 처리된 배송은 409 errorCode 50301이다. 본문 없음, 응답 본문 없음(204).
+ * SHIPPING → DELIVERED. 구매확정 기한(`purchaseConfirmDueAt`)이 이때 부여된다. 거절 순서는 최초 배송 행 조회 → `deliveredAt` 확인 → 조건부 UPDATE다 — 배송 행이 없으면 404 errorCode 50300, 이미 배송완료거나 상태가 SHIPPING이 아니어서 전이가 실패하면 **둘 다** 409 errorCode 50301이다(50002가 아니다). 본문 없음, 응답 본문 없음(204).
  * @summary 배송 완료 처리
  */
 export const completeSellerOrderDelivery = (orderPublicId: string, signal?: AbortSignal) => {

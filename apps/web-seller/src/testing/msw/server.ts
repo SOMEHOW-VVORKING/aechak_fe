@@ -928,17 +928,23 @@ const sellerOrderHandlers = [
       { status: 201 },
     )
   }),
-  // 배송 완료 — SHIPPING만 받고(그 밖은 409/50002) 구매확정 기한을 부여한다. 204.
+  // 배송 완료 — be `OrderDeliveryService.complete`의 거절 순서를 그대로 비춘다. 50002가 아니다:
+  // 최초 배송 행이 없으면 404/50300이고, 이미 배송완료거나 조건부 UPDATE(SHIPPING→DELIVERED)가
+  // 실패하면 **둘 다** 409/50301이다. 스텁이 상태만 보고 50002를 주면 화면 문구의 근거가 서버와
+  // 갈라져, 틀린 문구를 테스트가 통과시킨다. 성공은 204.
   http.post(`${SELLER_ORDERS_URL}/:orderPublicId/delivery-complete`, ({ params }) => {
     const order = sellerOrders.find(row => row.orderId === params['orderPublicId'])
     if (!order) return orderNotFound()
-    if (order.status !== 'SHIPPING') {
-      return conflict(50002, '허용되지 않은 주문 상태 전이입니다.')
+    if (!order.shipment) {
+      return errorAt(404, 50300, '배송 정보를 찾을 수 없습니다.')
+    }
+    if (order.shipment.deliveredAt != null || order.status !== 'SHIPPING') {
+      return conflict(50301, '이미 배송완료 처리된 배송입니다.')
     }
     const deliveredAt = '2026-10-25T09:00:00'
     order.status = 'DELIVERED'
     order.purchaseConfirmDueAt = '2026-11-01T09:00:00'
-    if (order.shipment) order.shipment = { ...order.shipment, deliveredAt }
+    order.shipment = { ...order.shipment, deliveredAt }
     return new HttpResponse(null, { status: 204 })
   }),
 ]

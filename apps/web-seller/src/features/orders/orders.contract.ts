@@ -139,7 +139,14 @@ export const canAcceptOrder = (status: WireOrderStatus): boolean => status === '
 export const canRegisterShipment = (status: WireOrderStatus, hasShipment: boolean): boolean =>
   !hasShipment && (status === 'PREPARING' || status === 'DISPATCH_PENDING')
 
-/** 배송 완료: SHIPPING → DELIVERED. 그 밖은 409/50002, 이미 완료된 배송은 409/50301. */
+/**
+ * 배송 완료: SHIPPING → DELIVERED.
+ *
+ * 거절 코드는 50002가 아니다 — be `OrderDeliveryService.complete`가 최초 배송 행을 먼저 찾고
+ * (없으면 404/50300) `deliveredAt`과 조건부 UPDATE 실패를 **둘 다** 409/50301로 묶는다. 그래서
+ * 상태가 SHIPPING이 아닌 주문도 "이미 배송완료"와 같은 코드로 돌아온다(50002는 애그리거트
+ * 전이 가드까지 가야 나오는 사실상 도달 불가 경로다).
+ */
 export const canCompleteDelivery = (status: WireOrderStatus): boolean => status === 'SHIPPING'
 
 // ─── 표시 포맷 ───────────────────────────────────────────────────────────────
@@ -183,18 +190,27 @@ export function formatDeliveryAddress(order: {
 // setOnAuthExpired가 로그인으로 보낸다(셀러센터 main.tsx가 등록하는 핸들러는 그것 하나다).
 // 403/20006은 셀러센터에 온보딩 화면이 없어 전역 핸들러를 등록하지 않으므로 아래 문구가 유일한 안내다.
 // 어느 쪽이든 promise는 reject되어 화면까지 내려오므로 전역 이동 전/실패 시 보일 문구를 채운다.
+//
+// **코드는 OrderErrorCode(50xxx)와 공용(2xxxx·9xxxx)만 온다.** 상품 화면의 40004·40006은
+// ProductErrorCode라 이 경로로 올 수 없어 빼뒀다 — 넣어 두면 실제로는 닿지 않는 문구를 테스트가
+// 대신 검증하게 된다. 셀러 자격 거절은 이 모듈에서 403/50003 하나뿐이다
+// (be `SellerOrderFacade.requireActiveSeller`·`requireOrderReadableSeller`가 유일한 던지는 자리).
+// 남의 주문은 주문번호 존재를 숨기려고 404/50000으로 통일되므로(be `findSellerOrder`·`getOwned`)
+// 50003을 "내 주문이 아니다"로 읽으면 안 된다.
 const ERROR_MESSAGE: Record<number, string> = {
   20004: '로그인이 필요해요. 다시 로그인해 주세요.',
   20005: '이용이 제한된 계정이에요. 고객센터에 문의해 주세요.',
   20006: '구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.',
-  40004: '판매 활동이 가능한 계정이 아니라 처리할 수 없어요.',
-  40006: '주문을 조회할 수 있는 계정이 아니에요.',
   50000: '주문을 찾을 수 없어요. 목록을 새로고침해 주세요.',
   50002: '지금 주문 상태에서는 할 수 없는 처리예요. 목록을 새로고침해 주세요.',
-  50003: '내 주문이 아니라 처리할 수 없어요.',
+  // 조회는 휴점·탈퇴신청 셀러까지 열리지만(ORDER_READABLE_SELLER_STATUSES) 처리(발주확인·송장등록·
+  // 배송완료)는 활성 셀러만 된다 — 같은 코드로 둘 다 오므로 조회 실패와 처리 실패 양쪽에서 읽혀야 한다.
+  50003: '주문을 보거나 처리할 수 있는 계정이 아니에요. 고객센터에 문의해 주세요.',
   50004: '결제완료 상태의 주문만 발주 확인할 수 있어요. 목록을 새로고침해 주세요.',
   50005: '발송 대기 상태의 주문만 발송 처리할 수 있어요. 목록을 새로고침해 주세요.',
-  50301: '이미 배송완료로 처리된 주문이에요.',
+  50300: '배송 정보가 없어 배송 완료로 처리할 수 없어요. 목록을 새로고침해 주세요.',
+  // 서버가 "이미 배송완료"와 "SHIPPING이 아니어서 전이 실패"를 한 코드로 묶는다(canCompleteDelivery 주석).
+  50301: '이미 배송완료로 처리됐거나 지금 상태에서는 배송 완료할 수 없어요. 목록을 새로고침해 주세요.',
   50302: '이미 송장이 등록된 주문이에요. 송장 정정은 고객센터에 문의해 주세요.',
   50303: '택배사를 찾을 수 없어요. 택배사를 다시 선택해 주세요.',
   50304: '송장번호 형식이 선택한 택배사와 맞지 않아요.',
