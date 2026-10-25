@@ -2,15 +2,17 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   SELLER_CLAIMS_URL,
+  claimRequestCount,
   currentClaims,
   lastSellerClaimsQuery,
   seedClaims,
   seedCouriers,
   server,
+  updateClaimRow,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -119,6 +121,8 @@ describe('승인 — 반품비 부담 주체 지정', () => {
 
     await clickConfirm('반품 승인할까요?', '반품 승인')
     expect(await screen.findByText('반품비 부담 주체를 골라야 승인할 수 있어요.')).toBeInTheDocument()
+    // 상태만 보면 "요청이 나가서 서버가 거절한" 경우와 구별되지 않는다 — 요청 수로 단언한다.
+    expect(claimRequestCount('approve')).toBe(0)
     expect(claimById('claim-return-1').status).toBe('CLAIM_REQUESTED')
 
     await userEvent.click(screen.getByText('셀러 부담'))
@@ -160,6 +164,9 @@ describe('거부 — 사유 필수', () => {
     await clickConfirm('반품 요청을 거부할까요?', '거부')
 
     expect(await screen.findByText('거부 사유를 입력해 주세요.')).toBeInTheDocument()
+    // 빈 사유를 그대로 보내도 서버가 400/50405로 막아 상태는 그대로다 — 상태 단언만으로는 "보내지
+    // 않았다"를 증명하지 못한다. 요청 수가 그 둘을 가른다.
+    expect(claimRequestCount('reject')).toBe(0)
     expect(claimById('claim-return-1').status).toBe('CLAIM_REQUESTED')
 
     await userEvent.type(screen.getByLabelText('거부 사유'), '파손 흔적이 확인되지 않았어요')
@@ -170,6 +177,66 @@ describe('거부 — 사유 필수', () => {
       expect(claim.status).toBe('REJECTED')
       expect(claim.rejectionReason).toBe('파손 흔적이 확인되지 않았어요')
     })
+    expect(claimRequestCount('reject')).toBe(1)
+  })
+})
+
+describe('중복 전송 방지와 충돌 복구', () => {
+  it('[AC-SELLER-CLAIM-112] 응답을 기다리는 동안 확정을 다시 눌러도 요청은 한 번만 나간다', async () => {
+    // 느린 서버를 만든다 — 즉시 응답하면 두 번째 클릭이 들어갈 틈 자체가 없어 아무것도 검증하지 못한다.
+    // 횟수는 이 핸들러가 직접 센다(기본 핸들러를 가로챘으므로 claimRequestCount는 늘지 않는다).
+    let approveCalls = 0
+    server.use(
+      http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/approve`, async () => {
+        approveCalls += 1
+        await delay(60)
+        updateClaimRow('claim-cancel-1', { status: 'APPROVED', sellerApprovalStatus: 'APPROVED' })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderClaims()
+    const row = await rowOf('동결건조 간식 100g')
+
+    await userEvent.click(within(row).getByRole('button', { name: '취소 승인' }))
+    const dialog = (await screen.findByRole('heading', { name: '취소 승인할까요?' })).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    const confirm = within(dialog).getByRole('button', { name: '취소 승인' })
+
+    await userEvent.dblClick(confirm)
+    // 첫 클릭이 mutation을 띄우면 DS Modal이 confirm을 `disabled={loading}`로 잠근다.
+    expect(confirm).toBeDisabled()
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '취소 승인할까요?' })).toBeNull())
+    expect(approveCalls).toBe(1)
+  })
+
+  it('[AC-SELLER-CLAIM-113] 처리 실패도 목록을 다시 불러와 낡은 버튼을 남기지 않는다', async () => {
+    // 다른 작업자가 먼저 승인한 상황 — 서버는 409/50408을 주고 그 뒤 조회는 바뀐 상태를 준다.
+    server.use(
+      http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/approve`, () => {
+        updateClaimRow('claim-return-1', { status: 'COLLECTING', sellerApprovalStatus: 'APPROVED' })
+        return HttpResponse.json(
+          { errorCode: 50408, message: '이미 처리된 클레임입니다.' },
+          { status: 409 },
+        )
+      }),
+    )
+    renderClaims()
+    const row = await rowOf('자동 급식기 5L')
+
+    await userEvent.click(within(row).getByRole('button', { name: '반품 승인' }))
+    await userEvent.click(screen.getByText('셀러 부담'))
+    await clickConfirm('반품 승인할까요?', '반품 승인')
+
+    expect(
+      await screen.findByText('이미 처리된 클레임이에요. 목록을 새로고침해 주세요.'),
+    ).toBeInTheDocument()
+    // 실패 뒤 무효화가 없으면 같은 행에 승인 버튼이 남아 같은 실패를 되풀이한다.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '반품 승인' })).toBeNull()
+    })
+    expect(within(await rowOf('자동 급식기 5L')).getByRole('button', { name: '회수 처리' })).toBeInTheDocument()
   })
 })
 
@@ -230,6 +297,31 @@ describe('상세 Drawer — 회수 단계와 메모', () => {
     await waitFor(() => expect(claimById('claim-return-1').sellerMemo).toBe('검수 후 전량 폐기'))
     expect(await screen.findByText('메모를 저장했어요.')).toBeInTheDocument()
   })
+
+  it('[AC-SELLER-CLAIM-114] 다른 곳에서 메모가 바뀌어도 적고 있던 내용을 지우지 않고 알린다', async () => {
+    renderClaims()
+    await userEvent.click(await screen.findByText('자동 급식기 5L'))
+
+    // 행 버튼과 Drawer 버튼의 문구가 같아서(반품 승인) Drawer로 좁혀 누른다.
+    const drawer = (await screen.findByRole('heading', { name: '클레임 상세' })).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    const memo = within(drawer).getByPlaceholderText('내부 운영용 메모를 적어 주세요')
+    await userEvent.clear(memo)
+    await userEvent.type(memo, '사진 확인 중')
+
+    // 적고 있는 사이 다른 작업자가 같은 클레임 메모를 저장했다.
+    updateClaimRow('claim-return-1', { sellerMemo: '다른 작업자가 적은 메모' })
+    // 승인 처리가 목록·상세를 한꺼번에 무효화해 상세가 바뀐 메모와 함께 다시 온다.
+    await userEvent.click(within(drawer).getByRole('button', { name: '반품 승인' }))
+    await userEvent.click(screen.getByText('셀러 부담'))
+    await clickConfirm('반품 승인할까요?', '반품 승인')
+
+    expect(await screen.findByText(/다른 곳에서 이 클레임의 메모가 바뀌었어요/)).toBeInTheDocument()
+    // 서버 값으로 덮어쓰면 셀러가 적던 글이 통째로 사라진다.
+    expect(screen.getByPlaceholderText('내부 운영용 메모를 적어 주세요')).toHaveValue('사진 확인 중')
+    expect(claimRequestCount('memo')).toBe(0)
+  })
 })
 
 describe('교환 재발송', () => {
@@ -241,8 +333,15 @@ describe('교환 재발송', () => {
 
     // 교환 상세는 환불 축을 보여주지 않는다 — refundStatus가 NONE으로 남아 있을 뿐이다.
     await userEvent.click(within(row).getByText('캣타워 그레이'))
-    expect(await screen.findByText('진행 이력')).toBeInTheDocument()
-    expect(screen.queryByText('환불 상태')).not.toBeInTheDocument()
+    const drawer = (await screen.findByRole('heading', { name: '클레임 상세' })).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    expect(within(drawer).getByText('진행 이력')).toBeInTheDocument()
+    expect(within(drawer).queryByText('환불 상태')).not.toBeInTheDocument()
+    // 품목 금액도 환불을 말하지 않는다 — 서버는 교환에도 품목 환불액(120,000원)을 내리지만 집행되지
+    // 않는 금액이라, 합계만 '환불 없음'으로 접고 품목에 숫자를 남기면 한 화면이 서로 다른 말을 한다.
+    expect(within(drawer).getByText('단가 120,000원')).toBeInTheDocument()
+    expect(within(drawer).queryByText(/환불 120,000원/)).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: '닫기' }))
 
     await userEvent.click(within(row).getByRole('button', { name: '재발송 송장 등록' }))
@@ -264,6 +363,10 @@ describe('교환 재발송', () => {
 
     expect(screen.getByText('선택한 택배사의 송장번호 형식과 맞지 않아요.')).toBeInTheDocument()
     await clickConfirm('재발송 송장을 등록할까요?', '재발송 송장 등록')
+    // **서버가 형식을 봐 주지 않으므로 이 선검증이 유일한 방어선이다**(회수·재발송은
+    // CourierMaster.validateTrackingNumber를 거치지 않는다). 그래서 상태가 아니라 요청 수로
+    // 단언한다 — 상태 단언만 두면 선검증이 사라져 틀린 송장이 등록돼도 통과한다.
+    expect(claimRequestCount('reship')).toBe(0)
     expect(claimById('claim-exchange-1').resolvedAt).toBeNull()
   })
 })

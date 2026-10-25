@@ -892,7 +892,10 @@ export const DEFAULT_CLAIMS: ClaimWire[] = [
     returnCostBearer: 'SELLER',
     returnShippingFee: 3000,
     dispatched: true,
-    refundAmount: 0,
+    // **교환에도 0이 아닌 환불액이 실린다.** 요청 시점 계산기(ClaimAmountCalculator)가 유형을 보지
+    // 않고 claim_items.refund_amount를 채우고 조회가 그 합을 그대로 내리기 때문이다 — 집행만 교환을
+    // 건너뛴다. 0으로 두면 "환불 없음"으로 접는 화면과 품목 금액이 어긋나도 테스트가 알아채지 못한다.
+    refundAmount: 120000,
     productNames: ['캣타워 그레이'],
     itemCount: 1,
     rejectionReason: null,
@@ -910,7 +913,7 @@ export const DEFAULT_CLAIMS: ClaimWire[] = [
         optionName: '그레이',
         quantity: 1,
         unitPrice: 120000,
-        refundAmount: 0,
+        refundAmount: 120000,
         itemStatus: 'EXCHANGE_REQUESTED',
       },
     ],
@@ -920,10 +923,23 @@ export const DEFAULT_CLAIMS: ClaimWire[] = [
 let claims: ClaimWire[] = DEFAULT_CLAIMS.map(row => ({ ...row }))
 let lastClaimsQuery: string | null = null
 
+/**
+ * 처리 경로별 수신 요청 수. **"보내지 않는다"는 단언에 필요하다** — 결과 상태만 보면 요청이 나가서
+ * 서버가 거절한 경우와 애초에 나가지 않은 경우가 구별되지 않는다(둘 다 상태가 그대로다). 그래서
+ * 선검증이 막았다는 것은 0회로, 더블클릭이 한 번만 나갔다는 것은 1회로 단언한다.
+ */
+export type ClaimMutationPath = 'approve' | 'reject' | 'memo' | 'collection' | 'collection-complete' | 'reship'
+const claimRequestCounts = new Map<ClaimMutationPath, number>()
+
+const countClaimRequest = (path: ClaimMutationPath): void => {
+  claimRequestCounts.set(path, (claimRequestCounts.get(path) ?? 0) + 1)
+}
+
 /** 인자 없이 부르면 기본 4건으로 되돌린다. */
 export function seedClaims(rows: ClaimWire[] = DEFAULT_CLAIMS): void {
   claims = rows.map(row => ({ ...row, items: row.items.map(item => ({ ...item })) }))
   lastClaimsQuery = null
+  claimRequestCounts.clear()
 }
 
 /** 목록 핸들러가 받은 마지막 쿼리스트링 — 반복 파라미터·빈 값 제거를 단언할 때 쓴다. */
@@ -931,9 +947,22 @@ export function lastSellerClaimsQuery(): string | null {
   return lastClaimsQuery
 }
 
+/** 해당 처리 경로가 받은 요청 수(seedClaims가 0으로 되돌린다). */
+export function claimRequestCount(path: ClaimMutationPath): number {
+  return claimRequestCounts.get(path) ?? 0
+}
+
 /** 핸들러가 반영한 현재 목록 — 테스트가 처리 결과를 읽을 때 쓴다. */
 export function currentClaims(): ClaimWire[] {
   return claims.map(row => ({ ...row }))
+}
+
+/**
+ * 한 건만 서버 쪽에서 바꾼다 — "화면이 보고 있는 동안 다른 작업자가 먼저 처리했다"를 만드는 데 쓴다.
+ * `seedClaims`와 달리 요청 수를 지우지 않으므로, 그 상황에서도 요청 횟수를 그대로 단언할 수 있다.
+ */
+export function updateClaimRow(claimPublicId: string, patch: Partial<ClaimWire>): void {
+  claims = claims.map(row => (row.claimPublicId === claimPublicId ? { ...row, ...patch } : row))
 }
 
 const SUMMARY_OMITTED = ['collectionStartedAt', 'order', 'items'] as const
@@ -1008,6 +1037,29 @@ function inPendingStage(row: ClaimWire, stage: PendingStageWire): boolean {
 const claimNotFound = () =>
   errorAt(404, 50400, '클레임을 찾을 수 없습니다.')
 
+/**
+ * ClaimStatus.canTransitionTo 미러. 셀러 판단 축(sellerApprovalStatus)만 보고 통과시키면 안 된다 —
+ * 도메인은 requireSellerDecisionPending 다음에 transitionTo로 **상태 축도** 검사한다. 두 축이
+ * 갈라지는 자리가 실제로 있다: 구매자 철회(withdrawByBuyer)는 status만 WITHDRAWN으로 바꾸고
+ * sellerApprovalStatus는 REQUESTED로 남겨 둔다. 그 건에 승인·거부를 보내면 BE는 409/50402인데
+ * 판단 축만 보는 스텁은 성공시켜, 화면이 상태 축을 보지 않게 되는 회귀를 통과시킨다.
+ */
+const CLAIM_TRANSITIONS: Record<ClaimStatusWire, ClaimStatusWire[]> = {
+  CLAIM_REQUESTED: ['APPROVED', 'REJECTED', 'COLLECTING', 'WITHDRAWN', 'ADMIN_OVERRIDDEN'],
+  COLLECTING: ['APPROVED', 'REJECTED', 'ADMIN_OVERRIDDEN'],
+  APPROVED: ['REFUND_FAILED', 'ADMIN_OVERRIDDEN'],
+  REFUND_FAILED: ['APPROVED', 'ADMIN_OVERRIDDEN'],
+  REJECTED: [],
+  WITHDRAWN: [],
+  ADMIN_OVERRIDDEN: [],
+}
+
+const canTransition = (from: ClaimStatusWire, to: ClaimStatusWire): boolean =>
+  CLAIM_TRANSITIONS[from].includes(to)
+
+const invalidTransition = () =>
+  errorAt(409, 50402, '허용되지 않은 클레임 상태 전이입니다.')
+
 const CLAIM_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 const claimHandlers = [
@@ -1077,6 +1129,7 @@ const claimHandlers = [
   }),
 
   http.patch(`${SELLER_CLAIMS_URL}/:claimPublicId/memo`, async ({ params, request }) => {
+    countClaimRequest('memo')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     const body = (await request.json()) as { sellerMemo?: string | null }
@@ -1087,6 +1140,7 @@ const claimHandlers = [
   }),
 
   http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/approve`, async ({ params, request }) => {
+    countClaimRequest('approve')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     const body = (await request.json()) as { returnCostBearer?: 'BUYER' | 'SELLER' | null }
@@ -1094,23 +1148,29 @@ const claimHandlers = [
     if (row.sellerApprovalStatus !== 'REQUESTED') {
       return errorAt(409, 50408, '이미 처리된 클레임입니다.')
     }
+    // 그 다음 transitionTo가 상태 축을 본다(철회된 건은 여기서 걸린다).
+    const next: ClaimStatusWire = row.claimType === 'CANCEL' ? 'APPROVED' : 'COLLECTING'
+    if (!canTransition(row.status, next)) return invalidTransition()
     row.sellerApprovalStatus = 'APPROVED'
     row.approvedAt = '2026-10-25T09:00:00'
-    row.status = row.claimType === 'CANCEL' ? 'APPROVED' : 'COLLECTING'
+    row.status = next
     // 취소는 부담 주체를 저장하지 않는다(도메인이 건너뛴다).
     if (row.claimType !== 'CANCEL') row.returnCostBearer = body.returnCostBearer ?? null
     return new HttpResponse(null, { status: 204 })
   }),
 
   http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/reject`, async ({ params, request }) => {
+    countClaimRequest('reject')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     const body = (await request.json()) as { rejectionReason?: string }
     const reason = body.rejectionReason?.trim() ?? ''
+    // 도메인 순서 그대로 — 공백 사유를 판단 축·상태 축보다 먼저 거절한다(Claim.rejectBySeller).
     if (reason === '') return errorAt(400, 50405, '거부 사유를 입력해 주세요.')
     if (row.sellerApprovalStatus !== 'REQUESTED') {
       return errorAt(409, 50408, '이미 처리된 클레임입니다.')
     }
+    if (!canTransition(row.status, 'REJECTED')) return invalidTransition()
     row.sellerApprovalStatus = 'REJECTED'
     row.status = 'REJECTED'
     row.rejectionReason = reason
@@ -1118,7 +1178,12 @@ const claimHandlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
+  // 송장번호 형식은 검사하지 않는다 — BE ClaimCollectionService도 CourierMaster.validateTrackingNumber를
+  // 부르지 않는다(그 호출은 최초 발송 경로에만 있다). 스텁이 서버보다 엄격하면 FE 선검증이 깨져도
+  // 테스트가 400을 받아 상태가 그대로이므로 "막혔다"는 단언이 그대로 통과한다 — 그 선검증은 요청 수
+  // (claimRequestCount)로 단언한다.
   http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/collection`, async ({ params, request }) => {
+    countClaimRequest('collection')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     const body = (await request.json()) as { courierCode?: string; trackingNumber?: string }
@@ -1130,17 +1195,12 @@ const claimHandlers = [
     }
     const courier = couriers.find(c => c.courierCode === body.courierCode)
     if (!courier) return errorAt(404, 50303, '택배사를 찾을 수 없습니다.')
-    if (
-      courier.trackingFormatPattern != null &&
-      !new RegExp(courier.trackingFormatPattern).test(body.trackingNumber ?? '')
-    ) {
-      return errorAt(400, 50304, '송장번호 형식이 올바르지 않습니다.')
-    }
     row.collectionStartedAt = '2026-10-25T09:00:00'
     return new HttpResponse(null, { status: 204 })
   }),
 
   http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/collection/complete`, ({ params }) => {
+    countClaimRequest('collection-complete')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     if (row.status !== 'COLLECTING' || row.collectionStartedAt == null) {
@@ -1154,6 +1214,7 @@ const claimHandlers = [
   }),
 
   http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/reship`, async ({ params, request }) => {
+    countClaimRequest('reship')
     const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
     if (!row) return claimNotFound()
     const body = (await request.json()) as { courierCode?: string; trackingNumber?: string }
