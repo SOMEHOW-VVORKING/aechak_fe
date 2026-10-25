@@ -671,5 +671,521 @@ const courierHandlers = [
   ),
 ]
 
-export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers, ...courierHandlers]
+// ─── 셀러 클레임 (seller 호스트 /sellers/me/claims) ──────────────────────────
+// BE SellerClaimController 8경로의 스텁. 상태 전이와 실패 계약을 도메인(Claim.kt·
+// ClaimCollectionService.kt)과 같은 판정으로 재현한다 — FE가 "지금 할 수 있는 처리"를 행과 이력에서
+// 어떻게 가르는지가 이 전이에 달려 있다.
+//
+// 응답에 **collectionStartedAt을 싣지 않는다**(BE SellerClaimSummaryResponse에 그 필드가 없다).
+// 스텁은 내부 상태로만 들고 상세 이력의 COLLECTION_STARTED로만 드러낸다 — FE가 목록 행에서 회수
+// 단계를 단정하는 회귀를 이 모양이 잡는다.
+
+export const SELLER_CLAIMS_URL = `${sellerBase}/sellers/me/claims`
+
+type ClaimTypeWire = 'CANCEL' | 'RETURN' | 'EXCHANGE'
+type ClaimStatusWire =
+  | 'CLAIM_REQUESTED'
+  | 'COLLECTING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ADMIN_OVERRIDDEN'
+  | 'REFUND_FAILED'
+  | 'WITHDRAWN'
+type RefundStatusWire = 'NONE' | 'REQUESTED' | 'DONE' | 'REFUND_FAILED'
+type PendingStageWire =
+  | 'DECISION_PENDING'
+  | 'COLLECTION_INVOICE_PENDING'
+  | 'COLLECTION_COMPLETION_PENDING'
+  | 'RESHIP_PENDING'
+
+export interface ClaimWire {
+  claimPublicId: string
+  orderPublicId: string
+  claimType: ClaimTypeWire
+  reasonCode: string | null
+  /** SCRUM-273(PR #150) 머지 전에는 **키 자체가 없다** — undefined면 직렬화에서 뺀다. */
+  reasonLabel?: string | null
+  reasonDetail: string | null
+  status: ClaimStatusWire
+  refundStatus: RefundStatusWire | null
+  sellerApprovalStatus: 'REQUESTED' | 'APPROVED' | 'REJECTED' | null
+  settlementStatus: 'PENDING' | 'SETTLED' | null
+  returnCostBearer: 'BUYER' | 'SELLER' | null
+  returnShippingFee: number | null
+  dispatched: boolean
+  refundAmount: number
+  productNames: string[]
+  itemCount: number
+  rejectionReason: string | null
+  sellerMemo: string | null
+  requestedAt: string | null
+  autoApproveDueAt: string | null
+  approvedAt: string | null
+  resolvedAt: string | null
+  /** 응답에 없는 내부 상태. 회수 단계 판정과 이력 조립에만 쓴다. */
+  collectionStartedAt: string | null
+  /** 상세 전용 — 주문·품목(목록 응답에는 없다). */
+  order: ClaimOrderWire
+  items: ClaimItemWire[]
+}
+
+export interface ClaimOrderWire {
+  orderStatus: 'PAID' | 'PREPARING' | 'DISPATCH_PENDING' | 'SHIPPING' | 'DELIVERED'
+  orderedAt: string
+  sellerShippingFee: number
+  recipientName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  detailAddress: string | null
+  deliveryMemo: string | null
+}
+
+export interface ClaimItemWire {
+  orderItemId: number
+  productName: string
+  optionName: string
+  quantity: number
+  unitPrice: number
+  refundAmount: number
+  itemStatus: 'ORDERED' | 'CANCELLED' | 'RETURN_REQUESTED' | 'RETURNED' | 'EXCHANGE_REQUESTED'
+}
+
+const claimOrder = (overrides: Partial<ClaimOrderWire> = {}): ClaimOrderWire => ({
+  orderStatus: 'DELIVERED',
+  orderedAt: '2026-10-20T10:00:00',
+  sellerShippingFee: 3000,
+  recipientName: '김집사',
+  contactNumber: '010-1234-5678',
+  zipCode: '06236',
+  baseAddress: '서울 강남구 테헤란로 1',
+  detailAddress: '101동 1001호',
+  deliveryMemo: '문 앞에 놓아 주세요',
+  ...overrides,
+})
+
+/**
+ * 기본 시드 4건 — 셀러가 할 일이 서로 다른 단계에 하나씩 놓인다.
+ * `reasonLabel`은 고정 어휘 전환 전 상태를 재현하려고 **일부러 비운다**(claim-2만 실어 둔다).
+ */
+export const DEFAULT_CLAIMS: ClaimWire[] = [
+  {
+    claimPublicId: 'claim-cancel-1',
+    orderPublicId: '01JC0RDER0000000000000001',
+    claimType: 'CANCEL',
+    reasonCode: 'CHANGE_OF_MIND',
+    reasonDetail: '색상을 잘못 골랐어요',
+    status: 'CLAIM_REQUESTED',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'REQUESTED',
+    settlementStatus: 'PENDING',
+    returnCostBearer: null,
+    returnShippingFee: null,
+    dispatched: false,
+    refundAmount: 25000,
+    productNames: ['동결건조 간식 100g'],
+    itemCount: 1,
+    rejectionReason: null,
+    sellerMemo: null,
+    requestedAt: '2026-10-24T10:00:00',
+    autoApproveDueAt: '2026-10-26T10:00:00',
+    approvedAt: null,
+    resolvedAt: null,
+    collectionStartedAt: null,
+    order: claimOrder({ orderStatus: 'PREPARING', deliveryMemo: null }),
+    items: [
+      {
+        orderItemId: 11,
+        productName: '동결건조 간식 100g',
+        optionName: '기본',
+        quantity: 1,
+        unitPrice: 25000,
+        refundAmount: 25000,
+        itemStatus: 'ORDERED',
+      },
+    ],
+  },
+  {
+    claimPublicId: 'claim-return-1',
+    orderPublicId: '01JC0RDER0000000000000002',
+    claimType: 'RETURN',
+    reasonCode: 'DEFECTIVE',
+    reasonLabel: '상품이 파손되었거나 불량이에요',
+    reasonDetail: '포장을 열자마자 급식기 뚜껑이 깨져 있었어요',
+    status: 'CLAIM_REQUESTED',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'REQUESTED',
+    settlementStatus: 'PENDING',
+    returnCostBearer: null,
+    returnShippingFee: 3000,
+    dispatched: true,
+    refundAmount: 59000,
+    productNames: ['자동 급식기 5L'],
+    itemCount: 1,
+    rejectionReason: null,
+    sellerMemo: '불량 사진 확인됨',
+    requestedAt: '2026-10-23T15:20:00',
+    autoApproveDueAt: '2026-10-25T15:20:00',
+    approvedAt: null,
+    resolvedAt: null,
+    collectionStartedAt: null,
+    order: claimOrder(),
+    items: [
+      {
+        orderItemId: 21,
+        productName: '자동 급식기 5L',
+        optionName: '화이트 / 5L',
+        quantity: 1,
+        unitPrice: 59000,
+        refundAmount: 59000,
+        itemStatus: 'RETURN_REQUESTED',
+      },
+    ],
+  },
+  {
+    claimPublicId: 'claim-return-2',
+    orderPublicId: '01JC0RDER0000000000000003',
+    claimType: 'RETURN',
+    reasonCode: 'CHANGE_OF_MIND',
+    reasonDetail: null,
+    status: 'COLLECTING',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'APPROVED',
+    settlementStatus: 'PENDING',
+    returnCostBearer: 'BUYER',
+    returnShippingFee: 3000,
+    dispatched: true,
+    refundAmount: 18000,
+    productNames: ['캣닢 장난감 세트'],
+    itemCount: 1,
+    rejectionReason: null,
+    sellerMemo: null,
+    requestedAt: '2026-10-22T09:00:00',
+    autoApproveDueAt: '2026-10-24T09:00:00',
+    approvedAt: '2026-10-22T11:00:00',
+    resolvedAt: null,
+    // 회수 송장이 등록된 건 — 다음 할 일은 회수 완료 처리다.
+    collectionStartedAt: '2026-10-22T12:00:00',
+    order: claimOrder({ detailAddress: null }),
+    items: [
+      {
+        orderItemId: 31,
+        productName: '캣닢 장난감 세트',
+        optionName: '기본',
+        quantity: 2,
+        unitPrice: 9000,
+        refundAmount: 18000,
+        itemStatus: 'RETURN_REQUESTED',
+      },
+    ],
+  },
+  {
+    claimPublicId: 'claim-exchange-1',
+    orderPublicId: '01JC0RDER0000000000000004',
+    claimType: 'EXCHANGE',
+    reasonCode: 'WRONG_ITEM',
+    reasonDetail: '주문과 다른 색이 왔어요',
+    status: 'APPROVED',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'APPROVED',
+    settlementStatus: 'PENDING',
+    returnCostBearer: 'SELLER',
+    returnShippingFee: 3000,
+    dispatched: true,
+    refundAmount: 0,
+    productNames: ['캣타워 그레이'],
+    itemCount: 1,
+    rejectionReason: null,
+    sellerMemo: null,
+    requestedAt: '2026-10-21T17:45:00',
+    autoApproveDueAt: '2026-10-23T17:45:00',
+    approvedAt: '2026-10-21T18:00:00',
+    resolvedAt: null,
+    collectionStartedAt: '2026-10-21T19:00:00',
+    order: claimOrder(),
+    items: [
+      {
+        orderItemId: 41,
+        productName: '캣타워 그레이',
+        optionName: '그레이',
+        quantity: 1,
+        unitPrice: 120000,
+        refundAmount: 0,
+        itemStatus: 'EXCHANGE_REQUESTED',
+      },
+    ],
+  },
+]
+
+let claims: ClaimWire[] = DEFAULT_CLAIMS.map(row => ({ ...row }))
+let lastClaimsQuery: string | null = null
+
+/** 인자 없이 부르면 기본 4건으로 되돌린다. */
+export function seedClaims(rows: ClaimWire[] = DEFAULT_CLAIMS): void {
+  claims = rows.map(row => ({ ...row, items: row.items.map(item => ({ ...item })) }))
+  lastClaimsQuery = null
+}
+
+/** 목록 핸들러가 받은 마지막 쿼리스트링 — 반복 파라미터·빈 값 제거를 단언할 때 쓴다. */
+export function lastSellerClaimsQuery(): string | null {
+  return lastClaimsQuery
+}
+
+/** 핸들러가 반영한 현재 목록 — 테스트가 처리 결과를 읽을 때 쓴다. */
+export function currentClaims(): ClaimWire[] {
+  return claims.map(row => ({ ...row }))
+}
+
+const SUMMARY_OMITTED = ['collectionStartedAt', 'order', 'items'] as const
+
+const claimSummary = (row: ClaimWire) => {
+  const rest: Record<string, unknown> = { ...row }
+  // 응답에 없는 필드는 싣지 않는다(목록 행에는 회수 시작 시각도 주문·품목도 없다).
+  for (const key of SUMMARY_OMITTED) delete rest[key]
+  // reasonLabel이 undefined면 키째 뺀다(고정 어휘 전환 전 응답).
+  if (rest['reasonLabel'] === undefined) delete rest['reasonLabel']
+  return rest
+}
+
+/** SellerClaimDetailResult.historyOf 미러 — 시각 오름차순, 같은 시각은 사건 선언 순서. */
+const HISTORY_ORDER = [
+  'REQUESTED',
+  'COLLECTION_STARTED',
+  'APPROVED',
+  'CLAWBACK_DEPOSITED',
+  'REJECTED',
+  'WITHDRAWN',
+  'ADMIN_OVERRIDDEN',
+  'REFUNDED',
+  'RESOLVED',
+] as const
+
+function claimHistory(row: ClaimWire): { event: string; occurredAt: string }[] {
+  const resolvedEvent =
+    row.refundStatus === 'DONE'
+      ? 'REFUNDED'
+      : row.status === 'REJECTED'
+        ? 'REJECTED'
+        : row.status === 'WITHDRAWN'
+          ? 'WITHDRAWN'
+          : row.status === 'ADMIN_OVERRIDDEN'
+            ? 'ADMIN_OVERRIDDEN'
+            : 'RESOLVED'
+  const entries: { event: string; occurredAt: string }[] = []
+  if (row.requestedAt) entries.push({ event: 'REQUESTED', occurredAt: row.requestedAt })
+  if (row.collectionStartedAt) {
+    entries.push({ event: 'COLLECTION_STARTED', occurredAt: row.collectionStartedAt })
+  }
+  if (row.approvedAt) entries.push({ event: 'APPROVED', occurredAt: row.approvedAt })
+  if (row.resolvedAt) entries.push({ event: resolvedEvent, occurredAt: row.resolvedAt })
+  return entries.sort(
+    (a, b) =>
+      a.occurredAt.localeCompare(b.occurredAt) ||
+      HISTORY_ORDER.indexOf(a.event as (typeof HISTORY_ORDER)[number]) -
+        HISTORY_ORDER.indexOf(b.event as (typeof HISTORY_ORDER)[number]),
+  )
+}
+
+/** SellerClaimQueryAdapter.pendingStage 미러. */
+function inPendingStage(row: ClaimWire, stage: PendingStageWire): boolean {
+  switch (stage) {
+    case 'DECISION_PENDING':
+      return row.status === 'CLAIM_REQUESTED'
+    case 'COLLECTION_INVOICE_PENDING':
+      return row.status === 'COLLECTING' && row.collectionStartedAt == null
+    case 'COLLECTION_COMPLETION_PENDING':
+      return row.status === 'COLLECTING' && row.collectionStartedAt != null
+    case 'RESHIP_PENDING':
+      return (
+        row.status === 'APPROVED' &&
+        row.claimType === 'EXCHANGE' &&
+        row.collectionStartedAt != null &&
+        row.resolvedAt == null
+      )
+  }
+}
+
+const claimNotFound = () =>
+  errorAt(404, 50400, '클레임을 찾을 수 없습니다.')
+
+const CLAIM_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+const claimHandlers = [
+  http.get(SELLER_CLAIMS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    lastClaimsQuery = url.search
+    // 값이 빈 파라미터와 `k[]=` 직렬화는 BE가 400으로 거절한다 — 스텁도 같이 거절해 회귀를 잡는다.
+    for (const [key, value] of url.searchParams.entries()) {
+      if (key.endsWith('[]')) return badRequest(`${key}: 지원하지 않는 값입니다.`)
+      if (value === '') return badRequest(`${key}: 지원하지 않는 값입니다.`)
+    }
+    const types = url.searchParams.getAll('claimType') as ClaimTypeWire[]
+    const statuses = url.searchParams.getAll('status') as ClaimStatusWire[]
+    const refundStatuses = url.searchParams.getAll('refundStatus') as RefundStatusWire[]
+    const stages = url.searchParams.getAll('pendingStage') as PendingStageWire[]
+    const from = url.searchParams.get('requestedFrom')
+    const to = url.searchParams.get('requestedTo')
+    if ((from && !CLAIM_DATE_PATTERN.test(from)) || (to && !CLAIM_DATE_PATTERN.test(to))) {
+      return badRequest('requestedFrom: 날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)')
+    }
+    if (from && to && from > to) return badRequest('요청일 시작일은 종료일보다 늦을 수 없습니다.')
+    const page = Number(url.searchParams.get('page') ?? '0')
+    const size = Number(url.searchParams.get('size') ?? '20')
+
+    // 유형 축을 뺀 나머지 필터 — counts가 이 집합을 센다(BE countByClaimType과 같은 기준).
+    const withoutType = claims.filter(row => {
+      if (statuses.length > 0 && !statuses.includes(row.status)) return false
+      if (refundStatuses.length > 0 && (row.refundStatus == null || !refundStatuses.includes(row.refundStatus))) {
+        return false
+      }
+      if (stages.length > 0 && !stages.some(stage => inPendingStage(row, stage))) return false
+      if (from && (row.requestedAt == null || row.requestedAt.slice(0, 10) < from)) return false
+      if (to && (row.requestedAt == null || row.requestedAt.slice(0, 10) > to)) return false
+      return true
+    })
+    const filtered = withoutType.filter(row => types.length === 0 || types.includes(row.claimType))
+    const pageRows = filtered.slice(page * size, page * size + size)
+
+    return HttpResponse.json({
+      data: {
+        claims: pageRows.map(claimSummary),
+        totalCount: filtered.length,
+        counts: {
+          CANCEL: withoutType.filter(row => row.claimType === 'CANCEL').length,
+          RETURN: withoutType.filter(row => row.claimType === 'RETURN').length,
+          EXCHANGE: withoutType.filter(row => row.claimType === 'EXCHANGE').length,
+        },
+        page,
+        size,
+        totalPages: Math.ceil(filtered.length / size),
+        hasNext: (page + 1) * size < filtered.length,
+      },
+    })
+  }),
+
+  http.get(`${SELLER_CLAIMS_URL}/:claimPublicId`, ({ params }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    return HttpResponse.json({
+      data: {
+        claim: claimSummary(row),
+        order: { orderPublicId: row.orderPublicId, ...row.order },
+        items: row.items.map(item => ({ ...item })),
+        history: claimHistory(row),
+      },
+    })
+  }),
+
+  http.patch(`${SELLER_CLAIMS_URL}/:claimPublicId/memo`, async ({ params, request }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    const body = (await request.json()) as { sellerMemo?: string | null }
+    const memo = body.sellerMemo?.trim() ?? ''
+    if (memo.length > 500) return badRequest('sellerMemo는 최대 500자입니다.')
+    row.sellerMemo = memo === '' ? null : memo
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/approve`, async ({ params, request }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    const body = (await request.json()) as { returnCostBearer?: 'BUYER' | 'SELLER' | null }
+    // Claim.requireSellerDecisionPending — 상태가 아니라 셀러 판단 축이 가른다.
+    if (row.sellerApprovalStatus !== 'REQUESTED') {
+      return errorAt(409, 50408, '이미 처리된 클레임입니다.')
+    }
+    row.sellerApprovalStatus = 'APPROVED'
+    row.approvedAt = '2026-10-25T09:00:00'
+    row.status = row.claimType === 'CANCEL' ? 'APPROVED' : 'COLLECTING'
+    // 취소는 부담 주체를 저장하지 않는다(도메인이 건너뛴다).
+    if (row.claimType !== 'CANCEL') row.returnCostBearer = body.returnCostBearer ?? null
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/reject`, async ({ params, request }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    const body = (await request.json()) as { rejectionReason?: string }
+    const reason = body.rejectionReason?.trim() ?? ''
+    if (reason === '') return errorAt(400, 50405, '거부 사유를 입력해 주세요.')
+    if (row.sellerApprovalStatus !== 'REQUESTED') {
+      return errorAt(409, 50408, '이미 처리된 클레임입니다.')
+    }
+    row.sellerApprovalStatus = 'REJECTED'
+    row.status = 'REJECTED'
+    row.rejectionReason = reason
+    row.resolvedAt = '2026-10-25T09:00:00'
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/collection`, async ({ params, request }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    const body = (await request.json()) as { courierCode?: string; trackingNumber?: string }
+    if (row.claimType === 'CANCEL' || row.status !== 'COLLECTING') {
+      return errorAt(409, 50409, '회수를 진행할 수 없는 클레임 상태입니다.')
+    }
+    if (row.collectionStartedAt != null) {
+      return errorAt(409, 50302, '이미 송장이 등록되어 있습니다.')
+    }
+    const courier = couriers.find(c => c.courierCode === body.courierCode)
+    if (!courier) return errorAt(404, 50303, '택배사를 찾을 수 없습니다.')
+    if (
+      courier.trackingFormatPattern != null &&
+      !new RegExp(courier.trackingFormatPattern).test(body.trackingNumber ?? '')
+    ) {
+      return errorAt(400, 50304, '송장번호 형식이 올바르지 않습니다.')
+    }
+    row.collectionStartedAt = '2026-10-25T09:00:00'
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/collection/complete`, ({ params }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    if (row.status !== 'COLLECTING' || row.collectionStartedAt == null) {
+      return errorAt(409, 50409, '회수를 진행할 수 없는 클레임 상태입니다.')
+    }
+    row.status = 'APPROVED'
+    if (row.claimType === 'RETURN') {
+      row.items = row.items.map(item => ({ ...item, itemStatus: 'RETURNED' as const }))
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/reship`, async ({ params, request }) => {
+    const row = claims.find(claim => claim.claimPublicId === params['claimPublicId'])
+    if (!row) return claimNotFound()
+    const body = (await request.json()) as { courierCode?: string; trackingNumber?: string }
+    // Claim.isReshippable 미러.
+    const reshippable =
+      row.claimType === 'EXCHANGE' &&
+      row.status === 'APPROVED' &&
+      row.collectionStartedAt != null &&
+      row.resolvedAt == null
+    if (!reshippable) return errorAt(409, 50411, '회수가 끝난 교환 클레임만 재발송할 수 있습니다.')
+    const courier = couriers.find(c => c.courierCode === body.courierCode)
+    if (!courier) return errorAt(404, 50303, '택배사를 찾을 수 없습니다.')
+    row.resolvedAt = '2026-10-25T09:00:00'
+    return HttpResponse.json(
+      {
+        data: {
+          shipmentType: 'EXCHANGE_RESHIP',
+          courierCode: courier.courierCode,
+          courierName: courier.courierName,
+          trackingNumber: body.trackingNumber ?? '',
+          dispatchedAt: '2026-10-25T09:00:00',
+        },
+      },
+      { status: 201 },
+    )
+  }),
+]
+
+export const handlers = [
+  ...sellerApplicationHandlers,
+  ...sellerProductHandlers,
+  ...courierHandlers,
+  ...claimHandlers,
+]
 export const server = setupServer(...handlers)
