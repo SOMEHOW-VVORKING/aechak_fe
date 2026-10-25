@@ -1839,6 +1839,316 @@ export interface SellerProductOptionsResponse {
 }
 
 /**
+ * 클레임 정산 반영 상태(be ClaimSettlementStatus)
+ */
+export type ClaimSettlementStatus =
+  (typeof ClaimSettlementStatus)[keyof typeof ClaimSettlementStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClaimSettlementStatus = {
+  PENDING: 'PENDING',
+  SETTLED: 'SETTLED',
+} as const
+
+/**
+ * 셀러 판단 축(be SellerApprovalStatus). 승인·거부 가능 여부는 상태가 아니라 이 축이 가른다 — REQUESTED가 아니면 409 errorCode 50408이다
+ */
+export type SellerApprovalStatus = (typeof SellerApprovalStatus)[keyof typeof SellerApprovalStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerApprovalStatus = {
+  REQUESTED: 'REQUESTED',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const
+
+/**
+ * 반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가 승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다
+ */
+export type ReturnCostBearer = (typeof ReturnCostBearer)[keyof typeof ReturnCostBearer]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReturnCostBearer = {
+  BUYER: 'BUYER',
+  SELLER: 'SELLER',
+} as const
+
+/**
+ * 배송 종류(be ShipmentType). 초회 발송·회수·교환 재발송이 한 테이블에 공존한다
+ */
+export type ShipmentType = (typeof ShipmentType)[keyof typeof ShipmentType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ShipmentType = {
+  INITIAL: 'INITIAL',
+  RETURN_COLLECT: 'RETURN_COLLECT',
+  EXCHANGE_RESHIP: 'EXCHANGE_RESHIP',
+} as const
+
+/**
+ * 셀러가 할 일이 남은 단계(be SellerClaimPendingStage). 목록 필터와 대시보드 처리 대기 집계가 이 축 하나를 공유한다. DECISION_PENDING=승인·거부 판단 대기(CLAIM_REQUESTED), COLLECTION_INVOICE_PENDING=회수 송장 등록 대기(COLLECTING·회수 미시작), COLLECTION_COMPLETION_PENDING=회수 완료 처리 대기(COLLECTING·회수 시작됨), RESHIP_PENDING=교환 재발송 대기(APPROVED·교환·미종결)
+ */
+export type SellerClaimPendingStage =
+  (typeof SellerClaimPendingStage)[keyof typeof SellerClaimPendingStage]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerClaimPendingStage = {
+  DECISION_PENDING: 'DECISION_PENDING',
+  COLLECTION_INVOICE_PENDING: 'COLLECTION_INVOICE_PENDING',
+  COLLECTION_COMPLETION_PENDING: 'COLLECTION_COMPLETION_PENDING',
+  RESHIP_PENDING: 'RESHIP_PENDING',
+} as const
+
+/**
+ * 클레임 진행 이력의 사건 어휘(be SellerClaimHistoryEvent). 이력 전용 테이블이 없어 클레임의 시각 컬럼에서 조립하며, 종결 시각 한 칸의 성격을 네 축으로 되짚어 이름을 붙인다 (환불 완료=REFUNDED, 거부=REJECTED, 철회=WITHDRAWN, 개입=ADMIN_OVERRIDDEN, 그 밖=RESOLVED)
+ */
+export type SellerClaimHistoryEvent =
+  (typeof SellerClaimHistoryEvent)[keyof typeof SellerClaimHistoryEvent]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerClaimHistoryEvent = {
+  REQUESTED: 'REQUESTED',
+  COLLECTION_STARTED: 'COLLECTION_STARTED',
+  APPROVED: 'APPROVED',
+  CLAWBACK_DEPOSITED: 'CLAWBACK_DEPOSITED',
+  REJECTED: 'REJECTED',
+  WITHDRAWN: 'WITHDRAWN',
+  ADMIN_OVERRIDDEN: 'ADMIN_OVERRIDDEN',
+  REFUNDED: 'REFUNDED',
+  RESOLVED: 'RESOLVED',
+} as const
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummaryRefundStatus = RefundStatus | null
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummarySellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummarySettlementStatus = ClaimSettlementStatus | null
+
+/**
+ * 승인 때 지정된다 — 판단 전이거나 취소 클레임이면 null
+ * @nullable
+ */
+export type SellerClaimSummaryReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 셀러 클레임 목록 한 행. 상태를 한 값으로 접지 않고 네 축(status·refundStatus· sellerApprovalStatus·settlementStatus)을 그대로 내리며, 반품비 문구도 조립하지 않고 근거 3필드(returnCostBearer·returnShippingFee·dispatched)만 내린다 — 접는 일은 화면이 한다. **collectionStartedAt이 없다** — 회수 중 클레임의 단계(송장 등록 대기 / 완료 처리 대기)는 이 행만으로 가를 수 없고, 단계 필터(pendingStage)나 상세의 이력이 필요하다.
+ */
+export interface SellerClaimSummary {
+  /** 클레임 공개 식별자(ULID 26자) — 모든 처리 경로의 경로 변수 */
+  claimPublicId: string
+  orderPublicId: string
+  claimType: ClaimType
+  /**
+   * 구매자가 고른 사유 코드. 고정 어휘 전환(SCRUM-273) 전에는 자유 문자열이라 알 수 없는 값이 올 수 있다 — 화면이 코드별 라벨 표를 들고 있으면 안 되고 reasonLabel을 쓴다
+   * @nullable
+   */
+  reasonCode: string | null
+  /**
+   * 사람이 읽을 사유 문구. **SCRUM-273(PR #150)이 머지된 뒤부터 실린다** — 그 전에는 필드 자체가 없으므로 required에 넣지 않는다. 있으면 쓰고 없으면 reasonCode를 그대로 보여준다
+   * @nullable
+   */
+  reasonLabel?: string | null
+  /**
+   * 구매자가 직접 적은 사유 상세(최대 500자). 셀러가 부담 주체를 판단하는 근거다
+   * @nullable
+   */
+  reasonDetail: string | null
+  status: ClaimStatus
+  /** @nullable */
+  refundStatus: SellerClaimSummaryRefundStatus
+  /** @nullable */
+  sellerApprovalStatus: SellerClaimSummarySellerApprovalStatus
+  /** @nullable */
+  settlementStatus: SellerClaimSummarySettlementStatus
+  /**
+   * 승인 때 지정된다 — 판단 전이거나 취소 클레임이면 null
+   * @nullable
+   */
+  returnCostBearer: SellerClaimSummaryReturnCostBearer
+  /**
+   * 반품 발송비. 취소에는 발생하지 않아 null이고, 셀러 배송 정책 테이블이 생기기 전까지는 서버 설정값(order.claim.return-shipping-fee, 기본 0)이 정책 스냅샷이다
+   * @nullable
+   */
+  returnShippingFee: number | null
+  /** 이 주문의 초회 발송이 끝났는지. 반품비 문구가 "미발송"인지 가르는 근거다. **BE 필드명에 is 접두가 없다** — 문서에서 깎인 것이 아니라 원래 dispatched다 */
+  dispatched: boolean
+  /** 환불 예정액 = 품목 환불액 합 + 배송비 환불액. 구매자 목록과 같은 계산기를 쓴다 */
+  refundAmount: number
+  /** 대상 품목의 상품명(중복 제거) */
+  productNames: string[]
+  /** 대상 품목 수(중복 제거 전) */
+  itemCount: number
+  /** @nullable */
+  rejectionReason: string | null
+  /**
+   * 셀러 운영 메모. 어드민 개입 사유(adminReason)와 주체가 다르고 구매자에게 안 나간다
+   * @nullable
+   */
+  sellerMemo: string | null
+  /**
+   * 오프셋 없는 LocalDateTime(예: 2026-10-24T10:00:00)
+   * @nullable
+   */
+  requestedAt: string | null
+  /**
+   * 셀러 미응답 자동승인 기한. 지나면 배치가 반품비 부담 주체 없이 승인한다
+   * @nullable
+   */
+  autoApproveDueAt: string | null
+  /** @nullable */
+  approvedAt: string | null
+  /**
+   * 종결 시각 한 칸 — 환불 완료·거부·철회·개입·교환 재발송이 모두 여기 찍힌다
+   * @nullable
+   */
+  resolvedAt: string | null
+}
+
+/**
+ * 유형별 건수. 세 키는 0이어도 빠지지 않는다(SellerClaimPageResult.of가 채운다). **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다 — 탭 배지용이다
+ */
+export interface SellerClaimTypeCounts {
+  CANCEL: number
+  RETURN: number
+  EXCHANGE: number
+}
+
+export interface SellerClaimListData {
+  claims: SellerClaimSummary[]
+  /** 필터를 모두 반영한 전체 건수(유형 필터 포함) — counts와 기준이 다르다 */
+  totalCount: number
+  counts: SellerClaimTypeCounts
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerClaimListResponse {
+  data: SellerClaimListData
+}
+
+/**
+ * 클레임 대상 주문. 수령인명·연락처는 복호 평문이라 마스킹은 화면이 한다. `sellerShippingFee`는 이 셀러 몫 배송비다(주문그룹 전체가 아니다)
+ */
+export interface SellerClaimOrderInfo {
+  orderPublicId: string
+  orderStatus: OrderStatus
+  orderedAt: string
+  sellerShippingFee: number
+  recipientName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailAddress: string | null
+  /** @nullable */
+  deliveryMemo: string | null
+}
+
+/**
+ * 클레임 대상 주문품목. 수량 쪼개기를 받지 않으므로 주문 수량 전부가 대상이다
+ */
+export interface SellerClaimItem {
+  orderItemId: number
+  productName: string
+  /** 옵션값을 " / "로 이은 주문 시점 스냅샷. 옵션 없는 상품은 "기본" */
+  optionName: string
+  quantity: number
+  unitPrice: number
+  refundAmount: number
+  itemStatus: OrderItemStatus
+}
+
+export interface SellerClaimHistoryEntry {
+  event: SellerClaimHistoryEvent
+  occurredAt: string
+}
+
+export interface SellerClaimDetailData {
+  claim: SellerClaimSummary
+  order: SellerClaimOrderInfo
+  items: SellerClaimItem[]
+  /** 시각 오름차순(같은 시각은 사건 선언 순서). COLLECTION_STARTED 유무가 회수 단계를 가른다 */
+  history: SellerClaimHistoryEntry[]
+}
+
+export interface SellerClaimDetailResponse {
+  data: SellerClaimDetailData
+}
+
+/**
+ * @nullable
+ */
+export type ApproveClaimRequestReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 반품비 부담 주체는 반품·교환만 쓴다 — 취소는 비워 보낸다(서버가 저장하지 않는다). 본문 없이 보내도 서버는 받지만(required=false) 빈 객체를 보내 의도를 드러낸다
+ */
+export interface ApproveClaimRequest {
+  /** @nullable */
+  returnCostBearer?: ApproveClaimRequestReturnCostBearer
+}
+
+export interface RejectClaimRequest {
+  /**
+   * 공백만 보내면 400 errorCode 50405. 구매자에게 그대로 노출된다
+   * @maxLength 500
+   */
+  rejectionReason: string
+}
+
+/**
+ * 덮어쓰기. null·공백은 삭제로 본다
+ */
+export interface UpdateClaimMemoRequest {
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  sellerMemo?: string | null
+}
+
+export interface StartClaimCollectionRequest {
+  /**
+   * GET /sellers/couriers의 대문자 코드 그대로(소문자는 404 errorCode 50303)
+   * @maxLength 30
+   */
+  courierCode: string
+  /** @maxLength 50 */
+  trackingNumber: string
+}
+
+export interface ReshipClaimRequest {
+  /** @maxLength 30 */
+  courierCode: string
+  /** @maxLength 50 */
+  trackingNumber: string
+}
+
+export interface ReshipClaimData {
+  shipmentType: ShipmentType
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  /** @nullable */
+  dispatchedAt: string | null
+}
+
+export interface ReshipClaimResponse {
+  data: ReshipClaimData
+}
+
+/**
  * 계정 상태. BE UserStatus enum 이름이 그대로 직렬화된다
  */
 export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus]
@@ -2394,6 +2704,46 @@ export const GetSellerProductsSort = {
   price_asc: 'price_asc',
   price_desc: 'price_desc',
 } as const
+
+export type GetSellerClaimsParams = {
+  /**
+   * 반복 파라미터로 보낸다(?claimType=CANCEL&claimType=RETURN). 미지 값은 400 errorCode 90001 message "claimType: 지원하지 않는 값입니다."
+   */
+  claimType?: ClaimType[]
+  /**
+   * claimType과 같은 규칙. 축끼리는 AND, 한 축 안의 값끼리는 OR
+   */
+  status?: ClaimStatus[]
+  /**
+   * claimType과 같은 규칙
+   */
+  refundStatus?: RefundStatus[]
+  /**
+   * 셀러가 아직 할 일이 남은 단계(SCRUM-278). 대시보드 처리 대기 집계와 **같은 판정**을 쓰므로 카드에서 목록으로 넘어와도 두 숫자가 어긋나지 않는다. 상태 축만으로는 가를 수 없는 자리가 있어 필요하다 — 회수 중(COLLECTING) 한 상태에 송장 등록 대기와 완료 처리 대기가 함께 들어 있고, 목록 응답에는 그 둘을 가르는 collectionStartedAt이 없다
+   */
+  pendingStage?: SellerClaimPendingStage[]
+  /**
+   * 요청일 하한(yyyy-MM-dd, 당일 00:00 포함). 네 자리 연도만 받는다 — 형식 위반은 400 errorCode 90001 message "requestedFrom: 날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)"
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  requestedFrom?: string
+  /**
+   * 요청일 상한(종료일 당일을 통째로 포함한다 — 서버가 다음 날 00:00 반개구간으로 바꾼다). from > to는 400 errorCode 90001
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  requestedTo?: string
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
 
 export type GetAdminRosterParams = {
   /**
@@ -11772,6 +12122,902 @@ export const useChangeSellerProductOptionCombination = <TError = unknown, TConte
   TContext
 > => {
   const mutationOptions = getChangeSellerProductOptionCombinationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이고 정렬은 claims.id 내림차순 고정이다 (정렬 파라미터가 없다). 키워드 검색이 없다 — 주문번호로 찾는 입력을 만들면 안 된다. 자격 게이트가 상품·주문보다 좁다: **조회까지 ACTIVE 셀러만** 통과하고(ClaimFacade가 모든 경로를 isActiveSeller로 감싼다) 휴점·탈퇴신청 셀러는 목록 조회도 403 errorCode 50404다. 형식 오류는 전부 400 errorCode 90001이고, 빈 값 파라미터(`?status=`·`?requestedFrom=`)는 미입력이 아니라 형식 오류로 거절된다 — 값이 없는 파라미터는 키째 빼서 보낼 것. `counts`는 **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다(유형 탭 배지가 지금 고른 탭과 무관해야 하기 때문) — 세 유형 키는 0이어도 빠지지 않는다.
+ * @summary 셀러 클레임 목록
+ */
+export const getSellerClaims = (params?: GetSellerClaimsParams, signal?: AbortSignal) => {
+  return customInstance<SellerClaimListResponse>({
+    url: `/sellers/me/claims`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerClaimsQueryKey = (params?: GetSellerClaimsParams) => {
+  return [`/sellers/me/claims`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerClaimsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaims>>> = ({ signal }) =>
+    getSellerClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimsQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerClaims>>>
+export type GetSellerClaimsQueryError = void
+
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params: undefined | GetSellerClaimsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 목록
+ */
+
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerClaimsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaims>>> = ({ signal }) =>
+    getSellerClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerClaims>>
+>
+export type GetSellerClaimsSuspenseQueryError = void
+
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params: undefined | GetSellerClaimsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 목록
+ */
+
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행 + 주문·수령자 + 대상 품목 + 진행 이력. 수령인명·연락처는 **복호 평문**이라 마스킹은 화면이 한다(어드민 심사 API 선례와 통일). 이력에는 전용 테이블이 없어 클레임이 들고 있는 시각 컬럼에서 조립하며, 목록에 없는 `COLLECTION_STARTED`가 여기서 드러난다 — 회수 중 클레임이 송장 등록 대기인지 완료 처리 대기인지 가르는 유일한 응답 근거다. 남의 클레임·없는 클레임은 모두 404 errorCode 50400이고, ACTIVE 셀러가 아니면 403 errorCode 50404다.
+ * @summary 셀러 클레임 상세
+ */
+export const getSellerClaim = (claimPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SellerClaimDetailResponse>({
+    url: `/sellers/me/claims/${claimPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerClaimQueryKey = (claimPublicId?: string) => {
+  return [`/sellers/me/claims/${claimPublicId}`] as const
+}
+
+export const getGetSellerClaimQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaim>>> = ({ signal }) =>
+    getSellerClaim(claimPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!claimPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaim>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerClaim>>>
+export type GetSellerClaimQueryError = void
+
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaim>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaim>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaim>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaim>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 상세
+ */
+
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimQueryOptions(claimPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerClaimSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaim>>> = ({ signal }) =>
+    getSellerClaim(claimPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaim>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerClaim>>
+>
+export type GetSellerClaimSuspenseQueryError = void
+
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 상세
+ */
+
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimSuspenseQueryOptions(claimPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 상태만 바꾼다 — 환불 집행은 이 경로가 아니라 배치가 한다(승인 직후 refundStatus는 NONE이다). 취소는 바로 APPROVED, 반품·교환은 COLLECTING(회수 대기)으로 간다. **반품비 부담 주체는 셀러가 직접 지정한다** — 서버는 사유로 유도하지 않고 받은 값을 그대로 저장하며, 취소에서는 그 값을 저장하지 않는다(Claim.approveBySeller가 CANCEL이면 건너뛴다). 이미 판단한 건은 409 errorCode 50408, 상태가 맞지 않으면 409 errorCode 50402다.
+ * @summary 셀러 클레임 승인
+ */
+export const approveSellerClaim = (
+  claimPublicId: string,
+  approveClaimRequest: ApproveClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/approve`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: approveClaimRequest,
+    signal,
+  })
+}
+
+export const getApproveSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: ApproveClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ApproveClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['approveSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveSellerClaim>>,
+    { claimPublicId: string; data: ApproveClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return approveSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ApproveSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveSellerClaim>>
+>
+export type ApproveSellerClaimMutationBody = ApproveClaimRequest
+export type ApproveSellerClaimMutationError = void
+
+/**
+ * @summary 셀러 클레임 승인
+ */
+export const useApproveSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: ApproveClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ApproveClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getApproveSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 거부 사유는 구매자에게 그대로 노출되므로 **빈 값을 받지 않는다** — 공백만 보내면 400 errorCode 50405다(본문 자체를 생략해도 같다). 500자를 넘으면 400 errorCode 90001이고 서버가 trim 후 500자로 자른다. 반품·교환 거부는 붙잡고 있던 주문품목을 주문 상태로 되돌린다.
+ * @summary 셀러 클레임 거부
+ */
+export const rejectSellerClaim = (
+  claimPublicId: string,
+  rejectClaimRequest: RejectClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/reject`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: rejectClaimRequest,
+    signal,
+  })
+}
+
+export const getRejectSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: RejectClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: RejectClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['rejectSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectSellerClaim>>,
+    { claimPublicId: string; data: RejectClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return rejectSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RejectSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectSellerClaim>>
+>
+export type RejectSellerClaimMutationBody = RejectClaimRequest
+export type RejectSellerClaimMutationError = void
+
+/**
+ * @summary 셀러 클레임 거부
+ */
+export const useRejectSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: RejectClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: RejectClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getRejectSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 덮어쓰기다(병합이 아니다). null·공백을 보내면 메모를 지운다. 상태 전이와 무관해서 종결된 클레임에도 쓸 수 있다. 500자 초과는 400 errorCode 90001. 구매자 응답에는 나가지 않는다.
+ * @summary 셀러 클레임 운영 메모
+ */
+export const updateSellerClaimMemo = (
+  claimPublicId: string,
+  updateClaimMemoRequest: UpdateClaimMemoRequest,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/memo`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: updateClaimMemoRequest,
+  })
+}
+
+export const getUpdateSellerClaimMemoMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+    TError,
+    { claimPublicId: string; data: UpdateClaimMemoRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+  TError,
+  { claimPublicId: string; data: UpdateClaimMemoRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerClaimMemo']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+    { claimPublicId: string; data: UpdateClaimMemoRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return updateSellerClaimMemo(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerClaimMemoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>
+>
+export type UpdateSellerClaimMemoMutationBody = UpdateClaimMemoRequest
+export type UpdateSellerClaimMemoMutationError = unknown
+
+/**
+ * @summary 셀러 클레임 운영 메모
+ */
+export const useUpdateSellerClaimMemo = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+      TError,
+      { claimPublicId: string; data: UpdateClaimMemoRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+  TError,
+  { claimPublicId: string; data: UpdateClaimMemoRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerClaimMemoMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 승인해 회수 대기(COLLECTING)로 넘어온 반품·교환만. 상태는 COLLECTING에 머물고 회수 시작 시각만 남는다 — "물건을 받기 전에는 환불하지 않는다"의 근거다. 취소에 부르면 409 errorCode 50409, 이미 등록했으면 409 errorCode 50302, 택배사 코드가 없으면 404 errorCode 50303, 송장번호 형식 위반은 400 errorCode 50304다. courierCode는 `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다.
+ * @summary 반품·교환 회수 송장 등록
+ */
+export const startSellerClaimCollection = (
+  claimPublicId: string,
+  startClaimCollectionRequest: StartClaimCollectionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/collection`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: startClaimCollectionRequest,
+    signal,
+  })
+}
+
+export const getStartSellerClaimCollectionMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startSellerClaimCollection>>,
+    TError,
+    { claimPublicId: string; data: StartClaimCollectionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string; data: StartClaimCollectionRequest },
+  TContext
+> => {
+  const mutationKey = ['startSellerClaimCollection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startSellerClaimCollection>>,
+    { claimPublicId: string; data: StartClaimCollectionRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return startSellerClaimCollection(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type StartSellerClaimCollectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>
+>
+export type StartSellerClaimCollectionMutationBody = StartClaimCollectionRequest
+export type StartSellerClaimCollectionMutationError = void
+
+/**
+ * @summary 반품·교환 회수 송장 등록
+ */
+export const useStartSellerClaimCollection = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof startSellerClaimCollection>>,
+      TError,
+      { claimPublicId: string; data: StartClaimCollectionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string; data: StartClaimCollectionRequest },
+  TContext
+> => {
+  const mutationOptions = getStartSellerClaimCollectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 회수 송장이 등록된 건만. 이 전이로 상태가 APPROVED가 되고 반품 환불 집행이 그 뒤에만 일어난다 (교환은 재발송이 남는다). 송장이 없거나 이미 완료했으면 409 errorCode 50409다. 본문이 없다.
+ * @summary 반품·교환 회수 완료
+ */
+export const completeSellerClaimCollection = (claimPublicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/collection/complete`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getCompleteSellerClaimCollectionMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+    TError,
+    { claimPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['completeSellerClaimCollection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+    { claimPublicId: string }
+  > = props => {
+    const { claimPublicId } = props ?? {}
+
+    return completeSellerClaimCollection(claimPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CompleteSellerClaimCollectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>
+>
+
+export type CompleteSellerClaimCollectionMutationError = void
+
+/**
+ * @summary 반품·교환 회수 완료
+ */
+export const useCompleteSellerClaimCollection = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+      TError,
+      { claimPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getCompleteSellerClaimCollectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 회수가 끝난 교환(APPROVED·미종결)만. 환불이 없는 대신 이 송장 등록이 교환을 종결시킨다 (resolvedAt이 찍힌다). 조건을 벗어나면 409 errorCode 50411, 이미 등록했으면 409 errorCode 50302다. 응답은 201이고 등록된 송장을 돌려준다.
+ * @summary 교환 재발송 송장 등록
+ */
+export const reshipSellerClaim = (
+  claimPublicId: string,
+  reshipClaimRequest: ReshipClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ReshipClaimResponse>({
+    url: `/sellers/me/claims/${claimPublicId}/reship`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: reshipClaimRequest,
+    signal,
+  })
+}
+
+export const getReshipSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reshipSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: ReshipClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reshipSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ReshipClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['reshipSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reshipSellerClaim>>,
+    { claimPublicId: string; data: ReshipClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return reshipSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReshipSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reshipSellerClaim>>
+>
+export type ReshipSellerClaimMutationBody = ReshipClaimRequest
+export type ReshipSellerClaimMutationError = void
+
+/**
+ * @summary 교환 재발송 송장 등록
+ */
+export const useReshipSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof reshipSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: ReshipClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof reshipSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ReshipClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getReshipSellerClaimMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

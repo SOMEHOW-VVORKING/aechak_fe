@@ -1787,6 +1787,292 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SellerOptionCombinationChangeResponse"
+  /sellers/me/claims:
+    get:
+      summary: "셀러 클레임 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이고 정렬은 claims.id 내림차순 고정이다
+        (정렬 파라미터가 없다). 키워드 검색이 없다 — 주문번호로 찾는 입력을 만들면 안 된다.
+        자격 게이트가 상품·주문보다 좁다: **조회까지 ACTIVE 셀러만** 통과하고(ClaimFacade가 모든
+        경로를 isActiveSeller로 감싼다) 휴점·탈퇴신청 셀러는 목록 조회도 403 errorCode 50404다.
+        형식 오류는 전부 400 errorCode 90001이고, 빈 값 파라미터(`?status=`·`?requestedFrom=`)는
+        미입력이 아니라 형식 오류로 거절된다 — 값이 없는 파라미터는 키째 빼서 보낼 것.
+        `counts`는 **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다(유형 탭 배지가 지금 고른
+        탭과 무관해야 하기 때문) — 세 유형 키는 0이어도 빠지지 않는다.
+      operationId: "getSellerClaims"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimType
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ClaimType"
+          description: >-
+            반복 파라미터로 보낸다(?claimType=CANCEL&claimType=RETURN). 미지 값은 400 errorCode
+            90001 message "claimType: 지원하지 않는 값입니다."
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ClaimStatus"
+          description: "claimType과 같은 규칙. 축끼리는 AND, 한 축 안의 값끼리는 OR"
+        - name: refundStatus
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/RefundStatus"
+          description: "claimType과 같은 규칙"
+        - name: pendingStage
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/SellerClaimPendingStage"
+          description: >-
+            셀러가 아직 할 일이 남은 단계(SCRUM-278). 대시보드 처리 대기 집계와 **같은 판정**을 쓰므로
+            카드에서 목록으로 넘어와도 두 숫자가 어긋나지 않는다. 상태 축만으로는 가를 수 없는 자리가
+            있어 필요하다 — 회수 중(COLLECTING) 한 상태에 송장 등록 대기와 완료 처리 대기가 함께 들어
+            있고, 목록 응답에는 그 둘을 가르는 collectionStartedAt이 없다
+        - name: requestedFrom
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: >-
+            요청일 하한(yyyy-MM-dd, 당일 00:00 포함). 네 자리 연도만 받는다 — 형식 위반은
+            400 errorCode 90001 message "requestedFrom: 날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)"
+        - name: requestedTo
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: >-
+            요청일 상한(종료일 당일을 통째로 포함한다 — 서버가 다음 날 00:00 반개구간으로 바꾼다).
+            from > to는 400 errorCode 90001
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: "0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)"
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: "1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerClaimListResponse"
+        "403":
+          description: "ACTIVE 셀러가 아님(errorCode 50404)"
+  /sellers/me/claims/{claimPublicId}:
+    get:
+      summary: "셀러 클레임 상세"
+      description: >-
+        목록 행 + 주문·수령자 + 대상 품목 + 진행 이력. 수령인명·연락처는 **복호 평문**이라 마스킹은
+        화면이 한다(어드민 심사 API 선례와 통일). 이력에는 전용 테이블이 없어 클레임이 들고 있는 시각
+        컬럼에서 조립하며, 목록에 없는 `COLLECTION_STARTED`가 여기서 드러난다 — 회수 중 클레임이
+        송장 등록 대기인지 완료 처리 대기인지 가르는 유일한 응답 근거다. 남의 클레임·없는 클레임은
+        모두 404 errorCode 50400이고, ACTIVE 셀러가 아니면 403 errorCode 50404다.
+      operationId: "getSellerClaim"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "클레임 공개 식별자(ULID 26자)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerClaimDetailResponse"
+        "404":
+          description: "없는 클레임 또는 남의 클레임(errorCode 50400)"
+  /sellers/me/claims/{claimPublicId}/approve:
+    post:
+      summary: "셀러 클레임 승인"
+      description: >-
+        상태만 바꾼다 — 환불 집행은 이 경로가 아니라 배치가 한다(승인 직후 refundStatus는 NONE이다).
+        취소는 바로 APPROVED, 반품·교환은 COLLECTING(회수 대기)으로 간다. **반품비 부담 주체는 셀러가
+        직접 지정한다** — 서버는 사유로 유도하지 않고 받은 값을 그대로 저장하며, 취소에서는 그 값을
+        저장하지 않는다(Claim.approveBySeller가 CANCEL이면 건너뛴다). 이미 판단한 건은
+        409 errorCode 50408, 상태가 맞지 않으면 409 errorCode 50402다.
+      operationId: "approveSellerClaim"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveClaimRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "409":
+          description: "이미 처리됨(errorCode 50408) / 허용되지 않은 전이(errorCode 50402)"
+  /sellers/me/claims/{claimPublicId}/reject:
+    post:
+      summary: "셀러 클레임 거부"
+      description: >-
+        거부 사유는 구매자에게 그대로 노출되므로 **빈 값을 받지 않는다** — 공백만 보내면
+        400 errorCode 50405다(본문 자체를 생략해도 같다). 500자를 넘으면 400 errorCode 90001이고
+        서버가 trim 후 500자로 자른다. 반품·교환 거부는 붙잡고 있던 주문품목을 주문 상태로 되돌린다.
+      operationId: "rejectSellerClaim"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectClaimRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "400":
+          description: "거부 사유 누락(errorCode 50405)"
+  /sellers/me/claims/{claimPublicId}/memo:
+    patch:
+      summary: "셀러 클레임 운영 메모"
+      description: >-
+        덮어쓰기다(병합이 아니다). null·공백을 보내면 메모를 지운다. 상태 전이와 무관해서 종결된
+        클레임에도 쓸 수 있다. 500자 초과는 400 errorCode 90001. 구매자 응답에는 나가지 않는다.
+      operationId: "updateSellerClaimMemo"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimMemoRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+  /sellers/me/claims/{claimPublicId}/collection:
+    post:
+      summary: "반품·교환 회수 송장 등록"
+      description: >-
+        승인해 회수 대기(COLLECTING)로 넘어온 반품·교환만. 상태는 COLLECTING에 머물고 회수 시작
+        시각만 남는다 — "물건을 받기 전에는 환불하지 않는다"의 근거다. 취소에 부르면
+        409 errorCode 50409, 이미 등록했으면 409 errorCode 50302, 택배사 코드가 없으면
+        404 errorCode 50303, 송장번호 형식 위반은 400 errorCode 50304다. courierCode는
+        `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다.
+      operationId: "startSellerClaimCollection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartClaimCollectionRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "409":
+          description: "회수 불가 상태(errorCode 50409) / 이미 등록(errorCode 50302)"
+  /sellers/me/claims/{claimPublicId}/collection/complete:
+    post:
+      summary: "반품·교환 회수 완료"
+      description: >-
+        회수 송장이 등록된 건만. 이 전이로 상태가 APPROVED가 되고 반품 환불 집행이 그 뒤에만 일어난다
+        (교환은 재발송이 남는다). 송장이 없거나 이미 완료했으면 409 errorCode 50409다. 본문이 없다.
+      operationId: "completeSellerClaimCollection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "409":
+          description: "회수 진행 불가(errorCode 50409)"
+  /sellers/me/claims/{claimPublicId}/reship:
+    post:
+      summary: "교환 재발송 송장 등록"
+      description: >-
+        회수가 끝난 교환(APPROVED·미종결)만. 환불이 없는 대신 이 송장 등록이 교환을 종결시킨다
+        (resolvedAt이 찍힌다). 조건을 벗어나면 409 errorCode 50411, 이미 등록했으면
+        409 errorCode 50302다. 응답은 201이고 등록된 송장을 돌려준다.
+      operationId: "reshipSellerClaim"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: claimPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReshipClaimRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReshipClaimResponse"
+        "409":
+          description: "재발송 불가(errorCode 50411) / 이미 등록(errorCode 50302)"
   /admin/admins:
     get:
       summary: "어드민 관리자 명부 목록"
@@ -4275,6 +4561,346 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SellerProductOptionsData"
+    ClaimSettlementStatus:
+      type: string
+      description: "클레임 정산 반영 상태(be ClaimSettlementStatus)"
+      enum: [PENDING, SETTLED]
+    SellerApprovalStatus:
+      type: string
+      description: >-
+        셀러 판단 축(be SellerApprovalStatus). 승인·거부 가능 여부는 상태가 아니라 이 축이 가른다 —
+        REQUESTED가 아니면 409 errorCode 50408이다
+      enum: [REQUESTED, APPROVED, REJECTED]
+    ReturnCostBearer:
+      type: string
+      description: >-
+        반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가
+        승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다
+      enum: [BUYER, SELLER]
+    ShipmentType:
+      type: string
+      description: "배송 종류(be ShipmentType). 초회 발송·회수·교환 재발송이 한 테이블에 공존한다"
+      enum: [INITIAL, RETURN_COLLECT, EXCHANGE_RESHIP]
+    SellerClaimPendingStage:
+      type: string
+      description: >-
+        셀러가 할 일이 남은 단계(be SellerClaimPendingStage). 목록 필터와 대시보드 처리 대기 집계가
+        이 축 하나를 공유한다. DECISION_PENDING=승인·거부 판단 대기(CLAIM_REQUESTED),
+        COLLECTION_INVOICE_PENDING=회수 송장 등록 대기(COLLECTING·회수 미시작),
+        COLLECTION_COMPLETION_PENDING=회수 완료 처리 대기(COLLECTING·회수 시작됨),
+        RESHIP_PENDING=교환 재발송 대기(APPROVED·교환·미종결)
+      enum:
+        [DECISION_PENDING, COLLECTION_INVOICE_PENDING, COLLECTION_COMPLETION_PENDING, RESHIP_PENDING]
+    SellerClaimHistoryEvent:
+      type: string
+      description: >-
+        클레임 진행 이력의 사건 어휘(be SellerClaimHistoryEvent). 이력 전용 테이블이 없어 클레임의
+        시각 컬럼에서 조립하며, 종결 시각 한 칸의 성격을 네 축으로 되짚어 이름을 붙인다
+        (환불 완료=REFUNDED, 거부=REJECTED, 철회=WITHDRAWN, 개입=ADMIN_OVERRIDDEN, 그 밖=RESOLVED)
+      enum:
+        [REQUESTED, COLLECTION_STARTED, APPROVED, CLAWBACK_DEPOSITED, REJECTED, WITHDRAWN,
+         ADMIN_OVERRIDDEN, REFUNDED, RESOLVED]
+    SellerClaimSummary:
+      type: object
+      description: >-
+        셀러 클레임 목록 한 행. 상태를 한 값으로 접지 않고 네 축(status·refundStatus·
+        sellerApprovalStatus·settlementStatus)을 그대로 내리며, 반품비 문구도 조립하지 않고 근거
+        3필드(returnCostBearer·returnShippingFee·dispatched)만 내린다 — 접는 일은 화면이 한다.
+        **collectionStartedAt이 없다** — 회수 중 클레임의 단계(송장 등록 대기 / 완료 처리 대기)는
+        이 행만으로 가를 수 없고, 단계 필터(pendingStage)나 상세의 이력이 필요하다.
+      required:
+        [claimPublicId, orderPublicId, claimType, reasonCode, reasonDetail, status, refundStatus,
+         sellerApprovalStatus, settlementStatus, returnCostBearer, returnShippingFee, dispatched,
+         refundAmount, productNames, itemCount, rejectionReason, sellerMemo, requestedAt,
+         autoApproveDueAt, approvedAt, resolvedAt]
+      properties:
+        claimPublicId:
+          type: string
+          description: "클레임 공개 식별자(ULID 26자) — 모든 처리 경로의 경로 변수"
+        orderPublicId:
+          type: string
+        claimType:
+          $ref: "#/components/schemas/ClaimType"
+        reasonCode:
+          type: string
+          nullable: true
+          description: >-
+            구매자가 고른 사유 코드. 고정 어휘 전환(SCRUM-273) 전에는 자유 문자열이라 알 수 없는
+            값이 올 수 있다 — 화면이 코드별 라벨 표를 들고 있으면 안 되고 reasonLabel을 쓴다
+        reasonLabel:
+          type: string
+          nullable: true
+          description: >-
+            사람이 읽을 사유 문구. **SCRUM-273(PR #150)이 머지된 뒤부터 실린다** — 그 전에는 필드
+            자체가 없으므로 required에 넣지 않는다. 있으면 쓰고 없으면 reasonCode를 그대로 보여준다
+        reasonDetail:
+          type: string
+          nullable: true
+          description: "구매자가 직접 적은 사유 상세(최대 500자). 셀러가 부담 주체를 판단하는 근거다"
+        status:
+          $ref: "#/components/schemas/ClaimStatus"
+        refundStatus:
+          allOf:
+            - $ref: "#/components/schemas/RefundStatus"
+          nullable: true
+        sellerApprovalStatus:
+          allOf:
+            - $ref: "#/components/schemas/SellerApprovalStatus"
+          nullable: true
+        settlementStatus:
+          allOf:
+            - $ref: "#/components/schemas/ClaimSettlementStatus"
+          nullable: true
+        returnCostBearer:
+          allOf:
+            - $ref: "#/components/schemas/ReturnCostBearer"
+          nullable: true
+          description: "승인 때 지정된다 — 판단 전이거나 취소 클레임이면 null"
+        returnShippingFee:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            반품 발송비. 취소에는 발생하지 않아 null이고, 셀러 배송 정책 테이블이 생기기 전까지는
+            서버 설정값(order.claim.return-shipping-fee, 기본 0)이 정책 스냅샷이다
+        dispatched:
+          type: boolean
+          description: >-
+            이 주문의 초회 발송이 끝났는지. 반품비 문구가 "미발송"인지 가르는 근거다.
+            **BE 필드명에 is 접두가 없다** — 문서에서 깎인 것이 아니라 원래 dispatched다
+        refundAmount:
+          type: integer
+          format: int64
+          description: "환불 예정액 = 품목 환불액 합 + 배송비 환불액. 구매자 목록과 같은 계산기를 쓴다"
+        productNames:
+          type: array
+          items:
+            type: string
+          description: "대상 품목의 상품명(중복 제거)"
+        itemCount:
+          type: integer
+          description: "대상 품목 수(중복 제거 전)"
+        rejectionReason:
+          type: string
+          nullable: true
+        sellerMemo:
+          type: string
+          nullable: true
+          description: "셀러 운영 메모. 어드민 개입 사유(adminReason)와 주체가 다르고 구매자에게 안 나간다"
+        requestedAt:
+          type: string
+          nullable: true
+          description: "오프셋 없는 LocalDateTime(예: 2026-10-24T10:00:00)"
+        autoApproveDueAt:
+          type: string
+          nullable: true
+          description: "셀러 미응답 자동승인 기한. 지나면 배치가 반품비 부담 주체 없이 승인한다"
+        approvedAt:
+          type: string
+          nullable: true
+        resolvedAt:
+          type: string
+          nullable: true
+          description: "종결 시각 한 칸 — 환불 완료·거부·철회·개입·교환 재발송이 모두 여기 찍힌다"
+    SellerClaimTypeCounts:
+      type: object
+      description: >-
+        유형별 건수. 세 키는 0이어도 빠지지 않는다(SellerClaimPageResult.of가 채운다).
+        **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다 — 탭 배지용이다
+      required: [CANCEL, RETURN, EXCHANGE]
+      properties:
+        CANCEL:
+          type: integer
+          format: int64
+        RETURN:
+          type: integer
+          format: int64
+        EXCHANGE:
+          type: integer
+          format: int64
+    SellerClaimListData:
+      type: object
+      required: [claims, totalCount, counts, page, size, totalPages, hasNext]
+      properties:
+        claims:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerClaimSummary"
+        totalCount:
+          type: integer
+          format: int64
+          description: "필터를 모두 반영한 전체 건수(유형 필터 포함) — counts와 기준이 다르다"
+        counts:
+          $ref: "#/components/schemas/SellerClaimTypeCounts"
+        page:
+          type: integer
+        size:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+    SellerClaimListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerClaimListData"
+    SellerClaimOrderInfo:
+      type: object
+      description: >-
+        클레임 대상 주문. 수령인명·연락처는 복호 평문이라 마스킹은 화면이 한다.
+        `sellerShippingFee`는 이 셀러 몫 배송비다(주문그룹 전체가 아니다)
+      required:
+        [orderPublicId, orderStatus, orderedAt, sellerShippingFee, recipientName, contactNumber,
+         zipCode, baseAddress, detailAddress, deliveryMemo]
+      properties:
+        orderPublicId:
+          type: string
+        orderStatus:
+          $ref: "#/components/schemas/OrderStatus"
+        orderedAt:
+          type: string
+        sellerShippingFee:
+          type: integer
+          format: int64
+        recipientName:
+          type: string
+        contactNumber:
+          type: string
+        zipCode:
+          type: string
+        baseAddress:
+          type: string
+        detailAddress:
+          type: string
+          nullable: true
+        deliveryMemo:
+          type: string
+          nullable: true
+    SellerClaimItem:
+      type: object
+      description: "클레임 대상 주문품목. 수량 쪼개기를 받지 않으므로 주문 수량 전부가 대상이다"
+      required:
+        [orderItemId, productName, optionName, quantity, unitPrice, refundAmount, itemStatus]
+      properties:
+        orderItemId:
+          type: integer
+          format: int64
+        productName:
+          type: string
+        optionName:
+          type: string
+          description: '옵션값을 " / "로 이은 주문 시점 스냅샷. 옵션 없는 상품은 "기본"'
+        quantity:
+          type: integer
+        unitPrice:
+          type: integer
+          format: int64
+        refundAmount:
+          type: integer
+          format: int64
+        itemStatus:
+          $ref: "#/components/schemas/OrderItemStatus"
+    SellerClaimHistoryEntry:
+      type: object
+      required: [event, occurredAt]
+      properties:
+        event:
+          $ref: "#/components/schemas/SellerClaimHistoryEvent"
+        occurredAt:
+          type: string
+    SellerClaimDetailData:
+      type: object
+      required: [claim, order, items, history]
+      properties:
+        claim:
+          $ref: "#/components/schemas/SellerClaimSummary"
+        order:
+          $ref: "#/components/schemas/SellerClaimOrderInfo"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerClaimItem"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerClaimHistoryEntry"
+          description: "시각 오름차순(같은 시각은 사건 선언 순서). COLLECTION_STARTED 유무가 회수 단계를 가른다"
+    SellerClaimDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerClaimDetailData"
+    ApproveClaimRequest:
+      type: object
+      description: >-
+        반품비 부담 주체는 반품·교환만 쓴다 — 취소는 비워 보낸다(서버가 저장하지 않는다).
+        본문 없이 보내도 서버는 받지만(required=false) 빈 객체를 보내 의도를 드러낸다
+      properties:
+        returnCostBearer:
+          allOf:
+            - $ref: "#/components/schemas/ReturnCostBearer"
+          nullable: true
+    RejectClaimRequest:
+      type: object
+      required: [rejectionReason]
+      properties:
+        rejectionReason:
+          type: string
+          maxLength: 500
+          description: "공백만 보내면 400 errorCode 50405. 구매자에게 그대로 노출된다"
+    UpdateClaimMemoRequest:
+      type: object
+      description: "덮어쓰기. null·공백은 삭제로 본다"
+      properties:
+        sellerMemo:
+          type: string
+          maxLength: 500
+          nullable: true
+    StartClaimCollectionRequest:
+      type: object
+      required: [courierCode, trackingNumber]
+      properties:
+        courierCode:
+          type: string
+          maxLength: 30
+          description: "GET /sellers/couriers의 대문자 코드 그대로(소문자는 404 errorCode 50303)"
+        trackingNumber:
+          type: string
+          maxLength: 50
+    ReshipClaimRequest:
+      type: object
+      required: [courierCode, trackingNumber]
+      properties:
+        courierCode:
+          type: string
+          maxLength: 30
+        trackingNumber:
+          type: string
+          maxLength: 50
+    ReshipClaimData:
+      type: object
+      required: [shipmentType, courierCode, courierName, trackingNumber, dispatchedAt]
+      properties:
+        shipmentType:
+          $ref: "#/components/schemas/ShipmentType"
+        courierCode:
+          type: string
+        courierName:
+          type: string
+        trackingNumber:
+          type: string
+        dispatchedAt:
+          type: string
+          nullable: true
+    ReshipClaimResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReshipClaimData"
     UserStatus:
       type: string
       enum: [PENDING_ONBOARDING, ACTIVE, SUSPENDED, WITHDRAWN]
