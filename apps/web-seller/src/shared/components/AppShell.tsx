@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
-import { Package, Store, Truck } from 'lucide-react'
+import { Package, Store, Truck, Wallet } from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
 
-// nav에는 seller 모듈에 API가 있는 화면만 둔다(상품 관리·배송 정책·스토어 설정). 대시보드/주문/
-// 클레임은 아직 목업이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이
+// nav에는 seller 모듈에 API가 있는 화면만 둔다(상품 관리·배송 정책·정산/매출·스토어 설정).
+// 대시보드/주문/클레임은 아직 목업이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이
 // 없는 항목(문의/리뷰/쿠폰/공지/계정)은 404로 가는 죽은 nav라 함께 뺐다. BE가 생기면 항목을 되돌린다.
 const groups: NavGroup[] = [
   {
@@ -17,6 +17,11 @@ const groups: NavGroup[] = [
       { key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> },
       { key: '/shipping-policy', label: '배송 정책', icon: <Truck className={iconClass} /> },
     ],
+  },
+  {
+    key: '정산',
+    label: '정산',
+    items: [{ key: '/settlements', label: '정산/매출', icon: <Wallet className={iconClass} /> }],
   },
   {
     key: '스토어',

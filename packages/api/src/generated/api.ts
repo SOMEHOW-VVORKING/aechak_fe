@@ -1737,6 +1737,105 @@ export interface CourierListResponse {
   data: CourierListData
 }
 
+/**
+ * 정산 상태(화면 어휘 소문자). pending 정산 대기 / scheduled 정산 예정 / completed 정산 완료 / held 정산 보류. 서버가 주문 단위로 접을 때 보류가 가장 세고 그다음은 덜 진행된 쪽이다
+ */
+export type SellerSettlementStatus =
+  (typeof SellerSettlementStatus)[keyof typeof SellerSettlementStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSettlementStatus = {
+  pending: 'pending',
+  scheduled: 'scheduled',
+  completed: 'completed',
+  held: 'held',
+} as const
+
+export interface SellerSettlementSummary {
+  /** 주문 공개 식별자(ULID). 상세 조회 경로에 그대로 싣는다 */
+  orderId: string
+  /** 정산월(`yyyy-MM`). 구매확정일에서 뽑으므로 월 필터가 늘 걸린다 */
+  settlementMonth: string
+  /**
+   * 구매확정 시각. 오프셋 없는 LocalDateTime(예: 2026-06-18T10:00:00)
+   * @nullable
+   */
+  confirmedAt: string | null
+  /** 지급 예정일(`yyyy-MM-dd`). 구매확정일 +5일(역일)이다 */
+  expectedPayoutDate: string
+  /** 상품 금액 합(원). 품목 grossAmount의 합이다 */
+  productAmount: number
+  /** 수수료 합(원) = platformFeeAmount + pgFeeAmount. 쿠폰 부담·환불 차감은 포함하지 않는다 */
+  feeAmount: number
+  /** 지급 예정액 합(원) = productAmount + shippingFee - couponBurden - feeAmount - refundDeduction. 저장된 원장 값이라 화면이 다시 계산하지 않는다 */
+  finalAmount: number
+  status: SellerSettlementStatus
+}
+
+export interface SellerSettlementListData {
+  settlements: SellerSettlementSummary[]
+  totalCount: number
+  page: number
+  size: number
+  /** 정산이 없으면 0이다(1이 아니다) */
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerSettlementListResponse {
+  data: SellerSettlementListData
+}
+
+export interface SellerSettlementMonthsData {
+  /** `yyyy-MM` 최신순 */
+  months: string[]
+}
+
+export interface SellerSettlementMonthsResponse {
+  data: SellerSettlementMonthsData
+}
+
+export interface SellerSettlementItem {
+  orderItemId: number
+  /**
+   * 주문품목·상품 버전 스냅샷이 없으면 null이다
+   * @nullable
+   */
+  productName: string | null
+  /** @nullable */
+  quantity: number | null
+  grossAmount: number
+  shippingFee: number
+  /** 플랫폼 수수료(원) */
+  commission: number
+  pgFee: number
+  sellerCouponBurden: number
+  refundDeduction: number
+  /** 이 품목의 지급 예정액(원). 저장된 값 그대로다 */
+  netAmount: number
+}
+
+export type SellerSettlementDetailDataAllOf = {
+  shippingFee: number
+  /** 셀러가 부담한 쿠폰 금액(원). 수수료가 아니라 별도 차감이다 */
+  couponBurden: number
+  platformFeeAmount: number
+  pgFeeAmount: number
+  refundDeduction: number
+  /** 정산 행에 박힌 생성 시점 요율 스냅샷(비율, DECIMAL(5,4)). 정책이 바뀌어도 과거 정산은 그대로 둔다 — **화면이 요율을 하드코딩하지 말고 이 값을 쓸 것.** 서버는 자릿수까지(0.0800) 내려 주지만 JSON 수로 파싱하면 scale이 사라지므로 표시할 때만 소수 4자리 기준으로 백분율을 만든다(금액은 손대지 않는다) */
+  platformFeeRate: number
+  /** platformFeeRate와 같은 규칙 */
+  pgFeeRate: number
+  /** 취소된 정산 행은 빠진다. 요약 금액은 이 배열의 합이다 */
+  items: SellerSettlementItem[]
+}
+
+export type SellerSettlementDetailData = SellerSettlementSummary & SellerSettlementDetailDataAllOf
+
+export interface SellerSettlementDetailResponse {
+  data: SellerSettlementDetailData
+}
+
 export interface ShippingPolicyData {
   /**
    * courier_masters PK(대문자). 미설정이면 null. 저장 시 이 값을 그대로 되돌려 보낸다
@@ -2500,6 +2599,27 @@ export const GetSellerProductsSort = {
   price_asc: 'price_asc',
   price_desc: 'price_desc',
 } as const
+
+export type GetSellerSettlementsParams = {
+  /**
+   * 정산월(`yyyy-MM`, 구매확정일 기준). 생략하면 전체 조회다 — 화면의 '전체' 선택은 이 파라미터를 보내지 않는 것으로 표현한다. 고를 수 있는 월은 `/months`가 준다
+   * @pattern ^\d{4}-(0[1-9]|1[0-2])$
+   */
+  month?: string
+  /**
+   * 생략하면 전체. 소문자 네 어휘만 받는다
+   */
+  status?: SellerSettlementStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
 
 export type GetAdminRosterParams = {
   /**
@@ -11880,6 +12000,646 @@ export const useChangeSellerProductOptionCombination = <TError = unknown, TConte
   const mutationOptions = getChangeSellerProductOptionCombinationMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. **주문 하나가 한 행이다** — 정산 원장은 주문품목당 1행이지만 이 목록은 주문 단위로 접고 금액은 품목 합이다. 정렬은 구매확정일 최신순 고정이다. 오프셋 페이지네이션이며 커서가 아니다. 취소된 정산 행은 집계에서 빠지고, 정산 행이 전부 취소된 주문과 주문 행이 없는 정산 행은 목록·총건수에서 함께 빠진다. 한 주문 안에서 상태가 갈리면 **덜 진행된 쪽으로 접히고 보류가 가장 세다**(보류 > 대기 > 예정 > 완료) — 상태 필터를 걸어도 금액은 쪼개지 않고 주문 전체 합을 준다. 자격은 활성·휴점 셀러이고(정지·탈퇴신청·비셀러는 403) 미인증은 401 errorCode 20004. 형식 오류는 전부 400 errorCode 90001이다 — month가 `yyyy-MM`이 아니거나, status가 네 어휘 밖이거나, size가 범위 밖일 때다. **값이 빈 파라미터는 키째 빼서 보낼 것.** 배포된 OpenAPI 문서는 이 질의를 `request` 객체 하나로 그리지만(@ModelAttribute 렌더링 결함) 실제 계약은 아래 평면 파라미터다 — BE 컨트롤러가 정답이다.
+ * @summary 셀러 정산 목록
+ */
+export const getSellerSettlements = (params?: GetSellerSettlementsParams, signal?: AbortSignal) => {
+  return customInstance<SellerSettlementListResponse>({
+    url: `/sellers/me/settlements`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerSettlementsQueryKey = (params?: GetSellerSettlementsParams) => {
+  return [`/sellers/me/settlements`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerSettlementsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlements>>> = ({ signal }) =>
+    getSellerSettlements(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlements>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlements>>
+>
+export type GetSellerSettlementsQueryError = unknown
+
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerSettlementsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlements>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlements>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlements>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlements>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 목록
+ */
+
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlements>>> = ({ signal }) =>
+    getSellerSettlements(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlements>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlements>>
+>
+export type GetSellerSettlementsSuspenseQueryError = unknown
+
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerSettlementsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 목록
+ */
+
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 월 필터가 고를 수 있는 정산월만 최신순으로 준다(정산 행이 있는 월뿐이다). 비어 있으면 아직 정산 행이 없는 셀러다 — 화면은 '전체'만 남긴다.
+ * @summary 정산월 목록
+ */
+export const getSellerSettlementMonths = (signal?: AbortSignal) => {
+  return customInstance<SellerSettlementMonthsResponse>({
+    url: `/sellers/me/settlements/months`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerSettlementMonthsQueryKey = () => {
+  return [`/sellers/me/settlements/months`] as const
+}
+
+export const getGetSellerSettlementMonthsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementMonthsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlementMonths>>> = ({
+    signal,
+  }) => getSellerSettlementMonths(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementMonthsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlementMonths>>
+>
+export type GetSellerSettlementMonthsQueryError = unknown
+
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 정산월 목록
+ */
+
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementMonthsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementMonthsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementMonthsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlementMonths>>> = ({
+    signal,
+  }) => getSellerSettlementMonths(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementMonthsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlementMonths>>
+>
+export type GetSellerSettlementMonthsSuspenseQueryError = unknown
+
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 정산월 목록
+ */
+
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementMonthsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행 클릭 시 열리는 건별 상세. 목록과 같은 요약 + 금액 분해 + 품목 내역이다. 남의 정산은 403 errorCode 70003, 없는 주문번호와 정산이 전부 취소된 주문은 404 errorCode 70002다. 금액 불변식은 요약 = 품목 내역의 합이고, `feeAmount = platformFeeAmount + pgFeeAmount`다(쿠폰 부담·환불 차감은 수수료가 아니다). `finalAmount`는 저장된 지급 예정액의 합이라 배송비가 더해지고 쿠폰 부담·환불 차감이 빠진 값이다 — `productAmount - feeAmount`와 같지 않다.
+ * @summary 셀러 정산 상세
+ */
+export const getSellerSettlement = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SellerSettlementDetailResponse>({
+    url: `/sellers/me/settlements/${orderPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerSettlementQueryKey = (orderPublicId?: string) => {
+  return [`/sellers/me/settlements/${orderPublicId}`] as const
+}
+
+export const getGetSellerSettlementQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlement>>> = ({ signal }) =>
+    getSellerSettlement(orderPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlement>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlement>>
+>
+export type GetSellerSettlementQueryError = unknown
+
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlement>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlement>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlement>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlement>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 상세
+ */
+
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementQueryOptions(orderPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlement>>> = ({ signal }) =>
+    getSellerSettlement(orderPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlement>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlement>>
+>
+export type GetSellerSettlementSuspenseQueryError = unknown
+
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 상세
+ */
+
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementSuspenseQueryOptions(orderPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }
 
 /**

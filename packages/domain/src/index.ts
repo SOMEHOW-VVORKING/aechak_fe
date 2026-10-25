@@ -56,8 +56,6 @@ export type {
   AiReviewDetectionStage,
   AiReviewStatus,
   AiReviewQueueItem,
-  SettlementStatus,
-  Settlement,
   ProductReportReason,
   ProductReport,
 } from './types'

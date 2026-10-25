@@ -473,27 +473,6 @@ export interface ProductReviewItem {
   internalMemo?: string
 }
 
-export type SettlementStatus = 'pending' | 'scheduled' | 'completed' | 'held'
-
-export interface Settlement {
-  orderId: OrderId
-  // 월 선택기 필터링용 소속 월('YYYY-MM') — 구매확정 전(정산 대기/보류)이라 confirmedAt이
-  // 없는 건도 필터가 걸려야 하므로 confirmedAt과 별개로 항상 채워지는 필수 필드다.
-  settlementMonth: string
-  confirmedAt?: string
-  expectedPayoutDate?: string
-  productAmount: number
-  feeAmount?: number
-  finalAmount?: number
-  status: SettlementStatus
-  // 건별 정산 상세 Drawer(표 행 클릭 시)용 세부 분해 — 정산 대기/보류 건은 아직 확정 전이라 비워둔다.
-  shippingFee?: number
-  couponBurden?: number
-  platformFeeAmount?: number
-  pgFeeAmount?: number
-  refundDeduction?: number
-}
-
 export type AiReviewTargetType = 'product-image' | 'product-description' | 'review' | 'sns-post'
 export type AiReviewDetectionStage = 1 | 2
 export type AiReviewStatus =

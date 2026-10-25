@@ -1787,6 +1787,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SellerOptionCombinationChangeResponse"
+  /sellers/me/settlements:
+    get:
+      summary: "셀러 정산 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. **주문 하나가 한 행이다** — 정산 원장은 주문품목당 1행이지만
+        이 목록은 주문 단위로 접고 금액은 품목 합이다. 정렬은 구매확정일 최신순 고정이다.
+        오프셋 페이지네이션이며 커서가 아니다. 취소된 정산 행은 집계에서 빠지고, 정산 행이
+        전부 취소된 주문과 주문 행이 없는 정산 행은 목록·총건수에서 함께 빠진다.
+        한 주문 안에서 상태가 갈리면 **덜 진행된 쪽으로 접히고 보류가 가장 세다**(보류 >
+        대기 > 예정 > 완료) — 상태 필터를 걸어도 금액은 쪼개지 않고 주문 전체 합을 준다.
+        자격은 활성·휴점 셀러이고(정지·탈퇴신청·비셀러는 403) 미인증은 401 errorCode 20004.
+        형식 오류는 전부 400 errorCode 90001이다 — month가 `yyyy-MM`이 아니거나, status가
+        네 어휘 밖이거나, size가 범위 밖일 때다. **값이 빈 파라미터는 키째 빼서 보낼 것.**
+        배포된 OpenAPI 문서는 이 질의를 `request` 객체 하나로 그리지만(@ModelAttribute 렌더링
+        결함) 실제 계약은 아래 평면 파라미터다 — BE 컨트롤러가 정답이다.
+      operationId: "getSellerSettlements"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          description: >-
+            정산월(`yyyy-MM`, 구매확정일 기준). 생략하면 전체 조회다 — 화면의 '전체' 선택은
+            이 파라미터를 보내지 않는 것으로 표현한다. 고를 수 있는 월은 `/months`가 준다
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/SellerSettlementStatus"
+          description: "생략하면 전체. 소문자 네 어휘만 받는다"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerSettlementListResponse"
+  /sellers/me/settlements/months:
+    get:
+      summary: "정산월 목록"
+      description: >-
+        월 필터가 고를 수 있는 정산월만 최신순으로 준다(정산 행이 있는 월뿐이다).
+        비어 있으면 아직 정산 행이 없는 셀러다 — 화면은 '전체'만 남긴다.
+      operationId: "getSellerSettlementMonths"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerSettlementMonthsResponse"
+  /sellers/me/settlements/{orderPublicId}:
+    get:
+      summary: "셀러 정산 상세"
+      description: >-
+        목록 행 클릭 시 열리는 건별 상세. 목록과 같은 요약 + 금액 분해 + 품목 내역이다.
+        남의 정산은 403 errorCode 70003, 없는 주문번호와 정산이 전부 취소된 주문은
+        404 errorCode 70002다. 금액 불변식은 요약 = 품목 내역의 합이고,
+        `feeAmount = platformFeeAmount + pgFeeAmount`다(쿠폰 부담·환불 차감은 수수료가 아니다).
+        `finalAmount`는 저장된 지급 예정액의 합이라 배송비가 더해지고 쿠폰 부담·환불 차감이
+        빠진 값이다 — `productAmount - feeAmount`와 같지 않다.
+      operationId: "getSellerSettlement"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderPublicId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "주문 공개 식별자(ULID). 목록 행의 orderId를 그대로 쓴다"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerSettlementDetailResponse"
   /sellers/me/shipping-policy:
     get:
       summary: "셀러 배송 정책 조회"
@@ -4163,6 +4258,199 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/CourierListData"
+    SellerSettlementStatus:
+      type: string
+      enum: [pending, scheduled, completed, held]
+      description: >-
+        정산 상태(화면 어휘 소문자). pending 정산 대기 / scheduled 정산 예정 /
+        completed 정산 완료 / held 정산 보류. 서버가 주문 단위로 접을 때 보류가 가장 세고
+        그다음은 덜 진행된 쪽이다
+    SellerSettlementSummary:
+      type: object
+      required:
+        [
+          orderId,
+          settlementMonth,
+          confirmedAt,
+          expectedPayoutDate,
+          productAmount,
+          feeAmount,
+          finalAmount,
+          status,
+        ]
+      properties:
+        orderId:
+          type: string
+          description: "주문 공개 식별자(ULID). 상세 조회 경로에 그대로 싣는다"
+        settlementMonth:
+          type: string
+          description: "정산월(`yyyy-MM`). 구매확정일에서 뽑으므로 월 필터가 늘 걸린다"
+        confirmedAt:
+          type: string
+          nullable: true
+          description: "구매확정 시각. 오프셋 없는 LocalDateTime(예: 2026-06-18T10:00:00)"
+        expectedPayoutDate:
+          type: string
+          description: "지급 예정일(`yyyy-MM-dd`). 구매확정일 +5일(역일)이다"
+        productAmount:
+          type: integer
+          format: int64
+          description: "상품 금액 합(원). 품목 grossAmount의 합이다"
+        feeAmount:
+          type: integer
+          format: int64
+          description: "수수료 합(원) = platformFeeAmount + pgFeeAmount. 쿠폰 부담·환불 차감은 포함하지 않는다"
+        finalAmount:
+          type: integer
+          format: int64
+          description: >-
+            지급 예정액 합(원) = productAmount + shippingFee - couponBurden - feeAmount
+            - refundDeduction. 저장된 원장 값이라 화면이 다시 계산하지 않는다
+        status:
+          $ref: "#/components/schemas/SellerSettlementStatus"
+    SellerSettlementListData:
+      type: object
+      required: [settlements, totalCount, page, size, totalPages, hasNext]
+      properties:
+        settlements:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerSettlementSummary"
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        size:
+          type: integer
+        totalPages:
+          type: integer
+          description: "정산이 없으면 0이다(1이 아니다)"
+        hasNext:
+          type: boolean
+    SellerSettlementListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerSettlementListData"
+    SellerSettlementMonthsData:
+      type: object
+      required: [months]
+      properties:
+        months:
+          type: array
+          items:
+            type: string
+          description: "`yyyy-MM` 최신순"
+    SellerSettlementMonthsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerSettlementMonthsData"
+    SellerSettlementItem:
+      type: object
+      required:
+        [
+          orderItemId,
+          productName,
+          quantity,
+          grossAmount,
+          shippingFee,
+          commission,
+          pgFee,
+          sellerCouponBurden,
+          refundDeduction,
+          netAmount,
+        ]
+      properties:
+        orderItemId:
+          type: integer
+          format: int64
+        productName:
+          type: string
+          nullable: true
+          description: "주문품목·상품 버전 스냅샷이 없으면 null이다"
+        quantity:
+          type: integer
+          nullable: true
+        grossAmount:
+          type: integer
+          format: int64
+        shippingFee:
+          type: integer
+          format: int64
+        commission:
+          type: integer
+          format: int64
+          description: "플랫폼 수수료(원)"
+        pgFee:
+          type: integer
+          format: int64
+        sellerCouponBurden:
+          type: integer
+          format: int64
+        refundDeduction:
+          type: integer
+          format: int64
+        netAmount:
+          type: integer
+          format: int64
+          description: "이 품목의 지급 예정액(원). 저장된 값 그대로다"
+    SellerSettlementDetailData:
+      allOf:
+        - $ref: "#/components/schemas/SellerSettlementSummary"
+        - type: object
+          required:
+            [
+              shippingFee,
+              couponBurden,
+              platformFeeAmount,
+              pgFeeAmount,
+              refundDeduction,
+              platformFeeRate,
+              pgFeeRate,
+              items,
+            ]
+          properties:
+            shippingFee:
+              type: integer
+              format: int64
+            couponBurden:
+              type: integer
+              format: int64
+              description: "셀러가 부담한 쿠폰 금액(원). 수수료가 아니라 별도 차감이다"
+            platformFeeAmount:
+              type: integer
+              format: int64
+            pgFeeAmount:
+              type: integer
+              format: int64
+            refundDeduction:
+              type: integer
+              format: int64
+            platformFeeRate:
+              type: number
+              description: >-
+                정산 행에 박힌 생성 시점 요율 스냅샷(비율, DECIMAL(5,4)). 정책이 바뀌어도 과거
+                정산은 그대로 둔다 — **화면이 요율을 하드코딩하지 말고 이 값을 쓸 것.**
+                서버는 자릿수까지(0.0800) 내려 주지만 JSON 수로 파싱하면 scale이 사라지므로
+                표시할 때만 소수 4자리 기준으로 백분율을 만든다(금액은 손대지 않는다)
+            pgFeeRate:
+              type: number
+              description: "platformFeeRate와 같은 규칙"
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/SellerSettlementItem"
+              description: "취소된 정산 행은 빠진다. 요약 금액은 이 배열의 합이다"
+    SellerSettlementDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerSettlementDetailData"
     ShippingPolicyData:
       type: object
       required:
