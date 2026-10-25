@@ -5,6 +5,7 @@
 //
 // 날짜는 BE LocalDateTime(오프셋 없는 KST 벽시계, 예: 2026-10-24T10:00:00)이다. `+09:00`/`Z`를 붙이면
 // 역직렬화가 400/90001로 실패하거나(오프셋) 9시간 밀린다(Z). 주문일 범위 필터만 yyyy-MM-dd다.
+import type { StatusPillVariant } from '@aechak/design-system/web'
 import type {
   ClaimStatus,
   ClaimType,
@@ -67,10 +68,9 @@ export const ORDER_STATUS_LABEL: Record<WireOrderStatus, string> = {
 // 신규 주문은 그보다 먼저 봐야 하는 자리라 `brand`다. 배송완료(구매확정 대기)와 구매확정은 둘 다
 // 긍정 종결이지만 구매확정이 최종이라 색을 가른다. 취소완료는 셀러 잘못이 아닌 종결이라 `error`가
 // 아니라 `muted`다(고칠 것이 있는 상태로 읽히면 안 된다).
-export const ORDER_STATUS_VARIANT: Record<
-  WireOrderStatus,
-  'brand' | 'warning' | 'info' | 'success' | 'accent' | 'muted' | 'neutral'
-> = {
+// variant는 DS 소스가 정본(9종)이라 그 타입을 그대로 받는다 — 좁은 리터럴 유니온으로 베끼면
+// DS가 이름을 바꿀 때 이 파일이 조용히 통과한다(products 라우트 관례).
+export const ORDER_STATUS_VARIANT: Record<WireOrderStatus, StatusPillVariant> = {
   PENDING_PAYMENT: 'neutral',
   PAID: 'brand',
   PREPARING: 'warning',
