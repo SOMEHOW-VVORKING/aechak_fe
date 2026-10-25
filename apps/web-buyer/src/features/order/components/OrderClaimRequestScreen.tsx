@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { BuyerClaimType, BuyerOrderDetail, BuyerOrderItem } from '@aechak/domain'
+import type { BuyerClaimType, BuyerOrderItem } from '@aechak/domain'
 import {
   Alert,
   BottomFixedAction,
@@ -20,13 +20,15 @@ import { formatKRW } from '@/shared/formatKRW'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   RETURN_WINDOW_DAYS,
-  canRequestClaim,
   claimReasonsErrorMessage,
+  claimableOrderItems,
+  isClaimableByStatus,
   isOrderNotFound,
   needsReasonDetail,
   orderErrorMessage,
   requestClaimErrorMessage,
   useClaimReasons,
+  useOrderClaims,
   useRequestClaim,
 } from '@/shared/order'
 import { useOrder } from '../order.queries'
@@ -87,11 +89,6 @@ const COPY: Record<
   },
 }
 
-/** 클레임을 걸 수 있는 품목 — 이미 취소·반품·교환이 걸린 품목은 서버가 다시 받지 않는다(409 50403). */
-function claimableItems(order: BuyerOrderDetail): BuyerOrderItem[] {
-  return order.items.filter(item => item.itemStatus === 'ordered')
-}
-
 /**
  * 클레임(취소·반품·교환) 요청 화면.
  *
@@ -114,6 +111,9 @@ export function OrderClaimRequestScreen({
   const navigate = useNavigate()
   const { order, isPending, isSuccess, isError, error, refetch } = useOrder(orderId)
   const reasons = useClaimReasons()
+  // 대상 품목은 내역으로 가른다 — 서버가 중복을 품목 단위로 막으므로 진행 중 건이 잡지 않은 품목은
+  // 아직 신청할 수 있다(취소는 요청 시점에 itemStatus를 바꾸지 않아 내역 없이는 가릴 수 없다).
+  const claims = useOrderClaims(orderId)
   const { request, isPending: isRequesting } = useRequestClaim()
 
   const [selected, setSelected] = useState<Set<number> | null>(null)
@@ -128,7 +128,13 @@ export function OrderClaimRequestScreen({
     navigate({ to: '/orders/$orderId', params: { orderId }, replace: true })
   const goBack = useSafeBack({ to: '/orders/$orderId', params: { orderId } })
 
-  const items = useMemo(() => (order ? claimableItems(order) : []), [order])
+  const knownClaims = claims.isPending || claims.isError ? undefined : claims.claims
+  // null은 "잡힌 품목을 가릴 수 없다"는 뜻이라 빈 배열과 다르게 다룬다(아래 분기가 가른다).
+  const available = useMemo(
+    () => (order ? claimableOrderItems(order, knownClaims) : null),
+    [order, knownClaims],
+  )
+  const items = available ?? []
   // 선택을 한 번도 건드리지 않았으면 전량 선택이 기본값이다(대개 주문 전체를 되돌린다).
   const checked = selected ?? new Set(items.map(item => item.orderItemId))
 
@@ -149,7 +155,8 @@ export function OrderClaimRequestScreen({
     !reasons.isError
 
   const submit = () => {
-    if (!order) return
+    // 확인 버튼은 isRequesting이면 disabled가 되지만 같은 틱의 두 번째 클릭은 그 리렌더 전에 들어온다.
+    if (!order || isRequesting) return
     setConfirmOpen(false)
     request(
       {
@@ -207,14 +214,43 @@ export function OrderClaimRequestScreen({
     </MobileScreen>
   )
 
-  if (isPending) {
+  const skeleton = (
+    <div className="flex flex-col gap-3 p-4" aria-busy="true">
+      <Skeleton variant="rect" className="h-16 w-full" />
+      <Skeleton variant="rect" className="h-32 w-full" />
+      <Skeleton variant="rect" className="h-40 w-full" />
+    </div>
+  )
+
+  /**
+   * 접수 완료 — **조회 분기보다 먼저 그린다.** 요청 어댑터가 onSettled에서 주문 캐시를 무효화하므로
+   * 성공 직후 상세 재조회가 돌고, 그 재조회가 실패하면 아래 오류 분기가 "주문을 불러오지 못했어요"로
+   * 덮어 접수 성공과 **서버가 확정한 환불 예정 금액을 아무도 못 보게 된다**(그 금액은 이 응답에만 있다).
+   * 서버가 201을 준 사실은 이후 조회 결과와 무관하다.
+   */
+  if (done) {
     return screen(
-      <div className="flex flex-col gap-3 p-4" aria-busy="true">
-        <Skeleton variant="rect" className="h-16 w-full" />
-        <Skeleton variant="rect" className="h-32 w-full" />
-        <Skeleton variant="rect" className="h-40 w-full" />
+      <div className="flex flex-col gap-4 p-4">
+        <Alert variant="info" title={copy.done.title}>
+          {copy.done.body}
+        </Alert>
+        {claimType !== 'exchange' && (
+          <Card className="flex items-baseline justify-between p-4">
+            <span className="text-label font-semibold text-text-primary">환불 예정 금액</span>
+            <span className="text-price-sm font-bold text-text-price">
+              {formatKRW(done.refundAmount)}
+            </span>
+          </Card>
+        )}
+        <Button variant="primary" size="lg" fullWidth onClick={goDetail}>
+          주문 상세로
+        </Button>
       </div>,
     )
+  }
+
+  if (isPending) {
+    return screen(skeleton)
   }
 
   if ((isError && isOrderNotFound(error)) || (isSuccess && order == null)) {
@@ -237,35 +273,23 @@ export function OrderClaimRequestScreen({
     )
   }
 
-  // 접수 완료 — 서버가 확정한 환불액을 그대로 보여 준다(화면이 미리 계산하지 않는다).
-  if (done) {
-    return screen(
-      <div className="flex flex-col gap-4 p-4">
-        <Alert variant="info" title={copy.done.title}>
-          {copy.done.body}
-        </Alert>
-        {claimType !== 'exchange' && (
-          <Card className="flex items-baseline justify-between p-4">
-            <span className="text-label font-semibold text-text-primary">환불 예정 금액</span>
-            <span className="text-price-sm font-bold text-text-price">
-              {formatKRW(done.refundAmount)}
-            </span>
-          </Card>
-        )}
-        <Button variant="primary" size="lg" fullWidth onClick={goDetail}>
-          주문 상세로
-        </Button>
-      </div>,
-    )
+  // 진행 중 건이 있으면 그 건이 잡은 품목을 내역으로만 가릴 수 있다 — 도착 전에 폼을 그리지 않는다.
+  if (order.activeClaim != null && claims.isPending) {
+    return screen(skeleton)
   }
 
-  // 진행 중 클레임이 있으면 유형과 무관하게 서버가 받지 않는다 — 사유를 먼저 설명한다.
-  if (order.activeClaim) {
+  /**
+   * 진행 중 건 때문에 고를 대상이 없는 경우 — 남은 품목이 하나도 없거나(전량이 잡혔다) 내역을 못 읽어
+   * 어느 품목이 잡혔는지 가릴 수 없는 경우다. 서버 409를 유도하지 않고 사유를 먼저 적는다.
+   */
+  const activeClaim = order.activeClaim
+  if (available == null || (available.length === 0 && activeClaim != null)) {
     return screen(
       <div className="flex flex-col gap-4 p-4">
         <Alert variant="warning" title="이미 진행 중인 요청이 있어요">
-          {CLAIM_TYPE_LABEL[order.activeClaim.claimType]} 요청이 처리되는 동안에는 새로 신청할 수
-          없어요. 진행 상황은 주문 상세에서 볼 수 있어요.
+          {activeClaim ? `${CLAIM_TYPE_LABEL[activeClaim.claimType]} 요청이 ` : '진행 중인 요청이 '}
+          처리되는 동안에는 이 주문의 상품을 새로 신청할 수 없어요. 진행 상황은 주문 상세에서 볼 수
+          있어요.
         </Alert>
         <Button variant="secondary" size="lg" fullWidth onClick={goDetail}>
           주문 상세로
@@ -274,7 +298,7 @@ export function OrderClaimRequestScreen({
     )
   }
 
-  if (!canRequestClaim(order, claimType)) {
+  if (!isClaimableByStatus(order, claimType)) {
     return screen(
       <div className="flex flex-col gap-4 p-4">
         <Alert variant="warning" title={`${CLAIM_ACTION_LABEL[claimType]}을 할 수 없어요`}>
@@ -287,12 +311,12 @@ export function OrderClaimRequestScreen({
     )
   }
 
-  // 모든 품목에 이미 클레임이 걸려 있으면 고를 대상이 없다(서버도 409로 거절한다).
+  // 모든 품목이 이미 처리됐거나 다른 클레임에 잡혀 있으면 고를 대상이 없다(서버도 409로 거절한다).
   if (items.length === 0) {
     return screen(
       <div className="flex flex-col gap-4 p-4">
         <Alert variant="warning" title="신청할 수 있는 상품이 없어요">
-          이 주문의 상품은 이미 취소 또는 반품/교환 처리됐어요.
+          이 주문의 상품은 이미 처리됐거나 다른 요청이 진행 중이에요.
         </Alert>
         <Button variant="secondary" size="lg" fullWidth onClick={goDetail}>
           주문 상세로

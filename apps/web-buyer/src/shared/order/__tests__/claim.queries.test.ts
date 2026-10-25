@@ -8,6 +8,7 @@ import type { BuyerOrderClaim, BuyerOrderDetail } from '@aechak/domain'
 import {
   canRequestClaim,
   claimReasonsErrorMessage,
+  claimableOrderItems,
   isClaimAlreadyInProgress,
   isWithdrawable,
   needsReasonDetail,
@@ -179,23 +180,23 @@ describe('claim.queries 요청 가능 판정', () => {
 
   it('[AC-CLAIM-ADAPT-009] 취소는 발송 전만, 반품·교환은 배송완료만(be ClaimType.requestableFrom)', () => {
     for (const status of ['paid', 'preparing'] as const) {
-      expect(canRequestClaim(orderDetail({ status }), 'cancel', now)).toBe(true)
+      expect(canRequestClaim(orderDetail({ status }), 'cancel', [], now)).toBe(true)
     }
     for (const status of ['shipping', 'delivered', 'confirmed', 'cancelled'] as const) {
-      expect(canRequestClaim(orderDetail({ status }), 'cancel', now)).toBe(false)
+      expect(canRequestClaim(orderDetail({ status }), 'cancel', [], now)).toBe(false)
     }
     for (const type of ['return', 'exchange'] as const) {
-      expect(canRequestClaim(orderDetail({ status: 'delivered' }), type, now)).toBe(true)
+      expect(canRequestClaim(orderDetail({ status: 'delivered' }), type, [], now)).toBe(true)
       for (const status of ['paid', 'preparing', 'shipping', 'confirmed', 'cancelled'] as const) {
-        expect(canRequestClaim(orderDetail({ status }), type, now)).toBe(false)
+        expect(canRequestClaim(orderDetail({ status }), type, [], now)).toBe(false)
       }
     }
   })
 
   it('[AC-CLAIM-ADAPT-010] 구매확정하면 반품·교환도 못 한다(확정이 기한을 여는 것이 아니다)', () => {
     const confirmed = orderDetail({ status: 'confirmed', rawStatus: 'PURCHASE_CONFIRMED' })
-    expect(canRequestClaim(confirmed, 'return', now)).toBe(false)
-    expect(canRequestClaim(confirmed, 'exchange', now)).toBe(false)
+    expect(canRequestClaim(confirmed, 'return', [], now)).toBe(false)
+    expect(canRequestClaim(confirmed, 'exchange', [], now)).toBe(false)
   })
 
   it('[AC-CLAIM-ADAPT-011] 반품 기한은 배송완료 +7일이고 지나면 닫는다', () => {
@@ -207,37 +208,114 @@ describe('claim.queries 요청 가능 판정', () => {
     })
     const within = new Date(now - 6 * DAY_MS).toISOString()
     const expired = new Date(now - 8 * DAY_MS).toISOString()
-    expect(canRequestClaim(orderDetail({ shipment: shipment(within) }), 'return', now)).toBe(true)
-    expect(canRequestClaim(orderDetail({ shipment: shipment(expired) }), 'return', now)).toBe(false)
+    expect(canRequestClaim(orderDetail({ shipment: shipment(within) }), 'return', [], now)).toBe(true)
+    expect(canRequestClaim(orderDetail({ shipment: shipment(expired) }), 'return', [], now)).toBe(false)
   })
 
   it('[AC-CLAIM-ADAPT-012] 배송완료 시각을 모르면 열어 두고 서버 판정에 맡긴다', () => {
     // 서버는 주문 상태 이력의 DELIVERED 전이 시각으로 기한을 재고 화면은 송장의 배송완료 시각만 안다 —
     // 출처가 다르므로 모를 때 닫아 버리면 멀쩡한 요청을 화면이 막는다.
-    expect(canRequestClaim(orderDetail({ shipment: undefined }), 'return', now)).toBe(true)
+    expect(canRequestClaim(orderDetail({ shipment: undefined }), 'return', [], now)).toBe(true)
     expect(
       canRequestClaim(
         orderDetail({
           shipment: { courierCode: 'CJ', courierName: 'CJ대한통운', trackingNumber: '1' },
         }),
         'return',
+        [],
         now,
       ),
     ).toBe(true)
   })
 
-  it('[AC-CLAIM-ADAPT-013] 진행 중 클레임이 있으면 유형과 무관하게 받지 않는다(서버 409 50403)', () => {
-    const held = orderDetail({
-      activeClaim: {
-        claimPublicId: 'c-1',
-        claimType: 'return',
-        status: 'requested',
-        rawStatus: 'CLAIM_REQUESTED',
-      },
+  // 서버는 중복을 **품목 단위**로 막는다(be ClaimService.rejectIfAlreadyClaimed가 이번 요청의 대상
+  // 품목만 본다). 진행 중 건 하나로 주문 전체를 잠그면 서버가 받아 주는 요청을 화면이 막는다.
+  const twoItems = (overrides: Partial<BuyerOrderDetail> = {}): BuyerOrderDetail =>
+    orderDetail({
+      items: [
+        { name: '리드줄', option: '기본', quantity: 1, unitPrice: 24000, itemStatus: 'ordered', productId: 'p-1', orderItemId: 11 },
+        { name: '하네스', option: '기본', quantity: 2, unitPrice: 18000, itemStatus: 'ordered', productId: 'p-2', orderItemId: 12 },
+      ],
+      ...overrides,
     })
-    for (const type of ['cancel', 'return', 'exchange'] as const) {
-      expect(canRequestClaim(held, type, now)).toBe(false)
+
+  const activeClaimOf = (claimPublicId: string): BuyerOrderClaim => ({
+    claimPublicId,
+    claimType: 'return',
+    status: 'requested',
+    rawStatus: 'CLAIM_REQUESTED',
+  })
+
+  const claimRow = (
+    claimPublicId: string,
+    orderItemIds: number[],
+    status: BuyerOrderClaim['status'] = 'requested',
+  ): BuyerOrderClaim => ({
+    claimPublicId,
+    claimType: 'return',
+    status,
+    rawStatus: status,
+    items: orderItemIds.map(orderItemId => ({ orderItemId, quantity: 1, refundAmount: 0 })),
+  })
+
+  it('[AC-CLAIM-ADAPT-013] 진행 중 건이 잡지 않은 품목은 아직 신청할 수 있다(서버는 품목 단위로 막는다)', () => {
+    const order = twoItems({ activeClaim: activeClaimOf('c-1') })
+    const claims = [claimRow('c-1', [11])]
+    // 잡힌 11은 빠지고 12만 남는다 — 진입점을 닫지 않는다.
+    expect(claimableOrderItems(order, claims)?.map(i => i.orderItemId)).toEqual([12])
+    for (const type of ['return', 'exchange'] as const) {
+      expect(canRequestClaim(order, type, claims, now)).toBe(true)
     }
+  })
+
+  it('[AC-CLAIM-ADAPT-013b] 취소 건에 잡힌 품목도 빠진다(취소는 itemStatus를 바꾸지 않는다)', () => {
+    // be markRequestedItems가 CANCEL을 건너뛰므로 itemStatus만 보면 잡힌 품목을 가릴 수 없다.
+    const order = twoItems({ status: 'paid', rawStatus: 'PAID', activeClaim: activeClaimOf('c-1') })
+    const cancelClaim: BuyerOrderClaim = { ...claimRow('c-1', [11]), claimType: 'cancel' }
+    expect(claimableOrderItems(order, [cancelClaim])?.map(i => i.orderItemId)).toEqual([12])
+    expect(canRequestClaim(order, 'cancel', [cancelClaim], now)).toBe(true)
+  })
+
+  it('[AC-CLAIM-ADAPT-013c] 모든 품목이 잡혔으면 받지 않는다', () => {
+    const order = twoItems({ activeClaim: activeClaimOf('c-1') })
+    const claims = [claimRow('c-1', [11, 12])]
+    expect(claimableOrderItems(order, claims)).toEqual([])
+    expect(canRequestClaim(order, 'return', claims, now)).toBe(false)
+  })
+
+  it('[AC-CLAIM-ADAPT-013d] 거부·철회된 건은 품목을 풀어준다(be ClaimStatus.RELEASED)', () => {
+    const order = twoItems()
+    for (const status of ['rejected', 'withdrawn'] as const) {
+      const ids = claimableOrderItems(order, [claimRow('c-1', [11, 12], status)])?.map(
+        i => i.orderItemId,
+      )
+      expect(ids).toEqual([11, 12])
+    }
+  })
+
+  it('[AC-CLAIM-ADAPT-013e] 내역을 모르면 진행 중 건이 있는 주문만 잠근다(판정 불가는 빈 배열과 다르다)', () => {
+    // 내역 조회 실패·미도착(undefined)에서는 어느 품목이 잡혀 있는지 가릴 수 없다.
+    expect(claimableOrderItems(twoItems({ activeClaim: activeClaimOf('c-1') }), undefined)).toBeNull()
+    expect(canRequestClaim(twoItems({ activeClaim: activeClaimOf('c-1') }), 'return', undefined, now)).toBe(false)
+    // 진행 중 건이 없다고 알려져 있으면 잡힌 품목도 없다 — 정상 품목 전부를 연다.
+    expect(claimableOrderItems(twoItems(), undefined)?.map(i => i.orderItemId)).toEqual([11, 12])
+    expect(canRequestClaim(twoItems(), 'return', undefined, now)).toBe(true)
+  })
+
+  it('[AC-CLAIM-ADAPT-013f] 상세의 진행 중 건이 내역에 없으면 판정 불가로 접는다(두 응답이 어긋난 경우)', () => {
+    const order = twoItems({ activeClaim: activeClaimOf('c-missing') })
+    expect(claimableOrderItems(order, [claimRow('c-1', [11], 'rejected')])).toBeNull()
+  })
+
+  it('[AC-CLAIM-ADAPT-013g] 처리된 품목(취소·반품됨)은 대상에서 빠진다', () => {
+    const order = orderDetail({
+      items: [
+        { name: '리드줄', option: '기본', quantity: 1, unitPrice: 24000, itemStatus: 'returned', productId: 'p-1', orderItemId: 11 },
+        { name: '하네스', option: '기본', quantity: 1, unitPrice: 18000, itemStatus: 'cancelled', productId: 'p-2', orderItemId: 12 },
+      ],
+    })
+    expect(claimableOrderItems(order, [])).toEqual([])
+    expect(canRequestClaim(order, 'return', [], now)).toBe(false)
   })
 
   it('[AC-CLAIM-ADAPT-014] 철회는 셀러 판단 전(CLAIM_REQUESTED)만 — 회수 중에는 서버가 409 50402', () => {

@@ -67,7 +67,7 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
   const claims = useOrderClaims(orderId)
   const { withdraw, isPending: isWithdrawing } = useWithdrawClaim()
   // 같은 결제의 형제 주문. 주문그룹 번호는 상세 응답에 실려 오므로 상세가 오기 전에는 쿼리가 쉰다.
-  const { group } = useOrderGroup(order?.orderGroupId)
+  const group = useOrderGroup(order?.orderGroupId)
 
   // 확인 Modal의 타겟은 라우트가 소유한다(Modal이 자체 mutation을 만들지 않는다).
   const [confirmTarget, setConfirmTarget] = useState<BuyerOrderDetail | null>(null)
@@ -100,8 +100,10 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
       },
     })
 
+  // Modal의 확인 버튼은 isConfirming이면 disabled가 되지만(DS Modal), 같은 틱에 두 번 들어온 클릭은
+  // 리렌더 전이라 그 disabled를 아직 보지 못한다 — 비가역 처리라 핸들러에도 재진입 가드를 둔다.
   const handleConfirm = () => {
-    if (!confirmTarget) return
+    if (!confirmTarget || isConfirming) return
     confirm(confirmTarget.orderId, {
       onSuccess: () => {
         setConfirmTarget(null)
@@ -121,7 +123,7 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
   }
 
   const handleWithdraw = () => {
-    if (!withdrawTarget) return
+    if (!withdrawTarget || isWithdrawing) return
     const type = CLAIM_TYPE_LABEL[withdrawTarget.claimType]
     withdraw(
       { orderId, claimPublicId: withdrawTarget.claimPublicId },
@@ -222,7 +224,9 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
     )
   }
 
-  const siblings = (group?.sellerOrders ?? []).filter(so => so.orderId !== order.orderId)
+  const siblings = (group.group?.sellerOrders ?? []).filter(so => so.orderId !== order.orderId)
+  // 내역이 아직 없거나 실패하면 어느 품목이 잡혀 있는지 가를 수 없다 — 판정을 넘기지 않는다.
+  const knownClaims = claims.isPending || claims.isError ? undefined : claims.claims
 
   return screen(
     <div className="flex flex-col gap-3 p-4">
@@ -262,7 +266,7 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
         />
       )}
 
-      <ClaimActionSection order={order} onRequest={goClaim} />
+      <ClaimActionSection order={order} claims={knownClaims} onRequest={goClaim} />
 
       {/* 주문 상품(이 셀러 주문의 전체 품목) */}
       <OrderItemsCard
@@ -303,6 +307,12 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
         주문그룹 번호 <span className="tabular-nums">{order.orderGroupId}</span>
         {siblings.length === 0 && ' / 같은 결제의 다른 판매자 주문은 주문 내역에서 볼 수 있어요.'}
       </p>
+      {/* 조회 실패를 "형제 주문 없음"으로 위장하지 않는다 — 둘은 사용자에게 다른 사실이다. */}
+      {group.isError && (
+        <p className="text-caption text-text-secondary">
+          같은 결제의 다른 주문을 불러오지 못했어요.
+        </p>
+      )}
     </div>,
   )
 }
@@ -421,7 +431,10 @@ function ClaimRow({
       {/* StatusPill 아래 보조 텍스트는 pill 내부 텍스트와 좌측을 맞춘다(디자인시스템 컨벤션). */}
       <p className="pl-0.5 text-caption text-text-secondary">{claimTargetSummary(claim, order)}</p>
 
-      {claim.refundAmount != null && claim.refundAmount > 0 && (
+      {/* 교환은 재발송으로 끝나 환불이 없다 — 그런데 서버는 교환에도 같은 계산식으로 금액을 실어
+          보낸다(be ClaimService가 유형을 가리지 않고 ClaimAmountCalculator를 부르고, 실제 환불 집행만
+          ClaimType.REFUNDABLE에서 교환을 뺀다). 그 값을 그대로 그리면 나가지 않을 돈을 약속한다. */}
+      {claim.claimType !== 'exchange' && claim.refundAmount != null && claim.refundAmount > 0 && (
         <PriceRow label="환불 금액" value={formatKRW(claim.refundAmount)} />
       )}
       {refund && <p className="pl-0.5 text-caption text-text-secondary">{refund}</p>}
@@ -462,17 +475,21 @@ function ClaimRow({
 /**
  * 클레임 요청 진입점. 서버가 받는 유형만 그린다(be `ClaimType.requestableFrom`) —
  * 취소는 발송 전, 반품·교환은 배송완료만. 구매확정 뒤에는 어느 유형도 받지 않아 아무 버튼도 없다.
+ * 진행 중 건이 있어도 **그 건이 잡지 않은 품목이 남아 있으면** 서버가 받으므로 버튼을 닫지 않는다
+ * (`claims`가 없으면 가릴 수 없어 잠근다 — `claimableOrderItems`).
  */
 function ClaimActionSection({
   order,
+  claims,
   onRequest,
 }: {
   order: BuyerOrderDetail
+  claims: BuyerOrderClaim[] | undefined
   onRequest: (type: BuyerClaimType) => void
 }) {
-  const cancelable = canRequestClaim(order, 'cancel')
-  const returnable = canRequestClaim(order, 'return')
-  const exchangeable = canRequestClaim(order, 'exchange')
+  const cancelable = canRequestClaim(order, 'cancel', claims)
+  const returnable = canRequestClaim(order, 'return', claims)
+  const exchangeable = canRequestClaim(order, 'exchange', claims)
   if (!cancelable && !returnable && !exchangeable) return null
   return (
     <div className="flex gap-2">

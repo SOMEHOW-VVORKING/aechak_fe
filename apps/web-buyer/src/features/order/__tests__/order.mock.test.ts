@@ -213,7 +213,14 @@ describe('order.mock 클레임 내역 요약', () => {
 
   it('[AC-ORDER-017] 대상 품목이 비면 주문 전체로 적는다(지어낸 이름을 쓰지 않는다)', () => {
     expect(claimTargetSummary(claim({ items: [] }), orderDetail())).toBe('주문 전체')
-    expect(claimTargetSummary(claim(), orderDetail())).toBe('주문 전체')
+  })
+
+  it('[AC-ORDER-017b] 대상 품목을 모르면 주문 전체로 위장하지 않는다', () => {
+    // 주문 상세의 activeClaim 응답에는 품목이 아예 없다(be OrderActiveClaimResponse) — 내역이
+    // 도착하기 전 폴백으로 그릴 때 "주문 전체"라고 적으면 일부만 신청한 건을 전체로 위장한다.
+    expect(claimTargetSummary(claim(), orderDetail())).toBe(
+      '신청 상품은 내역을 불러온 뒤 확인할 수 있어요',
+    )
   })
 
   it('[AC-ORDER-018] 최신 시각은 종결 > 승인 > 요청 순으로 고른다', () => {

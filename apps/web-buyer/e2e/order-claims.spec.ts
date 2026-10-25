@@ -297,14 +297,18 @@ test('[AC-CLAIM-E2E-003] 진행 중 요청은 내역에 뜨고 철회하면 품�
     requestedAt: '2026-10-20T10:00:00',
     approvedAt: null,
     resolvedAt: null,
-    items: [{ orderItemId: 9101, productName: '유기농 수제 간식', quantity: 2, refundAmount: 24000 }],
+    // 두 품목을 모두 잡은 건이라 남는 대상이 없다 — 서버 판정과 같은 조건을 만든다.
+    items: [
+      { orderItemId: 9101, productName: '유기농 수제 간식', quantity: 2, refundAmount: 24000 },
+      { orderItemId: 9102, productName: '삑삑 공', quantity: 1, refundAmount: 8000 },
+    ],
   })
   await page.goto(`/orders/${ORDER_ID}`)
 
   await expect(page.getByText('취소/반품/교환 요청')).toBeVisible()
   await expect(page.getByText('판매자 확인 대기')).toBeVisible()
-  await expect(page.getByText('유기농 수제 간식 (2개)')).toBeVisible()
-  // 진행 중에는 새 요청을 받지 않는다(서버 409 50403).
+  await expect(page.getByText('유기농 수제 간식 (2개) 외 1개')).toBeVisible()
+  // 주문의 모든 품목이 잡혀 있어 새로 신청할 대상이 없다(서버도 409 50403으로 거절한다).
   await expect(page.getByRole('button', { name: '주문 취소' })).toHaveCount(0)
   await shot(page, `${SHOTS}/claims-06-history-in-progress.png`)
 
@@ -319,6 +323,56 @@ test('[AC-CLAIM-E2E-003] 진행 중 요청은 내역에 뜨고 철회하면 품�
   // 품목이 풀려 다시 신청할 수 있다.
   await expect(page.getByRole('button', { name: '주문 취소' })).toBeVisible()
   await shot(page, `${SHOTS}/claims-07-history-withdrawn.png`)
+})
+
+test('[AC-CLAIM-E2E-005] 일부 품목만 잡혀 있으면 남은 품목은 신청할 수 있다', async ({ page }) => {
+  // 서버는 중복을 **품목 단위**로 막는다(be ClaimService.rejectIfAlreadyClaimed가 이번 요청의 대상
+  // 품목만 본다) — 진행 중 건 하나로 주문 전체를 잠그면 서버가 받아 주는 요청을 화면이 막는다.
+  const stubs = await stubClaimScreens(page)
+  stubs.detail.data.activeClaim = {
+    claimPublicId: 'CLAIM-PARTIAL',
+    claimType: 'CANCEL',
+    status: 'CLAIM_REQUESTED',
+    refundStatus: 'NONE',
+  }
+  stubs.claims.push({
+    claimPublicId: 'CLAIM-PARTIAL',
+    claimType: 'CANCEL',
+    status: 'CLAIM_REQUESTED',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'REQUESTED',
+    returnCostBearer: null,
+    refundAmount: 24000,
+    rejectionReason: null,
+    requestedAt: '2026-10-20T10:00:00',
+    approvedAt: null,
+    resolvedAt: null,
+    items: [{ orderItemId: 9101, productName: '유기농 수제 간식', quantity: 2, refundAmount: 24000 }],
+  })
+  await page.goto(`/orders/${ORDER_ID}`)
+
+  await expect(page.getByText('유기농 수제 간식 (2개)')).toBeVisible()
+  await page.getByRole('button', { name: '주문 취소' }).click()
+
+  // 잡힌 간식은 대상에서 빠지고 남은 공만 뜬다(품목이 하나뿐이라 체크박스 없이 읽기 전용).
+  await expect(page.getByText('신청 상품', { exact: true })).toBeVisible()
+  await expect(page.getByText('삑삑 공')).toBeVisible()
+  await expect(page.getByText('유기농 수제 간식')).toHaveCount(0)
+  await shot(page, `${SHOTS}/claims-08-partial-remaining.png`)
+
+  await page.getByText('단순 변심').click()
+  await page.getByRole('button', { name: '주문 취소하기' }).click()
+  await page.getByRole('button', { name: '취소 신청할게요' }).click()
+
+  await expect(page.getByText('취소를 접수했어요')).toBeVisible()
+  // 고른 품목만 전량으로 보낸다(수량을 쪼갠 요청은 서버가 422 50410으로 거절한다).
+  expect(stubs.posted).toEqual([
+    {
+      claimType: 'CANCEL',
+      reasonCode: 'CHANGE_OF_MIND',
+      items: [{ orderItemId: 9102, quantity: 1 }],
+    },
+  ])
 })
 
 test('[AC-CLAIM-E2E-004] 같은 결제의 다른 주문을 상세에서 바로 열 수 있다', async ({ page }) => {

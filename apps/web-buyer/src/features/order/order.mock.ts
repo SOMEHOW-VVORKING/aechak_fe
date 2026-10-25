@@ -187,9 +187,14 @@ export function sellerOrderTitle(so: BuyerSellerOrder): string {
  * 클레임 내역 한 줄의 대상 품목 요약 — "상품명 (N개)" + "외 N개".
  * 수량 표기만 괄호를 쓰는 카피 규칙에 맞춘다(그 밖의 구분자는 `/`).
  * 서버가 상품명을 비워 보낼 수 있어 주문 품목에서 메우고, 그래도 없으면 품목 수만 알린다.
+ *
+ * **대상 품목을 모르는 경우(`items` 미제공)와 비어 있는 경우를 가른다** — 주문 상세의 `activeClaim`
+ * 응답에는 품목이 아예 없어서(be OrderActiveClaimResponse) 내역이 도착하기 전 폴백으로 그릴 때
+ * "주문 전체"라고 적으면 일부 품목만 신청한 건을 전체 신청으로 위장한다.
  */
 export function claimTargetSummary(claim: BuyerOrderClaim, order: BuyerOrderDetail): string {
-  const lines = claim.items ?? []
+  const lines = claim.items
+  if (lines == null) return '신청 상품은 내역을 불러온 뒤 확인할 수 있어요'
   if (lines.length === 0) return '주문 전체'
   const first = lines[0] as NonNullable<typeof lines>[number]
   const name =

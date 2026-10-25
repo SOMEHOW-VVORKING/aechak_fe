@@ -9,6 +9,7 @@ import {
   CLAIM_REASONS_URL,
   ORDER_CLAIMS_URL,
   ORDER_CLAIM_URL,
+  ORDER_DETAIL_URL,
   ORDER_GROUP_DETAIL_URL,
   makeClaimItem,
   makeOrderGroupRow,
@@ -296,14 +297,16 @@ describe('/orders/$orderId/claim 접수', () => {
   })
 
   it('[AC-CLAIM-012] 접수가 중복으로 거절되면(409 50403) 사유를 그대로 알린다', async () => {
+    // 화면이 고른 품목이 비어 있다고 봤는데 그 사이 다른 클레임이 접수된 경합 — 서버 판정이 심판이다.
     seedOrderGroups([BEFORE_DISPATCH])
-    seedOrderClaims('o-cancelable', [
-      makeClaimItem({
-        claimType: 'CANCEL',
-        status: 'CLAIM_REQUESTED',
-        items: [{ orderItemId: 7001, productName: '유기농 수제 간식', quantity: 2, refundAmount: 24000 }],
-      }),
-    ])
+    server.use(
+      http.post(ORDER_CLAIMS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 50403, message: '이미 진행 중인 클레임이 있는 상품입니다.' },
+          { status: 409 },
+        ),
+      ),
+    )
     const user = userEvent.setup()
     renderAt('/orders/o-cancelable/claim?type=cancel')
 
@@ -312,6 +315,122 @@ describe('/orders/$orderId/claim 접수', () => {
     await user.click(screen.getByRole('button', { name: '취소 신청할게요' }))
 
     expect(await screen.findByText('이미 진행 중인 요청이 있어요')).toBeInTheDocument()
+  })
+
+  it('[AC-CLAIM-012b] 다른 품목에 클레임이 있어도 남은 품목은 신청할 수 있다(서버는 품목 단위로 막는다)', async () => {
+    // be ClaimService.rejectIfAlreadyClaimed는 이번 요청의 대상 품목만 본다 — 주문 전체를 잠그면
+    // 서버가 받아 주는 요청을 화면이 막는다.
+    seedOrderGroups([BEFORE_DISPATCH])
+    seedOrderClaims('o-cancelable', [
+      makeClaimItem({
+        claimPublicId: 'CLAIMHELD7001',
+        claimType: 'CANCEL',
+        status: 'CLAIM_REQUESTED',
+        items: [{ orderItemId: 7001, productName: '유기농 수제 간식', quantity: 2, refundAmount: 24000 }],
+      }),
+    ])
+    let body: unknown
+    server.use(
+      http.post(ORDER_CLAIMS_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(
+          {
+            data: {
+              claimPublicId: 'CLAIMNEW',
+              claimType: 'CANCEL',
+              status: 'CLAIM_REQUESTED',
+              refundAmount: 8000,
+              sellerApprovalStatus: 'REQUESTED',
+              autoApproveDueAt: null,
+              requestedAt: null,
+            },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/orders/o-cancelable/claim?type=cancel')
+
+    // 잡힌 간식은 대상에서 빠지고 남은 공 하나만 뜬다(품목이 하나면 체크박스 없이 읽기 전용).
+    expect(await screen.findByText('삑삑 공')).toBeInTheDocument()
+    expect(screen.queryByText('유기농 수제 간식')).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('단순 변심'))
+    await user.click(screen.getByRole('button', { name: '주문 취소하기' }))
+    await user.click(screen.getByRole('button', { name: '취소 신청할게요' }))
+
+    await waitFor(() => expect(body).toBeDefined())
+    expect(body).toEqual({
+      claimType: 'CANCEL',
+      reasonCode: 'CHANGE_OF_MIND',
+      items: [{ orderItemId: 7002, quantity: 1 }],
+    })
+    expect(await screen.findByText('취소를 접수했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-CLAIM-012c] 접수 성공 뒤 상세 재조회가 실패해도 접수 결과와 환불액을 보여준다', async () => {
+    // 요청 어댑터가 onSettled에서 주문 캐시를 무효화하므로 성공 직후 상세 재조회가 돈다 —
+    // 그 실패가 접수 결과를 덮으면 서버가 확정한 환불액(이 응답에만 있는 값)을 아무도 못 본다.
+    seedOrderGroups([BEFORE_DISPATCH])
+    const user = userEvent.setup()
+    renderAt('/orders/o-cancelable/claim?type=cancel')
+
+    await user.click(await screen.findByText('단순 변심'))
+    server.use(
+      http.get(ORDER_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 }),
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: '주문 취소하기' }))
+    await user.click(screen.getByRole('button', { name: '취소 신청할게요' }))
+
+    expect(await screen.findByText('취소를 접수했어요')).toBeInTheDocument()
+    expect(screen.getByText('35,000원')).toBeInTheDocument()
+    expect(screen.queryByText('주문을 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-CLAIM-012d] 확인 버튼을 연타해도 요청은 한 번만 나간다', async () => {
+    seedOrderGroups([BEFORE_DISPATCH])
+    let posts = 0
+    let release: (() => void) | undefined
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.post(ORDER_CLAIMS_URL, async () => {
+        posts += 1
+        await gate
+        return HttpResponse.json(
+          {
+            data: {
+              claimPublicId: 'CLAIMONCE',
+              claimType: 'CANCEL',
+              status: 'CLAIM_REQUESTED',
+              refundAmount: 35000,
+              sellerApprovalStatus: 'REQUESTED',
+              autoApproveDueAt: null,
+              requestedAt: null,
+            },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/orders/o-cancelable/claim?type=cancel')
+
+    await user.click(await screen.findByText('단순 변심'))
+    const cta = screen.getByRole('button', { name: '주문 취소하기' })
+    await user.click(cta)
+    await user.click(screen.getByRole('button', { name: '취소 신청할게요' }))
+
+    // 요청이 떠 있는 동안 CTA는 잠겨 다시 열 수 없다(DS Button이 loading을 disabled로 바꾼다).
+    await waitFor(() => expect(posts).toBe(1))
+    expect(screen.getByRole('button', { name: '주문 취소하기' })).toBeDisabled()
+    release?.()
+    expect(await screen.findByText('취소를 접수했어요')).toBeInTheDocument()
+    expect(posts).toBe(1)
   })
 
   it('[AC-CLAIM-013] 진행 중 클레임이 있으면 폼 대신 사유를 먼저 설명한다', async () => {
@@ -476,6 +595,8 @@ describe('/orders/$orderId 클레임 내역·철회', () => {
 
     expect(await screen.findByText('반품 요청')).toBeInTheDocument()
     expect(screen.getByText('판매자 확인 대기')).toBeInTheDocument()
+    // 상세 응답에는 대상 품목이 없다 — "주문 전체"로 위장하지 않고 모른다고 적는다.
+    expect(screen.getByText('신청 상품은 내역을 불러온 뒤 확인할 수 있어요')).toBeInTheDocument()
     // 실패를 "없음"으로 위장하지 않는다.
     expect(screen.getByText(/요청 내역을 불러오지 못했어요/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
@@ -519,7 +640,7 @@ describe('/orders/$orderId 같은 결제의 다른 주문', () => {
     ).toBeInTheDocument()
   })
 
-  it('[AC-CLAIM-022] 주문그룹 조회가 실패하면 카드를 숨기고 주문 내역 안내로 되돌린다', async () => {
+  it('[AC-CLAIM-022] 주문그룹 조회가 실패하면 "형제 주문 없음"으로 위장하지 않고 사실을 적는다', async () => {
     seedOrderGroups([TWO_SELLERS])
     server.use(
       http.get(ORDER_GROUP_DETAIL_URL, () =>
@@ -529,9 +650,68 @@ describe('/orders/$orderId 같은 결제의 다른 주문', () => {
     renderAt('/orders/o-first')
 
     expect(await screen.findByText('o-first')).toBeInTheDocument()
+    // 조회가 끝나기 전에 통과하지 않도록 오류 문구가 뜨는 것을 먼저 기다린다.
+    expect(
+      await screen.findByText('같은 결제의 다른 주문을 불러오지 못했어요.'),
+    ).toBeInTheDocument()
     expect(screen.queryByText('같은 결제의 다른 주문')).not.toBeInTheDocument()
+    // 대체 경로(주문 내역)는 그대로 남는다 — 보조 카드 하나가 상세를 죽이지 않는다.
     expect(
       screen.getByText(/같은 결제의 다른 판매자 주문은 주문 내역에서 볼 수 있어요/),
     ).toBeInTheDocument()
+  })
+
+  it('[AC-CLAIM-023] 형제 주문이 정말 없으면 오류 문구를 적지 않는다(없음과 실패를 가른다)', async () => {
+    seedOrderGroups([BEFORE_DISPATCH])
+    renderAt('/orders/o-cancelable')
+
+    expect(
+      await screen.findByText(/같은 결제의 다른 판매자 주문은 주문 내역에서 볼 수 있어요/),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('같은 결제의 다른 주문을 불러오지 못했어요.'),
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe('/orders/$orderId 교환 내역의 환불 표시', () => {
+  it('[AC-CLAIM-024] 교환 건에 금액이 실려 와도 환불로 그리지 않는다(나가지 않는 돈이다)', async () => {
+    // be ClaimService는 유형을 가리지 않고 ClaimAmountCalculator를 부르므로 교환 응답에도 금액이
+    // 온다 — 실제 환불 집행만 ClaimType.REFUNDABLE에서 교환을 뺀다.
+    seedOrderGroups([deliveredGroup(RECENTLY_DELIVERED_AT)])
+    seedOrderClaims('o-returnable', [
+      makeClaimItem({
+        claimPublicId: 'CLAIMEXC',
+        claimType: 'EXCHANGE',
+        status: 'CLAIM_REQUESTED',
+        refundStatus: 'NONE',
+        // 결제 금액(24,000원)과 겹치지 않는 값을 써서 환불 줄이 사라진 것을 확실히 본다.
+        refundAmount: 21000,
+        items: [{ orderItemId: 7001, productName: '유기농 수제 간식', quantity: 2, refundAmount: 21000 }],
+      }),
+    ])
+    renderAt('/orders/o-returnable')
+
+    expect(await screen.findByText('교환 요청')).toBeInTheDocument()
+    expect(screen.queryByText('환불 금액')).not.toBeInTheDocument()
+    expect(screen.queryByText('21,000원')).not.toBeInTheDocument()
+  })
+
+  it('[AC-CLAIM-025] 반품 건은 서버가 확정한 환불 금액을 그대로 적는다', async () => {
+    seedOrderGroups([deliveredGroup(RECENTLY_DELIVERED_AT)])
+    seedOrderClaims('o-returnable', [
+      makeClaimItem({
+        claimPublicId: 'CLAIMRET',
+        claimType: 'RETURN',
+        status: 'CLAIM_REQUESTED',
+        refundStatus: 'NONE',
+        refundAmount: 21000,
+        items: [{ orderItemId: 7001, productName: '유기농 수제 간식', quantity: 2, refundAmount: 21000 }],
+      }),
+    ])
+    renderAt('/orders/o-returnable')
+
+    expect(await screen.findByText('환불 금액')).toBeInTheDocument()
+    expect(screen.getByText('21,000원')).toBeInTheDocument()
   })
 })

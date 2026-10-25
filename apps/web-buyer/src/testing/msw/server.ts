@@ -1974,18 +1974,25 @@ const claimHandlers = [
         return errorJson(409, 50403, '이미 진행 중인 클레임이 있는 상품입니다.')
       }
     }
-    // 환불액은 서버가 확정한다 — 품목 금액 + 이 셀러 주문 배송비(교환은 환불이 없어 0).
+    // 환불액은 서버가 확정한다(be ClaimAmountCalculator). 배송비는 **주문 전체를 대상으로 할 때만**
+    // 돌려주고, **교환도 같은 계산식을 탄다** — 교환은 실제 환불 집행 대상에서만 빠지므로 응답에는
+    // 0이 아닌 금액이 실려 온다. 스텁이 교환을 0으로 내리면 화면이 그 금액을 환불처럼 그려도 드러나지 않는다.
     const itemRefund = targets.reduce((sum, target) => {
       const line = so.items.find(item => item.orderItemId === target.orderItemId)
       return sum + (line ? line.unitPrice * target.quantity : 0)
     }, 0)
-    const refundAmount =
-      claimType === 'EXCHANGE' ? 0 : itemRefund + (so.sellerShippingFee ?? 0)
+    const coversWholeOrder = so.items.every(item =>
+      targets.some(
+        target => target.orderItemId === item.orderItemId && target.quantity >= item.quantity,
+      ),
+    )
+    const refundAmount = itemRefund + (coversWholeOrder ? (so.sellerShippingFee ?? 0) : 0)
 
     const claim = makeClaimItem({
       claimType,
       status: 'CLAIM_REQUESTED',
-      refundStatus: claimType === 'EXCHANGE' ? null : 'NONE',
+      // be Claim.request는 유형을 가리지 않고 refundStatus=NONE으로 둔다.
+      refundStatus: 'NONE',
       sellerApprovalStatus: 'REQUESTED',
       refundAmount,
       items: targets.map(target => {

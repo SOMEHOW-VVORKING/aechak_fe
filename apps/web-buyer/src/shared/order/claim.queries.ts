@@ -19,6 +19,7 @@ import type {
   BuyerClaimType,
   BuyerOrderClaim,
   BuyerOrderDetail,
+  BuyerOrderItem,
 } from '@aechak/domain'
 import {
   CLAIM_STATUS_MAP,
@@ -26,6 +27,7 @@ import {
   ORDER_GROUPS_QUERY_KEY,
   REFUND_STATUS_MAP,
   SERVER_CLAIM_TYPE,
+  holdsOrderItem,
 } from './order.queries'
 
 // 클레임(취소·반품·교환) 어댑터 — 내역(GET /orders/{id}/claims), 요청(POST 같은 경로),
@@ -338,21 +340,21 @@ export const RETURN_WINDOW_DAYS = 7
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * 이 주문에서 그 유형을 요청할 수 있는지 — be `ClaimType.requestableFrom`과 같은 판정이다.
+ * 유형이 받는 주문 상태·반품 기한 판정 — be `ClaimType.requestableFrom`과 같다.
  * 취소는 발송 전(FE 표시 상태 paid·preparing = 서버 PAID·PREPARING·DISPATCH_PENDING),
- * 반품·교환은 배송완료만. 진행 중 클레임이 있으면 어느 유형도 받지 않는다(서버 409 50403).
+ * 반품·교환은 배송완료만. **진행 중 클레임은 보지 않는다** — 서버가 중복을 품목 단위로 막으므로
+ * 그 판정은 `claimableOrderItems`가 맡는다.
  *
  * 반품 기한은 **서버가 주문 상태 이력의 DELIVERED 전이 시각**으로 재므로 화면이 가진
  * `shipment.deliveredAt`과 출처가 다르다(같은 트랜잭션에서 쌓여 사실상 같은 순간이지만 같다고
  * 보장되지 않는다). 그래서 이 함수는 **확실히 지난 경우만 닫고** 경계는 서버에 맡긴다 —
  * 배송완료 시각을 모르면(송장 없음) 열어 두고 서버 판정을 받는다.
  */
-export function canRequestClaim(
+export function isClaimableByStatus(
   order: BuyerOrderDetail,
   claimType: BuyerClaimType,
   now: number = Date.now(),
 ): boolean {
-  if (order.activeClaim != null) return false
   if (claimType === 'cancel') return order.status === 'paid' || order.status === 'preparing'
   if (order.status !== 'delivered') return false
   const deliveredAt = order.shipment?.deliveredAt
@@ -360,6 +362,53 @@ export function canRequestClaim(
   const delivered = new Date(deliveredAt).getTime()
   if (Number.isNaN(delivered)) return true
   return now <= delivered + RETURN_WINDOW_DAYS * DAY_MS
+}
+
+/**
+ * 아직 다른 클레임이 붙잡고 있지 않은 주문품목 — 새 요청을 넣을 수 있는 대상이다.
+ * `null`은 "가릴 수 없다"는 뜻이고 호출부는 접수를 잠근다(빈 배열과 구분된다).
+ *
+ * **서버는 중복을 품목 단위로 막는다** — be `ClaimService.rejectIfAlreadyClaimed`는 이번 요청의
+ * 대상 품목에만 진행 중 건이 있는지 본다. 그래서 A 상품을 반품 신청한 주문에서 B 상품을 교환
+ * 신청하는 것은 정상 경로다. 진행 중 건 하나로 주문 전체를 잠그면 서버가 받아 주는 요청을
+ * 화면이 막고, 그 주문은 남은 품목을 영구히 신청할 수 없게 된다.
+ *
+ * 취소는 요청 시점에 품목 상태를 바꾸지 않으므로(be `markRequestedItems`가 CANCEL을 건너뛴다)
+ * `itemStatus`만으로는 잡힌 품목을 가릴 수 없다 — 내역의 대상 품목을 함께 빼야 한다.
+ *
+ * `claims`가 없으면(내역 미도착·조회 실패) 잡힌 품목을 모른다. 그때는 진행 중 건이 있다고 알려진
+ * 주문만 잠그고(`null`), 없으면 정상 품목 전부를 연다.
+ */
+export function claimableOrderItems(
+  order: BuyerOrderDetail,
+  claims: BuyerOrderClaim[] | undefined,
+): BuyerOrderItem[] | null {
+  const ordered = order.items.filter(item => item.itemStatus === 'ordered')
+  const active = order.activeClaim
+  if (claims == null) return active == null ? ordered : null
+  const holding = claims.filter(claim => holdsOrderItem(claim.status))
+  // 상세의 진행 중 건이 내역에 없으면 두 응답이 어긋난 것이고, 잡고 있는 건의 대상 품목을 모르면
+  // 어느 품목이 비었는지 가릴 수 없다 — 둘 다 "모른다"로 접어 서버 409를 유도하지 않는다.
+  if (active != null && !claims.some(claim => claim.claimPublicId === active.claimPublicId)) {
+    return null
+  }
+  if (holding.some(claim => claim.items == null || claim.items.length === 0)) return null
+  const held = new Set(
+    holding.flatMap(claim => (claim.items ?? []).map(line => line.orderItemId)),
+  )
+  return ordered.filter(item => !held.has(item.orderItemId))
+}
+
+/** 이 주문에서 그 유형의 요청 진입점을 열지 — 상태·기한 판정 + 남은 대상 품목. */
+export function canRequestClaim(
+  order: BuyerOrderDetail,
+  claimType: BuyerClaimType,
+  claims: BuyerOrderClaim[] | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!isClaimableByStatus(order, claimType, now)) return false
+  const items = claimableOrderItems(order, claims)
+  return items != null && items.length > 0
 }
 
 /** 구매자가 거둘 수 있는 클레임인지 — 셀러 판단 전(CLAIM_REQUESTED)만. */
