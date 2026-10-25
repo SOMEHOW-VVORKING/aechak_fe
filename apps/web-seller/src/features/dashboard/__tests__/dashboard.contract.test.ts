@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   DASHBOARD_METRICS,
+  DASHBOARD_METRIC_DISPLAY,
+  DASHBOARD_METRIC_ORDER,
   DASHBOARD_PERIOD_OPTIONS,
   DASHBOARD_SECTIONS,
+  isSellerCenterForbidden,
   previousValueHint,
   type DashboardMetricKey,
   type SellerDashboardMetric,
@@ -17,21 +20,15 @@ const metric = (overrides: Partial<SellerDashboardMetric> = {}): SellerDashboard
 
 describe('대시보드 지표 표시 규칙', () => {
   it('[AC-SELLER-DASH-002] 서버 지표 10종을 하나도 빠뜨리지 않고 한 번씩만 그린다', () => {
-    // 응답 키 10종을 그대로 옮긴 목록 — 서버가 지표를 더하면 생성물 타입이 바뀌어 여기서 걸린다.
-    const expected: DashboardMetricKey[] = [
-      'newOrders',
-      'awaitingShipment',
-      'shippingDelayed',
-      'cancelRequests',
-      'returnRequests',
-      'exchangeRequests',
-      'collectionInvoicePending',
-      'collectionCompletionPending',
-      'reshipPending',
-      'unansweredInquiries',
-    ]
-    expect(DASHBOARD_METRICS.map(meta => meta.key).sort()).toEqual([...expected].sort())
-    expect(new Set(DASHBOARD_METRICS.map(meta => meta.key)).size).toBe(expected.length)
+    // 표 자체의 완전성은 **타입이** 지킨다 — DASHBOARD_METRIC_DISPLAY가
+    // `Record<DashboardMetricKey, …>`라 생성물에 지표가 늘면 키 누락으로 컴파일 오류가 난다
+    // (배열이던 때는 늘어난 지표를 조용히 빠뜨려도 타입·테스트가 모두 통과했다).
+    // 그래서 여기서는 타입이 세어 주지 못하는 것만 본다: 개수와, 표를 화면 순서로 옮기는 과정.
+    const tableKeys = Object.keys(DASHBOARD_METRIC_DISPLAY) as DashboardMetricKey[]
+    expect(tableKeys).toHaveLength(10)
+    expect([...DASHBOARD_METRIC_ORDER].sort()).toEqual([...tableKeys].sort())
+    expect(new Set(DASHBOARD_METRIC_ORDER).size).toBe(DASHBOARD_METRIC_ORDER.length)
+    expect(DASHBOARD_METRICS.map(meta => meta.key)).toEqual([...DASHBOARD_METRIC_ORDER])
   })
 
   it('[AC-SELLER-DASH-002] 승인 이후 세 단계가 한 칸으로 합쳐지지 않고 각각 카드를 갖는다', () => {
@@ -135,5 +132,28 @@ describe('직전 기간 값 문구', () => {
     expect(
       previousValueHint(metric({ supported: false, previousValue: 3 }), '7d', 'requested'),
     ).toBeNull()
+  })
+})
+
+describe('조회 실패 분류', () => {
+  // axios 에러 모양(`response.status`)으로 판정한다 — 공유 클라이언트의 errorResponse가 그 자리다.
+  const axiosError = (status: number, errorCode: number) =>
+    Object.assign(new Error('x'), {
+      isAxiosError: true,
+      response: { status, data: { errorCode, message: 'x' } },
+    })
+
+  it('[AC-SELLER-DASH-005] 403은 자격 거절로 가른다 — 재시도로 풀리지 않는다', () => {
+    expect(isSellerCenterForbidden(axiosError(403, 10003))).toBe(true)
+    // 자격 거절 코드가 10003 하나가 아니다(SELLER_NOT_ACTIVE 10002도 403이고 뜻이 같다).
+    expect(isSellerCenterForbidden(axiosError(403, 10002))).toBe(true)
+  })
+
+  it('[AC-SELLER-DASH-005] 서버 오류·네트워크 단절은 자격 거절이 아니다', () => {
+    expect(isSellerCenterForbidden(axiosError(500, 90000))).toBe(false)
+    expect(isSellerCenterForbidden(axiosError(400, 90001))).toBe(false)
+    // 응답 자체가 없는 경우(단절·취소)도 재시도할 수 있는 실패다.
+    expect(isSellerCenterForbidden(new Error('Network Error'))).toBe(false)
+    expect(isSellerCenterForbidden(undefined)).toBe(false)
   })
 })

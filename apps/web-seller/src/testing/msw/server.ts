@@ -683,8 +683,23 @@ export interface DashboardMetricWire {
   supported: boolean
 }
 
+// 응답 `metrics`의 필드 이름. 생성물 타입을 끌어오지 않고 손으로 적는다 — 모킹이 생성물을 따라가면
+// "스펙과 다른 응답"을 표현할 수 없고, 서버 계약이 바뀔 때 테스트가 함께 조용히 바뀐다.
+type DashboardMetricKeyWire =
+  | 'newOrders'
+  | 'awaitingShipment'
+  | 'shippingDelayed'
+  | 'cancelRequests'
+  | 'returnRequests'
+  | 'exchangeRequests'
+  | 'collectionInvoicePending'
+  | 'collectionCompletionPending'
+  | 'reshipPending'
+  | 'unansweredInquiries'
+
 export interface DashboardSummaryWire {
-  metrics: Record<string, DashboardMetricWire>
+  /** 10종 전부 — 서버가 필수로 내리는 필드이므로 fixture도 빠뜨릴 수 없다(Record가 컴파일에서 막는다). */
+  metrics: Record<DashboardMetricKeyWire, DashboardMetricWire>
   settlement: { totalAmount: number; pendingAmount: number; onHoldAmount: number }
   productStatuses: {
     awaitingInspection: number
@@ -694,25 +709,19 @@ export interface DashboardSummaryWire {
   }
 }
 
-const DASHBOARD_METRIC_KEYS = [
-  'newOrders',
-  'awaitingShipment',
-  'shippingDelayed',
-  'cancelRequests',
-  'returnRequests',
-  'exchangeRequests',
-  'collectionInvoicePending',
-  'collectionCompletionPending',
-  'reshipPending',
-  'unansweredInquiries',
-] as const
-
 /**
  * 기본 응답. 지표마다 값을 다르게 둬서 화면이 키를 뒤섞어 꽂으면 테스트가 잡는다.
  * `previousValue`는 기간이 있을 때만 의미가 있으므로 period=all이면 핸들러가 null로 바꿔 내린다.
+ *
+ * `metrics`만 **얕은 병합이 아니라 키 단위로 덮는다** — 지표 하나만 바꾸려고 `{ metrics: { … } }`를
+ * 넘겼을 때 나머지 아홉이 사라지면, 핸들러가 그 구멍을 메우며 "서버가 안 내려준 필드"를 정상 0건으로
+ * 위장하게 된다(실제 응답에서 키가 빠지면 화면은 예외로 깨진다 — 모킹이 서버보다 관대해지는 자리).
  */
 export function makeDashboardSummaryWire(
-  overrides: Partial<DashboardSummaryWire> = {},
+  overrides: Partial<Omit<DashboardSummaryWire, 'metrics'>> & {
+    /** 지표는 바꿀 것만 적는다 — 적지 않은 지표는 기본값으로 남아 응답이 늘 10종 전부다. */
+    metrics?: Partial<Record<DashboardMetricKeyWire, DashboardMetricWire>>
+  } = {},
 ): DashboardSummaryWire {
   const base: DashboardSummaryWire = {
     metrics: {
@@ -730,12 +739,13 @@ export function makeDashboardSummaryWire(
     settlement: { totalAmount: 360_000, pendingAmount: 312_000, onHoldAmount: 48_000 },
     productStatuses: { awaitingInspection: 2, rejected: 1, suspended: 1, soldOut: 3 },
   }
-  return { ...base, ...overrides }
+  return { ...base, ...overrides, metrics: { ...base.metrics, ...overrides.metrics } }
 }
 
 let dashboardSummary: DashboardSummaryWire = makeDashboardSummaryWire()
 let dashboardError: { status: number; errorCode: number; message: string } | null = null
 let lastDashboardPeriod: string | null | undefined
+let dashboardRequestCount = 0
 
 /** 인자 없이 부르면 기본 응답으로 되돌린다. */
 export function seedDashboardSummary(
@@ -761,8 +771,17 @@ export function lastDashboardSummaryPeriod(): string | null | undefined {
   return lastDashboardPeriod
 }
 
-export function resetDashboardSummaryPeriod(): void {
+/**
+ * 집계 GET이 실제로 몇 번 나갔는지. 재시도 정책을 숫자로 확인하는 용도다 — 자격 거절(4xx)은
+ * 다시 보내도 같은 답이라 한 번이어야 하고, 5xx만 한 번 더 나가야 한다.
+ */
+export function dashboardSummaryRequestCount(): number {
+  return dashboardRequestCount
+}
+
+export function resetDashboardSummaryProbe(): void {
   lastDashboardPeriod = undefined
+  dashboardRequestCount = 0
 }
 
 const DASHBOARD_PERIODS = ['all', '7d', '30d', '90d']
@@ -771,6 +790,7 @@ const dashboardHandlers = [
   http.get(SELLER_DASHBOARD_SUMMARY_URL, ({ request }) => {
     const period = new URL(request.url).searchParams.get('period')
     lastDashboardPeriod = period
+    dashboardRequestCount += 1
     if (period != null && !DASHBOARD_PERIODS.includes(period)) {
       return badRequest('period: 지원하지 않는 값입니다.')
     }
@@ -781,16 +801,13 @@ const dashboardHandlers = [
       )
     }
     // 전체 기간에는 비교할 직전 구간이 없다 — 0이 아니라 null이어야 화면이 두 경우를 가른다.
+    // 세운 응답은 그 밖으로는 손대지 않는다(없는 키를 메우면 모킹이 서버보다 관대해진다).
     const isAll = period == null || period === 'all'
     const metrics = Object.fromEntries(
-      DASHBOARD_METRIC_KEYS.map(key => {
-        const metric = dashboardSummary.metrics[key] ?? {
-          value: 0,
-          previousValue: null,
-          supported: true,
-        }
-        return [key, { ...metric, previousValue: isAll ? null : metric.previousValue }]
-      }),
+      Object.entries(dashboardSummary.metrics).map(([key, metric]) => [
+        key,
+        { ...metric, previousValue: isAll ? null : metric.previousValue },
+      ]),
     )
     return HttpResponse.json({ data: { ...dashboardSummary, metrics } })
   }),
