@@ -1,8 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   SELLER_ORDERS_URL,
@@ -291,6 +291,113 @@ describe('셀러 주문 처리 실연동', () => {
     await user.click(screen.getByRole('button', { name: '배송 완료' }))
 
     expect(await screen.findByText(/이미 배송완료로 처리됐거나/)).toBeInTheDocument()
+  })
+})
+
+describe('셀러 주문 처리 경계', () => {
+  it('[AC-SORDER-017] 확인 버튼을 두 번 눌러도 요청은 한 번만 나간다', async () => {
+    const user = userEvent.setup()
+    let accepts = 0
+    server.use(
+      http.post(`${SELLER_ORDERS_URL}/:orderPublicId/accept`, async () => {
+        accepts += 1
+        await delay('infinite')
+      }),
+    )
+    renderOrders()
+
+    const row = await rowOf(NEW_ORDER.orderId)
+    await user.click(within(row).getByRole('button', { name: `주문 ${NEW_ORDER.orderId} 발주 확인` }))
+    await screen.findByText('발주를 확인할까요?')
+    const confirm = screen.getByRole('button', { name: '발주 확인' })
+    await user.click(confirm)
+
+    // 처리 중에는 확인 버튼이 잠긴다 — 라벨이 스피너로 바뀌어 이름으로는 더 찾히지 않는다.
+    await waitFor(() => expect(confirm).toBeDisabled())
+    await user.click(confirm)
+    expect(accepts).toBe(1)
+  })
+
+  it('[AC-SORDER-018] 요청이 떠 있는 동안에는 취소로 창이 닫히지 않는다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(`${SELLER_ORDERS_URL}/:orderPublicId/shipment`, async () => {
+        await delay('infinite')
+      }),
+    )
+    renderOrders()
+
+    const row = await rowOf(PREPARING.orderId)
+    await user.click(within(row).getByRole('button', { name: `주문 ${PREPARING.orderId} 발송 처리` }))
+    await user.selectOptions(await screen.findByLabelText('택배사'), 'CJ')
+    await user.type(screen.getByLabelText('운송장 번호'), '601234567891')
+    await user.click(screen.getByRole('button', { name: '발송 확정' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '발송 확정' })).not.toBeInTheDocument())
+
+    // DS Modal은 loading 중에도 취소·ESC·스크림을 onClose로 흘린다 — 되돌릴 수 없는 등록이 떠 있는
+    // 동안 창만 닫히면 셀러는 취소된 줄로 읽는다. 호출부가 막는지 본다.
+    // 상태 세그먼트 칩에도 '취소'가 있다(ORDER_SEGMENT_LABEL.cancelled) — Modal 안으로 좁힌다.
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '취소' }))
+
+    expect(screen.getByLabelText('택배사')).toBeInTheDocument()
+  })
+
+  it('[AC-SORDER-019] 빈 칸으로 발송 확정을 누르면 어느 칸이 비었는지 알려준다', async () => {
+    const user = userEvent.setup()
+    renderOrders()
+
+    const row = await rowOf(PREPARING.orderId)
+    await user.click(within(row).getByRole('button', { name: `주문 ${PREPARING.orderId} 발송 처리` }))
+    await screen.findByLabelText('택배사')
+
+    // DS Modal에는 confirmDisabled가 없어 못 보내는 상태에서도 버튼이 눌린다 — 조용히 아무 일도
+    // 일어나지 않으면 버튼이 죽은 것처럼 보인다.
+    await user.click(screen.getByRole('button', { name: '발송 확정' }))
+
+    expect(await screen.findByText('택배사를 선택해 주세요.')).toBeInTheDocument()
+    expect(screen.getByText('운송장 번호를 입력해 주세요.')).toBeInTheDocument()
+    expect(lastShipmentRegisterBody()).toBeNull()
+  })
+
+  it('[AC-SORDER-020] 경합으로 거절되면 목록을 다시 받아 죽은 버튼을 치운다', async () => {
+    const user = userEvent.setup()
+    seedSellerOrders([{ order: NEW_ORDER }])
+    server.use(
+      http.post(`${SELLER_ORDERS_URL}/:orderPublicId/accept`, () => {
+        // 다른 탭이 먼저 발주 확인한 상태를 만든다 — 서버는 거절하고 내 목록은 그 순간 낡는다.
+        seedSellerOrders([{ order: { ...NEW_ORDER, status: 'PREPARING' } }])
+        return HttpResponse.json(
+          { errorCode: 50004, message: '결제완료 상태의 주문만 발주 확인할 수 있습니다.' },
+          { status: 409 },
+        )
+      }),
+    )
+    renderOrders()
+
+    const row = await rowOf(NEW_ORDER.orderId)
+    await user.click(within(row).getByRole('button', { name: `주문 ${NEW_ORDER.orderId} 발주 확인` }))
+    await screen.findByText('발주를 확인할까요?')
+    await user.click(screen.getByRole('button', { name: '발주 확인' }))
+
+    expect(await screen.findByText(/결제완료 상태의 주문만 발주 확인할 수 있어요/)).toBeInTheDocument()
+    // 성공에만 무효화하면 '발주 확인' 버튼이 그대로 남아 같은 요청을 다시 보낸다.
+    expect(await screen.findByText('상품준비중')).toBeInTheDocument()
+    const refreshed = await rowOf(NEW_ORDER.orderId)
+    expect(
+      within(refreshed).queryByRole('button', { name: `주문 ${NEW_ORDER.orderId} 발주 확인` }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('[AC-SORDER-021] 키보드로 역전된 주문일 범위를 넣으면 어느 칸이 잘못인지 짚어 준다', async () => {
+    renderOrders()
+    await screen.findByText(NEW_ORDER.orderId)
+
+    // DatePicker의 min/max는 피커 UI만 묶는다 — 직접 입력한 값은 그대로 들어와 BE가 400/90001로
+    // 거절하고, 그 문구만으로는 어느 칸이 문제인지 알 수 없다.
+    fireEvent.change(screen.getByLabelText('주문일 종료'), { target: { value: '2026-10-20' } })
+    fireEvent.change(screen.getByLabelText('주문일 시작'), { target: { value: '2026-10-25' } })
+
+    expect(await screen.findByText('주문일 시작이 종료보다 늦어요.')).toBeInTheDocument()
   })
 })
 

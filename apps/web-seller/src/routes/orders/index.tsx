@@ -10,6 +10,7 @@ import {
   PageHeader,
   SearchInput,
 } from '@aechak/design-system/web'
+import { FieldError } from '@/shared/components/Field'
 import { useToast } from '@/shared/hooks/useToast'
 import {
   KEYWORD_MAX,
@@ -159,6 +160,13 @@ function OrdersRoute() {
     )
   }
 
+  // DatePicker의 min/max는 피커 UI만 묶는다 — 키보드로 직접 날짜를 쳐 넣으면 역전된 범위가 그대로
+  // 상태에 들어오고 BE가 400/90001로 거절한다(be SellerOrderSearchRequest.toQuery). 서버 문구는
+  // "입력한 내용을 다시 확인해 주세요"라 어느 칸이 문제인지 알려주지 않으므로 자리를 짚어 준다.
+  // ISO yyyy-MM-dd는 사전순이 곧 시간순이라 문자열 비교로 충분하다.
+  const dateRangeInverted =
+    filters.orderedFrom !== '' && filters.orderedTo !== '' && filters.orderedFrom > filters.orderedTo
+
   const totalPages = data?.totalPages ?? 0
   // 재조회가 실패해도 keepPreviousData가 직전 페이지를 남긴다 — 그 상태를 안내 문구로 가른다.
   const hasRows = (data?.orders.length ?? 0) > 0
@@ -192,18 +200,23 @@ function OrdersRoute() {
             label="주문일 시작"
             value={filters.orderedFrom}
             max={filters.orderedTo || undefined}
+            state={dateRangeInverted ? 'error' : 'default'}
             onChange={orderedFrom => setFilter({ orderedFrom })}
           />
           <DatePicker
             label="주문일 종료"
             value={filters.orderedTo}
             min={filters.orderedFrom || undefined}
+            state={dateRangeInverted ? 'error' : 'default'}
             onChange={orderedTo => setFilter({ orderedTo })}
           />
           <Button variant="ghost" size="md" onClick={() => setFilters(EMPTY_FILTERS)}>
             초기화
           </Button>
         </FilterBar>
+        {/* DatePicker는 helperText를 쓰면 FilterBar 한 줄의 높이가 칸마다 달라져 입력칸이 어긋난다 —
+            오류 문구는 줄 밖에 따로 둔다(products ProductEditor의 FieldError 관례). */}
+        {dateRangeInverted && <FieldError>주문일 시작이 종료보다 늦어요.</FieldError>}
       </div>
 
       {/* 목록 조회 실패를 표의 빈 상태로 흘리지 않는다 — 실 API에는 403/40006(정지·탈퇴 셀러),
@@ -268,10 +281,15 @@ function OrdersRoute() {
         </nav>
       )}
 
+      {/* DS Modal은 ESC·스크림·취소를 `loading`과 무관하게 onClose로 흘린다(design-system/web/Modal).
+          되돌릴 수 없는 전이가 날아간 뒤에 창만 닫히면 셀러는 취소된 줄로 읽으므로, 요청이 떠 있는
+          동안에는 닫히지 않게 호출부에서 막는다 — 요청 자체는 취소할 수 없다(POST, abort 불가). */}
       {confirmTarget && (
         <Modal
           open
-          onClose={() => setConfirmTarget(null)}
+          onClose={() => {
+            if (!isMutating) setConfirmTarget(null)
+          }}
           title={ACTION_CONFIRM[confirmTarget.action].title}
           description={ACTION_CONFIRM[confirmTarget.action].description}
           confirmLabel={ACTION_CONFIRM[confirmTarget.action].confirmLabel}
@@ -286,7 +304,9 @@ function OrdersRoute() {
         key={shipmentOrder?.orderId ?? 'closed'}
         order={shipmentOrder}
         loading={registerShipment.isPending}
-        onClose={() => setShipmentOrder(null)}
+        onClose={() => {
+          if (!registerShipment.isPending) setShipmentOrder(null)
+        }}
         onSubmit={handleRegisterShipment}
       />
 

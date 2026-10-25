@@ -76,8 +76,12 @@ export const useSellerOrderDetail = (orderPublicId: string | null | undefined) =
   })
 
 /**
- * 세 처리가 공유하는 뮤테이션 껍데기. 성공하면 주문 접두를 통째로 무효화한다 — 상태가 바뀌면 목록의
- * 세그먼트 집계와 상세가 동시에 낡는다.
+ * 세 처리가 공유하는 뮤테이션 껍데기. 끝나면(성공이든 실패든) 주문 접두를 통째로 무효화한다 —
+ * 상태가 바뀌면 목록의 세그먼트 집계와 상세가 동시에 낡는다.
+ *
+ * **실패에도 무효화한다.** 전이 거절(409/50004·50005·50301·50302)은 대개 다른 탭·다른 사람이
+ * 먼저 처리해서 내 목록이 낡았다는 뜻이고, 성공만 무효화하면 사라져야 할 버튼이 그대로 남아 같은
+ * 요청을 다시 보낸다. 거절 문구가 "목록을 새로고침해 주세요"라고 말하는 일을 코드가 대신한다.
  *
  * 라우트가 `isPending`을 읽어 목록의 다른 행 버튼까지 잠근다(AGENTS 확인 Modal 패턴). 그래서 각
  * Modal이 자기 뮤테이션을 만들지 않고 라우트에서 받는다.
@@ -86,7 +90,7 @@ function useOrdersMutation<TVariables, TData>(mutationFn: (variables: TVariables
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY }),
   })
 }
 
