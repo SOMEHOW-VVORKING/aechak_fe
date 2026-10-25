@@ -171,7 +171,9 @@ function ClaimDetailBody({
           label="내 배송비"
           value={<span className="tabular-nums">{order.sellerShippingFee.toLocaleString()}원</span>}
         />
-        {claim.refundStatus != null && (
+        {/* 교환은 환불 축을 타지 않는다 — refundStatus가 NONE으로 남아 있을 뿐이라 환불 대기로
+            보여 주면 오지 않을 환불을 기다리게 한다. */}
+        {claim.claimType !== 'EXCHANGE' && claim.refundStatus != null && (
           <DetailField label="환불 상태" value={REFUND_STATUS_LABEL[claim.refundStatus]} />
         )}
         {claim.settlementStatus != null && (

@@ -239,6 +239,12 @@ describe('교환 재발송', () => {
     expect(within(row).getByText('재발송 대기')).toBeInTheDocument()
     expect(within(row).getByText('환불 없음 (재발송)')).toBeInTheDocument()
 
+    // 교환 상세는 환불 축을 보여주지 않는다 — refundStatus가 NONE으로 남아 있을 뿐이다.
+    await userEvent.click(within(row).getByText('캣타워 그레이'))
+    expect(await screen.findByText('진행 이력')).toBeInTheDocument()
+    expect(screen.queryByText('환불 상태')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '닫기' }))
+
     await userEvent.click(within(row).getByRole('button', { name: '재발송 송장 등록' }))
     await userEvent.selectOptions(await screen.findByLabelText('택배사'), 'LOGEN')
     await userEvent.type(screen.getByLabelText('송장번호'), 'L123456')
