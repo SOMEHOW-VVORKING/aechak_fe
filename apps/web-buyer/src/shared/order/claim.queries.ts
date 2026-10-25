@@ -7,7 +7,8 @@ import {
   withdrawClaim,
   type ClaimItemResponse,
   type ClaimReasonCatalogResponse,
-  type ClaimType,
+  type ReturnCostBearer,
+  type SellerApprovalStatus,
 } from '@aechak/api'
 import type {
   BuyerClaimCostBearer,
@@ -50,13 +51,15 @@ export function toKstInstant(value: string | null | undefined): string | undefin
   return HAS_OFFSET.test(value) ? value : `${value}${KST_OFFSET}`
 }
 
-const SELLER_APPROVAL_MAP: Record<string, BuyerClaimSellerApproval> = {
+// 두 맵은 Record로 전수를 받는다 — 서버가 값을 늘리면 스키마 갱신 시점에 typecheck가 깨져야 한다
+// (Record<string, …>로 두면 모르는 값이 조용히 undefined가 되어 배포에서만 드러난다).
+const SELLER_APPROVAL_MAP: Record<SellerApprovalStatus, BuyerClaimSellerApproval> = {
   REQUESTED: 'requested',
   APPROVED: 'approved',
   REJECTED: 'rejected',
 }
 
-const COST_BEARER_MAP: Record<string, BuyerClaimCostBearer> = {
+const COST_BEARER_MAP: Record<ReturnCostBearer, BuyerClaimCostBearer> = {
   BUYER: 'buyer',
   SELLER: 'seller',
 }
@@ -120,7 +123,7 @@ export function toBuyerClaimReasonCatalog(
 ): BuyerClaimReasonCatalog {
   const catalog: BuyerClaimReasonCatalog = { cancel: [], return: [], exchange: [] }
   for (const entry of response.claimTypes) {
-    const type = CLAIM_TYPE_MAP[entry.claimType as ClaimType]
+    const type = CLAIM_TYPE_MAP[entry.claimType]
     if (type == null) continue
     catalog[type] = entry.reasons.map(reason => ({
       code: reason.code,
