@@ -12783,7 +12783,7 @@ export const useUpdateSellerClaimMemo = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 승인해 회수 대기(COLLECTING)로 넘어온 반품·교환만. 상태는 COLLECTING에 머물고 회수 시작 시각만 남는다 — "물건을 받기 전에는 환불하지 않는다"의 근거다. 취소에 부르면 409 errorCode 50409, 이미 등록했으면 409 errorCode 50302, 택배사 코드가 없으면 404 errorCode 50303, 송장번호 형식 위반은 400 errorCode 50304다. courierCode는 `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다.
+ * 승인해 회수 대기(COLLECTING)로 넘어온 반품·교환만. 상태는 COLLECTING에 머물고 회수 시작 시각만 남는다 — "물건을 받기 전에는 환불하지 않는다"의 근거다. 취소에 부르면 409 errorCode 50409, 이미 등록했으면 409 errorCode 50302, 택배사 코드가 없으면 404 errorCode 50303이다. courierCode는 `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다. **송장번호 형식은 이 경로가 검사하지 않는다** — `CourierMaster.validateTrackingNumber`를 부르는 곳은 최초 발송(SellerOrderService)뿐이고 회수·재발송은 공백·길이(50자)만 본다. 형식 위반(400 errorCode 50304)을 기대하지 말 것.
  * @summary 반품·교환 회수 송장 등록
  */
 export const startSellerClaimCollection = (
@@ -12943,7 +12943,7 @@ export const useCompleteSellerClaimCollection = <TError = void, TContext = unkno
 }
 
 /**
- * 회수가 끝난 교환(APPROVED·미종결)만. 환불이 없는 대신 이 송장 등록이 교환을 종결시킨다 (resolvedAt이 찍힌다). 조건을 벗어나면 409 errorCode 50411, 이미 등록했으면 409 errorCode 50302다. 응답은 201이고 등록된 송장을 돌려준다.
+ * 회수가 끝난 교환(APPROVED·미종결)만. 환불이 없는 대신 이 송장 등록이 교환을 종결시킨다 (resolvedAt이 찍힌다). 조건을 벗어나면 409 errorCode 50411, 이미 등록했으면 409 errorCode 50302다. 응답은 201이고 등록된 송장을 돌려준다. 회수와 같이 **송장번호 형식은 검사하지 않는다**(공백·길이 50자만 본다).
  * @summary 교환 재발송 송장 등록
  */
 export const reshipSellerClaim = (
