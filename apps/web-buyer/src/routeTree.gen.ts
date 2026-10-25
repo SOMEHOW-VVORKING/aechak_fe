@@ -48,6 +48,7 @@ import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId
 import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
 import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
+import { Route as OrdersOrderIdClaimRouteImport } from './routes/orders/$orderId/claim'
 import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
@@ -247,6 +248,11 @@ const ProductsProductIdReportRoute = ProductsProductIdReportRouteImport.update({
   path: '/products/$productId/report',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrdersOrderIdClaimRoute = OrdersOrderIdClaimRouteImport.update({
+  id: '/orders/$orderId/claim',
+  path: '/orders/$orderId/claim',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrdersOrderIdCancelRoute = OrdersOrderIdCancelRouteImport.update({
   id: '/orders/$orderId/cancel',
   path: '/orders/$orderId/cancel',
@@ -304,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
@@ -348,6 +355,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/mypage/pets': typeof MypagePetsIndexRoute
@@ -394,6 +402,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
@@ -440,6 +449,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/mypage/pets/'
@@ -484,6 +494,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/mypage/pets'
@@ -529,6 +540,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/mypage/pets/'
@@ -570,6 +582,7 @@ export interface RootRouteChildren {
   SettingsIndexRoute: typeof SettingsIndexRoute
   MypagePetsNewRoute: typeof MypagePetsNewRoute
   OrdersOrderIdCancelRoute: typeof OrdersOrderIdCancelRoute
+  OrdersOrderIdClaimRoute: typeof OrdersOrderIdClaimRoute
   ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
   ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
@@ -854,6 +867,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsProductIdReportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/orders/$orderId/claim': {
+      id: '/orders/$orderId/claim'
+      path: '/orders/$orderId/claim'
+      fullPath: '/orders/$orderId/claim'
+      preLoaderRoute: typeof OrdersOrderIdClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orders/$orderId/cancel': {
       id: '/orders/$orderId/cancel'
       path: '/orders/$orderId/cancel'
@@ -935,6 +955,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsIndexRoute: SettingsIndexRoute,
   MypagePetsNewRoute: MypagePetsNewRoute,
   OrdersOrderIdCancelRoute: OrdersOrderIdCancelRoute,
+  OrdersOrderIdClaimRoute: OrdersOrderIdClaimRoute,
   ProductsProductIdReportRoute: ProductsProductIdReportRoute,
   ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
   MypagePetsIndexRoute: MypagePetsIndexRoute,

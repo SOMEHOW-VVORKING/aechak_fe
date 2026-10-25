@@ -1,7 +1,9 @@
 import type {
+  BuyerClaimCostBearer,
   BuyerClaimRefundStatus,
   BuyerClaimStatus,
   BuyerClaimType,
+  BuyerOrderClaim,
   BuyerOrderDetail,
   BuyerOrderItem,
   BuyerOrderItemStatus,
@@ -43,14 +45,21 @@ export const ORDER_ITEM_STATUS_LABEL: Partial<Record<BuyerOrderItemStatus, strin
   'exchange-requested': '교환 요청',
 }
 
-// 진행 중 클레임 라벨(읽기 전용). 요청·철회는 사유 코드 어휘가 미확정이라(SCRUM-273) 화면에 없다.
+// 클레임 유형 라벨.
 export const CLAIM_TYPE_LABEL: Record<BuyerClaimType, string> = {
   cancel: '취소',
   return: '반품',
   exchange: '교환',
 }
 
-// 상태 문구는 서버 ClaimStatus(HOLDING 5종)를 구매자 관점으로 옮긴 것. 운영자 직권 처리와 환불 실패는
+// 요청 화면·버튼에 쓰는 유형별 동작 이름("취소 신청"처럼 뒤에 붙는 말이 유형마다 달라 따로 둔다).
+export const CLAIM_ACTION_LABEL: Record<BuyerClaimType, string> = {
+  cancel: '주문 취소',
+  return: '반품 신청',
+  exchange: '교환 신청',
+}
+
+// 상태 문구는 서버 ClaimStatus 7종을 구매자 관점으로 옮긴 것. 운영자 직권 처리와 환불 실패는
 // 구매자가 할 수 있는 일이 없어 "확인 중"으로 묶지 않고 그대로 알린다.
 export const CLAIM_STATUS_LABEL: Record<BuyerClaimStatus, string> = {
   requested: '판매자 확인 대기',
@@ -58,14 +67,26 @@ export const CLAIM_STATUS_LABEL: Record<BuyerClaimStatus, string> = {
   approved: '승인',
   'admin-overridden': '운영자 처리',
   'refund-failed': '환불 실패',
+  rejected: '거부',
+  withdrawn: '철회',
 }
 
+// 거부는 부정적 결과이지만 제재가 아니라 `error`, 철회는 구매자가 스스로 거둔 종결이라 `muted`
+// (비활성·종료 상태 전용 규칙에 맞는다 — 디자인시스템 컨벤션).
 export const CLAIM_STATUS_VARIANT: Record<BuyerClaimStatus, StatusPillVariant> = {
   requested: 'warning',
   collecting: 'info',
   approved: 'success',
   'admin-overridden': 'neutral',
   'refund-failed': 'error',
+  rejected: 'error',
+  withdrawn: 'muted',
+}
+
+// 반품 발송비 부담 주체 문구. 셀러 승인 때 정해지고, 기한 초과 자동승인은 정하지 않아 값이 없다.
+export const CLAIM_COST_BEARER_LABEL: Record<BuyerClaimCostBearer, string> = {
+  buyer: '반품 발송비는 구매자 부담이에요',
+  seller: '반품 발송비는 판매자 부담이에요',
 }
 
 // 환불 진행 보조 라벨. NONE(교환 등 환불이 없는 건)은 라벨 없음.
@@ -82,11 +103,6 @@ export const ORDER_SEGMENTS: { value: OrderSegment; label: string }[] = [
   { value: 'done', label: '완료' },
   { value: 'canceled', label: '취소' },
 ]
-
-// 배송 시작 전(결제완료/상품준비중)만 취소 대상이다. 취소 API가 아직 없어 화면 진입은 막혀 있다.
-export function isCancelable(status: BuyerOrderStatus): boolean {
-  return status === 'paid' || status === 'preparing'
-}
 
 /**
  * 구매확정 가능 여부 — be OrderConfirmService의 판정을 그대로 옮긴다.
@@ -105,15 +121,6 @@ export function isConfirmable(order: BuyerOrderDetail): boolean {
 export function isReviewable(order: BuyerOrderDetail, item: BuyerOrderItem): boolean {
   return order.status === 'confirmed' && item.itemStatus === 'ordered'
 }
-
-// 주문 취소 사유(b4-st-4). 마지막 '기타'는 직접 입력 텍스트를 함께 받는다.
-export const CANCEL_REASONS: { value: string; label: string; needsDetail?: boolean }[] = [
-  { value: 'change-mind', label: '단순 변심' },
-  { value: 'wrong-order', label: '상품을 잘못 주문함' },
-  { value: 'late-delivery', label: '배송이 너무 늦어짐' },
-  { value: 'reorder', label: '다른 상품으로 재주문' },
-  { value: 'etc', label: '기타 (직접 입력)', needsDetail: true },
-]
 
 // 서버 orderedAt(ISO, 오프셋 포함)을 한국 시간 기준으로 그린다 — 머신 TZ(CI는 UTC)에 따라 날짜가
 // 흔들리지 않게 Asia/Seoul을 고정한다.
@@ -174,4 +181,30 @@ export function sellerOrderTitle(so: BuyerSellerOrder): string {
   if (!rep) return '주문 상품'
   const rest = so.itemCount - 1
   return rest > 0 ? `${rep.name} 외 ${rest}개` : rep.name
+}
+
+/**
+ * 클레임 내역 한 줄의 대상 품목 요약 — "상품명 (N개)" + "외 N개".
+ * 수량 표기만 괄호를 쓰는 카피 규칙에 맞춘다(그 밖의 구분자는 `/`).
+ * 서버가 상품명을 비워 보낼 수 있어 주문 품목에서 메우고, 그래도 없으면 품목 수만 알린다.
+ */
+export function claimTargetSummary(claim: BuyerOrderClaim, order: BuyerOrderDetail): string {
+  const lines = claim.items ?? []
+  if (lines.length === 0) return '주문 전체'
+  const first = lines[0] as NonNullable<typeof lines>[number]
+  const name =
+    first.productName ??
+    order.items.find(item => item.orderItemId === first.orderItemId)?.name ??
+    null
+  const head = name == null ? `품목 ${lines.length}개` : `${name} (${first.quantity}개)`
+  const rest = lines.length - 1
+  return rest > 0 ? `${head} 외 ${rest}개` : head
+}
+
+/**
+ * 클레임 내역 한 줄의 최신 시각 — 종결됐으면 종결, 승인됐으면 승인, 아니면 요청 시각.
+ * 세 값 모두 서버가 오프셋 없는 KST로 주고 어댑터가 오프셋을 붙여 넘긴 뒤라 절대 시각이다.
+ */
+export function claimTimelineAt(claim: BuyerOrderClaim): string | undefined {
+  return claim.resolvedAt ?? claim.approvedAt ?? claim.requestedAt
 }
