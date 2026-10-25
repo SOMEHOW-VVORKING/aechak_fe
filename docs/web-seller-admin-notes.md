@@ -825,3 +825,27 @@ be `domain/.../order/enums/OrderStatus.kt`를 직접 읽어 8종(`PENDING_PAYMEN
 재구성의 결과물인데, web-seller가 와이어 타입을 바로 쓰게 되면서 참조가 0건이 됐다. 서버에 없는 필드
 (`purchaseConfirmDeadline: 'D-5'`)를 들고 있어 남겨 두면 새 코드가 지어낸 필드를 다시 요구한다
 (AGENTS 6-10). 구매자 쪽 `BuyerOrder*`는 상태머신이 다른 집계 도메인이라 그대로 남는다.
+
+**교차검토로 드러난 함정 셋(같은 모듈을 쓰는 클레임 화면도 그대로 밟는다).**
+
+1. **`50003`(ORDER_ACCESS_DENIED)은 "남의 주문"이 아니라 "셀러 자격"이다.** 주문 모듈에서 이 코드를
+   던지는 자리는 be `SellerOrderFacade`의 `requireActiveSeller`·`requireOrderReadableSeller` 둘뿐이고,
+   남의 주문·없는 주문은 주문번호 존재를 숨기려고 404/50000으로 통일된다(`findSellerOrder`·`getOwned`).
+   조회는 ACTIVE·PAUSED·WITHDRAWAL_REQUESTED까지 열리지만 처리(발주확인·송장등록·배송완료)는 ACTIVE만
+   되므로 **휴점 셀러는 목록은 보이고 처리만 403**이다. 셀러 상태를 알려주는 경로가 셀러센터에 없어
+   버튼을 미리 감출 수는 없고(스펙의 `/sellers/**`는 couriers·orders·products뿐), 문구가 조회 실패와
+   처리 실패 양쪽에서 읽혀야 한다. 상품 화면의 `40004`·`40006`은 ProductErrorCode라 주문 경로로는 오지
+   않는다 — 매핑에 넣어 두면 닿지 않는 문구를 테스트가 대신 지켜 준다.
+2. **배송완료 거절은 `50002`가 아니다.** be `OrderDeliveryService.complete`는 최초 배송 행을 먼저 찾아
+   없으면 404/50300이고, `deliveredAt`이 있는 경우와 조건부 UPDATE(SHIPPING → DELIVERED) 실패를
+   **둘 다** 409/50301로 묶는다. 그래서 "SHIPPING이 아닌 주문"도 "이미 배송완료"와 같은 코드로 돌아온다
+   — 문구를 둘 다 읽히게 써야 한다. MSW 스텁을 상태만 보고 50002를 주게 두면 틀린 문구가 통과한다.
+3. **DS `Modal`은 `loading` 중에도 ESC·스크림·취소를 `onClose`로 흘린다**(`design-system/web/Modal`에
+   `confirmDisabled`도 없다). 되돌릴 수 없는 POST는 취소할 수도 없으니, 요청이 떠 있는 동안 창만 닫히면
+   셀러는 취소된 줄로 읽는다 — 호출부에서 `isPending`이면 닫지 않게 막는다. 같은 이유로 못 보내는
+   상태에서도 확인 버튼이 눌리므로, 조용히 `return`하지 말고 어느 칸이 비었는지 짚어 줘야 버튼이 죽은
+   것처럼 보이지 않는다.
+
+**뮤테이션 무효화는 `onSettled`다.** 전이 거절(409/50004·50005·50301·50302)은 대개 다른 탭·다른 사람이
+먼저 처리해서 내 목록이 낡았다는 뜻이다. 성공만 무효화하면 사라져야 할 버튼이 그대로 남아 같은 요청을
+다시 보내게 되고, 거절 문구가 "목록을 새로고침해 주세요"라고 말하는 일을 사람에게 떠넘긴다.
