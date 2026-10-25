@@ -51,7 +51,12 @@ function useClaimMutation<TVariables, TData>(mutationFn: (variables: TVariables)
   return useMutation({
     mutationFn,
     // 목록 건수·탭 배지·상세가 한 번에 바뀐다(승인은 상태를, 회수 완료는 상태와 환불 축을 움직인다).
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CLAIMS_QUERY_KEY }),
+    //
+    // **실패도 무효화한다**(onSuccess가 아니라 onSettled인 이유). 처리 실패의 상당수가 "화면이 든
+    // 행이 낡았다"는 뜻이다 — 409/50408(이미 처리됨), 409/50402(허용되지 않은 전이),
+    // 409/90003(낙관적 잠금), 404/50400(사라짐)은 모두 서버 쪽 상태가 이미 움직인 경우다. 성공만
+    // 무효화하면 그 행이 낡은 상태로 남아 같은 버튼이 다시 눌리고 같은 실패를 반복한다.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: CLAIMS_QUERY_KEY }),
   })
 }
 

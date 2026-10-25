@@ -49,9 +49,16 @@ export function ClaimInvoiceModal({ claim, mode, loading, onClose, onConfirm }: 
   const couriers = useCouriers()
   const copy = COPY[mode]
 
+  const options = courierSelectOptions(couriers.data)
+  // 조회는 됐는데 고를 택배사가 없는 경우 — placeholder만 있는 Select를 필수값으로 요구하면 셀러가
+  // 고를 수 없는 것을 고르라는 말이 된다. 이유를 밝히고 입력·제출을 함께 닫는다.
+  const hasNoCourier = !couriers.isPending && !couriers.isError && options.length === 0
   const selected = (couriers.data ?? []).find(courier => courier.courierCode === courierCode) ?? null
   const trimmedTracking = trackingNumber.trim()
-  // 서버는 패턴 불일치를 400 errorCode 50304로 거절한다 — 패턴이 있는 택배사만 미리 걸러 준다.
+  // **서버가 형식을 봐 주지 않는다.** `CourierMaster.validateTrackingNumber`를 부르는 곳은 최초
+  // 발송(SellerOrderService)뿐이고 회수·재발송(ClaimCollectionService)은 공백·길이만 본다 — 틀린
+  // 번호를 보내면 그대로 등록돼 구매자가 추적할 수 없는 송장이 남는다. 그래서 이 선검증이 유일한
+  // 방어선이다(없어도 되는 편의가 아니다). 패턴이 없는 택배사는 통과시킨다.
   const formatMismatch =
     trimmedTracking !== '' &&
     selected != null &&
@@ -84,15 +91,21 @@ export function ClaimInvoiceModal({ claim, mode, loading, onClose, onConfirm }: 
           ]}
         />
         {couriers.isError && <Alert variant="error">{COURIER_LOAD_ERROR_MESSAGE}</Alert>}
+        {hasNoCourier && (
+          <Alert variant="warning">
+            등록할 수 있는 택배사가 없어요. 택배사가 등록된 뒤에 다시 시도해 주세요.
+          </Alert>
+        )}
         <Select
           label="택배사"
           placeholder={couriers.isPending ? '불러오는 중' : '선택'}
-          options={courierSelectOptions(couriers.data)}
+          options={options}
           value={courierCode}
           onChange={value => {
             setCourierCode(value)
             setBlocked(false)
           }}
+          disabled={loading || hasNoCourier}
           error={blocked && courierCode === '' ? '택배사를 선택해 주세요.' : undefined}
         />
         <Input
@@ -104,7 +117,7 @@ export function ClaimInvoiceModal({ claim, mode, loading, onClose, onConfirm }: 
           }}
           placeholder="송장번호를 입력해 주세요"
           maxLength={50}
-          disabled={loading}
+          disabled={loading || hasNoCourier}
           state={formatMismatch || (blocked && trimmedTracking === '') ? 'error' : 'default'}
           helperText={
             formatMismatch

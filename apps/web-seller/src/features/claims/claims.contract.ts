@@ -152,6 +152,8 @@ export const RETURN_COST_BEARER_LABEL = {
   SELLER: '셀러 부담',
 } as const
 
+// SETTLED로 바꾸는 코드가 develop에 없다 — settlementStatus는 Claim.request에서 PENDING으로만
+// 써진다. 그래서 지금은 '정산 반영 대기'만 나타난다(라벨만 두고 뜻을 짓지 않는다).
 export const CLAIM_SETTLEMENT_STATUS_LABEL: Record<ClaimSettlementStatus, string> = {
   PENDING: '정산 반영 대기',
   SETTLED: '정산 반영 완료',
@@ -266,6 +268,11 @@ export function claimReasonDetailText(claim: { reasonDetail: string | null }): s
  * - 취소는 반품비가 없다(returnShippingFee가 null) — 발송 전이면 "미발송"까지 밝힌다.
  * - 승인 전에는 부담 주체가 정해지지 않았다(null) — 승인 때 셀러가 고른다.
  * - 설정값이 0원이면 금액을 숨긴다(정책 스냅샷이 아직 서버 설정값이라 0이 "무료"와 구별되지 않는다).
+ *
+ * **이 두 값은 아직 어떤 금액도 움직이지 않는다.** develop에서 returnCostBearer는 저장·응답 경로에만
+ * 쓰이고(Claim.approveBySeller → SellerClaimSummaryResponse), returnShippingFee는 조회 때 서버
+ * 설정값을 실어 보여 주기만 한다(SellerClaimQueryService.returnShippingFeeOf). 환불액은
+ * 품목 환불액 합 + 배송비 환불액이다 — 화면 문구가 차감을 약속하면 거짓말이 된다.
  */
 export function returnCostText(claim: {
   claimType: ClaimType

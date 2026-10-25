@@ -100,7 +100,10 @@ interface ClaimActionTarget {
 function ClaimsRoute() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   const listQuery = useClaims(toParams(filters))
-  const { data, isLoading, isError, error, isFetching } = listQuery
+  // `isPlaceholderData`는 "지금 보고 있는 data가 이전 키(이전 페이지·이전 필터)의 응답"이라는 뜻이다.
+  // 처리 뒤 무효화나 포커스 복귀로 같은 키를 다시 받는 중에는 false다(그때 data는 이 키의 진짜 값이다)
+  // — 그래서 이 값으로 잠가도 처리 직후의 재조회까지 함께 잠기지 않는다.
+  const { data, isLoading, isError, error, isFetching, isPlaceholderData } = listQuery
 
   const [detailId, setDetailId] = useState<string | null>(null)
   // 확인 Modal 패턴: 타겟은 라우트가 소유하고 Modal은 타겟이 있을 때만 그린다.
@@ -138,10 +141,16 @@ function ClaimsRoute() {
   )
 
   // 마지막 페이지의 유일한 건이 처리로 빠지면 페이지 이동 버튼도 없는 빈 페이지에 남는다.
+  //
+  // `isPlaceholderData`일 때는 보정하지 않는다 — 그때 `data`는 **이전 키의 응답**이라 totalPages가
+  // 지금 요청한 필터/페이지의 것이 아니다. 전환 중에 보정하면 방금 누른 페이지를 이전 응답 기준으로
+  // 되돌려 버린다.
   const lastPage = Math.max((data?.totalPages ?? 1) - 1, 0)
   useEffect(() => {
-    if (data && filters.page > lastPage) setFilters(prev => ({ ...prev, page: lastPage }))
-  }, [data, filters.page, lastPage])
+    if (data && !isPlaceholderData && filters.page > lastPage) {
+      setFilters(prev => ({ ...prev, page: lastPage }))
+    }
+  }, [data, isPlaceholderData, filters.page, lastPage])
 
   const setFilter = (patch: Partial<Omit<Filters, 'page'>>) =>
     setFilters(prev => ({ ...prev, ...patch, page: 0 }))
@@ -162,9 +171,13 @@ function ClaimsRoute() {
   return (
     <div className="p-6">
       <PageHeader title="취소/반품/교환" />
+      {/* 반품비 부담 주체가 금액을 움직인다고 쓰지 않는다 — develop의 BE는 그 값을 저장하고 되돌려
+          주기만 한다. 환불액은 ClaimRefundService가 품목 환불액 합 + 배송비 환불액으로만 계산하고
+          (returnCostBearer·returnShippingFee를 읽지 않는다), settlementStatus는 PENDING으로만
+          써지는 자리라 SETTLED로 바뀌는 경로가 아직 없다. */}
       <p className="-mt-3 mb-4 text-body-sm text-text-secondary">
-        배송 전이면 취소, 배송이 시작되면 반품/교환으로 이어져요. 승인할 때 고른 반품비 부담 주체가 정산/환불
-        금액에 반영돼요.
+        배송 전이면 취소, 배송이 시작되면 반품/교환으로 이어져요. 승인할 때 고른 반품비 부담 주체는 클레임에
+        기록돼요 — 환불 금액에서 자동으로 빠지지는 않아요.
       </p>
 
       <Tabs
@@ -229,11 +242,17 @@ function ClaimsRoute() {
         </Alert>
       )}
 
+      {/* 전환 중에는 건수를 이전 값으로 두지 않는다 — 필터를 바꾼 직후 `data`는 이전 조건의
+          응답이라 그 숫자가 지금 조건의 건수처럼 보이면 셀러가 조건을 잘못 읽는다. 표는 지우지 않고
+          (placeholderData의 이점) 이전 결과라는 사실만 밝힌다. */}
       <p className="mt-4 text-caption text-text-tertiary">
-        총 {data ? data.totalCount.toLocaleString() : '—'}건
+        총 {data && !isPlaceholderData ? data.totalCount.toLocaleString() : '—'}건
+        {isPlaceholderData && (
+          <span className="ml-2">바뀐 조건으로 불러오는 중이에요. 아래 목록은 이전 결과예요.</span>
+        )}
       </p>
 
-      <div className="mt-2">
+      <div className={`mt-2${isPlaceholderData ? ' opacity-60' : ''}`}>
         <ClaimsTable
           claims={data?.claims ?? []}
           isLoading={isLoading}
@@ -251,12 +270,16 @@ function ClaimsRoute() {
         운영용이라 구매자에게 보이지 않아요.
       </p>
 
+      {/* 전환 중에는 양쪽 버튼을 함께 잠근다 — `hasNext`·`totalPages`가 이전 페이지의 값이라
+          그대로 믿으면 범위 밖 페이지로 넘어간다(3페이지 목록의 2페이지를 받는 동안 이전 응답의
+          hasNext=true로 4페이지까지 갈 수 있고, 그러면 빈 표와 "4 / 3"을 보여 준 뒤 보정으로
+          되돌아온다). 눌린 쪽만 잠그면 반대 버튼으로 같은 일이 생긴다. */}
       {totalPages > 1 && (
         <nav aria-label="페이지" className="mt-4 flex items-center justify-center gap-3">
           <Button
             variant="secondary"
             size="sm"
-            disabled={filters.page === 0}
+            disabled={filters.page === 0 || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page - 1 }))}
           >
             이전
@@ -267,7 +290,7 @@ function ClaimsRoute() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!data?.hasNext}
+            disabled={!data?.hasNext || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page + 1 }))}
           >
             다음

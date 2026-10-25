@@ -82,10 +82,16 @@ export function ClaimDetailDrawer({
       <div className="flex flex-col gap-3.5 pb-6">
         {detail.isPending && <p className="py-6 text-center text-body-sm text-text-tertiary">불러오는 중</p>}
 
+        {/* 조회가 실패했는데 캐시가 남아 있으면 본문은 지우지 않고(닫혔다 열린 상세를 백지로 만들지
+            않는다) **처리만 잠근다** — 실패한 조회 뒤의 화면은 서버 상태를 모르는 상태이고, 그 위에서
+            누른 처리는 403/50404(ACTIVE 상실)·409/50408(이미 처리됨)로 되돌아올 뿐이다. */}
         {detail.isError && (
           <Alert variant="error">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <span className="min-w-0 flex-1">{claimErrorMessage(detail.error)}</span>
+              <span className="min-w-0 flex-1">
+                {claimErrorMessage(detail.error)}
+                {detail.data && ' 아래 내용은 마지막으로 불러온 것이라 처리는 잠가 뒀어요.'}
+              </span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -100,9 +106,11 @@ export function ClaimDetailDrawer({
 
         {detail.data && (
           <ClaimDetailBody
+            key={detail.data.claim.claimPublicId}
             detail={detail.data}
-            isMutating={isMutating}
+            isMutating={isMutating || detail.isError}
             isSavingMemo={isSavingMemo}
+            isReadOnly={detail.isError}
             onApprove={onApprove}
             onReject={onReject}
             onStartCollection={onStartCollection}
@@ -120,6 +128,7 @@ function ClaimDetailBody({
   detail,
   isMutating,
   isSavingMemo,
+  isReadOnly,
   onApprove,
   onReject,
   onStartCollection,
@@ -128,18 +137,28 @@ function ClaimDetailBody({
   onSaveMemo,
 }: {
   detail: SellerClaimDetailData
+  /** 조회가 실패해 들고 있는 값이 낡았을 때 — 입력과 저장까지 잠근다. */
+  isReadOnly: boolean
 } & Omit<ClaimDetailDrawerProps, 'claimPublicId' | 'onClose'>) {
   const { claim, order, items, history } = detail
   const display = claimDisplayStatus(claim)
   const action = claimDetailAction(claim, history)
   const reasonDetail = claimReasonDetailText(claim)
-  // 서버 값이 바뀌면(다른 곳에서 메모 수정, 다른 클레임 열기) 입력칸도 그 값에서 다시 시작해야 한다 —
-  // 라우트가 claimPublicId로 Drawer를 다시 마운트하지 않으므로 key 대신 상태 초기화를 쓴다.
-  const [memo, setMemo] = useState(claim.sellerMemo ?? '')
-  const [memoSource, setMemoSource] = useState(claim.sellerMemo ?? '')
-  if (memoSource !== (claim.sellerMemo ?? '')) {
-    setMemoSource(claim.sellerMemo ?? '')
-    setMemo(claim.sellerMemo ?? '')
+  const serverMemo = claim.sellerMemo ?? ''
+  // 서버 값이 바뀌면 입력칸도 따라가야 하지만 **적고 있던 내용을 지우면서까지 따라가지는 않는다.**
+  // 메모는 셀러 여럿이 같은 계정으로 쓰고 이 Drawer는 처리마다 무효화로 다시 조회된다 — 따라가기만
+  // 하면 다른 사람이 같은 클레임의 메모를 저장한 순간 내가 적던 글이 통째로 사라진다. 그래서 손대지
+  // 않은 입력(`memo === memoSource`)과 내가 저장한 값이 서버 정규화(trim)를 거쳐 돌아온 경우만
+  // 덮어쓰고, 그 밖에는 초안을 지키고 서버 쪽이 바뀌었다는 사실만 알린다.
+  // 다른 클레임으로 바뀌는 경우는 호출부의 `key={claimPublicId}`가 폼째 새로 만들어 여기서 보지 않는다.
+  const [memo, setMemo] = useState(serverMemo)
+  const [memoSource, setMemoSource] = useState(serverMemo)
+  const [memoChangedElsewhere, setMemoChangedElsewhere] = useState(false)
+  if (memoSource !== serverMemo) {
+    const keepsDraft = memo !== memoSource && memo.trim() !== serverMemo
+    setMemoSource(serverMemo)
+    setMemoChangedElsewhere(keepsDraft)
+    if (!keepsDraft) setMemo(serverMemo)
   }
 
   return (
@@ -214,8 +233,13 @@ function ClaimDetailBody({
               <p className="mt-0.5 text-caption text-text-tertiary">
                 {item.optionName} / {item.quantity}개
               </p>
+              {/* 교환에는 품목 환불액도 띄우지 않는다 — 요청 시점 계산기가 유형과 무관하게
+                  claim_items.refund_amount를 채워 두어 교환에도 0이 아닌 값이 실리지만, 환불 집행
+                  스캔은 교환을 타지 않는다. 합계만 '환불 없음'으로 접고 품목에 금액을 남기면 한 화면이
+                  서로 다른 말을 한다. */}
               <p className="mt-1 text-caption tabular-nums text-text-secondary">
-                단가 {item.unitPrice.toLocaleString()}원 / 환불 {item.refundAmount.toLocaleString()}원
+                단가 {item.unitPrice.toLocaleString()}원
+                {claim.claimType !== 'EXCHANGE' && ` / 환불 ${item.refundAmount.toLocaleString()}원`}
               </p>
             </li>
           ))}
@@ -244,19 +268,29 @@ function ClaimDetailBody({
       <DrawerSection title="비고 메모">
         <Textarea
           value={memo}
-          onChange={setMemo}
+          onChange={value => {
+            setMemo(value)
+            setMemoChangedElsewhere(false)
+          }}
           maxLength={CLAIM_SELLER_MEMO_MAX}
           rows={3}
           placeholder="내부 운영용 메모를 적어 주세요"
-          disabled={isSavingMemo}
+          disabled={isSavingMemo || isReadOnly}
         />
+        {memoChangedElsewhere && (
+          <p className="mt-1.5 whitespace-pre-wrap text-caption text-warning-fg">
+            {serverMemo === ''
+              ? '다른 곳에서 이 클레임의 메모를 지웠어요. 적고 있던 내용은 그대로 뒀으니, 저장하면 이 내용으로 덮어써요.'
+              : `다른 곳에서 이 클레임의 메모가 바뀌었어요. 적고 있던 내용은 그대로 뒀으니, 저장하면 이 내용으로 덮어써요. 서버에 저장된 메모 — ${serverMemo}`}
+          </p>
+        )}
         <div className="mt-2 flex items-center justify-between gap-3">
           <p className="text-caption text-text-tertiary">구매자에게 보이지 않아요. 비우면 메모가 지워져요.</p>
           <Button
             variant="secondary"
             size="sm"
             loading={isSavingMemo}
-            disabled={memo === (claim.sellerMemo ?? '')}
+            disabled={memo === serverMemo || isReadOnly}
             onClick={() => onSaveMemo(claim, memo)}
           >
             메모 저장

@@ -94,8 +94,12 @@ export function ClaimApproveModal({ claim, loading, onClose, onConfirm }: ClaimA
         {needsBearer ? (
           <div>
             <p className="text-label font-medium text-text-secondary">반품비 부담 주체</p>
+            {/* 금액이 바뀐다고 약속하지 않는다 — BE는 이 값을 Claim에 저장하고 응답으로 되돌려 줄
+                뿐이고(Claim.approveBySeller), 환불액 계산(ClaimRefundService.refundAmounts)은
+                품목 환불액 합 + 배송비 환불액만 본다. */}
             <p className="mt-1 text-caption text-text-tertiary">
-              고른 값이 정산/환불 금액에 반영돼요. 서버가 사유로 정해 주지 않으니 직접 고르세요.
+              서버가 사유로 정해 주지 않으니 직접 고르세요. 고른 값은 클레임에 기록되고 환불 금액에서 자동으로
+              빠지지는 않아요.
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {BEARER_OPTIONS.map(option => (
