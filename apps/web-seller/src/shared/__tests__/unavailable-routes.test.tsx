@@ -18,7 +18,7 @@ function renderAt(path: string) {
   return router
 }
 
-// seller 모듈에 API가 없는 화면(대시보드/주문/클레임/정산/배송 정책)은 목업만 있어 운영 진입을 막는다 —
+// seller 모듈에 API가 없는 화면(대시보드/주문/정산/배송 정책)은 목업만 있어 운영 진입을 막는다 —
 // nav에서 빠지고, 주소로 직접 들어와도 "준비 중" 안내만 보여주며 목업 데이터·저장 버튼을 그리지 않는다.
 describe('목업 화면 진입 차단', () => {
   it('[AC-SELLER-GATE-001] 대시보드(/)는 준비 중 안내와 상품 관리 이동만 보여주고 목업 지표를 그리지 않는다', async () => {
@@ -31,7 +31,6 @@ describe('목업 화면 진입 차단', () => {
 
   it.each([
     ['/orders', '주문/배송 관리는 준비 중이에요', '발송 처리'],
-    ['/claims', '취소/반품/교환 관리는 준비 중이에요', '취소'],
     ['/settlements', '정산/매출 조회는 준비 중이에요', '최종정산금액'],
     ['/shipping-policy', '배송 정책 설정은 준비 중이에요', '저장'],
   ])(
@@ -47,15 +46,16 @@ describe('목업 화면 진입 차단', () => {
     },
   )
 
-  it('[AC-SELLER-GATE-003] SideNav에는 서버가 있는 화면(상품 관리·스토어 설정)만 남는다', async () => {
+  it('[AC-SELLER-GATE-003] SideNav에는 서버가 있는 화면(상품 관리·취소/반품/교환·스토어 설정)만 남는다', async () => {
     renderAt('/')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
+    // 클레임은 seller 모듈에 8경로가 들어와 진입점을 되돌렸다(SCRUM-295).
+    expect(screen.getByRole('button', { name: '취소/반품/교환' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '스토어 설정' })).toBeInTheDocument()
     for (const label of [
       '대시보드',
       '주문/배송 관리',
-      '취소/반품/교환',
       '배송 정책',
       '정산/매출',
       '고객 문의',
