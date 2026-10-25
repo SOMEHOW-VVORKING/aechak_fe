@@ -12,6 +12,7 @@ export {
   freeShippingThresholdError,
   shippingPolicyErrorMessage,
   toUpdateRequest,
+  toWon,
 } from './shipping-policy.contract'
 export type { ShippingPolicyFormValue } from './shipping-policy.contract'
 export { ShippingPolicyForm } from './components/ShippingPolicyForm'

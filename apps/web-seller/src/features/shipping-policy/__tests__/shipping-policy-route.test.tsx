@@ -183,4 +183,66 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
     await waitFor(() => expect(screen.getByLabelText('평균 발송 소요일')).toHaveValue('2'))
     expect(screen.getByText('무료배송을 운영하지 않아요.')).toBeInTheDocument()
   })
+
+  // ── codex 교차검토에서 나온 결함 셋 ─────────────────────────────────────────
+
+  it('[AC-SHIP-ROUTE-011] 저장이 날아가는 동안 폼을 잠근다(응답 대기 중 입력이 사라지지 않게)', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.put(SELLER_SHIPPING_POLICY_URL, async () => {
+        await held
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderAt('/shipping-policy')
+
+    await user.click(await screen.findByRole('button', { name: '저장' }))
+
+    // 폼이 열려 있으면 여기 입력한 값이 성공 콜백의 되맞춤(보낸 본문으로 폼 교체)에 덮여
+    // "저장했어요" 토스트와 함께 조용히 사라진다.
+    const originDetail = screen.getByLabelText('상세주소', { selector: '#origin-detail' })
+    await waitFor(() => expect(originDetail).toBeDisabled())
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: '출고지와 동일' })).toBeDisabled()
+
+    release()
+    await screen.findByText('저장했어요.')
+    await waitFor(() => expect(originDetail).toBeEnabled())
+  })
+
+  it('[AC-SHIP-ROUTE-012] 기본 택배사를 미설정(null)으로 되돌려 저장할 수 있다', async () => {
+    const user = userEvent.setup()
+    renderAt('/shipping-policy')
+
+    // placeholder는 DS Select가 선택 불가(`disabled hidden`)로 그리므로 실제 선택지여야 한다.
+    await screen.findByRole('option', { name: '선택 안 함' })
+    const select = screen.getByLabelText('기본 택배사')
+    expect(select).toHaveValue('CJ')
+
+    await user.selectOptions(select, '')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentShippingPolicy().defaultCourierCode).toBeNull()
+  })
+
+  it('[AC-SHIP-ROUTE-013] 금액 칸에 소수를 넣어도 원 단위 정수로 저장된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/shipping-policy')
+
+    // 금액 스테퍼 입력칸은 DOM 순서가 화면 순서다 — 첫 칸이 기본 배송비다.
+    const amounts = await screen.findAllByRole('textbox', { name: '값' })
+    await user.clear(amounts[0]!)
+    await user.type(amounts[0]!, '3000.5')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    // 소수를 그대로 보내면 서버 필드가 Long이라 10005가 아니라 역직렬화 400/90001로 떨어지고
+    // (MSW 핸들러가 그 분기를 재현한다) 저장 성공 토스트가 뜨지 않는다.
+    await screen.findByText('저장했어요.')
+    expect(currentShippingPolicy().baseShippingFee).toBe(3001)
+  })
 })

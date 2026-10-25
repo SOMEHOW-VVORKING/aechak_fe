@@ -749,6 +749,12 @@ const shippingPolicyHandlers = [
       body.returnFee,
       body.exchangeFee,
     ]
+    // 금액 필드는 서버가 Long이라 소수가 섞이면 도메인 검증까지 가지 못하고 역직렬화에서
+    // 400/90001("요청 본문을 읽을 수 없습니다.")로 떨어진다 — 10005와 다른 경로다.
+    const amounts = [...fees, ...(body.freeShippingThreshold == null ? [] : [body.freeShippingThreshold])]
+    if (amounts.some(amount => !Number.isInteger(amount))) {
+      return errorAt(400, 90001, '요청 본문을 읽을 수 없습니다.')
+    }
     // Seller.validateShippingPolicy 미러 — 음수·상한·자기모순·발송일 범위는 전부 10005다.
     if (fees.some(fee => fee < 0 || fee > 1_000_000)) return invalidShippingPolicy()
     if (body.freeShippingThreshold != null) {

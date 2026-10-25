@@ -24,6 +24,7 @@ import {
   formatWon,
   monthSelectOptions,
   settlementDetailErrorMessage,
+  settlementListErrorMessage,
   useSettlementDetail,
   useSettlementMonths,
   useSettlements,
@@ -82,7 +83,10 @@ function SettlementsRoute() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
 
   const months = useSettlementMonths()
-  const { data, isLoading, isError } = useSettlements({ ...filters, size: PAGE_SIZE })
+  const { data, isLoading, isError, isFetching, isPlaceholderData, error, refetch } = useSettlements({
+    ...filters,
+    size: PAGE_SIZE,
+  })
   const detail = useSettlementDetail(selectedOrderId)
 
   // 필터를 좁혀 페이지가 범위를 벗어나면(마지막 페이지에서 월을 바꾼 경우 등) 되돌린다.
@@ -96,6 +100,9 @@ function SettlementsRoute() {
     setFilters(prev => ({ ...prev, ...patch, page: 0 }))
 
   const totalPages = data?.totalPages ?? 0
+  // 재조회가 실패해도 keepPreviousData가 직전 결과를 남긴다 — 그 상태를 안내 문구로 가른다
+  // (상품 목록과 같은 결).
+  const hasRows = (data?.settlements.length ?? 0) > 0
 
   return (
     <div className="p-6">
@@ -118,6 +125,23 @@ function SettlementsRoute() {
           className="w-[160px]"
         />
       </FilterBar>
+
+      {/* 목록 조회 실패를 표의 빈 상태에만 흘리지 않는다 — 사유와 재시도를 함께 둬야 셀러가
+          필터를 의심하지 않고, 실패해도 직전 결과가 남는 재조회(포커스 복귀 등)에서는 표만 보고는
+          낡은 값인지 알 수 없다. */}
+      {isError && (
+        <Alert variant="error" className="mt-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="min-w-0 flex-1">
+              {settlementListErrorMessage(error)}
+              {hasRows && ' 아래 목록은 마지막으로 불러온 내용이라 지금과 다를 수 있어요.'}
+            </span>
+            <Button variant="secondary" size="sm" loading={isFetching} onClick={() => void refetch()}>
+              다시 시도
+            </Button>
+          </div>
+        </Alert>
+      )}
 
       {/* 월 선택지를 못 읽었다고 전체 조회까지 막지는 않는다 — 고를 수 없는 이유만 알린다. */}
       {months.isError && (
@@ -145,10 +169,13 @@ function SettlementsRoute() {
 
       {totalPages > 1 && (
         <nav aria-label="페이지" className="mt-4 flex items-center justify-center gap-3">
+          {/* 요청한 페이지가 도착하기 전에는 둘 다 잠근다. 표에 남아 있는 것은 직전 페이지라
+              `hasNext`도 직전 값이고, 그걸 믿고 연타하면 한 페이지를 건너뛴 채 다음 페이지를
+              요청한다(3페이지 이상에서 2페이지를 못 보고 지나친다). */}
           <Button
             variant="secondary"
             size="sm"
-            disabled={filters.page === 0}
+            disabled={filters.page === 0 || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page - 1 }))}
           >
             이전
@@ -159,7 +186,7 @@ function SettlementsRoute() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!data?.hasNext}
+            disabled={!data?.hasNext || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page + 1 }))}
           >
             다음

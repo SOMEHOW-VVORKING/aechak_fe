@@ -7,13 +7,22 @@ import {
   MAX_FREE_SHIPPING_THRESHOLD,
   MAX_SHIPPING_FEE,
   freeShippingThresholdError,
+  toWon,
   type ShippingPolicyFormValue,
 } from '../shipping-policy.contract'
 
 interface ShippingPolicyFormProps {
   value: ShippingPolicyFormValue
   onChange: (patch: Partial<ShippingPolicyFormValue>) => void
+  /**
+   * 저장이 날아가는 동안 전체를 잠근다. 저장은 전체 덮어쓰기이고 성공 콜백이 보낸 본문으로 폼을
+   * 되맞추므로, 잠그지 않으면 응답을 기다리는 사이 입력한 값이 "저장했어요" 토스트와 함께 사라진다.
+   */
+  disabled?: boolean
 }
+
+/** 미설정(null)으로 되돌릴 수 있어야 한다 — placeholder는 DS Select가 선택 불가로 그린다. */
+const COURIER_UNSET_OPTION = { value: '', label: '선택 안 함' }
 
 function MoneyField({
   label,
@@ -33,7 +42,15 @@ function MoneyField({
   return (
     <Field label={label}>
       <div className="flex items-center gap-2">
-        <NumberInput value={value} onChange={onChange} min={0} max={max} step={500} disabled={disabled} />
+        {/* 원 단위 정수만 보낸다 — NumberInput은 `3000.5`를 받아들이고 서버 필드는 Long이다. */}
+        <NumberInput
+          value={value}
+          onChange={next => onChange(toWon(next))}
+          min={0}
+          max={max}
+          step={500}
+          disabled={disabled}
+        />
         <span className="text-body-sm text-text-tertiary">원</span>
       </div>
       {error && <FieldError>{error}</FieldError>}
@@ -90,10 +107,14 @@ function AddressFields({
   )
 }
 
-export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps) {
+export function ShippingPolicyForm({ value, onChange, disabled = false }: ShippingPolicyFormProps) {
   // 택배사는 서버 마스터가 정본이다 — 코드를 그대로 저장해야 저장 시 404/50303이 나지 않는다.
   const couriers = useCouriers()
   const thresholdError = freeShippingThresholdError(value)
+  // 목록을 받기 전에는 빈 값 선택지도 올리지 않는다 — 저장된 택배사가 "선택 안 함"으로 보이면 안 된다.
+  const courierOptions = couriers.isPending
+    ? []
+    : [COURIER_UNSET_OPTION, ...courierSelectOptions(couriers.data)]
 
   return (
     <div className="flex flex-col gap-4">
@@ -103,14 +124,16 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Select
             label="기본 택배사"
-            placeholder={couriers.isPending ? '불러오는 중' : '선택 안 함'}
-            options={courierSelectOptions(couriers.data)}
+            placeholder={couriers.isPending ? '불러오는 중' : undefined}
+            options={courierOptions}
             value={value.defaultCourierCode}
+            disabled={disabled}
             onChange={defaultCourierCode => onChange({ defaultCourierCode })}
           />
           <MoneyField
             label="기본 배송비"
             value={value.baseShippingFee}
+            disabled={disabled}
             onChange={baseShippingFee => onChange({ baseShippingFee })}
           />
           {/* 서버에서 null(미운영)과 0원이 다른 뜻이라 스위치를 따로 둔다. */}
@@ -120,6 +143,7 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
               <Checkbox
                 label="무료배송 운영"
                 checked={value.freeShipping}
+                disabled={disabled}
                 onChange={freeShipping =>
                   onChange({
                     freeShipping,
@@ -136,11 +160,11 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
             <div className="flex items-center gap-2">
               <NumberInput
                 value={value.freeShippingThreshold}
-                onChange={freeShippingThreshold => onChange({ freeShippingThreshold })}
+                onChange={freeShippingThreshold => onChange({ freeShippingThreshold: toWon(freeShippingThreshold) })}
                 min={0}
                 max={MAX_FREE_SHIPPING_THRESHOLD}
                 step={1000}
-                disabled={!value.freeShipping}
+                disabled={disabled || !value.freeShipping}
               />
               <span className="text-body-sm text-text-tertiary">원</span>
             </div>
@@ -161,6 +185,7 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
               zipCode={value.originZipCode}
               roadAddress={value.originRoadAddress}
               detailAddress={value.originDetailAddress}
+              disabled={disabled}
               onChange={patch =>
                 onChange({
                   ...(patch.zipCode !== undefined && { originZipCode: patch.zipCode }),
@@ -176,6 +201,7 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
               <Checkbox
                 label="출고지와 동일"
                 checked={value.returnSameAsOrigin}
+                disabled={disabled}
                 onChange={returnSameAsOrigin => onChange({ returnSameAsOrigin })}
               />
             }
@@ -187,7 +213,7 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
               detailAddress={
                 value.returnSameAsOrigin ? value.originDetailAddress : value.returnDetailAddress
               }
-              disabled={value.returnSameAsOrigin}
+              disabled={disabled || value.returnSameAsOrigin}
               onChange={patch =>
                 onChange({
                   ...(patch.zipCode !== undefined && { returnZipCode: patch.zipCode }),
@@ -205,23 +231,32 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
           <MoneyField
             label="제주 추가 배송비"
             value={value.jejuExtraFee}
+            disabled={disabled}
             onChange={jejuExtraFee => onChange({ jejuExtraFee })}
           />
           <MoneyField
             label="도서산간 추가 배송비"
             value={value.remoteAreaExtraFee}
+            disabled={disabled}
             onChange={remoteAreaExtraFee => onChange({ remoteAreaExtraFee })}
           />
-          <MoneyField label="반품 배송비" value={value.returnFee} onChange={returnFee => onChange({ returnFee })} />
+          <MoneyField
+            label="반품 배송비"
+            value={value.returnFee}
+            disabled={disabled}
+            onChange={returnFee => onChange({ returnFee })}
+          />
           <MoneyField
             label="교환 배송비 (왕복)"
             value={value.exchangeFee}
+            disabled={disabled}
             onChange={exchangeFee => onChange({ exchangeFee })}
           />
           <Select
             label="평균 발송 소요일"
             options={AVG_DISPATCH_DAY_OPTIONS}
             value={String(value.avgDispatchDays)}
+            disabled={disabled}
             onChange={avgDispatchDays => onChange({ avgDispatchDays: Number(avgDispatchDays) })}
           />
         </div>
@@ -233,6 +268,7 @@ export function ShippingPolicyForm({ value, onChange }: ShippingPolicyFormProps)
           value={value.shippingPolicyText}
           maxLength={2000}
           rows={4}
+          disabled={disabled}
           helperText="비워 두면 안내문을 보여주지 않아요."
           onChange={shippingPolicyText => onChange({ shippingPolicyText })}
         />

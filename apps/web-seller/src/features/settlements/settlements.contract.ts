@@ -103,6 +103,24 @@ export function settlementItemRows(detail: SellerSettlementDetailData): Settleme
 /** 목록·상세가 같은 요약을 쓰므로 상세에서 요약만 떼어 쓸 수 있다. */
 export const summaryOf = (detail: SellerSettlementDetailData): SellerSettlementSummary => detail
 
+/**
+ * 목록 조회 실패 안내. 표의 빈 상태로 흘리지 않기 위해 사유를 따로 말한다 — 500과
+ * "조건에 맞는 내역 없음"이 같은 문구로 보이면 셀러는 필터를 의심한다.
+ *
+ * 90001(월·상태 형식)은 `normalizeSearchParams`가 빈 값을 키째 빼므로 정상 동선에서는 안 나온다 —
+ * 나오면 FE 버그 신호라 "다시 골라 달라"고 말한다.
+ */
+export function settlementListErrorMessage(error: unknown): string {
+  switch (errorResponse(error)?.data?.errorCode) {
+    case 90001:
+      return '조회 조건이 올바르지 않아요. 기간과 상태를 다시 골라 주세요.'
+    case 10000:
+      return '셀러 정보를 찾을 수 없어요. 화면을 새로고침해 주세요.'
+    default:
+      return '정산 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+  }
+}
+
 /** 상세 조회 실패 안내. 서버 격식체 문구는 싣지 않는다(앱 전체 -해요체). */
 export function settlementDetailErrorMessage(error: unknown): string {
   switch (errorResponse(error)?.data?.errorCode) {

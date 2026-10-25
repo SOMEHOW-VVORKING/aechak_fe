@@ -192,3 +192,57 @@ describe('FREE_SHIPPING_FALLBACK_THRESHOLD', () => {
     expect(FREE_SHIPPING_FALLBACK_THRESHOLD).toBeGreaterThan(0)
   })
 })
+
+describe('별도 반품지의 빈 칸(codex 지적)', () => {
+  it('[AC-SHIP-CONTRACT-018] 출고지와 다른 반품지의 null은 출고지로 채우지 않고 빈 칸으로 둔다', () => {
+    // 서버는 `returnSameAsOrigin=false`일 때만 반품지를 저장하고, 비운 칸은 null로 들고 있다.
+    // 거기에 출고지를 끼워 넣으면 배송비만 고쳐 저장해도(전체 덮어쓰기다) 입력한 적 없는
+    // 출고지 주소가 반품지로 저장된다.
+    const form = formValueFrom(
+      wire({
+        returnSameAsOrigin: false,
+        returnZipCode: '06236',
+        returnRoadAddress: null,
+        returnDetailAddress: null,
+      }),
+    )
+
+    expect(form.returnZipCode).toBe('06236')
+    expect(form.returnRoadAddress).toBe('')
+    expect(form.returnDetailAddress).toBe('')
+    // 그대로 저장하면 서버가 들고 있던 null이 유지된다.
+    const request = toUpdateRequest(form)
+    expect(request.returnRoadAddress).toBeNull()
+    expect(request.returnDetailAddress).toBeNull()
+  })
+
+  it('[AC-SHIP-CONTRACT-019] 출고지와 동일일 때는 그대로 출고지 값으로 채운다(AC-003 유지)', () => {
+    const form = formValueFrom(wire({ returnSameAsOrigin: true, returnRoadAddress: null }))
+
+    expect(form.returnRoadAddress).toBe('서울 마포구 와우산로 00')
+  })
+})
+
+describe('금액 단위(codex 지적)', () => {
+  it('[AC-SHIP-CONTRACT-020] 금액은 원 단위 정수로 끊어 보낸다(서버 필드가 Long이다)', () => {
+    // 소수가 섞이면 도메인 검증(10005)까지 가지 못하고 역직렬화 400/90001로 떨어져 사유를 못 알린다.
+    const request = toUpdateRequest(
+      formOf({
+        baseShippingFee: 3000.5,
+        freeShipping: true,
+        freeShippingThreshold: 30000.4,
+        jejuExtraFee: 3000.5,
+        remoteAreaExtraFee: 0.2,
+        returnFee: 4000.5,
+        exchangeFee: 8000.49,
+      }),
+    )
+
+    expect(request.baseShippingFee).toBe(3001)
+    expect(request.freeShippingThreshold).toBe(30000)
+    expect(request.jejuExtraFee).toBe(3001)
+    expect(request.remoteAreaExtraFee).toBe(0)
+    expect(request.returnFee).toBe(4001)
+    expect(request.exchangeFee).toBe(8000)
+  })
+})

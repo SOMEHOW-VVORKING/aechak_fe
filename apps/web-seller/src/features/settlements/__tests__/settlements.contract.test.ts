@@ -13,6 +13,7 @@ import {
   monthSelectOptions,
   settlementDetailErrorMessage,
   settlementItemRows,
+  settlementListErrorMessage,
 } from '../settlements.contract'
 import { normalizeSearchParams } from '../settlements.queries'
 
@@ -190,5 +191,24 @@ describe('settlementDetailErrorMessage', () => {
 
   it('[AC-SETTLE-CONTRACT-021] 서버 격식체 문구를 그대로 싣지 않는다', () => {
     expect(settlementDetailErrorMessage(axiosLike(70002, 404))).not.toContain('없습니다')
+  })
+})
+
+describe('settlementListErrorMessage (codex 지적)', () => {
+  const axiosLike = (errorCode: number, status: number) => ({
+    isAxiosError: true,
+    response: { status, data: { errorCode, message: '조회 조건이 올바르지 않습니다.' } },
+  })
+
+  it('[AC-SETTLE-CONTRACT-022] 목록 실패는 "내역 없음"과 다른 사유를 말한다', () => {
+    // 표의 빈 상태 문구만 바뀌면 셀러는 서버 오류를 필터 탓으로 읽는다.
+    expect(settlementListErrorMessage(new Error('network'))).toBe(
+      '정산 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+    )
+    expect(settlementListErrorMessage(axiosLike(90001, 400))).toContain('기간과 상태를 다시 골라')
+  })
+
+  it('[AC-SETTLE-CONTRACT-023] 서버 격식체 문구를 그대로 싣지 않는다', () => {
+    expect(settlementListErrorMessage(axiosLike(90001, 400))).not.toContain('않습니다')
   })
 })

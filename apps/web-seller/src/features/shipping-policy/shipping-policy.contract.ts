@@ -37,6 +37,30 @@ export const FREE_SHIPPING_FALLBACK_THRESHOLD = 30_000
 
 const text = (value: string | null): string => value ?? ''
 
+/** 원 단위 정수로 끊는다 — 금액 입력은 소수를 받을 수 있고 서버 필드는 Long이다. */
+export const toWon = (value: number): number => Math.round(value)
+
+type ReturnAddress = Pick<
+  ShippingPolicyFormValue,
+  'returnZipCode' | 'returnRoadAddress' | 'returnDetailAddress'
+>
+
+/** 반품지 3필드. 출고지 폴백은 "출고지와 동일"일 때만 쓴다(그때만 서버가 버린 값이다). */
+function returnAddressOf(policy: ShippingPolicyData): ReturnAddress {
+  if (!policy.returnSameAsOrigin) {
+    return {
+      returnZipCode: text(policy.returnZipCode),
+      returnRoadAddress: text(policy.returnRoadAddress),
+      returnDetailAddress: text(policy.returnDetailAddress),
+    }
+  }
+  return {
+    returnZipCode: text(policy.returnZipCode ?? policy.originZipCode),
+    returnRoadAddress: text(policy.returnRoadAddress ?? policy.originRoadAddress),
+    returnDetailAddress: text(policy.returnDetailAddress ?? policy.originDetailAddress),
+  }
+}
+
 export function formValueFrom(policy: ShippingPolicyData): ShippingPolicyFormValue {
   return {
     defaultCourierCode: text(policy.defaultCourierCode),
@@ -51,9 +75,11 @@ export function formValueFrom(policy: ShippingPolicyData): ShippingPolicyFormVal
     returnSameAsOrigin: policy.returnSameAsOrigin,
     // 반품지가 출고지와 같으면 서버가 반품지 3필드를 저장하지 않고 null로 내려 준다 —
     // 체크를 풀었을 때 빈 칸을 보여 주지 않도록 출고지 값으로 채워 둔다.
-    returnZipCode: text(policy.returnZipCode ?? policy.originZipCode),
-    returnRoadAddress: text(policy.returnRoadAddress ?? policy.originRoadAddress),
-    returnDetailAddress: text(policy.returnDetailAddress ?? policy.originDetailAddress),
+    //
+    // **별도 반품지일 때는 채우지 않는다.** 그때 비어 있는 칸은 서버가 실제로 null로 들고 있는
+    // 값이고, 거기에 출고지를 끼워 넣으면 배송비만 고쳐 저장해도(저장은 전체 덮어쓰기다)
+    // 사용자가 입력한 적 없는 출고지 주소가 반품지로 저장된다.
+    ...returnAddressOf(policy),
     jejuExtraFee: policy.jejuExtraFee,
     remoteAreaExtraFee: policy.remoteAreaExtraFee,
     returnFee: policy.returnFee,
@@ -74,12 +100,15 @@ const nullIfBlank = (value: string): string | null => {
  *
  * 반품지 3필드는 `returnSameAsOrigin`이 참이면 서버가 어차피 버리므로 null로 보낸다 —
  * 보낸 값과 저장된 값이 갈리지 않게 요청 단계에서 맞춘다.
+ *
+ * 금액은 `toWon`으로 정수로 끊는다. 폼이 이미 정수로 들고 있지만(입력 컨트롤이 끊는다) 서버
+ * 필드가 Long이라 소수가 섞이면 저장이 10005가 아니라 역직렬화 400으로 떨어져 사유를 못 알린다.
  */
 export function toUpdateRequest(form: ShippingPolicyFormValue): ShippingPolicyUpdateRequest {
   return {
     defaultCourierCode: nullIfBlank(form.defaultCourierCode),
-    baseShippingFee: form.baseShippingFee,
-    freeShippingThreshold: form.freeShipping ? form.freeShippingThreshold : null,
+    baseShippingFee: toWon(form.baseShippingFee),
+    freeShippingThreshold: form.freeShipping ? toWon(form.freeShippingThreshold) : null,
     originZipCode: nullIfBlank(form.originZipCode),
     originRoadAddress: nullIfBlank(form.originRoadAddress),
     originDetailAddress: nullIfBlank(form.originDetailAddress),
@@ -87,10 +116,10 @@ export function toUpdateRequest(form: ShippingPolicyFormValue): ShippingPolicyUp
     returnZipCode: form.returnSameAsOrigin ? null : nullIfBlank(form.returnZipCode),
     returnRoadAddress: form.returnSameAsOrigin ? null : nullIfBlank(form.returnRoadAddress),
     returnDetailAddress: form.returnSameAsOrigin ? null : nullIfBlank(form.returnDetailAddress),
-    jejuExtraFee: form.jejuExtraFee,
-    remoteAreaExtraFee: form.remoteAreaExtraFee,
-    returnFee: form.returnFee,
-    exchangeFee: form.exchangeFee,
+    jejuExtraFee: toWon(form.jejuExtraFee),
+    remoteAreaExtraFee: toWon(form.remoteAreaExtraFee),
+    returnFee: toWon(form.returnFee),
+    exchangeFee: toWon(form.exchangeFee),
     avgDispatchDays: form.avgDispatchDays,
     shippingPolicyText: nullIfBlank(form.shippingPolicyText),
   }

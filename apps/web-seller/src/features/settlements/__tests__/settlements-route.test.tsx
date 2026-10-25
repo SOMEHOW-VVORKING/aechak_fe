@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -267,5 +267,105 @@ describe('/settlements (실서버 계약 — MSW)', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: '지급 상태' }), 'pending')
 
     expect(await screen.findByText('1 / 2')).toBeInTheDocument()
+  })
+
+  // ── codex 교차검토에서 나온 결함 둘 ─────────────────────────────────────────
+
+  it('[AC-SETTLE-ROUTE-016] 요청한 페이지가 도착하기 전에는 페이지 버튼이 잠긴다', async () => {
+    const user = userEvent.setup()
+    const requested: number[] = []
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(SELLER_SETTLEMENTS_URL, async ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') ?? '0')
+        requested.push(page)
+        if (page > 0) await held
+        return HttpResponse.json({
+          data: {
+            settlements: [
+              {
+                orderId: `01JZ0PAGE${page}`,
+                settlementMonth: '2026-06',
+                confirmedAt: '2026-06-18T10:00:00',
+                expectedPayoutDate: '2026-06-23',
+                productAmount: 64_000,
+                feeAmount: 6_912,
+                finalAmount: 60_088,
+                status: 'pending',
+              },
+            ],
+            totalCount: 60,
+            page,
+            size: 20,
+            totalPages: 3,
+            hasNext: page < 2,
+          },
+        })
+      }),
+    )
+    renderAt('/settlements')
+
+    expect(await screen.findByText('1 / 3')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '다음' }))
+
+    // 표에 남아 있는 것은 직전 페이지라 `hasNext`도 직전 값이다 — 잠기지 않으면 연타가
+    // page=2를 요청해 2페이지를 건너뛴다.
+    await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: '이전' })).toBeDisabled()
+
+    // 페이지 번호(`2 / 3`)는 누르는 즉시 바뀌므로 응답 도착의 신호가 아니다 — 2페이지 행을 기다린다.
+    release()
+    expect(await screen.findByText('01JZ0PAGE1')).toBeInTheDocument()
+    expect(screen.getByText('2 / 3')).toBeInTheDocument()
+    expect(requested).toEqual([0, 1])
+    await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  })
+
+  it('[AC-SETTLE-ROUTE-017] 목록 조회 실패는 사유와 재시도를 함께 보여주고 다시 조회한다', async () => {
+    const user = userEvent.setup()
+    seedSettlements([JUNE])
+    let calls = 0
+    server.use(
+      http.get(SELLER_SETTLEMENTS_URL, () => {
+        calls += 1
+        if (calls === 1) {
+          return HttpResponse.json({ errorCode: 50000, message: '서버 오류' }, { status: 500 })
+        }
+        return HttpResponse.json({
+          data: {
+            settlements: [
+              {
+                orderId: JUNE.orderId,
+                settlementMonth: JUNE.settlementMonth,
+                confirmedAt: JUNE.confirmedAt,
+                expectedPayoutDate: JUNE.expectedPayoutDate,
+                productAmount: 64_000,
+                feeAmount: 6_912,
+                finalAmount: 60_088,
+                status: 'pending',
+              },
+            ],
+            totalCount: 1,
+            page: 0,
+            size: 20,
+            totalPages: 1,
+            hasNext: false,
+          },
+        })
+      }),
+    )
+    renderAt('/settlements')
+
+    // 표의 빈 상태 문구만으로는 셀러가 서버 오류를 필터 탓으로 읽는다.
+    expect(
+      await screen.findByText(/정산 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요./),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByText(JUNE.orderId)).toBeInTheDocument()
   })
 })

@@ -105,7 +105,9 @@ function ShippingPolicyRoute() {
         저장하면 입력한 내용으로 전체가 덮어써져요. 출고지 주소는 스토어 설정의 주소와 같은 값이에요.
       </p>
 
-      <ShippingPolicyForm value={form} onChange={handleChange} />
+      {/* 저장 중에는 폼을 잠근다 — 성공 콜백이 보낸 본문으로 폼을 되맞추므로, 응답을 기다리는
+          사이에 입력한 값은 "저장했어요" 토스트와 함께 조용히 사라진다. */}
+      <ShippingPolicyForm value={form} onChange={handleChange} disabled={updatePolicy.isPending} />
 
       {toast.element}
     </div>
