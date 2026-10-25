@@ -21,6 +21,7 @@ export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
+export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -671,5 +672,281 @@ const courierHandlers = [
   ),
 ]
 
-export const handlers = [...sellerApplicationHandlers, ...sellerProductHandlers, ...courierHandlers]
+
+// ─── 셀러 주문 (seller 호스트 /sellers/me/orders) ─────────────────────────────
+// 목록은 "FE가 무엇을 보냈는가"를 기록하고 시드한 주문을 세그먼트로만 걸러 돌려준다 — 키워드·날짜
+// 필터링은 BE 소관이고 FE의 책임은 파라미터를 정확히 보내는 것이라, 테스트는
+// lastSellerOrdersQuery()로 쿼리 문자열을 단언한다. 세그먼트만 실제로 거른다: 한 세그먼트가 상태
+// 여러 개를 묶는다는 사실(awaiting-dispatch = PREPARING·DISPATCH_PENDING)이 FE 라벨의 근거라
+// 그 매핑이 어긋나면 테스트가 잡아야 한다.
+//
+// 쓰기는 be SellerOrderService의 전이 규칙을 그대로 비춘다 — 거절 코드(50004·50005·50302·50301)가
+// 화면 문구의 근거이고, 상태를 바꿔 목록·상세 재조회에 반영한다.
+
+export interface SellerOrderShipmentWire {
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  dispatchedAt: string | null
+  deliveredAt: string | null
+  lastTrackingStatus: string | null
+}
+
+export interface SellerOrderClaimWire {
+  claimId: string
+  claimType: 'CANCEL' | 'RETURN' | 'EXCHANGE'
+  status:
+    | 'CLAIM_REQUESTED'
+    | 'COLLECTING'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'ADMIN_OVERRIDDEN'
+    | 'REFUND_FAILED'
+    | 'WITHDRAWN'
+}
+
+export interface SellerOrderLineWire {
+  orderItemId: number
+  productId: string
+  productName: string
+  thumbnailUrl: string | null
+  optionName: string
+  quantity: number
+  unitPrice: number
+  discountAllocatedAmount: number
+  itemStatus: 'ORDERED' | 'CANCELLED' | 'RETURN_REQUESTED' | 'RETURNED' | 'EXCHANGE_REQUESTED'
+}
+
+/** be OrderStatus 8종 그대로. PENDING_PAYMENT는 목록 응답에 나오지 않지만 타입에서 빼지 않는다. */
+export type OrderStatusWire =
+  | 'PENDING_PAYMENT'
+  | 'PAID'
+  | 'PREPARING'
+  | 'DISPATCH_PENDING'
+  | 'SHIPPING'
+  | 'DELIVERED'
+  | 'PURCHASE_CONFIRMED'
+  | 'CANCELLED'
+
+export interface SellerOrderWire {
+  orderId: string
+  orderGroupId: string
+  status: OrderStatusWire
+  orderedAt: string
+  buyerNickname: string
+  recipientName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  detailAddress: string | null
+  deliveryMemo: string | null
+  itemCount: number
+  totalProductAmount: number
+  sellerShippingFee: number
+  allocatedCouponDiscount: number
+  payableAmount: number
+  purchaseConfirmDueAt: string | null
+  shipment: SellerOrderShipmentWire | null
+  activeClaim: SellerOrderClaimWire | null
+}
+
+/** be SellerOrderStatusFilter 미러 — all은 PENDING_PAYMENT를 뺀 전부다. */
+const SEGMENT_STATUSES: Record<string, OrderStatusWire[]> = {
+  all: ['PAID', 'PREPARING', 'DISPATCH_PENDING', 'SHIPPING', 'DELIVERED', 'PURCHASE_CONFIRMED', 'CANCELLED'],
+  new: ['PAID'],
+  'awaiting-dispatch': ['PREPARING', 'DISPATCH_PENDING'],
+  shipping: ['SHIPPING'],
+  delivered: ['DELIVERED', 'PURCHASE_CONFIRMED'],
+  cancelled: ['CANCELLED'],
+}
+
+let sellerOrders: SellerOrderWire[] = []
+let sellerOrderLines = new Map<string, SellerOrderLineWire[]>()
+let lastOrdersQuery: string | null = null
+let lastShipmentBody: unknown = null
+let orderSeq = 0
+let orderItemSeq = 0
+let shipmentIdSeq = 0
+
+export function makeSellerOrderWire(overrides: Partial<SellerOrderWire> = {}): SellerOrderWire {
+  orderSeq += 1
+  return {
+    orderId: `01JMSWORDER${String(orderSeq).padStart(15, '0')}`,
+    orderGroupId: `01JMSWGROUP${String(orderSeq).padStart(15, '0')}`,
+    status: 'PAID',
+    orderedAt: '2026-10-24T10:00:00',
+    buyerNickname: `구매자${orderSeq}`,
+    recipientName: '김보호',
+    contactNumber: '01012345678',
+    zipCode: '06236',
+    baseAddress: '서울 강남구 테헤란로 1',
+    detailAddress: '101동 1001호',
+    deliveryMemo: null,
+    itemCount: 1,
+    totalProductAmount: 30000,
+    sellerShippingFee: 3000,
+    allocatedCouponDiscount: 0,
+    payableAmount: 33000,
+    purchaseConfirmDueAt: null,
+    shipment: null,
+    activeClaim: null,
+    ...overrides,
+  }
+}
+
+export function makeSellerOrderLineWire(overrides: Partial<SellerOrderLineWire> = {}): SellerOrderLineWire {
+  orderItemSeq += 1
+  return {
+    orderItemId: orderItemSeq,
+    productId: `01JMSWPRODUCT${String(orderItemSeq).padStart(13, '0')}`,
+    productName: `목업 상품 ${orderItemSeq}`,
+    thumbnailUrl: null,
+    optionName: '기본',
+    quantity: 1,
+    unitPrice: 30000,
+    discountAllocatedAmount: 0,
+    itemStatus: 'ORDERED',
+    ...overrides,
+  }
+}
+
+/** 테스트마다 주문과 품목 라인을 세운다. `items`를 주지 않은 주문은 기본 라인 하나로 채운다. */
+export function seedSellerOrders(
+  rows: { order: SellerOrderWire; items?: SellerOrderLineWire[] }[] = [],
+): void {
+  sellerOrders = rows.map(row => ({ ...row.order }))
+  sellerOrderLines = new Map(
+    rows.map(row => [row.order.orderId, (row.items ?? [makeSellerOrderLineWire()]).map(item => ({ ...item }))]),
+  )
+  lastOrdersQuery = null
+  lastShipmentBody = null
+}
+
+/** 목록 핸들러가 받은 마지막 쿼리 문자열(`?` 제외). 빈 값 제거·세그먼트 어휘 단언에 쓴다. */
+export function lastSellerOrdersQuery(): string | null {
+  return lastOrdersQuery
+}
+
+/** 송장 등록 핸들러가 받은 마지막 요청 본문 — courierCode를 그대로 보내는지 단언할 때 쓴다. */
+export function lastShipmentRegisterBody(): unknown {
+  return lastShipmentBody
+}
+
+/** 핸들러가 반영한 현재 주문 목록 — 테스트가 전이 결과를 읽을 때 쓴다. */
+export function currentSellerOrders(): SellerOrderWire[] {
+  return sellerOrders.map(order => ({ ...order }))
+}
+
+const orderNotFound = () =>
+  HttpResponse.json({ errorCode: 50000, message: '주문을 찾을 수 없습니다.' }, { status: 404 })
+
+const conflict = (errorCode: number, message: string) =>
+  HttpResponse.json({ errorCode, message }, { status: 409 })
+
+const sellerOrderHandlers = [
+  http.get(SELLER_ORDERS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    lastOrdersQuery = url.search.replace(/^\?/, '')
+    const params = url.searchParams
+    // 빈 값은 BE가 미입력이 아니라 형식 오류로 거절하는 자리가 있다(`?status=`·`?orderedFrom=`) —
+    // 정규화가 새면 테스트가 여기서 터진다. 스텁은 일부러 전부 거절한다(FE는 어차피 키째 뺀다).
+    for (const [key, value] of params.entries()) {
+      if (value === '') return badRequest(`${key}: 지원하지 않는 값입니다.`)
+    }
+    const segment = params.get('status') ?? 'all'
+    const statuses = SEGMENT_STATUSES[segment]
+    if (!statuses) return badRequest('status: 지원하지 않는 값입니다.')
+    const matched = sellerOrders.filter(order => statuses.includes(order.status))
+    const size = Number(params.get('size') ?? 20)
+    const page = Number(params.get('page') ?? 0)
+    const totalCount = matched.length
+    const totalPages = Math.ceil(totalCount / size)
+    return HttpResponse.json({
+      data: {
+        orders: matched.slice(page * size, (page + 1) * size),
+        totalCount,
+        page,
+        size,
+        totalPages,
+        hasNext: page + 1 < totalPages,
+      },
+    })
+  }),
+  // 상세 — 주문 단위 필드는 목록 행과 같고 items가 더 붙는다. 남의 주문도 같은 404로 가린다.
+  http.get(`${SELLER_ORDERS_URL}/:orderPublicId`, ({ params }) => {
+    const orderId = params['orderPublicId'] as string
+    const order = sellerOrders.find(row => row.orderId === orderId)
+    if (!order) return orderNotFound()
+    return HttpResponse.json({ data: { ...order, items: sellerOrderLines.get(orderId) ?? [] } })
+  }),
+  // 발주 확인 — PAID만 받는다(그 밖은 409/50004). 204.
+  http.post(`${SELLER_ORDERS_URL}/:orderPublicId/accept`, ({ params }) => {
+    const order = sellerOrders.find(row => row.orderId === params['orderPublicId'])
+    if (!order) return orderNotFound()
+    if (order.status !== 'PAID') {
+      return conflict(50004, '결제완료 상태의 주문만 발주 확인할 수 있습니다.')
+    }
+    order.status = 'PREPARING'
+    return new HttpResponse(null, { status: 204 })
+  }),
+  // 송장 등록 — 최초 한 번뿐이다(재등록 409/50302). PREPARING에서 불러도 2단 전이해 SHIPPING이 된다.
+  http.post(`${SELLER_ORDERS_URL}/:orderPublicId/shipment`, async ({ params, request }) => {
+    const order = sellerOrders.find(row => row.orderId === params['orderPublicId'])
+    if (!order) return orderNotFound()
+    const body = (await request.json()) as { courierCode: string; trackingNumber: string }
+    lastShipmentBody = body
+    if (order.shipment != null) {
+      return conflict(50302, '이미 송장이 등록되어 있습니다.')
+    }
+    if (order.status !== 'PREPARING' && order.status !== 'DISPATCH_PENDING') {
+      return conflict(50005, '발송 대기 상태의 주문만 발송 처리할 수 있습니다.')
+    }
+    // 택배사 코드는 정확 일치다 — 화면이 대소문자를 바꾸면 여기서 404/50303으로 터진다.
+    const courier = couriers.find(row => row.courierCode === body.courierCode)
+    if (!courier) {
+      return HttpResponse.json(
+        { errorCode: 50303, message: '택배사를 찾을 수 없습니다.' },
+        { status: 404 },
+      )
+    }
+    if (courier.trackingFormatPattern && !new RegExp(courier.trackingFormatPattern).test(body.trackingNumber)) {
+      return errorAt(400, 50304, '송장번호 형식이 올바르지 않습니다.')
+    }
+    shipmentIdSeq += 1
+    const dispatchedAt = '2026-10-24T14:00:00'
+    order.status = 'SHIPPING'
+    order.shipment = {
+      courierCode: courier.courierCode,
+      courierName: courier.courierName,
+      trackingNumber: body.trackingNumber,
+      dispatchedAt,
+      deliveredAt: null,
+      lastTrackingStatus: null,
+    }
+    return HttpResponse.json(
+      { data: { shipmentId: shipmentIdSeq, dispatchedAt, orderStatus: order.status } },
+      { status: 201 },
+    )
+  }),
+  // 배송 완료 — SHIPPING만 받고(그 밖은 409/50002) 구매확정 기한을 부여한다. 204.
+  http.post(`${SELLER_ORDERS_URL}/:orderPublicId/delivery-complete`, ({ params }) => {
+    const order = sellerOrders.find(row => row.orderId === params['orderPublicId'])
+    if (!order) return orderNotFound()
+    if (order.status !== 'SHIPPING') {
+      return conflict(50002, '허용되지 않은 주문 상태 전이입니다.')
+    }
+    const deliveredAt = '2026-10-25T09:00:00'
+    order.status = 'DELIVERED'
+    order.purchaseConfirmDueAt = '2026-11-01T09:00:00'
+    if (order.shipment) order.shipment = { ...order.shipment, deliveredAt }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
+export const handlers = [
+  ...sellerApplicationHandlers,
+  ...sellerProductHandlers,
+  ...courierHandlers,
+  ...sellerOrderHandlers,
+]
 export const server = setupServer(...handlers)
