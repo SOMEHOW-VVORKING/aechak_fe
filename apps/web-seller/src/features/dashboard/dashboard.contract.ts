@@ -4,10 +4,13 @@
 // 타입 오류가 드러난다(products.contract·store-settings.contract 관례).
 import { errorResponse } from '@aechak/api'
 import type {
+  ClaimType,
+  SellerClaimPendingStage,
   SellerDashboardMetric,
   SellerDashboardMetrics,
   SellerDashboardPeriod,
   SellerDashboardSummaryData,
+  SellerOrderStatusFilter,
 } from '@aechak/api'
 
 export type {
@@ -42,29 +45,21 @@ const PERIOD_LENGTH_LABEL: Record<Exclude<SellerDashboardPeriod, 'all'>, string>
 }
 
 // ─── 목적지 목록 화면이 받는 쿼리 어휘 ──────────────────────────────────────
-// 주문·클레임 목록 화면은 다른 작업에서 실서버에 붙고 있어 이 feature가 그 코드를 읽지 않는다
-// (feature → feature import 금지). 여기 어휘는 BE 요청 DTO에서 그대로 옮겼다 —
-// `SellerOrderStatusFilter.code`와 `SellerClaimPendingStage`/`ClaimType`의 enum 이름이다.
-// 두 목록이 `packages/api` 스펙에 올라오면 이 타입들을 생성물로 갈아타고 여기서 지운다.
+// 주문·클레임 목록 화면의 코드는 읽지 않는다(feature → feature import 금지) — 어휘는 **생성물**에서
+// 가져온다. 두 목록이 실서버에 붙으면서 `/sellers/me/orders`·`/sellers/me/claims`가 스펙에 올라와
+// `SellerOrderStatusFilter`·`SellerClaimPendingStage`·`ClaimType`이 생성물에 있다(손으로 옮겨 적은
+// 유니온을 여기서 지웠다).
+//
+// 손으로 옮긴 어휘를 남겨 두면 서버가 세그먼트 이름을 바꿔도 이 파일은 깨지지 않고, 카드가 낡은
+// 값을 주소에 실어 목록의 validateSearch가 그 값을 버린다 — "카드를 누르면 그 단계의 목록이 열려요"가
+// 조용히 거짓이 되는 자리다(SCRUM-300 b270200이 고친 결함과 같은 모양). 생성물을 보면 재생성만으로
+// 여기서 타입 오류가 난다.
 
 /** `GET /sellers/me/orders`의 `status` 세그먼트 어휘. 한 세그먼트가 주문 상태 여러 개를 묶는다. */
-export type SellerOrderStatusSegment =
-  | 'all'
-  | 'new'
-  | 'awaiting-dispatch'
-  | 'shipping'
-  | 'delivered'
-  | 'cancelled'
-
-/** `GET /sellers/me/claims`의 `pendingStage` — 셀러가 할 일이 남은 단계 축. */
-export type SellerClaimPendingStage =
-  | 'DECISION_PENDING'
-  | 'COLLECTION_INVOICE_PENDING'
-  | 'COLLECTION_COMPLETION_PENDING'
-  | 'RESHIP_PENDING'
+export type SellerOrderStatusSegment = SellerOrderStatusFilter
 
 /** `GET /sellers/me/claims`의 `claimType`. */
-export type SellerClaimTypeCode = 'CANCEL' | 'RETURN' | 'EXCHANGE'
+export type SellerClaimTypeCode = ClaimType
 
 /**
  * 카드를 눌렀을 때 열 목록과 그 목록에 실어 보낼 쿼리.
@@ -313,6 +308,22 @@ export function previousValueHint(
  */
 export function isSellerCenterForbidden(error: unknown): boolean {
   return errorResponse(error)?.status === 403
+}
+
+/**
+ * 그 403이 **왜** 났는지. 상태로 가른 거절 안에 사유가 둘 섞여 있어 문구를 하나로 두면 거짓이 된다 —
+ * 온보딩 미완(20006)은 정지·탈퇴가 아니라 구매자 앱에서 약관·닉네임을 마치면 풀리는 상태다.
+ *
+ * 셀러센터에는 온보딩 화면이 없어 전역 유도 핸들러가 없다(main.tsx가 등록하는 것은 401뿐) —
+ * 그래서 이 문구가 유일한 안내다. 로그인 콜백이 `status=PENDING_ONBOARDING`을 보고 로그인 화면에서
+ * 먼저 막지만(routes/login/complete.tsx), 그 콜백을 거치지 않고 남아 있던 세션으로 주소를 직접
+ * 열면(북마크·새 탭) 이 화면이 받는다. 문구는 products·orders·claims 계약과 같은 문장이다.
+ */
+export function sellerCenterForbiddenMessage(error: unknown): string {
+  if (errorResponse(error)?.data?.errorCode === 20006) {
+    return '구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.'
+  }
+  return '셀러 자격이 정지되거나 탈퇴 처리된 계정이에요. 다시 이용하려면 고객센터에 문의해 주세요.'
 }
 
 // ─── 기간 무관 스냅샷 ───────────────────────────────────────────────────────

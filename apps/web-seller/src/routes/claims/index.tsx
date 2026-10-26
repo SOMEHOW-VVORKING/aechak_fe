@@ -36,9 +36,13 @@ export const Route = createFileRoute('/claims/')({
   //
   // 모르는 값은 버리지 말고 **기본값으로 덮어써야** 한다 — 라우터는 validateSearch가 돌려준 키만
   // 덮어쓰고 빠뜨린 키는 주소의 날값을 그대로 통과시킨다.
+  // `claimType`을 **optional로 선언한다** — 이 반환 타입이 곧 호출부가 넘겨야 하는 모양이기도 해서
+  // 필수로 두면 단계만 좁히는 대시보드 카드가 FE 전용 sentinel('ALL')을 알아야 하고, 그걸 피하려고
+  // 호출부가 타입을 뚫으면(as unknown as) 쿼리 이름이 어긋나도 아무도 모른다. 값은 아래에서 늘
+  // 채워 주므로 주소에는 그대로 실린다.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { pendingStage: SellerClaimPendingStage | ''; claimType: TypeTab } => {
+  ): { pendingStage: SellerClaimPendingStage | ''; claimType?: TypeTab } => {
     const stage = search['pendingStage']
     const type = search['claimType']
     return {
@@ -138,7 +142,12 @@ interface ClaimActionTarget {
 function ClaimsRoute() {
   // 첫 필터만 주소에서 받는다(그 뒤 조작은 화면 상태가 소유한다).
   const { pendingStage, claimType } = Route.useSearch()
-  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, pendingStage, claimType })
+  const [filters, setFilters] = useState<Filters>({
+    ...EMPTY_FILTERS,
+    pendingStage,
+    // validateSearch가 늘 채우지만 타입은 optional이다(위 주석) — 기본값을 여기서도 둔다.
+    claimType: claimType ?? 'ALL',
+  })
   const listQuery = useClaims(toParams(filters))
   // `isPlaceholderData`는 "지금 보고 있는 data가 이전 키(이전 페이지·이전 필터)의 응답"이라는 뜻이다.
   // 처리 뒤 무효화나 포커스 복귀로 같은 키를 다시 받는 중에는 false다(그때 data는 이 키의 진짜 값이다)
@@ -203,6 +212,14 @@ function ClaimsRoute() {
   const onFailed = (cause: unknown) => {
     setActionTarget(null)
     showError(cause)
+  }
+
+  // DS Modal은 ESC·스크림·취소를 `loading`과 무관하게 onClose로 흘린다(design-system/web/Modal —
+  // `loading`은 확인 버튼만 잠근다). 승인·거부·회수 완료·재발송은 되돌릴 수 없고 환불·정산까지
+  // 이어지므로, 요청이 떠 있는 동안 창만 닫히면 운영자는 취소된 줄로 읽는다 — 요청 자체는 취소할
+  // 수 없다(POST, abort 불가). 그래서 호출부에서 닫기를 막는다(주문 화면과 같은 가드).
+  const closeAction = () => {
+    if (!isMutating) setActionTarget(null)
   }
 
   const totalPages = data?.totalPages ?? 0
@@ -363,7 +380,7 @@ function ClaimsRoute() {
         <ClaimApproveModal
           claim={actionTarget.claim}
           loading={approveClaim.isPending}
-          onClose={() => setActionTarget(null)}
+          onClose={closeAction}
           onConfirm={returnCostBearer =>
             approveClaim.mutate(
               { claimPublicId: actionTarget.claim.claimPublicId, returnCostBearer },
@@ -385,7 +402,7 @@ function ClaimsRoute() {
         <ClaimRejectModal
           claim={actionTarget.claim}
           loading={rejectClaim.isPending}
-          onClose={() => setActionTarget(null)}
+          onClose={closeAction}
           onConfirm={rejectionReason =>
             rejectClaim.mutate(
               { claimPublicId: actionTarget.claim.claimPublicId, rejectionReason },
@@ -400,7 +417,7 @@ function ClaimsRoute() {
           claim={actionTarget.claim}
           mode="collection"
           loading={startCollection.isPending}
-          onClose={() => setActionTarget(null)}
+          onClose={closeAction}
           onConfirm={invoice =>
             startCollection.mutate(
               { claimPublicId: actionTarget.claim.claimPublicId, ...invoice },
@@ -415,7 +432,7 @@ function ClaimsRoute() {
           claim={actionTarget.claim}
           mode="reship"
           loading={reshipClaim.isPending}
-          onClose={() => setActionTarget(null)}
+          onClose={closeAction}
           onConfirm={invoice =>
             reshipClaim.mutate(
               { claimPublicId: actionTarget.claim.claimPublicId, ...invoice },
@@ -429,7 +446,7 @@ function ClaimsRoute() {
         <ClaimInvoiceCompleteModal
           claim={actionTarget.claim}
           loading={completeCollection.isPending}
-          onClose={() => setActionTarget(null)}
+          onClose={closeAction}
           onConfirm={() =>
             completeCollection.mutate(
               { claimPublicId: actionTarget.claim.claimPublicId },

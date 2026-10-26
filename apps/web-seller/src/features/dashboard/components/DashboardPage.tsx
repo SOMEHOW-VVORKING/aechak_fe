@@ -34,6 +34,7 @@ import {
   formatWon,
   isSellerCenterForbidden,
   previousValueHint,
+  sellerCenterForbiddenMessage,
   type DashboardListScreen,
   type DashboardMetricIconKey,
   type DashboardMetricMeta,
@@ -75,17 +76,14 @@ export function DashboardPage() {
    * 카드 → 목록 이동. 단계·상태 축만 싣고 **기간은 싣지 않는다**(dashboard.contract의
    * DashboardMetricTarget 주석 참고 — 두 화면의 기간 단위가 달라 함께 넘기면 숫자가 어긋난다).
    *
-   * 목적지 라우트(`/orders`·`/claims`)가 아직 `validateSearch`를 선언하지 않아 타입 레벨에서
-   * 그 라우트의 search 스키마가 빈 객체다 — 그래서 단언 없이는 쿼리를 실을 수 없다. 런타임은
-   * 라우터의 stringifySearch가 넘긴 객체를 그대로 직렬화하므로 동작하고, 두 라우트가 실서버에
-   * 붙으면서 `validateSearch`를 선언하면 이 단언을 지우고 타입 추론에 맡길 수 있다
-   * (그때 쿼리 이름이 어긋나 있으면 여기서 타입 오류로 드러난다). 단언은 이 한 곳에만 둔다.
+   * **단언(as unknown as)을 걷어냈다.** 두 목적지 라우트가 실서버에 붙으면서 `validateSearch`를
+   * 선언했으므로(routes/orders·claims) 라우터가 각 화면의 search 스키마를 알고, 카드가 싣는 쿼리
+   * 이름이 어긋나면 여기서 타입 오류가 난다(`pendingStage`를 `pendingStageTypo`로 바꿔 확인했다).
+   * 그것이 이 자리에서 가장 지키고 싶은 것이다 — 주소에 실은 축을 목록이 읽지 않으면 "카드를
+   * 누르면 그 단계의 목록이 열려요"가 조용히 거짓이 된다(b270200이 손으로 고친 결함).
    */
   const openList = (target: DashboardMetricTarget) => {
-    const options = { to: target.screen, search: target.search } as unknown as Parameters<
-      typeof navigate
-    >[0]
-    void navigate(options)
+    void navigate({ to: target.screen, search: target.search })
   }
 
   // 자격 거절(403)은 재시도로 풀리지 않는다 — 캐시된 숫자를 남겨 두면 권한이 아직 있는 것처럼
@@ -94,10 +92,9 @@ export function DashboardPage() {
     return (
       <div className="p-6">
         <PageHeader title="대시보드" />
-        <EmptyState
-          title="셀러센터를 열 수 없어요"
-          description="셀러 자격이 정지되거나 탈퇴 처리된 계정이에요. 다시 이용하려면 고객센터에 문의해 주세요."
-        />
+        {/* 403 안에 사유가 둘 있다 — 정지·탈퇴와 온보딩 미완. 문구를 하나로 두면 온보딩만
+            마치면 풀리는 계정에 "고객센터에 문의"라고 거짓 안내를 한다. */}
+        <EmptyState title="셀러센터를 열 수 없어요" description={sellerCenterForbiddenMessage(error)} />
       </div>
     )
   }

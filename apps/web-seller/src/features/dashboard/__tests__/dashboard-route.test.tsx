@@ -191,6 +191,27 @@ describe('셀러 대시보드 실 연동', () => {
     expect(dashboardSummaryRequestCount()).toBe(1)
   })
 
+  it('[AC-SELLER-DASH-007] 온보딩 미완(403/20006)은 정지·탈퇴가 아니라 온보딩 안내로 가른다', async () => {
+    // 403 안에 사유가 둘 섞여 있다 — 정지·탈퇴(10002·10003)와 온보딩 미완(20006). 셀러센터에는
+    // 온보딩 화면이 없어 전역 유도 핸들러가 없으므로(main.tsx는 401만 등록한다) 이 문구가 유일한
+    // 안내다. 로그인 콜백이 PENDING_ONBOARDING을 먼저 막지만 남아 있던 세션으로 주소를 직접 열면
+    // (북마크·새 탭) 이 화면이 받는다 — 그때 "고객센터에 문의"는 거짓 안내다.
+    seedDashboardSummaryError({
+      status: 403,
+      errorCode: 20006,
+      message: '온보딩이 필요합니다.',
+    })
+    renderDashboard()
+
+    expect(await screen.findByText('셀러센터를 열 수 없어요')).toBeInTheDocument()
+    expect(
+      screen.getByText('구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/정지되거나 탈퇴/)).not.toBeInTheDocument()
+    // 사유가 달라도 재시도로 풀리지 않는 것은 같다.
+    expect(screen.queryByRole('button', { name: '다시 불러오기' })).not.toBeInTheDocument()
+  })
+
   it('[AC-SELLER-DASH-005] 재조회만 실패하면 숫자를 지우지 않고 방금 것이 아님을 밝힌다', async () => {
     const { queryClient } = renderDashboard()
     await screen.findByText('신규 주문')

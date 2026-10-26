@@ -228,6 +228,31 @@ describe('중복 전송 방지와 충돌 복구', () => {
     expect(approveCalls).toBe(1)
   })
 
+  it('[AC-SELLER-CLAIM-115] 요청이 떠 있는 동안에는 취소로 창이 닫히지 않는다', async () => {
+    // DS Modal은 `loading`으로 확인 버튼만 잠그고 취소·ESC·스크림은 그대로 onClose로 흘린다
+    // (design-system/web/Modal). 승인은 되돌릴 수 없고 반품이면 환불까지 이어지는데, 요청이 떠 있는
+    // 동안 창만 닫히면 운영자는 취소된 줄로 읽는다 — 요청 자체는 취소할 수 없다(POST, abort 불가).
+    server.use(
+      http.post(`${SELLER_CLAIMS_URL}/:claimPublicId/approve`, async () => {
+        await delay('infinite')
+      }),
+    )
+    renderClaims()
+    const row = await rowOf('자동 급식기 5L')
+
+    await userEvent.click(within(row).getByRole('button', { name: '반품 승인' }))
+    await userEvent.click(screen.getByText('셀러 부담'))
+    await clickConfirm('반품 승인할까요?', '반품 승인')
+
+    const dialog = (await screen.findByRole('heading', { name: '반품 승인할까요?' })).closest(
+      '[role="dialog"]',
+    ) as HTMLElement
+    await userEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+
+    // 창이 그대로 떠 있어야 한다 — 닫히면 운영자는 승인이 취소된 줄로 읽는다.
+    expect(screen.getByRole('heading', { name: '반품 승인할까요?' })).toBeInTheDocument()
+  })
+
   it('[AC-SELLER-CLAIM-113] 처리 실패도 목록을 다시 불러와 낡은 버튼을 남기지 않는다', async () => {
     // 다른 작업자가 먼저 승인한 상황 — 서버는 409/50408을 주고 그 뒤 조회는 바뀐 상태를 준다.
     server.use(

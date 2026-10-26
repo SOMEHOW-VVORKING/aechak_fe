@@ -66,14 +66,23 @@ describe('셀러센터 SideNav', () => {
 
   // 게이트 상수(`shared/serverAvailability`)는 지우지 않고 true로 올렸다 — 서버가 내려가면 다시
   // 내릴 수 있어야 한다. 올라가 있는 동안은 어느 라우트도 "준비 중" 안내로 빠지지 않아야 한다.
-  it.each(['/', '/orders', '/claims', '/settlements', '/shipping-policy'])(
-    '[AC-SELLER-NAV-004] %s 직접 진입이 "준비 중" 안내로 빠지지 않는다',
-    async path => {
-      renderAt(path)
+  //
+  // **"준비 중 문구가 없다"만 단언하면 안 된다** — 라우터는 렌더가 터진 라우트를 기본 errorComponent로
+  // 받아 삼키므로, 화면이 깨져도 그 문구는 당연히 없어 테스트가 초록으로 통과한다. 그래서 목적지가
+  // 실제로 열렸다는 증거(그 화면의 제목)를 먼저 기다린다. 제목은 nav 항목과 이름이 겹치므로
+  // heading으로 가른다(nav는 button이다).
+  it.each([
+    ['/', '대시보드'],
+    ['/orders', '주문/배송 관리'],
+    ['/claims', '취소/반품/교환'],
+    ['/settlements', '정산/매출'],
+    ['/shipping-policy', '배송 정책'],
+  ])('[AC-SELLER-NAV-004] %s 직접 진입이 그 화면을 열고 "준비 중" 안내로 빠지지 않는다', async (path, heading) => {
+    renderAt(path)
 
-      expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
-      expect(screen.queryByText(/준비 중이에요/)).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: '상품 관리로' })).not.toBeInTheDocument()
-    },
-  )
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '상품 관리' })).toBeInTheDocument()
+    expect(screen.queryByText(/준비 중이에요/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '상품 관리로' })).not.toBeInTheDocument()
+  })
 })

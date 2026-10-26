@@ -357,6 +357,49 @@ describe('셀러 주문 처리 경계', () => {
     expect(screen.getByLabelText('택배사')).toBeInTheDocument()
   })
 
+  it('[AC-SORDER-022] 페이지 응답을 기다리는 동안 양쪽 이동 버튼이 함께 잠긴다', async () => {
+    // 표에 남아 있는 것은 직전 페이지라(`placeholderData: keepPreviousData`) `hasNext`·`totalPages`도
+    // 직전 값이다 — 잠그지 않으면 연타가 page=2를 요청해 2페이지를 건너뛰고, 범위 밖 페이지를 받아
+    // "4 / 3"과 빈 표를 보여 준 뒤 보정으로 되돌아온다.
+    const user = userEvent.setup()
+    const requested: number[] = []
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(SELLER_ORDERS_URL, async ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') ?? '0')
+        requested.push(page)
+        if (page > 0) await held
+        return HttpResponse.json({
+          data: {
+            orders: [makeSellerOrderWire({ orderId: `01JZ0ORDERPAGE${page}` })],
+            totalCount: 60,
+            page,
+            size: 20,
+            totalPages: 3,
+            hasNext: page < 2,
+          },
+        })
+      }),
+    )
+    renderOrders()
+
+    expect(await screen.findByText('1 / 3')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '다음' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: '이전' })).toBeDisabled()
+    // 건수도 직전 조건의 값으로 두지 않는다 — 전환 중임을 밝힌다.
+    expect(screen.getByText(/바뀐 조건으로 불러오는 중이에요/)).toBeInTheDocument()
+
+    release()
+    expect(await screen.findByText('01JZ0ORDERPAGE1')).toBeInTheDocument()
+    expect(requested).toEqual([0, 1])
+    await waitFor(() => expect(screen.getByRole('button', { name: '다음' })).toBeEnabled())
+  })
+
   it('[AC-SORDER-019] 빈 칸으로 발송 확정을 누르면 어느 칸이 비었는지 알려준다', async () => {
     const user = userEvent.setup()
     renderOrders()

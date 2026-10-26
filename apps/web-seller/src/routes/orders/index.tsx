@@ -140,7 +140,10 @@ function OrdersRoute() {
   const { status } = Route.useSearch()
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, segment: status })
   const listQuery = useSellerOrders(toParams(filters))
-  const { data, isLoading, isError, error, isFetching } = listQuery
+  // `isPlaceholderData`는 "지금 보고 있는 data가 이전 키(이전 페이지·이전 필터)의 응답"이라는
+  // 뜻이다. 처리 뒤 무효화나 포커스 복귀로 같은 키를 다시 받는 중에는 false다 — 그래서 이 값으로
+  // 잠가도 처리 직후의 재조회까지 함께 잠기지 않는다(클레임·정산 화면과 같은 처리).
+  const { data, isLoading, isError, error, isFetching, isPlaceholderData } = listQuery
 
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
   const [shipmentOrder, setShipmentOrder] = useState<SellerOrderSummary | null>(null)
@@ -158,10 +161,16 @@ function OrdersRoute() {
   const isMutating = acceptOrder.isPending || registerShipment.isPending || completeDelivery.isPending
 
   // 마지막 페이지의 유일한 주문이 필터/상태 변경으로 빠지면 페이지 이동 버튼도 사라진 빈 페이지에 남는다.
+  //
+  // `isPlaceholderData`일 때는 보정하지 않는다 — 그때 `data`는 **이전 키의 응답**이라 totalPages가
+  // 지금 요청한 필터/페이지의 것이 아니다. 전환 중에 보정하면 방금 누른 페이지를 이전 응답 기준으로
+  // 되돌려 버린다.
   const lastPage = Math.max((data?.totalPages ?? 1) - 1, 0)
   useEffect(() => {
-    if (data && filters.page > lastPage) setFilters(prev => ({ ...prev, page: lastPage }))
-  }, [data, filters.page, lastPage])
+    if (data && !isPlaceholderData && filters.page > lastPage) {
+      setFilters(prev => ({ ...prev, page: lastPage }))
+    }
+  }, [data, isPlaceholderData, filters.page, lastPage])
 
   // 필터를 바꾸면 첫 페이지로 돌아간다.
   const setFilter = (patch: Partial<Omit<Filters, 'page'>>) => setFilters(prev => ({ ...prev, ...patch, page: 0 }))
@@ -277,8 +286,14 @@ function OrdersRoute() {
         </Alert>
       )}
 
+      {/* 전환 중에는 건수를 이전 값으로 두지 않는다 — 필터를 바꾼 직후 `data`는 이전 조건의 응답이라
+          그 숫자가 지금 조건의 건수처럼 보이면 셀러가 조건을 잘못 읽는다. 표는 지우지 않고
+          (placeholderData의 이점) 이전 결과라는 사실만 밝힌다. */}
       <p className="mt-4 text-caption text-text-tertiary">
-        총 {data ? data.totalCount.toLocaleString() : '—'}건
+        총 {data && !isPlaceholderData ? data.totalCount.toLocaleString() : '—'}건
+        {isPlaceholderData && (
+          <span className="ml-2">바뀐 조건으로 불러오는 중이에요. 아래 목록은 이전 결과예요.</span>
+        )}
       </p>
       <div className="mt-2">
         <OrdersTable
@@ -296,12 +311,16 @@ function OrdersRoute() {
         등록한 송장은 셀러센터에서 바꿀 수 없어요. 취소/반품/교환 요청 처리는 클레임 관리에서 할 수 있어요.
       </p>
 
+      {/* 전환 중에는 양쪽 버튼을 함께 잠근다 — `hasNext`·`totalPages`가 이전 페이지의 값이라
+          그대로 믿으면 범위 밖 페이지로 넘어간다(3페이지 목록의 2페이지를 받는 동안 이전 응답의
+          hasNext=true로 4페이지까지 갈 수 있고, 그러면 빈 표와 "4 / 3"을 보여 준 뒤 보정으로
+          되돌아온다). 눌린 쪽만 잠그면 반대 버튼으로 같은 일이 생긴다. */}
       {totalPages > 1 && (
         <nav aria-label="페이지" className="mt-4 flex items-center justify-center gap-3">
           <Button
             variant="secondary"
             size="sm"
-            disabled={filters.page === 0}
+            disabled={filters.page === 0 || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page - 1 }))}
           >
             이전
@@ -312,7 +331,7 @@ function OrdersRoute() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!data?.hasNext}
+            disabled={!data?.hasNext || isPlaceholderData}
             onClick={() => setFilters(prev => ({ ...prev, page: prev.page + 1 }))}
           >
             다음
