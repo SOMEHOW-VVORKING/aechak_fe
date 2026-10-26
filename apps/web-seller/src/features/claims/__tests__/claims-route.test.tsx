@@ -19,10 +19,10 @@ import { routeTree } from '../../../routeTree.gen'
 // 실 API 연동 — MSW가 seller 호스트(8081) /sellers/me/claims 8경로를 가로챈다. 모듈 모킹이 아니라
 // 네트워크 레벨이라 URL·호스트·envelope·에러 계약까지 함께 검증되고, test-setup의
 // onUnhandledRequest:'error'가 핸들러 없는 요청을 곧바로 실패로 만든다.
-function renderClaims() {
+function renderClaims(entry = '/claims') {
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ['/claims'] }),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -71,6 +71,23 @@ describe('셀러 클레임 목록', () => {
     // 유형 탭 배지는 counts(유형 필터 무시)를 쓴다 — 취소 1 / 반품 2 / 교환 1.
     expect(screen.getByRole('tab', { name: '전체 4' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '반품 2' })).toBeInTheDocument()
+  })
+
+  // 대시보드 카드가 처리 단계와 유형을 주소로 실어 보낸다(SCRUM-292). 라우트가 그 값을 받지 않으면
+  // 카드의 "그 단계의 목록이 열려요" 안내가 거짓이 된다 — 목록이 전체로 열린다.
+  it('[AC-SELLER-CLAIM-102b] 주소로 받은 처리 단계·유형이 첫 조회에 그대로 실린다', async () => {
+    renderClaims('/claims?pendingStage=DECISION_PENDING&claimType=RETURN')
+
+    await waitFor(() => {
+      expect(lastSellerClaimsQuery()).toBe('?claimType=RETURN&pendingStage=DECISION_PENDING&page=0')
+    })
+  })
+
+  // 모르는 값은 버린다 — 서버가 400으로 거절하는 어휘를 주소에서 그대로 통과시키지 않는다.
+  it('[AC-SELLER-CLAIM-102c] 주소의 모르는 단계·유형은 버리고 전체로 연다', async () => {
+    renderClaims('/claims?pendingStage=NOPE&claimType=DISPUTE')
+
+    await waitFor(() => expect(lastSellerClaimsQuery()).toBe('?page=0'))
   })
 
   it('[AC-SELLER-CLAIM-102] 빈 필터는 쿼리에서 빠지고 선택한 축만 반복 파라미터로 나간다', async () => {

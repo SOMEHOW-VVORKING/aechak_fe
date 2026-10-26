@@ -30,6 +30,25 @@ import { SERVER_CLAIMS_AVAILABLE } from '@/shared/serverAvailability'
 
 export const Route = createFileRoute('/claims/')({
   component: ClaimsGate,
+  // 대시보드 카드가 처리 단계(와 필요하면 유형)를 주소로 실어 보낸다
+  // (`/claims?pendingStage=COLLECTION_INVOICE&claimType=RETURN`) — 선언하지 않으면 라우터가 그
+  // 값을 버려 카드 안내가 거짓이 된다. 기간은 받지 않는다(orders와 같은 이유).
+  //
+  // 모르는 값은 버리지 말고 **기본값으로 덮어써야** 한다 — 라우터는 validateSearch가 돌려준 키만
+  // 덮어쓰고 빠뜨린 키는 주소의 날값을 그대로 통과시킨다.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { pendingStage: SellerClaimPendingStage | ''; claimType: TypeTab } => {
+    const stage = search['pendingStage']
+    const type = search['claimType']
+    return {
+      pendingStage:
+        typeof stage === 'string' && stage in PENDING_STAGE_LABEL
+          ? (stage as SellerClaimPendingStage)
+          : '',
+      claimType: typeof type === 'string' && type in CLAIM_TYPE_LABEL ? (type as ClaimType) : 'ALL',
+    }
+  },
 })
 
 // 운영 진입 차단 스위치는 shared에 있다(`shared/serverAvailability`) — 대시보드 카드처럼 이 화면으로
@@ -117,7 +136,9 @@ interface ClaimActionTarget {
 }
 
 function ClaimsRoute() {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  // 첫 필터만 주소에서 받는다(그 뒤 조작은 화면 상태가 소유한다).
+  const { pendingStage, claimType } = Route.useSearch()
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, pendingStage, claimType })
   const listQuery = useClaims(toParams(filters))
   // `isPlaceholderData`는 "지금 보고 있는 data가 이전 키(이전 페이지·이전 필터)의 응답"이라는 뜻이다.
   // 처리 뒤 무효화나 포커스 복귀로 같은 키를 다시 받는 중에는 false다(그때 data는 이 키의 진짜 값이다)

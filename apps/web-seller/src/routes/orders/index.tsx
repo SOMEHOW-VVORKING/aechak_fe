@@ -34,6 +34,23 @@ import {
 
 export const Route = createFileRoute('/orders/')({
   component: OrdersGate,
+  // 대시보드 카드가 단계 축을 주소로 실어 보낸다(`/orders?status=new`) — 선언하지 않으면 라우터가
+  // 그 값을 버려 "카드를 누르면 그 단계의 목록이 열려요"라는 안내가 거짓이 된다(목록은 전체로 열린다).
+  // 기간은 일부러 받지 않는다: 카드의 기간은 시각 단위, 목록 필터는 날짜 단위라 함께 넘기면
+  // 숫자가 어긋난다(dashboard.contract의 DashboardMetricTarget 주석).
+  //
+  // 모르는 값은 버리지 말고 **기본값으로 덮어써야** 한다 — 라우터는 validateSearch가 돌려준 키만
+  // 덮어쓰고 빠뜨린 키는 주소의 날값을 그대로 통과시킨다. 키를 빼면 `?status=nope`가 그대로 조회에
+  // 실려 서버가 400으로 거절한다.
+  validateSearch: (search: Record<string, unknown>): { status: OrderStatusSegment } => {
+    const status = search['status']
+    return {
+      status:
+        typeof status === 'string' && (ORDER_SEGMENTS as string[]).includes(status)
+          ? (status as OrderStatusSegment)
+          : 'all',
+    }
+  },
 })
 
 // 운영 진입 차단 스위치는 shared에 있다(`shared/serverAvailability`) — 대시보드 카드처럼 이 화면으로
@@ -118,7 +135,10 @@ function toParams(f: Filters): SellerOrderSearchInput {
 const SEGMENT_OPTIONS = ORDER_SEGMENTS.map(value => ({ value, label: ORDER_SEGMENT_LABEL[value] }))
 
 function OrdersRoute() {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  // 첫 필터만 주소에서 받는다(그 뒤 조작은 화면 상태가 소유한다 — 필터 하나하나를 주소에
+  // 동기화하는 것은 이 화면의 범위가 아니다).
+  const { status } = Route.useSearch()
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, segment: status })
   const listQuery = useSellerOrders(toParams(filters))
   const { data, isLoading, isError, error, isFetching } = listQuery
 

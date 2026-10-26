@@ -20,10 +20,10 @@ import { routeTree } from '../../../routeTree.gen'
 // 실 API 연동 — MSW가 seller 호스트(8081)의 /sellers/me/orders 5경로와 /sellers/couriers를 가로챈다.
 // 모듈 모킹이 아니라 네트워크 레벨이라 URL(특히 **단수** `shipment`)·호스트·envelope·에러 계약까지
 // 함께 검증되고, test-setup의 onUnhandledRequest:'error'가 핸들러 없는 요청을 곧바로 실패로 만든다.
-function renderOrders() {
+function renderOrders(entry = '/orders') {
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ['/orders'] }),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -110,6 +110,21 @@ describe('셀러 주문 목록 실연동', () => {
 
     await screen.findByText(NEW_ORDER.orderId)
     // `?keyword=`·`?orderedFrom=`은 BE가 미입력이 아니라 형식 오류로 거절한다.
+    await waitFor(() => expect(lastSellerOrdersQuery()).toBe('status=all&page=0'))
+  })
+
+  // 대시보드 카드가 단계 축을 주소로 실어 보낸다(SCRUM-292). 라우트가 그 값을 받지 않으면 카드의
+  // "그 단계의 목록이 열려요" 안내가 거짓이 된다 — 목록이 전체로 열린다.
+  it('[AC-SORDER-003b] 주소로 받은 단계 축이 첫 조회에 그대로 실린다', async () => {
+    renderOrders('/orders?status=new')
+
+    await waitFor(() => expect(lastSellerOrdersQuery()).toBe('status=new&page=0'))
+  })
+
+  // 모르는 값은 버린다 — 서버가 400으로 거절하는 세그먼트를 주소에서 그대로 통과시키지 않는다.
+  it('[AC-SORDER-003c] 주소의 모르는 단계 축은 버리고 전체로 연다', async () => {
+    renderOrders('/orders?status=nope')
+
     await waitFor(() => expect(lastSellerOrdersQuery()).toBe('status=all&page=0'))
   })
 

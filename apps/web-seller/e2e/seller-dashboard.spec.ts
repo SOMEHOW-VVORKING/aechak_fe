@@ -5,9 +5,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // 인증이 api 모듈(8080), 대시보드 집계가 seller 모듈(8081) 소유라서다 — `**/api/v1/...`로 두면
 // 요청이 엉뚱한 모듈로 나가도 같은 스텁이 받아 주어 호스트 오배치를 브라우저 테스트가 놓친다.
 //
-// 카드 → 목록 동선은 여기서 덮지 못한다. 목적지(`/orders`·`/claims`)가 아직 목업 차단 상태라
-// 빌드 상수(`shared/serverAvailability`)가 카드를 누를 수 없게 두기 때문이다 — 대신 "누를 수 없고
-// 그렇게 안내한다"를 고정하고, 목록이 열린 뒤의 쿼리 배선은 라우트 테스트가 상수를 모킹해 덮는다.
+// 카드 → 목록 동선은 목적지(`/orders`·`/claims`)가 실서버에 붙어(SCRUM-291·295) 빌드 상수
+// (`shared/serverAvailability`)가 올라간 뒤로 브라우저에서 끝까지 따라갈 수 있다 — 카드가 버튼으로
+// 올라오고, 누르면 단계 축만 실어 목록으로 넘어간다(기간은 싣지 않는다).
 
 const ORIGIN = 'http://localhost:5173'
 const API_ORIGIN = 'http://localhost:8080'
@@ -101,28 +101,41 @@ test('[AC-SELLER-E2E-003] 랜딩이 처리 대기 10지표를 그리고 기간�
   expect(periods).toContain('7d')
 })
 
-test('[AC-SELLER-E2E-004] 목적지 목록이 준비 중이면 카드를 누를 수 없고 그렇게 안내한다', async ({
-  page,
-}) => {
+test('[AC-SELLER-E2E-004] 카드를 누르면 단계 축만 실어 목록으로 넘어간다', async ({ page }) => {
   const periods: string[] = []
   await stubDashboard(page, periods)
+  // 목적지 목록은 빈 페이지로 받는다 — 여기서 고정할 것은 "어디로 가며 무엇을 싣는가"다.
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/orders*`, route =>
+    fulfillJson(route, 200, {
+      data: { orders: [], totalCount: 0, page: 0, size: 20, totalPages: 0, hasNext: false },
+    }),
+  )
 
   await page.goto('/')
   await expect(page.getByText('신규 주문')).toBeVisible()
 
-  // 누르면 "준비 중" 화면만 나오는 죽은 진입점을 만들지 않는다 — 카드가 버튼으로 올라오지 않는다.
-  await expect(page.getByRole('button', { name: /신규 주문/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /회수 완료 처리 대기/ })).toHaveCount(0)
-  await expect(page.getByText(/목록 화면이 준비되면/)).toBeVisible()
+  // 목적지가 열려 있으니 카드가 버튼으로 올라오고 그렇게 안내한다.
+  await expect(page.getByText(/카드를 누르면 그 단계의 목록이 열려요/)).toBeVisible()
 
-  // 카드를 눌러도 주소가 그대로다(목적지로 새지 않는다).
-  await page.getByText('신규 주문').click()
-  await expect(page).toHaveURL(`${ORIGIN}/`)
-
-  // 목록으로 넘어갈 수 없는 동안은 두 화면의 숫자가 어긋날 일도 없어 그 경고를 띄우지 않는다.
+  // 기간을 고르면 두 화면의 기간 단위가 달라 숫자가 어긋날 수 있다고 미리 알린다.
   await page.getByRole('combobox', { name: '기간' }).selectOption('30d')
   await expect(page.getByText('직전 30일 요청분 중 4건 남음')).toBeVisible()
-  await expect(page.getByText(/목록이 카드보다 많이 보일 수 있어요/)).toHaveCount(0)
+  await expect(page.getByText(/목록이 카드보다 많이 보일 수 있어요/)).toBeVisible()
+
+  // 목록 조회가 나가는 것을 기다려 잡는다(클릭 직후 단언하면 요청 전에 읽는다).
+  const listRequest = page.waitForRequest(request =>
+    request.url().includes('/api/v1/sellers/me/orders'),
+  )
+  await page.getByRole('button', { name: /신규 주문/ }).click()
+
+  await expect(page).toHaveURL(`${ORIGIN}/orders?status=new`)
+  const listQuery = new URL((await listRequest).url()).search
+
+  // 단계 축은 싣고(status=new) 기간은 싣지 않는다 — 카드의 기간은 시각 단위, 목록 필터는 날짜
+  // 단위라 함께 넘기면 숫자가 어긋난다.
+  expect(listQuery).toContain('status=new')
+  expect(listQuery).not.toContain('period')
+  expect(listQuery).not.toContain('30d')
 })
 
 test('[AC-SELLER-E2E-005] 집계 조회가 실패하면 빈 상태가 아니라 오류로 드러난다', async ({ page }) => {
