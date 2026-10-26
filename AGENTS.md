@@ -33,7 +33,7 @@ dev는 `api-dev` · `seller-api-dev` · `admin-api-dev`.aechak.co.kr이다. 어�
 ### 앱 셸 — 새 화면은 셸을 다시 만들지 말고 라우트 파일만 추가한다
 
 - **web-seller**: `src/shared/components/AppShell.tsx`가 `SideNav` + `<Outlet/>`을 조립한다. nav에는 BE가 있는 화면(상품 관리·스토어 설정)만 올라 있고, BE가 없는 라우트(대시보드·주문·클레임·정산·배송 정책)는 라우트 파일의 `SERVER_*_AVAILABLE` 상수 게이트로 "준비 중" 안내만 보인다 — BE가 생기면 상수를 올리고 nav 항목을 복원한다. 새 화면은 `src/routes/<segment>/index.tsx`를 추가하고 nav 그룹에 항목을 넣으면 활성 탭이 자동 처리된다.
-- **web-admin**: `src/routes/__root.tsx` 안에 `AdminShell`을 **인라인**으로 정의(web-seller와 위치 다름). 마찬가지로 `src/routes/`에 파일만 추가.
+- **web-admin**: `src/routes/__root.tsx` 안에 `AdminShell`을 **인라인**으로 정의(web-seller와 위치 다름). 마찬가지로 `src/routes/`에 파일만 추가. nav에는 5그룹 15항목이 **전부 올라 있고**, BE가 없는 항목은 숨기는 대신 `NavItem.tag`로 "준비 중" 꼬리표를 달아 라우트가 `UnavailableScreen` 안내만 보여준다 — BE가 생기면 그 항목의 `tag`만 뗀다(`docs/web-seller-admin-notes.md` "어드민 nav 복원").
 - **web-buyer**: 탭 셸은 별도 파일이 아니라 **pathless layout route** `src/routes/_tabs.tsx`. 5개 탭(index/market/sns/chat/mypage)이 자식으로 하단 탭바 공유. 온보딩 라우트는 `__root` 직속이라 탭바가 안 뜬다(탭바가 보이면 파일이 `_tabs/` 밑에 잘못 들어간 것).
 - 라우트 파일 추가 후 `routeTree.gen.ts` 갱신은 아래 "개발 명령어" 참고(standalone `generate-routes`는 무효).
 - **구매자 온보딩 정본은 `apps/web-buyer/src/routes/onboarding/*`** — `apps/mobile` 네이티브 온보딩은 superseded라 수정하지 말 것.
@@ -209,7 +209,7 @@ breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·�
 7. **실 API 전환은 실패 경로를 새로 만든다.** 목업 시절에는 없던 403·404·5xx가 생기므로 목록·상세 조회의 `isError`를 반드시 화면에 드러낸다 — 빈 상태 문구로 떨어지면 "데이터 없음"과 "불러오지 못함"이 구분되지 않는다. 화면 전체가 한 쿼리에 의존하면(등록 폼의 카테고리 트리 등) 실패 시 `return null`로 백지를 만들지 말고 `EmptyState` + 재시도를 둔다.
 8. 테스트: MSW(v2)로 실 HTTP 경로 검증(`onUnhandledRequest:'error'`, refresh 기본 핸들러는 반드시 401). **두 호스트를 부르는 앱은 MSW URL도 호스트별로 나누고 `test-setup.ts`에서 `configureApiHosts`를 실제 앱과 같게 호출할 것** — 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가 똑같이 받아 주어 배포에서만 드러나는 호스트 오배치를 놓친다. `vitest.config.ts`에 `exclude: e2e/**` 필수(Playwright spec이 vitest에 삼켜짐). Playwright E2E는 `page.route` 스텁 + CORS 헤더(교차출처라 정확한 origin·OPTIONS 방어가 필요하고, `Allow-Credentials:true`는 credentials를 쓰는 호스트에만 — 어드민 스텁에 넣으면 실제와 달라진다). `page.route` 글롭에 origin까지 적어 호스트를 가를 것.
 9. **배송지 네이밍**: 화면/훅/타입/파일/폴더는 `deliveryAddress`/`DeliveryAddress` 접두, 와이어 JSON 필드(`addressId`/`baseAddress` 등)는 BE 계약 그대로. FE 라우트 URL은 `/addresses`, API 경로는 `/delivery-addresses`(혼동 금지).
-10. **BE에 대응 엔드포인트가 없는 화면은 운영 진입점을 막고 코드는 보존한다.** 목업 주석만 남기는 방식은 쓰지 않는다 — 저장되지 않는다는 사실을 운영자에게 알려 주지 못한다. 서버에 아예 없는 필드를 화면이 요구하고 있으면(지어낸 필드) 제거한다.
+10. **BE에 대응 엔드포인트가 없는 화면은 운영 진입점을 막고 코드는 보존한다.** 목업 주석만 남기는 방식은 쓰지 않는다 — 저장되지 않는다는 사실을 운영자에게 알려 주지 못한다. 서버에 아예 없는 필드를 화면이 요구하고 있으면(지어낸 필드) 제거한다. **이 규약의 목적은 "메뉴를 숨겨라"가 아니라 "운영자가 속지 않게 하라"다** — 막아야 하는 것은 저장되지 않는 화면이 멀쩡해 보이는 것이지 메뉴가 아니다. 그래서 **nav 항목은 빼지 말고 `NavItem.tag`로 "준비 중" 꼬리표를 달고**(색·점이 아니라 글자로, 버튼 접근명에도 들어가게) 라우트는 `UnavailableScreen` 안내만 렌더한다. 꼬리표를 다는 항목에는 **반드시 라우트 파일이 있어야 한다** — 없으면 404로 가는 죽은 nav라 2절 금지에 걸린다(안내만 보여주는 짧은 라우트를 둔다). 2026-10-18에 메뉴를 통째로 걷어냈다가 "어드민이 무엇을 다루는 도구인지조차 알 수 없다"는 지적으로 되돌린 적이 있다(SCRUM-302).
 
 ---
 
