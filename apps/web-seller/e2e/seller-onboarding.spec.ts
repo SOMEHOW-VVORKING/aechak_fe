@@ -37,6 +37,34 @@ async function stubSession(page: Page) {
   )
 }
 
+/**
+ * 랜딩(`/`)이 부르는 대시보드 집계 — 이 spec의 관심사는 아니지만 스텁하지 않으면 실네트워크로
+ * 나간다. 값은 보지 않으므로 빈 집계로 내린다(대시보드 자체 검증은 seller-dashboard.spec.ts).
+ */
+async function stubDashboardSummary(page: Page) {
+  const zero = { value: 0, previousValue: null, supported: true }
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/dashboard/summary*`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        metrics: {
+          newOrders: zero,
+          awaitingShipment: zero,
+          shippingDelayed: zero,
+          cancelRequests: zero,
+          returnRequests: zero,
+          exchangeRequests: zero,
+          collectionInvoicePending: zero,
+          collectionCompletionPending: zero,
+          reshipPending: zero,
+          unansweredInquiries: { value: 0, previousValue: null, supported: false },
+        },
+        settlement: { totalAmount: 0, pendingAmount: 0, onHoldAmount: 0 },
+        productStatuses: { awaitingInspection: 0, rejected: 0, suspended: 0, soldOut: 0 },
+      },
+    }),
+  )
+}
+
 /** 입점 신청을 상태 있게 스텁한다(없음 → 저장 → DRAFT). */
 async function stubSellerApplication(page: Page) {
   let application: Record<string, unknown> | null = null
@@ -76,6 +104,7 @@ async function stubSellerApplication(page: Page) {
 test('[AC-SELLER-E2E-001] 카카오 로그인 복귀 → 대시보드 → 입점 신청 폼 임시저장', async ({ page }) => {
   await stubSession(page)
   await stubSellerApplication(page)
+  await stubDashboardSummary(page)
   // 로그인 진입은 페이지 이동(302) — 서버 인가 화면 대신 바로 복귀 주소로 되돌린다.
   await page.route(`${API_ORIGIN}/api/v1/auth/login/kakao/redirect*`, route =>
     route.fulfill({

@@ -14,7 +14,7 @@ import {
   useProductDraft,
   useRegisterProduct,
 } from '@/features/products'
-import { ShippingPolicyNotice } from '@/features/shipping-policy'
+import { ShippingPolicySummary } from '@/features/shipping-policy'
 
 /**
  * 임시저장 진입점(임시저장 버튼·목록의 초안 Drawer)은 BE에 임시저장 개념이 없어서(`ProductDraft`
@@ -97,7 +97,7 @@ function ProductNewRoute() {
           draft.data ? toFormValues(draft.data, categories, key => productImageUrl(key) ?? '') : emptyProductForm()
         }
         categories={categories}
-        shippingSummary={<ShippingPolicyNotice />}
+        shippingSummary={<ShippingPolicySummary />}
         submitting={register.isPending}
         onSubmit={values =>
           register.mutate(

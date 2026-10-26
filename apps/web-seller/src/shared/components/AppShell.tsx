@@ -1,19 +1,49 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
-import { Package, Store } from 'lucide-react'
+import {
+  ClipboardList,
+  LayoutDashboard,
+  Package,
+  RotateCcw,
+  Store,
+  Truck,
+  Wallet,
+} from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
 
-// nav에는 seller 모듈에 API가 있는 화면만 둔다(상품 관리·스토어 설정). 대시보드/주문/클레임/배송 정책/
-// 정산은 목업이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이 없는 항목
-// (문의/리뷰/쿠폰/공지/계정)은 404로 가는 죽은 nav라 함께 뺐다. BE가 생기면 항목을 되돌린다.
+// nav는 2026-10-18 게이트(SCRUM-238) 이전 정본 4그룹 구성으로 돌려놓은 것이다 — 그때 화면 코드는
+// 하나도 지워지지 않았고 진입점만 빠졌다. 그 사이 seller 모듈에 다섯 화면의 API가 모두 올라와
+// (주문 SCRUM-291 · 클레임 SCRUM-295 · 배송 정책·정산 SCRUM-293 · 대시보드 SCRUM-292) 항목을
+// 되돌렸다. 각 화면의 라우트 게이트 상수는 `shared/serverAvailability.ts`에 남아 있다(서버가
+// 내려가면 상수만 내려 진입점을 닫는다).
+//
+// 아직 올리지 않은 것은 라우트 파일 자체가 없는 다섯 항목이다 — 고객 문의·리뷰 관리·혜택/쿠폰/할인·
+// 알림/공지·계정/보안. 지금 올리면 404로 가는 죽은 nav라, 라우트가 생기는 작업에서 함께 되돌린다.
 const groups: NavGroup[] = [
+  {
+    key: '운영',
+    label: '운영',
+    items: [
+      { key: '/', label: '대시보드', icon: <LayoutDashboard className={iconClass} /> },
+      { key: '/orders', label: '주문/배송 관리', icon: <ClipboardList className={iconClass} /> },
+      { key: '/claims', label: '취소/반품/교환', icon: <RotateCcw className={iconClass} /> },
+    ],
+  },
   {
     key: '판매 설정',
     label: '판매 설정',
-    items: [{ key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> }],
+    items: [
+      { key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> },
+      { key: '/shipping-policy', label: '배송 정책', icon: <Truck className={iconClass} /> },
+    ],
+  },
+  {
+    key: '정산',
+    label: '정산',
+    items: [{ key: '/settlements', label: '정산/매출', icon: <Wallet className={iconClass} /> }],
   },
   {
     key: '스토어',
