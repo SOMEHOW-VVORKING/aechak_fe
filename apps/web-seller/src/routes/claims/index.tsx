@@ -24,13 +24,32 @@ import {
   type SellerClaimSearchInput,
   type SellerClaimSummary,
 } from '@/features/claims'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
 import { useToast } from '@/shared/hooks/useToast'
+import { SERVER_CLAIMS_AVAILABLE } from '@/shared/serverAvailability'
 
 export const Route = createFileRoute('/claims/')({
-  component: ClaimsRoute,
+  component: ClaimsGate,
 })
 
-// 운영 진입 차단 스위치(SERVER_CLAIMS_AVAILABLE)는 걷었다 — seller 모듈에 클레임 8경로가 모두 있고
+// 운영 진입 차단 스위치는 shared에 있다(`shared/serverAvailability`) — 대시보드 카드처럼 이 화면으로
+// 보내는 진입점이 같은 값을 봐야 "목록이 열려요"라고 안내하고 준비 중 화면으로 보내는 일이 생기지
+// 않는다. 상수는 올라가 있고(서버가 있다) 분기는 남겨 둔다 — 서버가 내려가면 상수만 내려 운영
+// 진입점을 한 번에 닫을 수 있어야 한다.
+function ClaimsGate() {
+  if (!SERVER_CLAIMS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="취소/반품/교환"
+        message="취소/반품/교환 관리는 준비 중이에요"
+        description="클레임 승인·거부·회수 처리는 서버가 준비되면 열어 둘게요."
+      />
+    )
+  }
+  return <ClaimsRoute />
+}
+
+// 상수는 올렸다 — seller 모듈에 클레임 8경로가 모두 있고
 // (목록·상세·메모·승인·거부·회수 송장·회수 완료·재발송) 이 화면이 그것만 부른다. 목업은 지웠다.
 //
 // 화면에 두지 않은 것과 이유:

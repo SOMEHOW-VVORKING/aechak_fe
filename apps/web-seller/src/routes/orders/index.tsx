@@ -11,6 +11,8 @@ import {
   SearchInput,
 } from '@aechak/design-system/web'
 import { FieldError } from '@/shared/components/Field'
+import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { SERVER_ORDERS_AVAILABLE } from '@/shared/serverAvailability'
 import { useToast } from '@/shared/hooks/useToast'
 import {
   KEYWORD_MAX,
@@ -31,10 +33,27 @@ import {
 } from '@/features/orders'
 
 export const Route = createFileRoute('/orders/')({
-  component: OrdersRoute,
+  component: OrdersGate,
 })
 
-// 셀러 주문 API 5경로가 seller 모듈에 올라와(SCRUM-291) 목업 게이트(SERVER_ORDERS_AVAILABLE)를 걷어냈다.
+// 운영 진입 차단 스위치는 shared에 있다(`shared/serverAvailability`) — 대시보드 카드처럼 이 화면으로
+// 보내는 진입점이 같은 값을 봐야 "목록이 열려요"라고 안내하고 준비 중 화면으로 보내는 일이 생기지
+// 않는다. 상수는 올라가 있고(서버가 있다) 분기는 남겨 둔다 — 서버가 내려가면 상수만 내려 운영
+// 진입점을 한 번에 닫을 수 있어야 한다.
+function OrdersGate() {
+  if (!SERVER_ORDERS_AVAILABLE) {
+    return (
+      <UnavailableScreen
+        title="주문/배송 관리"
+        message="주문/배송 관리는 준비 중이에요"
+        description="주문 조회와 발송 처리는 서버가 준비되면 열어 둘게요."
+      />
+    )
+  }
+  return <OrdersRoute />
+}
+
+// 셀러 주문 API 5경로가 seller 모듈에 올라와(SCRUM-291) 목업 배선을 걷어냈다.
 // 목록·상세·발주확인·송장등록·배송완료가 전부 실서버다. 아직 셀러센터에 없는 처리는 둘이다 —
 // · 송장 정정: 서버에 경로가 없다(재등록은 409/50302). 목업 시절의 '송장 수정' 버튼을 지웠다.
 // · 클레임 승인·거부: 별 화면(/claims) 소관이라 여기서는 진행 중 클레임을 알리기만 한다.
