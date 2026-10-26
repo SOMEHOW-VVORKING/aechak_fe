@@ -4,7 +4,8 @@ export interface NavItem {
   key: string
   label: string
   icon: ReactNode
-  badge?: number
+  /** 숫자는 미처리 건수(brand 강조), 문자는 상태 표시(예: '준비 중', muted). */
+  badge?: number | string
   href?: string
 }
 
@@ -62,6 +63,27 @@ function ToggleChevron({ pointing }: { pointing: 'left' | 'right' }) {
     >
       <path d="m15 6-6 6 6 6" />
     </svg>
+  )
+}
+
+// 숫자 배지는 처리할 건수라 brand로 띄우고, 문자 배지는 항목의 상태(예: '준비 중')라 muted로
+// 가라앉힌다 — 둘을 같은 색으로 그리면 "준비 중"이 처리할 일처럼 읽힌다.
+function NavBadge({ badge }: { badge?: number | string }) {
+  if (typeof badge === 'string') {
+    if (!badge) return null
+    return (
+      <span className="flex-none rounded-full border border-muted-border bg-muted-surface px-2 py-0.5 text-badge font-semibold text-muted">
+        {badge}
+      </span>
+    )
+  }
+
+  if (badge == null || badge <= 0) return null
+
+  return (
+    <span className="min-w-5 h-5 px-1.5 rounded-full bg-brand text-brand-on text-badge font-semibold flex items-center justify-center">
+      {badge > 99 ? '99+' : badge}
+    </span>
   )
 }
 
@@ -141,11 +163,7 @@ export function SideNav({
                     {item.icon}
                   </span>
                   <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge != null && item.badge > 0 && (
-                    <span className="min-w-5 h-5 px-1.5 rounded-full bg-brand text-brand-on text-badge font-semibold flex items-center justify-center">
-                      {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  )}
+                  <NavBadge badge={item.badge} />
                 </>
               )
 
