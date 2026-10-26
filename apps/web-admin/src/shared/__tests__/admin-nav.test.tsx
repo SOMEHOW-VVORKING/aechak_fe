@@ -184,7 +184,9 @@ describe('어드민 nav', () => {
     '[AC-ADMIN-NAV-006] nav의 %s 항목을 누르면 %s 화면이 열린다(죽은 nav가 아니다)',
     async (label, path) => {
       const user = userEvent.setup()
-      const { router } = renderAt('/')
+      // 도착지와 **다른** 화면에서 시작한다 — 대시보드처럼 시작 경로와 목적지가 같으면 클릭이
+      // 아무 일도 하지 않아도(onSelect 배선이 끊겨도) 경로·제목 단언이 그냥 통과한다.
+      const { router } = renderAt(path === '/' ? '/audit-log' : '/')
 
       await user.click(await screen.findByRole('button', { name: navButtonName(label) }))
 
