@@ -184,6 +184,22 @@ const navGroups: NavGroup[] = [
 ]
 
 /**
+ * nav `key`와 맞춰 보기 전에 경로의 꼬리 슬래시를 떼어 낸다.
+ *
+ * `SideNav`는 `activeKey`를 key와 **완전 일치**로만 비교한다(DS가 경로 규칙을 알 수 없으므로
+ * 그래야 맞다). 그런데 어드민 라우트는 대부분 index 라우트라 주소창에 `/sellers/`처럼 꼬리
+ * 슬래시가 붙은 채로 들어오는 경로가 그대로 유지된다 — 화면은 열리지만 어느 항목도 활성이 되지
+ * 않아 활성 스타일과 `aria-current="page"`가 통째로 사라진다(운영자는 자기가 어느 메뉴에 있는지
+ * 알 수 없고 스크린리더도 현재 위치를 읽지 못한다). 앱 안에서 nav를 눌러 이동하면 슬래시가 붙지
+ * 않아 북마크·외부 링크·주소 직접 입력에서만 드러난다.
+ *
+ * 루트(`/`)는 그 자체가 key라 건드리지 않는다 — 떼어 내면 빈 문자열이 되어 대시보드가 영구히
+ * 비활성이 된다. 중첩 경로(`/sellers/applications`)는 key가 그 꼴 그대로라 자르지 않는다.
+ */
+const navActiveKey = (pathname: string) =>
+  pathname === '/' ? pathname : pathname.replace(/\/+$/, '')
+
+/**
  * 입점 신청 배지만 서버 값으로 채운다. 같은 queryKey를 심사 화면도 쓰므로 조회가 중복되지 않고,
  * 권한이 없거나 조회가 실패하면 null이 와서 배지 자체가 사라진다(틀린 숫자를 띄우지 않는다).
  */
@@ -219,7 +235,7 @@ function AdminNavShell({ pathname }: { pathname: string }) {
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base">
       <SideNav
         groups={groups}
-        activeKey={pathname}
+        activeKey={navActiveKey(pathname)}
         onSelect={key => navigate({ to: key })}
         header={
           <div className="flex items-center gap-3">

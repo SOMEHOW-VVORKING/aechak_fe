@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -97,13 +97,35 @@ describe('셀러센터 SideNav', () => {
     expect(LIVE_ITEMS.length + PENDING_ITEMS.length).toBe(NAV_DESTINATIONS.length)
   })
 
+  /**
+   * 정본(26e4b89^)의 그룹 배치. 머리글이 있는지만 보면 **항목이 엉뚱한 그룹으로 옮겨가도 통과한다**
+   * — 주문/배송 관리를 운영에서 스토어로 옮겨도 머리글 4개와 항목 12개는 그대로이기 때문이다.
+   * 이번 통합이 세 브랜치의 nav를 한 배열로 합치면서 지킨 것이 바로 이 배치(운영 5 / 판매 설정 3 /
+   * 정산 1 / 스토어 3)라, 어느 항목이 어느 그룹에 있는지까지 고정한다.
+   */
+  const GROUPS = [
+    ['운영', ['대시보드', '주문/배송 관리', '취소/반품/교환', '고객 문의', '리뷰 관리']],
+    ['판매 설정', ['상품 관리', '배송 정책', '혜택/쿠폰/할인']],
+    ['정산', ['정산/매출']],
+    ['스토어', ['스토어 설정', '알림/공지', '계정/보안']],
+  ] as const satisfies readonly (readonly [string, readonly string[]])[]
+
   it('[AC-SELLER-NAV-002] 게이트 이전 정본 4그룹(운영·판매 설정·정산·스토어) 구성으로 묶인다', async () => {
     renderAt('/products')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
-    for (const group of ['운영', '판매 설정', '정산', '스토어']) {
-      expect(screen.getByText(group)).toBeInTheDocument()
+    for (const [group, labels] of GROUPS) {
+      // SideNav가 머리글을 `aria-labelledby`로 그룹에 묶어 주므로 그룹 이름으로 좁힐 수 있다.
+      const section = screen.getByRole('group', { name: group })
+      for (const label of labels) {
+        expect(within(section).getByRole('button', { name: navButtonName(label) })).toBeInTheDocument()
+      }
+      // 그 그룹에 **그 항목들만** 있어야 한다(다른 그룹의 항목이 섞여 들어오면 개수가 어긋난다).
+      expect(within(section).getAllByRole('button')).toHaveLength(labels.length)
     }
+    // 그룹이 더 생기거나 사라지지 않았는지 — 12항목이 4그룹에 빠짐없이 들어갔다.
+    expect(screen.getAllByRole('group')).toHaveLength(GROUPS.length)
+    expect(GROUPS.flatMap(([, labels]) => labels)).toHaveLength(NAV_DESTINATIONS.length)
   })
 
   // SCRUM-301이 라우트를 신설해 다섯 항목이 nav로 돌아왔다(그전에는 404로 가는 죽은 nav라 빠져

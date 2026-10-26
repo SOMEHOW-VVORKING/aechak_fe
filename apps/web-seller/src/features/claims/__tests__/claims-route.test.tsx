@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -30,7 +30,7 @@ function renderClaims(entry = '/claims') {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return router
+  return { router, queryClient }
 }
 
 const rowOf = async (text: string) => (await screen.findByText(text)).closest('tr') as HTMLElement
@@ -119,6 +119,31 @@ describe('셀러 클레임 목록', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
     expect(screen.queryByText('조건에 맞는 클레임이 없어요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SELLER-CLAIM-116] 재조회가 실패하면 낡은 행의 판정 버튼이 잠긴다', async () => {
+    const { queryClient } = renderClaims()
+    const row = await rowOf('자동 급식기 5L')
+    expect(within(row).getByRole('button', { name: '반품 승인' })).toBeEnabled()
+
+    // 권한이 끊긴 뒤(403/50404) 재조회가 실패해도 react-query는 직전 데이터를 들고 있어 행이
+    // 그대로 남는다. 승인 Modal은 **그 행의 값**으로 만들어지므로(부담 주체·반품비) 낡은 행에서
+    // 누르면 셀러는 서버에 없는 상태를 보고 되돌릴 수 없는 판정을 지시하게 된다.
+    server.use(
+      http.get(SELLER_CLAIMS_URL, () =>
+        HttpResponse.json({ errorCode: 50404, message: '클레임을 처리할 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries()
+    })
+
+    expect(
+      await screen.findByText(/판매 활동이 가능한 계정만 클레임을 볼 수 있어요/),
+    ).toBeInTheDocument()
+    const staleRow = await rowOf('자동 급식기 5L')
+    expect(within(staleRow).getByRole('button', { name: '반품 승인' })).toBeDisabled()
+    expect(within(staleRow).getByRole('button', { name: '거부' })).toBeDisabled()
   })
 })
 

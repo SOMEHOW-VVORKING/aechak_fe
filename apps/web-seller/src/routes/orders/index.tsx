@@ -301,6 +301,7 @@ function OrdersRoute() {
           isLoading={isLoading}
           emptyLabel={isError ? '목록을 불러오지 못했어요.' : '조건에 맞는 주문이 없어요.'}
           isMutating={isMutating}
+          isError={isError}
           onRowClick={order => setDetailOrderId(order.orderId)}
           onAccept={order => setConfirmTarget({ action: 'accept', order })}
           onShip={setShipmentOrder}

@@ -18,6 +18,12 @@ import {
 interface ClaimsTableProps {
   claims: SellerClaimSummary[]
   isLoading: boolean
+  /**
+   * 목록 조회가 실패한 상태 — 빈 상태 문구를 가르고, **판정 버튼을 잠근다**. 재조회가 실패하면
+   * 직전 성공 데이터가 그대로 남아 낡은 행에서 승인·거부가 계속 눌리는데, 확인 Modal은 그 행의
+   * 값으로 만들어지므로 셀러는 서버에 없는 상태를 보고 되돌릴 수 없는 판정을 지시하게 된다
+   * (권한이 끊긴 403/50404면 전부 실패한다). ClaimDetailDrawer가 상세 조회 실패에 쓰는 규칙과 같다.
+   */
   isError: boolean
   isMutating: boolean
   onOpenDetail: (claimPublicId: string) => void
@@ -39,6 +45,11 @@ export function ClaimsTable({
   onReject,
   onReship,
 }: ClaimsTableProps) {
+  // 낡은 행으로 되돌릴 수 없는 판정을 지시하지 않게, 처리 중이거나 조회가 실패한 동안 잠근다.
+  // '회수 처리'는 예외다 — mutation이 아니라 상세 Drawer를 여는 버튼이고, 상세는 스스로 다시
+  // 조회해 실패하면 거기서 잠긴다(열어 보는 길까지 막으면 셀러가 확인할 방법이 없어진다).
+  const decisionsLocked = isMutating || isError
+
   const columns: Column<SellerClaimSummary>[] = [
     {
       key: 'order',
@@ -128,7 +139,7 @@ export function ClaimsTable({
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={isMutating}
+                  disabled={decisionsLocked}
                   onClick={event => {
                     stop(event)
                     onApprove(claim)
@@ -139,7 +150,7 @@ export function ClaimsTable({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={isMutating}
+                  disabled={decisionsLocked}
                   onClick={event => {
                     stop(event)
                     onReject(claim)
@@ -168,7 +179,7 @@ export function ClaimsTable({
               <Button
                 variant="primary"
                 size="sm"
-                disabled={isMutating}
+                disabled={decisionsLocked}
                 onClick={event => {
                   stop(event)
                   onReship(claim)

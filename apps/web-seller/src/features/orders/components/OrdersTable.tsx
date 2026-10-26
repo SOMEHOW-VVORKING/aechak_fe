@@ -33,6 +33,14 @@ interface OrdersTableProps {
   emptyLabel: string
   /** 처리 중에는 모든 행의 버튼을 잠근다(확인 Modal 패턴 — 값은 라우트의 isMutating). */
   isMutating: boolean
+  /**
+   * 목록 조회가 실패한 상태. 재조회가 실패하면 직전 성공 데이터가 그대로 남아(placeholderData)
+   * 낡은 행에서 처리 버튼이 계속 눌린다 — 확인 Modal은 **그 행의 값**으로 만들어지므로 셀러는
+   * 서버에 없는 상태를 보고 되돌릴 수 없는 전이를 지시하게 된다(권한이 끊긴 403이면 전부 실패한다).
+   * 그래서 조회가 실패한 동안에는 처리 버튼을 잠근다 — ClaimDetailDrawer가 상세 조회 실패에
+   * 쓰는 규칙과 같다. 행 클릭(상세 열기)은 막지 않는다: 상세는 스스로 다시 조회한다.
+   */
+  isError: boolean
   onRowClick: (order: SellerOrderSummary) => void
   onAccept: (order: SellerOrderSummary) => void
   onShip: (order: SellerOrderSummary) => void
@@ -44,11 +52,15 @@ export function OrdersTable({
   isLoading,
   emptyLabel,
   isMutating,
+  isError,
   onRowClick,
   onAccept,
   onShip,
   onCompleteDelivery,
 }: OrdersTableProps) {
+  // 낡은 행으로 되돌릴 수 없는 전이를 지시하지 않게, 처리 중이거나 조회가 실패한 동안 잠근다.
+  const actionsLocked = isMutating || isError
+
   // 행 클릭이 상세를 열므로, 액션 버튼은 클릭이 행까지 올라가지 않게 막는다.
   const actionHandler = (run: () => void) => (event: React.MouseEvent) => {
     event.stopPropagation()
@@ -100,7 +112,7 @@ export function OrdersTable({
             <Button
               variant="primary"
               size="sm"
-              disabled={isMutating}
+              disabled={actionsLocked}
               aria-label={`주문 ${o.orderId} 발주 확인`}
               onClick={actionHandler(() => onAccept(o))}
             >
@@ -110,7 +122,7 @@ export function OrdersTable({
             <Button
               variant="primary"
               size="sm"
-              disabled={isMutating}
+              disabled={actionsLocked}
               aria-label={`주문 ${o.orderId} 발송 처리`}
               onClick={actionHandler(() => onShip(o))}
             >
@@ -120,7 +132,7 @@ export function OrdersTable({
             <Button
               variant="secondary"
               size="sm"
-              disabled={isMutating}
+              disabled={actionsLocked}
               aria-label={`주문 ${o.orderId} 배송 완료`}
               onClick={actionHandler(() => onCompleteDelivery(o))}
             >

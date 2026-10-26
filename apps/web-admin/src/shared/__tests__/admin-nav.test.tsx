@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -111,6 +111,59 @@ describe('어드민 nav', () => {
     for (const label of PENDING_LABELS) {
       expect(screen.getByRole('button', { name: pendingName(label) })).toBeInTheDocument()
     }
+  })
+
+  /**
+   * 차단 이전 nav의 그룹 배치 + 그 뒤 생긴 `/admins`. 머리글과 항목을 각각 전역에서 찾기만 하면
+   * **항목이 다른 그룹으로 옮겨가도 통과한다** — 머리글 5개와 항목 15개는 그대로이기 때문이다.
+   * 운영자가 메뉴에서 읽는 정보의 절반이 "무엇이 무엇과 묶여 있나"라 소속까지 고정한다.
+   */
+  const GROUPS = [
+    ['운영', ['대시보드', '셀러 입점 심사', '셀러 관리', '일반 회원 관리']],
+    ['검수', ['상품 검수 관리', 'AI 검수 큐']],
+    ['신고 / 문의', ['신고 제재 관리', '서비스 문의 관리']],
+    ['주문 / 클레임', ['주문 배송 모니터링', '취소/반품/교환', '리뷰 관리', '채팅 CS 모니터링']],
+    ['운영 관리', ['관리자 관리', '알림/공지 관리', '어드민 액션 로그']],
+  ] as const satisfies readonly (readonly [string, readonly string[]])[]
+
+  it('[AC-ADMIN-NAV-008] 15항목이 정해진 5그룹에 소속되어 묶인다', async () => {
+    renderAt('/')
+
+    expect(await screen.findByRole('button', { name: '관리자 관리' })).toBeInTheDocument()
+    for (const [group, labels] of GROUPS) {
+      // SideNav가 머리글을 `aria-labelledby`로 그룹에 묶어 주므로 그룹 이름으로 좁힐 수 있다.
+      const section = screen.getByRole('group', { name: group })
+      for (const label of labels) {
+        expect(within(section).getByRole('button', { name: navButtonName(label) })).toBeInTheDocument()
+      }
+      // 그 그룹에 **그 항목들만** 있어야 한다(다른 그룹 항목이 섞이면 개수가 어긋난다).
+      expect(within(section).getAllByRole('button')).toHaveLength(labels.length)
+    }
+    expect(screen.getAllByRole('group')).toHaveLength(GROUPS.length)
+    expect(GROUPS.flatMap(([, labels]) => labels)).toHaveLength(NAV_DESTINATIONS.length)
+  })
+
+  /**
+   * 꼬리 슬래시가 붙은 주소로 들어와도 현재 메뉴가 활성으로 보여야 한다.
+   *
+   * 어드민 라우트는 대부분 index 라우트라 `/sellers/`처럼 들어온 경로가 그대로 유지되는데,
+   * `SideNav`는 `activeKey`를 key와 완전 일치로 비교한다 — 셸이 pathname을 그대로 넘기면 어느
+   * 항목도 활성이 되지 않아 활성 스타일과 `aria-current`가 통째로 사라진다(화면은 열리는데
+   * 운영자는 자기가 어느 메뉴에 있는지 알 수 없다). 앱 안에서 nav를 눌러 이동하면 슬래시가
+   * 붙지 않아 북마크·외부 링크·주소 직접 입력에서만 드러나는 자리라, 그 진입으로 단언한다.
+   */
+  it.each([
+    ['/sellers/', '셀러 관리'],
+    ['/members/', '일반 회원 관리'],
+    ['/admins/', '관리자 관리'],
+    ['/sellers/applications/', '셀러 입점 심사'],
+  ])('[AC-ADMIN-NAV-009] %s 로 들어와도 %s 항목이 현재 위치로 표시된다', async (path, label) => {
+    renderAt(path)
+
+    const item = await screen.findByRole('button', { name: navButtonName(label) })
+    expect(item).toHaveAttribute('aria-current', 'page')
+    // 활성이 한 항목뿐이어야 한다 — 접두 일치로 느슨하게 맞추면 여러 항목이 함께 켜진다.
+    expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
   })
 
   it('[AC-ADMIN-NAV-002] 꼬리표는 BE가 없는 항목에만 붙고 실연동 항목에는 붙지 않는다', async () => {

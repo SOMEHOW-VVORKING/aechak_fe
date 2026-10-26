@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -31,6 +31,7 @@ function renderOrders(entry = '/orders') {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return { router, queryClient }
 }
 
 const rowOf = async (text: string) => (await screen.findByText(text)).closest('tr') as HTMLElement
@@ -182,6 +183,34 @@ describe('셀러 주문 목록 실연동', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
     // "조건에 맞는 주문이 없어요"로 떨어지면 셀러가 필터를 의심한다.
     expect(screen.getByText('목록을 불러오지 못했어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SORDER-019] 재조회가 실패하면 낡은 행의 처리 버튼이 잠긴다', async () => {
+    const { queryClient } = renderOrders()
+    const row = await rowOf(NEW_ORDER.orderId)
+    const accept = within(row).getByRole('button', { name: `주문 ${NEW_ORDER.orderId} 발주 확인` })
+    expect(accept).toBeEnabled()
+
+    // 권한이 끊긴 뒤(403/50003) 재조회가 실패해도 react-query는 직전 성공 데이터를 들고 있어
+    // 행이 그대로 남는다. 그 낡은 행에서 발주 확인이 눌리면 셀러는 서버에 없는 상태를 보고
+    // 되돌릴 수 없는 전이를 지시하는 셈이고, 요청은 전부 403으로 떨어진다.
+    server.use(
+      http.get(SELLER_ORDERS_URL, () =>
+        HttpResponse.json({ errorCode: 50003, message: '셀러 주문을 처리할 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries()
+    })
+
+    expect(
+      await screen.findByText(/주문을 보거나 처리할 수 있는 계정이 아니에요/),
+    ).toBeInTheDocument()
+    // 행은 지우지 않는다(마지막으로 본 내용은 셀러에게 정보다) — 대신 처리만 잠근다.
+    expect(within(await rowOf(NEW_ORDER.orderId)).getByRole('button', {
+      name: `주문 ${NEW_ORDER.orderId} 발주 확인`,
+    })).toBeDisabled()
+    expect(screen.getByText(/아래 목록은 마지막으로 불러온 내용이라/)).toBeInTheDocument()
   })
 })
 
