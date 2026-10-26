@@ -132,10 +132,10 @@ interface Recorded {
   /** 어드민 요청이 api 호스트(8080)로 샜는지. 0건이어야 한다. */
   leakedToApiHost: string[]
   /**
-   * 계약과 다른 메서드로 온 요청. BE는 조회가 GET, 결정이 POST뿐이라 그 밖은 서버에서 405다 —
-   * 스텁이 메서드를 안 보면 생성기가 메서드를 잘못 바꿔도 아무 테스트가 깨지지 않는다.
+   * 계약 밖 요청 — 메서드가 틀렸거나(BE는 조회 GET·결정 POST뿐) 경로가 틀린 것. 스텁이 이걸
+   * 안 가르면 생성기가 메서드나 URL을 잘못 바꿔도 아무 테스트가 깨지지 않는다.
    */
-  wrongMethods: string[]
+  offContract: string[]
 }
 
 interface StubOptions {
@@ -152,13 +152,13 @@ async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Reco
     listQueries: [],
     decisions: [],
     leakedToApiHost: [],
-    wrongMethods: [],
+    offContract: [],
   }
   let downloadIssue = 0
 
   /** 계약 밖 메서드는 서버와 같게 405로 떨어뜨리고 기록한다. */
   function rejectMethod(route: Route, method: string, pathname: string) {
-    recorded.wrongMethods.push(`${method} ${pathname}`)
+    recorded.offContract.push(`${method} ${pathname}`)
     return fulfillAdmin(route, 405, { errorCode: 90000, message: '허용되지 않는 메서드' })
   }
 
@@ -168,8 +168,14 @@ async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Reco
 
     const url = new URL(route.request().url())
     const match = /\/admin\/seller-applications(?:\/(\d+)(?:\/(approve|reject))?)?$/.exec(url.pathname)
-    const id = match?.[1] == null ? null : Number(match[1])
-    const action = match?.[2] ?? null
+    // 정규식이 안 맞는 경로(`/seller-applications/typo` 등)를 목록 분기로 흘리면 조회 URL이
+    // 틀려도 정상 목록이 돌아와 회귀가 묻힌다 — 서버처럼 404로 떨어뜨리고 기록한다.
+    if (!match) {
+      recorded.offContract.push(`${method} ${url.pathname}`)
+      return fulfillAdmin(route, 404, { errorCode: 90000, message: '없는 경로' })
+    }
+    const id = match[1] == null ? null : Number(match[1])
+    const action = match[2] ?? null
 
     if (id == null) {
       if (method !== 'GET') return rejectMethod(route, method, url.pathname)
@@ -346,7 +352,7 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   await expect(page.getByText('심사 대기 1')).toBeVisible()
   await expect(page.getByRole('button', { name: '셀러 입점 심사' })).toContainText('1')
   expect(recorded.leakedToApiHost).toEqual([])
-  expect(recorded.wrongMethods).toEqual([])
+  expect(recorded.offContract).toEqual([])
   await shot(page, 'admin-03-after-approve')
 })
 
@@ -389,7 +395,7 @@ test('[AC-ADM-E2E-021] 전송 중 확인 버튼이 잠겨, 다시 눌러도 appr
   await expect(page.getByText('입점을 승인했어요.')).toBeVisible()
   expect(recorded.decisions).toHaveLength(1)
   expect(recorded.leakedToApiHost).toEqual([])
-  expect(recorded.wrongMethods).toEqual([])
+  expect(recorded.offContract).toEqual([])
 })
 
 // ── 3. 상태 필터는 서버 쿼리로 나간다 ───────────────────────────────────────
@@ -468,7 +474,7 @@ test('[AC-ADM-E2E-023] 사유를 고르기 전에는 제출이 잠기고, 직접
     page.getByRole('row').filter({ hasText: '해피독몰' }).getByText('반려', { exact: true }),
   ).toBeVisible()
   expect(recorded.leakedToApiHost).toEqual([])
-  expect(recorded.wrongMethods).toEqual([])
+  expect(recorded.offContract).toEqual([])
   await shot(page, 'admin-06-after-reject')
 })
 
@@ -494,6 +500,6 @@ test('[AC-ADM-E2E-024] 상세 조회 500이면 Drawer가 사유를 알리고 결
   await expect(page.getByRole('button', { name: '제출' })).toHaveCount(0)
   expect(recorded.decisions).toEqual([])
   expect(recorded.leakedToApiHost).toEqual([])
-  expect(recorded.wrongMethods).toEqual([])
+  expect(recorded.offContract).toEqual([])
   await shot(page, 'admin-07-detail-load-error')
 })

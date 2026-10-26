@@ -579,7 +579,7 @@ test('[AC-STORE-E2E-008] 두 번째 서류 업로드가 실패하면 저장도 s
 })
 
 // ── 9. 저장이 실패하면 submit은 아예 나가지 않는다 ───────────────────────────
-test('[AC-STORE-E2E-009] 임시저장이 400으로 거절되면 submit이 나가지 않고 사유만 뜬다', async ({
+test('[AC-STORE-E2E-009] 임시저장이 403/10103으로 거절되면 submit이 나가지 않고 사유만 뜬다', async ({
   page,
 }) => {
   // submit은 saveDraft의 onSuccess 안에서만 불려야 한다 — 저장 실패 후에도 submit이 나가면
@@ -587,9 +587,12 @@ test('[AC-STORE-E2E-009] 임시저장이 400으로 거절되면 submit이 나가
   const recorded = await stubSellerApi(page, {
     snapshots: ['notFound'],
     onDraft: () => ({
-      status: 400,
-      // 10103은 본인 인증 미완이다. BE message는 격식체라 화면이 자체 카피로 갈아 끼운다 —
-      // 그대로 흘려보내면 -해요체 규칙(AGENTS.md 5절)이 깨진다.
+      // 휴대폰 미인증은 스펙상 **403** errorCode 10103이다(schema.yaml의 saveSellerApplicationDraft,
+      // "선행 조건 — 가장 먼저 검사"). 401이 아닌 403이라 refresh를 타지 않고 그대로 onError로
+      // 내려와야 한다 — 상태를 400으로 두면 계약에 없는 조합이라 이 경로를 못 본다.
+      status: 403,
+      // BE message는 격식체라 화면이 자체 카피로 갈아 끼운다 — 그대로 흘려보내면
+      // -해요체 규칙(AGENTS.md 5절)이 깨진다.
       json: { errorCode: 10103, message: '휴대폰 본인 인증이 필요합니다.' },
     }),
   })
