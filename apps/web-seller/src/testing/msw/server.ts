@@ -22,6 +22,9 @@ export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
+export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-policy`
+export const SELLER_SETTLEMENTS_URL = `${sellerBase}/sellers/me/settlements`
+export const SELLER_SETTLEMENT_MONTHS_URL = `${sellerBase}/sellers/me/settlements/months`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -1520,11 +1523,328 @@ const claimHandlers = [
   }),
 ]
 
+// ─── 배송 정책 (seller 호스트 /sellers/me/shipping-policy) ────────────────────
+// BE ShippingPolicyResponse/UpdateRequest 모양 그대로. 서버 쪽 두 규칙을 재현한다.
+// 1. 저장한 적 없는 셀러도 404가 아니라 컬럼 기본값을 받는다(0원·2영업일·반품지 동일).
+// 2. PUT은 전체 덮어쓰기이고 204(바디 없음)이며, returnSameAsOrigin=true면 반품지 3필드를
+//    저장하지 않고 null로 떨어뜨린다 — 화면이 저장 직후 그 소거를 반영하는지 테스트가 본다.
+
+export interface ShippingPolicyWire {
+  defaultCourierCode: string | null
+  baseShippingFee: number
+  freeShippingThreshold: number | null
+  originZipCode: string | null
+  originRoadAddress: string | null
+  originDetailAddress: string | null
+  returnSameAsOrigin: boolean
+  returnZipCode: string | null
+  returnRoadAddress: string | null
+  returnDetailAddress: string | null
+  jejuExtraFee: number
+  remoteAreaExtraFee: number
+  returnFee: number
+  exchangeFee: number
+  avgDispatchDays: number
+  shippingPolicyText: string | null
+}
+
+/** V32 컬럼 기본값 — 배송 정책을 한 번도 저장하지 않은 셀러가 보는 값. */
+export const DEFAULT_SHIPPING_POLICY: ShippingPolicyWire = {
+  defaultCourierCode: null,
+  baseShippingFee: 0,
+  freeShippingThreshold: null,
+  originZipCode: null,
+  originRoadAddress: null,
+  originDetailAddress: null,
+  returnSameAsOrigin: true,
+  returnZipCode: null,
+  returnRoadAddress: null,
+  returnDetailAddress: null,
+  jejuExtraFee: 0,
+  remoteAreaExtraFee: 0,
+  returnFee: 0,
+  exchangeFee: 0,
+  avgDispatchDays: 2,
+  shippingPolicyText: null,
+}
+
+let shippingPolicy: ShippingPolicyWire = { ...DEFAULT_SHIPPING_POLICY }
+
+export function makeShippingPolicyWire(
+  overrides: Partial<ShippingPolicyWire> = {},
+): ShippingPolicyWire {
+  return { ...DEFAULT_SHIPPING_POLICY, ...overrides }
+}
+
+/** 인자 없이 부르면 컬럼 기본값으로 되돌린다. */
+export function seedShippingPolicy(state: ShippingPolicyWire = DEFAULT_SHIPPING_POLICY): void {
+  shippingPolicy = { ...state }
+}
+
+/** 핸들러가 저장한 현재 정책 — 테스트가 PUT 본문 반영을 단언할 때 읽는다. */
+export function currentShippingPolicy(): ShippingPolicyWire {
+  return { ...shippingPolicy }
+}
+
+const shippingPolicyHandlers = [
+  http.get(SELLER_SHIPPING_POLICY_URL, () => HttpResponse.json({ data: { ...shippingPolicy } })),
+  http.put(SELLER_SHIPPING_POLICY_URL, async ({ request }) => {
+    const body = (await request.json()) as ShippingPolicyUpdateBody
+    const fees = [
+      body.baseShippingFee,
+      body.jejuExtraFee,
+      body.remoteAreaExtraFee,
+      body.returnFee,
+      body.exchangeFee,
+    ]
+    // 금액 필드는 서버가 Long이라 소수가 섞이면 도메인 검증까지 가지 못하고 역직렬화에서
+    // 400/90001("요청 본문을 읽을 수 없습니다.")로 떨어진다 — 10005와 다른 경로다.
+    const amounts = [...fees, ...(body.freeShippingThreshold == null ? [] : [body.freeShippingThreshold])]
+    if (amounts.some(amount => !Number.isInteger(amount))) {
+      return errorAt(400, 90001, '요청 본문을 읽을 수 없습니다.')
+    }
+    // Seller.validateShippingPolicy 미러 — 음수·상한·자기모순·발송일 범위는 전부 10005다.
+    if (fees.some(fee => fee < 0 || fee > 1_000_000)) return invalidShippingPolicy()
+    if (body.freeShippingThreshold != null) {
+      if (body.freeShippingThreshold < 0 || body.freeShippingThreshold > 100_000_000) {
+        return invalidShippingPolicy()
+      }
+      if (body.freeShippingThreshold < body.baseShippingFee) return invalidShippingPolicy()
+    }
+    if (body.avgDispatchDays < 1 || body.avgDispatchDays > 7) return invalidShippingPolicy()
+    // 셀러 게이트가 택배사 검증보다 앞서지만 여기서는 셀러가 늘 활성이라 택배사만 본다.
+    if (body.defaultCourierCode != null && !couriers.some(c => c.courierCode === body.defaultCourierCode)) {
+      return errorAt(404, 50303, '택배사를 찾을 수 없습니다.')
+    }
+    const sameAsOrigin = body.returnSameAsOrigin
+    shippingPolicy = {
+      defaultCourierCode: body.defaultCourierCode ?? null,
+      baseShippingFee: body.baseShippingFee,
+      freeShippingThreshold: body.freeShippingThreshold ?? null,
+      originZipCode: body.originZipCode ?? null,
+      originRoadAddress: body.originRoadAddress ?? null,
+      originDetailAddress: body.originDetailAddress ?? null,
+      returnSameAsOrigin: sameAsOrigin,
+      returnZipCode: sameAsOrigin ? null : (body.returnZipCode ?? null),
+      returnRoadAddress: sameAsOrigin ? null : (body.returnRoadAddress ?? null),
+      returnDetailAddress: sameAsOrigin ? null : (body.returnDetailAddress ?? null),
+      jejuExtraFee: body.jejuExtraFee,
+      remoteAreaExtraFee: body.remoteAreaExtraFee,
+      returnFee: body.returnFee,
+      exchangeFee: body.exchangeFee,
+      avgDispatchDays: body.avgDispatchDays,
+      shippingPolicyText: body.shippingPolicyText ?? null,
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
+type ShippingPolicyUpdateBody = Partial<Omit<ShippingPolicyWire, 'returnSameAsOrigin'>> &
+  Pick<
+    ShippingPolicyWire,
+    | 'baseShippingFee'
+    | 'returnSameAsOrigin'
+    | 'jejuExtraFee'
+    | 'remoteAreaExtraFee'
+    | 'returnFee'
+    | 'exchangeFee'
+    | 'avgDispatchDays'
+  >
+
+const invalidShippingPolicy = () =>
+  errorAt(400, 10005, '배송 정책 값이 올바르지 않습니다.')
+
+
+// ─── 정산 조회 (seller 호스트 /sellers/me/settlements) ────────────────────────
+// BE SellerSettlement* 응답 모양 그대로. 서버가 주문 단위로 접는 규칙까지 재현한다.
+// 1. 품목이 여럿이면 한 행으로 접히고 금액은 품목 합이다(Settlement.netAmount의 합).
+// 2. 한 주문 안에서 상태가 갈리면 보류 > 대기 > 예정 > 완료 순으로 센 쪽이 이긴다.
+// 3. 상태 필터를 걸어도 금액은 쪼개지 않는다 — 주문 전체 합을 그대로 준다.
+// 4. 요율은 정산 행에 박힌 스냅샷이라 행마다 다를 수 있다(화면이 하드코딩하지 않는지 본다).
+
+export type SettlementStatusWire = 'pending' | 'scheduled' | 'completed' | 'held'
+
+export interface SettlementItemWire {
+  orderItemId: number
+  productName: string | null
+  quantity: number | null
+  grossAmount: number
+  shippingFee: number
+  commission: number
+  pgFee: number
+  sellerCouponBurden: number
+  refundDeduction: number
+  status: SettlementStatusWire
+}
+
+export interface SettlementOrderWire {
+  orderId: string
+  settlementMonth: string
+  confirmedAt: string | null
+  expectedPayoutDate: string
+  platformFeeRate: number
+  pgFeeRate: number
+  items: SettlementItemWire[]
+}
+
+/** 품목 지급 예정액 = 상품금액 + 배송비 - 수수료 둘 - 쿠폰 부담 - 환불 차감(Settlement.create 미러). */
+const netAmountOf = (item: SettlementItemWire): number =>
+  item.grossAmount +
+  item.shippingFee -
+  item.commission -
+  item.pgFee -
+  item.sellerCouponBurden -
+  item.refundDeduction
+
+/** 서버의 상태 접기 — 보류가 가장 세고 그다음은 덜 진행된 쪽이다. */
+const STATUS_SEVERITY: Record<SettlementStatusWire, number> = {
+  held: 3,
+  pending: 2,
+  scheduled: 1,
+  completed: 0,
+}
+
+const foldStatus = (items: SettlementItemWire[]): SettlementStatusWire =>
+  items.reduce<SettlementStatusWire>(
+    (worst, item) => (STATUS_SEVERITY[item.status] > STATUS_SEVERITY[worst] ? item.status : worst),
+    'completed',
+  )
+
+const sum = (items: SettlementItemWire[], pick: (item: SettlementItemWire) => number) =>
+  items.reduce((total, item) => total + pick(item), 0)
+
+export function makeSettlementItemWire(
+  overrides: Partial<SettlementItemWire> = {},
+): SettlementItemWire {
+  return {
+    orderItemId: 1,
+    productName: '고양이 자동 급식기 5L',
+    quantity: 1,
+    grossAmount: 64_000,
+    shippingFee: 3_000,
+    commission: 5_120,
+    pgFee: 1_792,
+    sellerCouponBurden: 0,
+    refundDeduction: 0,
+    status: 'pending',
+    ...overrides,
+  }
+}
+
+export function makeSettlementOrderWire(
+  overrides: Partial<SettlementOrderWire> = {},
+): SettlementOrderWire {
+  return {
+    orderId: '01JZ0RDER0000000000000001',
+    settlementMonth: '2026-06',
+    confirmedAt: '2026-06-18T10:00:00',
+    expectedPayoutDate: '2026-06-23',
+    platformFeeRate: 0.08,
+    pgFeeRate: 0.028,
+    items: [makeSettlementItemWire()],
+    ...overrides,
+  }
+}
+
+let settlementOrders: SettlementOrderWire[] = []
+
+/** 인자 없이 부르면 정산 행이 없는 셀러(빈 목록·빈 월 목록)가 된다. */
+export function seedSettlements(orders: SettlementOrderWire[] = []): void {
+  settlementOrders = orders.map(order => ({ ...order, items: order.items.map(item => ({ ...item })) }))
+}
+
+const summaryOfOrder = (order: SettlementOrderWire) => ({
+  orderId: order.orderId,
+  settlementMonth: order.settlementMonth,
+  confirmedAt: order.confirmedAt,
+  expectedPayoutDate: order.expectedPayoutDate,
+  productAmount: sum(order.items, item => item.grossAmount),
+  feeAmount: sum(order.items, item => item.commission + item.pgFee),
+  finalAmount: sum(order.items, netAmountOf),
+  status: foldStatus(order.items),
+})
+
+const settlementHandlers = [
+  // 월 목록이 목록보다 먼저 와야 한다 — `/months`가 `/{orderPublicId}`에 먹히지 않게.
+  http.get(SELLER_SETTLEMENT_MONTHS_URL, () =>
+    HttpResponse.json({
+      data: {
+        months: [...new Set(settlementOrders.map(order => order.settlementMonth))].sort().reverse(),
+      },
+    }),
+  ),
+  http.get(SELLER_SETTLEMENTS_URL, ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const month = query.get('month')
+    const status = query.get('status')
+    const page = Number(query.get('page') ?? '0')
+    const size = Number(query.get('size') ?? '20')
+    // 빈 값 파라미터는 미입력이 아니라 형식 오류다(BE 계약) — FE가 키째 빼는지 이 분기가 본다.
+    if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return badRequest('month는 YYYY-MM 형식이어야 합니다.')
+    }
+    if (status !== null && !['pending', 'scheduled', 'completed', 'held'].includes(status)) {
+      return badRequest('status: 정산 대기, 정산 예정, 정산 완료, 정산 보류만 지원합니다.')
+    }
+    if (!Number.isInteger(size) || size < 1 || size > 100) return badRequest('size는 1~100 사이여야 합니다.')
+    if (!Number.isInteger(page) || page < 0) return badRequest('page는 0 이상이어야 합니다.')
+
+    const matched = settlementOrders
+      .filter(order => month === null || order.settlementMonth === month)
+      .filter(order => status === null || foldStatus(order.items) === status)
+      // 확정일 최신순. 확정 전(null)은 뒤로.
+      .sort((a, b) => (b.confirmedAt ?? '').localeCompare(a.confirmedAt ?? ''))
+    const totalCount = matched.length
+    const totalPages = Math.ceil(totalCount / size)
+    const start = page * size
+    return HttpResponse.json({
+      data: {
+        settlements: matched.slice(start, start + size).map(summaryOfOrder),
+        totalCount,
+        page,
+        size,
+        totalPages,
+        hasNext: start + size < totalCount,
+      },
+    })
+  }),
+  http.get(`${SELLER_SETTLEMENTS_URL}/:orderPublicId`, ({ params }) => {
+    const order = settlementOrders.find(row => row.orderId === params['orderPublicId'])
+    if (!order) return errorAt(404, 70002, '정산 내역을 찾을 수 없습니다.')
+    return HttpResponse.json({
+      data: {
+        ...summaryOfOrder(order),
+        shippingFee: sum(order.items, item => item.shippingFee),
+        couponBurden: sum(order.items, item => item.sellerCouponBurden),
+        platformFeeAmount: sum(order.items, item => item.commission),
+        pgFeeAmount: sum(order.items, item => item.pgFee),
+        refundDeduction: sum(order.items, item => item.refundDeduction),
+        platformFeeRate: order.platformFeeRate,
+        pgFeeRate: order.pgFeeRate,
+        items: order.items.map(item => ({
+          orderItemId: item.orderItemId,
+          productName: item.productName,
+          quantity: item.quantity,
+          grossAmount: item.grossAmount,
+          shippingFee: item.shippingFee,
+          commission: item.commission,
+          pgFee: item.pgFee,
+          sellerCouponBurden: item.sellerCouponBurden,
+          refundDeduction: item.refundDeduction,
+          netAmount: netAmountOf(item),
+        })),
+      },
+    })
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
   ...courierHandlers,
   ...sellerOrderHandlers,
   ...claimHandlers,
+  ...shippingPolicyHandlers,
+  ...settlementHandlers,
 ]
 export const server = setupServer(...handlers)

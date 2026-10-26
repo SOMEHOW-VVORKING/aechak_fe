@@ -35,7 +35,6 @@ export type {
   ClaimType,
   ClaimStatus,
   ClaimResponsibleParty,
-  ShippingPolicy,
   PaginatedResponse,
   HistoryEntry,
   SellerApplicationStatus,
@@ -55,8 +54,6 @@ export type {
   AiReviewDetectionStage,
   AiReviewStatus,
   AiReviewQueueItem,
-  SettlementStatus,
-  Settlement,
   ProductReportReason,
   ProductReport,
 } from './types'
