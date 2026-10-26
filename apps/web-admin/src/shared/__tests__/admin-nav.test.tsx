@@ -1,22 +1,35 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
+import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
-import { makeAdminApplicationWire, seedAdminApplications } from '@/testing/msw/server'
+import {
+  ADMIN_APPLICATIONS_URL,
+  makeAdminApplicationWire,
+  seedAdminApplications,
+  server,
+} from '@/testing/msw/server'
 
 function renderAt(path: string) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
+  // 에러 분기를 즉시 보려면 재시도를 끈다(main.tsx는 retry 1).
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return { router, queryClient }
 }
+
+/** TanStack은 index 라우트의 pathname에 꼬리 슬래시를 붙일 수 있다 — nav key와 같은 꼴로 맞춘다. */
+const normalizePath = (pathname: string) =>
+  pathname === '/' ? pathname : pathname.replace(/\/+$/, '')
 
 /**
  * BE가 dev에 있어 꼬리표 없이 실연동으로 쓰는 항목.
@@ -46,6 +59,33 @@ const PENDING_LABELS = [
 
 /** 꼬리표 글자는 버튼 접근명 끝에 붙는다 — 어느 항목에 붙었는지까지 이름으로 확인할 수 있다. */
 const pendingName = (label: string) => `${label} 준비 중`
+
+/**
+ * nav 항목이 **어느 화면으로 가는지**. 주소로 직접 열어 보는 단언은 라벨과 `key`가 어긋난 것을
+ * 잡지 못한다 — 라벨은 그대로 두고 `key`만 다른 경로로 바꿔도 통과하므로, 실제로 눌러서 도착지를
+ * 확인한다. 15항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
+ * 화면에 떨어진 것이다.
+ */
+const NAV_DESTINATIONS = [
+  ['대시보드', '/'],
+  ['셀러 입점 심사', '/sellers/applications'],
+  ['셀러 관리', '/sellers'],
+  ['일반 회원 관리', '/members'],
+  ['상품 검수 관리', '/products/review'],
+  ['AI 검수 큐', '/products/ai-queue'],
+  ['신고 제재 관리', '/reports'],
+  ['서비스 문의 관리', '/inquiries'],
+  ['주문 배송 모니터링', '/orders/monitoring'],
+  ['취소/반품/교환', '/claims'],
+  ['리뷰 관리', '/reviews'],
+  ['채팅 CS 모니터링', '/chat-monitoring'],
+  ['관리자 관리', '/admins'],
+  ['알림/공지 관리', '/notices'],
+  ['어드민 액션 로그', '/audit-log'],
+] as const satisfies readonly (readonly [string, string])[]
+
+const navButtonName = (label: string) =>
+  (PENDING_LABELS as readonly string[]).includes(label) ? pendingName(label) : label
 
 // SCRUM-238(26e4b89)이 BE 없는 화면의 운영 진입을 막으면서 nav 항목까지 걷어내, 어드민 메뉴가
 // 홈·입점 심사·관리자 관리 셋만 남았다. 규약 10의 목적은 "메뉴를 숨겨라"가 아니라 "운영자가
@@ -129,10 +169,48 @@ describe('어드민 nav', () => {
     },
   )
 
-  it('[AC-ADMIN-NAV-005] 대시보드 안내는 열려 있는 화면으로 바로 보내준다', async () => {
-    renderAt('/')
+  it('[AC-ADMIN-NAV-005] 대시보드 안내의 바로가기는 실제로 입점 심사 화면으로 보낸다', async () => {
+    const user = userEvent.setup()
+    const { router } = renderAt('/')
 
-    const shortcut = await screen.findByRole('button', { name: '셀러 입점 심사로' })
-    expect(shortcut).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: '셀러 입점 심사로' }))
+
+    // 버튼 존재만 보면 onClick을 떼어도 통과한다 — 도착지까지 단언한다.
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sellers/applications'))
+    expect(await screen.findByRole('heading', { name: '셀러 입점 심사' })).toBeInTheDocument()
+  })
+
+  it.each(NAV_DESTINATIONS)(
+    '[AC-ADMIN-NAV-006] nav의 %s 항목을 누르면 %s 화면이 열린다(죽은 nav가 아니다)',
+    async (label, path) => {
+      const user = userEvent.setup()
+      const { router } = renderAt('/')
+
+      await user.click(await screen.findByRole('button', { name: navButtonName(label) }))
+
+      await waitFor(() => expect(normalizePath(router.state.location.pathname)).toBe(path))
+      // 경로만 맞고 라우트 파일이 없으면 404 화면이라 이 제목이 없다.
+      expect(await screen.findByRole('heading', { name: label })).toBeInTheDocument()
+    },
+  )
+
+  it('[AC-ADMIN-NAV-007] 배지 숫자는 재조회가 실패하면 옛 숫자를 남기지 않고 사라진다', async () => {
+    seedAdminApplications([makeAdminApplicationWire({ applicationId: 11, status: 'SUBMITTED' })])
+    const { queryClient } = renderAt('/')
+    expect(await screen.findByRole('button', { name: '셀러 입점 심사 1' })).toBeInTheDocument()
+
+    // 권한이 끊긴 뒤(403/20011) 재조회가 실패해도 react-query는 캐시된 숫자를 그대로 들고 있다 —
+    // 그걸 돌려주면 nav가 서버에 없는 대기 건수를 가리킨다.
+    server.use(
+      http.get(ADMIN_APPLICATIONS_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries()
+    })
+
+    expect(await screen.findByRole('button', { name: '셀러 입점 심사' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '셀러 입점 심사 1' })).not.toBeInTheDocument()
   })
 })
