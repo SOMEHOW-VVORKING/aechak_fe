@@ -4,7 +4,15 @@ export interface NavItem {
   key: string
   label: string
   icon: ReactNode
+  /** 처리 대기 건수 등 서버가 채우는 숫자 배지. `tag`와 겸할 수 있다(쓰임이 서로 다르다). */
   badge?: number
+  /**
+   * 라벨 옆에 **글자로** 붙는 상태 꼬리표(예: `'준비 중'`). 숫자 배지와 별개 필드인 이유:
+   * 하나는 "일이 몇 건 쌓였다"이고 다른 하나는 "이 목적지가 아직 열리지 않았다"라 한 자리에
+   * 겹쳐 쓸 수 없다. 색이나 점으로만 구별하면 운영자가 알아보지 못하므로 글자로 적는다 —
+   * 버튼 접근명에도 포함되어 스크린리더가 "항목 이름 + 꼬리표"로 읽는다.
+   */
+  tag?: string
   href?: string
 }
 
@@ -141,6 +149,11 @@ export function SideNav({
                     {item.icon}
                   </span>
                   <span className="flex-1 truncate">{item.label}</span>
+                  {item.tag != null && item.tag !== '' && (
+                    <span className="flex-none rounded-full border border-border bg-surface-sunken px-1.5 py-px text-badge font-semibold text-text-tertiary">
+                      {item.tag}
+                    </span>
+                  )}
                   {item.badge != null && item.badge > 0 && (
                     <span className="min-w-5 h-5 px-1.5 rounded-full bg-brand text-brand-on text-badge font-semibold flex items-center justify-center">
                       {item.badge > 99 ? '99+' : item.badge}
