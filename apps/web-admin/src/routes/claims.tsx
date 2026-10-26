@@ -12,7 +12,7 @@ function ClaimsRoute() {
   return (
     <UnavailableScreen
       title="취소/반품/교환"
-      description="셀러와 구매자 사이의 클레임을 확인하고 중재합니다."
+      description="셀러와 구매자 사이의 클레임을 확인하고 중재해요."
       message="취소/반품/교환 관리는 준비 중이에요"
     />
   )

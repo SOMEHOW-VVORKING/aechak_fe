@@ -11,7 +11,7 @@ function InquiriesRoute() {
   return (
     <UnavailableScreen
       title="서비스 문의 관리"
-      description="접수된 서비스 문의를 확인하고 답변합니다."
+      description="접수된 서비스 문의를 확인하고 답변해요."
       message="서비스 문의 관리는 준비 중이에요"
     />
   )

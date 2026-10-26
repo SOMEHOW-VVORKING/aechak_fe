@@ -12,7 +12,7 @@ function OrdersMonitoringRoute() {
   return (
     <UnavailableScreen
       title="주문 배송 모니터링"
-      description="플랫폼 전체 주문과 배송 상태를 모니터링합니다."
+      description="플랫폼 전체 주문과 배송 상태를 모니터링해요."
       message="주문 배송 모니터링은 준비 중이에요"
     />
   )

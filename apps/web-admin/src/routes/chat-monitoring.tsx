@@ -11,7 +11,7 @@ function ChatMonitoringRoute() {
   return (
     <UnavailableScreen
       title="채팅 CS 모니터링"
-      description="구매자와 셀러 사이의 채팅 상담을 모니터링합니다."
+      description="구매자와 셀러 사이의 채팅 상담을 모니터링해요."
       message="채팅 CS 모니터링은 준비 중이에요"
     />
   )

@@ -11,7 +11,7 @@ function NoticesRoute() {
   return (
     <UnavailableScreen
       title="알림/공지 관리"
-      description="서비스 공지를 등록하고 알림을 발송합니다."
+      description="서비스 공지를 등록하고 알림을 발송해요."
       message="알림/공지 관리는 준비 중이에요"
     />
   )

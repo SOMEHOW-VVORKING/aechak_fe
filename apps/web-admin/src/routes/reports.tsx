@@ -13,7 +13,7 @@ function ReportsRoute() {
   return (
     <UnavailableScreen
       title="신고 제재 관리"
-      description="접수된 신고를 확인하고 제재를 처리합니다."
+      description="접수된 신고를 확인하고 제재를 처리해요."
       message="신고 제재 관리는 준비 중이에요"
     />
   )

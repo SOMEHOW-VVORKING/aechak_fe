@@ -14,7 +14,7 @@ function DashboardRoute() {
   return (
     <UnavailableScreen
       title="대시보드"
-      description="플랫폼 운영 지표를 한눈에 봅니다."
+      description="플랫폼 운영 지표를 한눈에 봐요."
       message="운영 지표 대시보드는 준비 중이에요"
       action={{
         label: '셀러 입점 심사로',
