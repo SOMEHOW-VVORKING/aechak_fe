@@ -357,7 +357,7 @@ test('[AC-ADM-E2E-022] 상태 필터는 status 쿼리로 나가고 전체 상태
   await page.getByLabel('심사 상태 필터').selectOption('rejected')
   await expect(page.getByRole('button', { name: '반려된상점' })).toBeVisible()
   await expect(page.getByRole('button', { name: '펫프렌즈상사' })).toHaveCount(0)
-  await expect(recorded.listQueries.length).toBeGreaterThan(1)
+  expect(recorded.listQueries.length).toBeGreaterThan(1)
   expect(recorded.listQueries.at(-1)).toContain('status=REJECTED')
   // 필터 기준 건수로 바뀌고, 전체일 때만 붙는 꼬리말이 사라진다.
   await expect(page.getByText('(작성 중 / 신청 취소 포함)')).toHaveCount(0)

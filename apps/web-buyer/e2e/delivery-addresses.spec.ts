@@ -338,19 +338,25 @@ test('[AC-ADDR-E2E-003] 기본 배송지로 설정은 /default를 부르고 재�
     return fulfill(route, 200, { data: { addressId: OFFICE.addressId, isDefault: true } })
   })
 
+  // 카드 머리말(별칭). 순서 있는 단언이라 서버가 정한 정렬이 화면에 그대로 닿았는지 보인다.
+  const cardLabels = page.getByText(/^(집|회사)$/)
+
   await page.goto('/addresses')
+  // 서버가 기본을 최상단에 올린다 — 집이 먼저다.
+  await expect(cardLabels).toHaveText(['집', '회사'])
   // 기본이 아닌 카드에만 설정 버튼이 뜬다 — 두 건 중 하나뿐이다.
   const setDefault = page.getByRole('button', { name: '기본 배송지로 설정' })
   await expect(setDefault).toHaveCount(1)
   await shot(page, 'addr-04-two-addresses')
 
   await setDefault.click()
-  // 서버가 유일성을 소유하므로 낙관적 갱신 없이 재조회 결과를 기다린다.
-  await expect(page.getByRole('button', { name: '기본 배송지로 설정' })).toHaveCount(1)
+  // 서버가 유일성을 소유하므로 낙관적 갱신 없이 재조회 결과를 기다린다 — 기본이 옮겨가면
+  // 정렬도 함께 뒤집혀야 한다(화면이 제 손으로 pill만 옮기면 이 단언이 깨진다).
+  await expect(cardLabels).toHaveText(['회사', '집'])
   expect(defaultCalls).toEqual([`PATCH /api/v1/delivery-addresses/${OFFICE.addressId}/default`])
-  // 기본이 회사로 옮겨졌으니 이제 설정 버튼은 집 카드에 있다.
-  await expect(page.getByText('회사')).toBeVisible()
+  // 기본은 언제나 하나이고, 이제 설정 버튼은 집 카드에 있다.
   await expect(page.getByText('기본', { exact: true })).toHaveCount(1)
+  await expect(setDefault).toHaveCount(1)
   expect(recorded.leaks).toEqual([])
 })
 
