@@ -942,3 +942,51 @@ be `domain/.../order/enums/OrderStatus.kt`를 직접 읽어 8종(`PENDING_PAYMEN
   게이트 화면(`members`·`sellers`·`products/review`·`products/ai-queue`)까지 함께 고쳤다(5절 카피
   규칙). 게이트 뒤 목업 Drawer의 `${id} · ${닉네임}` 같은 **메타데이터 조합**은 렌더되지 않아
   그대로 뒀다 — 게이트를 열 때 함께 본다.
+
+---
+
+## nav 복원 세 브랜치 통합 (2026-10-26, SCRUM-304)
+
+셀러 실연동(SCRUM-300) · 셀러 미구현 화면(SCRUM-301) · 어드민(SCRUM-302) 셋을 `origin/main` 위
+한 브랜치로 합쳤다. 세 브랜치가 모두 같은 커밋에서 갈라져 나왔고 충돌은 네 자리였다.
+
+**공유 파일 충돌과 결정.**
+
+| 자리 | 충돌 | 결정 |
+|---|---|---|
+| `web-seller AppShell.tsx` | 300이 실연동 7항목, 301이 준비 중 5항목을 같은 `groups`에 넣었다 | **양쪽 보존** — 차단 이전 정본(`26e4b89^`)의 4그룹 12항목 |
+| `design-system SideNav.tsx` | 301은 `badge: number \| string`, 302는 별도 `tag?: string` | **`tag`로 통일** (아래) |
+| `unavailable-routes.test.tsx` | 300이 삭제, 301이 수정 | **삭제 채택** — 게이트가 다 열려 막힌 라우트가 0건이라 단언 대상이 없다 |
+| `AGENTS.md`, `docs/web-seller-admin-notes.md` | 세 브랜치가 각자 서술을 더했다 | 한 벌로 합침 |
+
+**`badge`를 넓히는 길이 막히는 이유.** 어드민 nav에는 숫자 배지와 글자 꼬리표를 **겸하는** 항목이
+있다 — 셀러 입점 심사는 "대기 2건"(서버 값)이면서 동시에 "열려 있음"이다. 한 필드가 둘을 겸하면
+이 조합을 표현할 수 없고, 301의 `AC-SELLER-UNBUILT-002`·302의 `AC-ADMIN-NAV-003`이 양쪽에서 같은
+자리를 요구해 양립하지 않는다. 그래서 `tag`(글자, muted, 앞자리) / `badge`(숫자, brand, 뒷자리)로
+나눈 302 설계를 택하고 셀러도 `tag`를 쓴다. 꼬리표 글자가 버튼 접근명에 들어가는 성질은 두 설계가
+같아 **301의 테스트는 한 줄도 고치지 않고 통과**했다(`name: '고객 문의 준비 중'`).
+
+**셀러 nav는 12항목이다** — 운영 5(대시보드·주문/배송 관리·취소/반품/교환·고객 문의·리뷰 관리) /
+판매 설정 3(상품 관리·배송 정책·혜택/쿠폰/할인) / 정산 1(정산/매출) / 스토어 3(스토어 설정·
+알림/공지·계정/보안). 실연동 7 + 준비 중 5다. 통합 지시서에는 "11항목"으로 적혀 있었는데 정본
+파일을 세어 보면 12이고(300의 7 + 301의 5, 겹침 없음), 지시서가 "정본을 따른다"고 못박았으므로
+정본을 따랐다.
+
+**`/store-settings` 제목은 nav 라벨과 늘 같지 않다.** 입점 신청 상태별로 갈린다(none/draft →
+"스토어 개설 신청", submitted/reviewing → "스토어 개설 심사", rejected → "스토어 개설 · 서류 보완",
+approved → "스토어 설정"). nav 클릭 도착지를 `h1 === 라벨`로 고정하는 테스트는 **승인 셀러로
+시드해야** 한다 — 시드 없이 돌리면 신청 조회가 404(=none)라 그 한 항목만 빨개진다.
+
+**지운 파일과 대체물**(전부 SCRUM-300이 목업을 실 API 계약으로 바꾸면서 생긴 것이고, 통합에서
+새로 지운 것은 맨 아래 한 줄뿐이다).
+
+| 지운 것 | 대체물 |
+|---|---|
+| `features/{orders,claims,dashboard,settlements,shipping-policy}/*.mock.ts` (+ 그 `*.mock.test.ts`) | 각 feature의 `*.contract.ts` + MSW 핸들러 |
+| `features/orders/__tests__/OrdersTable.test.tsx` | `features/orders/__tests__/orders-route.test.tsx` |
+| `features/claims/components/{ClaimActionConfirmModal,RefundConfirmModal}.tsx` | `ClaimApproveModal` · `ClaimRejectModal` · `ClaimInvoiceModal` |
+| `features/shipping-policy/components/ShippingPolicyNotice.tsx` (목업 준비 중 카드) | 실 정책을 읽는 `ShippingPolicySummary` |
+| `shared/__tests__/unavailable-routes.test.tsx` | `shared/__tests__/app-nav.test.tsx` (통합에서 결정) |
+
+**화면 코드는 하나도 지우지 않았다.** 라우트 파일은 셀러 5개(`/inquiries`·`/reviews`·`/coupons`·
+`/notices`·`/account`) + 어드민 8개가 **늘었다**.
