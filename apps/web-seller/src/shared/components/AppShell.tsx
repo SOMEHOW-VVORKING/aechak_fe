@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
-import { Bell, MessageSquare, Package, ShieldCheck, Star, Store, Ticket } from 'lucide-react'
+import { Megaphone, MessageCircle, Package, Star, Store, Tag, UserCog } from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
@@ -20,7 +20,7 @@ const groups: NavGroup[] = [
       {
         key: '/inquiries',
         label: '고객 문의',
-        icon: <MessageSquare className={iconClass} />,
+        icon: <MessageCircle className={iconClass} />,
         badge: PENDING_BADGE,
       },
       {
@@ -39,7 +39,7 @@ const groups: NavGroup[] = [
       {
         key: '/coupons',
         label: '혜택/쿠폰/할인',
-        icon: <Ticket className={iconClass} />,
+        icon: <Tag className={iconClass} />,
         badge: PENDING_BADGE,
       },
     ],
@@ -52,13 +52,13 @@ const groups: NavGroup[] = [
       {
         key: '/notices',
         label: '알림/공지',
-        icon: <Bell className={iconClass} />,
+        icon: <Megaphone className={iconClass} />,
         badge: PENDING_BADGE,
       },
       {
         key: '/account',
         label: '계정/보안',
-        icon: <ShieldCheck className={iconClass} />,
+        icon: <UserCog className={iconClass} />,
         badge: PENDING_BADGE,
       },
     ],
