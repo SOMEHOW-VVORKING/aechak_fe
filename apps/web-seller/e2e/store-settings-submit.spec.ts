@@ -95,6 +95,11 @@ interface Recorded {
   drafts: SaveSellerApplicationDraftRequest[]
   /** presigned PUT이 Authorization을 달고 나가면 S3 서명 검증이 깨진다 — 실측한다. */
   putAuthHeaders: (string | undefined)[]
+  /**
+   * 계약과 다른 메서드로 온 요청. 기록을 실제 메서드 대신 고정 문자열로 적으면 생성기가
+   * submit을 PUT으로 바꿔도 `'POST /seller-applications/submit'` 단언이 그대로 통과한다.
+   */
+  wrongMethods: string[]
 }
 
 interface StubOptions {
@@ -106,10 +111,28 @@ interface StubOptions {
   submitResponse?: { status: number; json?: unknown }
   /** 임시저장 응답을 붙들어 전송 중 구간을 만든다. */
   holdDraft?: Promise<void>
+  /** 제출(submit) 응답을 붙들어 **저장 이후** 전송 중 구간을 만든다. */
+  holdSubmit?: Promise<void>
+  /** n번째(1부터) presigned 발급을 실패시킨다 — 업로드 단계에서 체인이 끊기는지 본다. */
+  failPresignedAt?: number
+  /** n번째(1부터) S3 PUT을 실패시킨다. */
+  failPutAt?: number
 }
 
 async function stubSellerApi(page: Page, options: StubOptions): Promise<Recorded> {
-  const recorded: Recorded = { calls: [], leaks: [], drafts: [], putAuthHeaders: [] }
+  const recorded: Recorded = {
+    calls: [],
+    leaks: [],
+    drafts: [],
+    putAuthHeaders: [],
+    wrongMethods: [],
+  }
+
+  /** 계약 밖 메서드는 서버와 같게 405로 떨어뜨리고 기록한다. */
+  function rejectMethod(route: Route, label: string) {
+    recorded.wrongMethods.push(`${route.request().method()} ${label}`)
+    return fulfill(route, 405, { errorCode: 90000, message: '허용되지 않는 메서드' })
+  }
 
   // 감시 스텁을 먼저 등록한다 — Playwright는 마지막에 등록된 핸들러를 먼저 보므로
   // 뒤에 오는 구체 글롭이 우선권을 갖고, 둘 중 어디에도 없는 경로만 여기로 떨어진다.
@@ -129,10 +152,15 @@ async function stubSellerApi(page: Page, options: StubOptions): Promise<Recorded
   // presigned 발급은 api 모듈이다 — 서류 종류별로 다른 키를 돌려줘 저장 본문에서 식별된다.
   let issued = 0
   await page.route(`${API_ORIGIN}/api/v1/files/presigned-url`, route => {
-    if (route.request().method() === 'OPTIONS') return fulfill(route, 204)
+    const method = route.request().method()
+    if (method === 'OPTIONS') return fulfill(route, 204)
+    if (method !== 'POST') return rejectMethod(route, '/files/presigned-url')
     const body = route.request().postDataJSON() as { purpose: string; contentType: string }
     issued += 1
     recorded.calls.push(`POST /files/presigned-url ${body.purpose} ${body.contentType}`)
+    if (options.failPresignedAt === issued) {
+      return fulfill(route, 500, { errorCode: 90000, message: '발급에 실패했습니다.' })
+    }
     const key = `tmp/seller-doc-${issued}`
     return fulfill(route, 200, { data: { url: `${DOCS_ORIGIN}/put/${key}`, key } })
   })
@@ -150,8 +178,16 @@ async function stubSellerApi(page: Page, options: StubOptions): Promise<Recorded
         },
       })
     }
+    // presigned 업로드는 PUT뿐이다(POST form 업로드 계약이 아니다).
+    if (request.method() !== 'PUT') {
+      recorded.wrongMethods.push(`${request.method()} ${new URL(request.url()).pathname}`)
+      return route.fulfill({ status: 405, headers: { 'Access-Control-Allow-Origin': ORIGIN } })
+    }
     recorded.calls.push(`PUT ${new URL(request.url()).pathname}`)
     recorded.putAuthHeaders.push(request.headers()['authorization'])
+    if (options.failPutAt === recorded.putAuthHeaders.length) {
+      return route.fulfill({ status: 403, headers: { 'Access-Control-Allow-Origin': ORIGIN } })
+    }
     return route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': ORIGIN } })
   })
 
@@ -183,6 +219,8 @@ async function stubSellerApi(page: Page, options: StubOptions): Promise<Recorded
       })
     }
 
+    // 조회는 GET뿐이다 — 메서드를 안 가르면 PUT·DELETE가 와도 조회로 기록돼 묻힌다.
+    if (method !== 'GET') return rejectMethod(route, '/seller-applications')
     recorded.calls.push('GET /seller-applications')
     const snapshot =
       options.snapshots[Math.min(getCount, options.snapshots.length - 1)] ?? 'notFound'
@@ -196,9 +234,12 @@ async function stubSellerApi(page: Page, options: StubOptions): Promise<Recorded
     return fulfill(route, 200, { data: snapshot })
   })
 
-  await page.route(`${SELLER_ORIGIN}/api/v1/seller-applications/submit`, route => {
-    if (route.request().method() === 'OPTIONS') return fulfill(route, 204)
+  await page.route(`${SELLER_ORIGIN}/api/v1/seller-applications/submit`, async route => {
+    const method = route.request().method()
+    if (method === 'OPTIONS') return fulfill(route, 204)
+    if (method !== 'POST') return rejectMethod(route, '/seller-applications/submit')
     recorded.calls.push('POST /seller-applications/submit')
+    if (options.holdSubmit) await options.holdSubmit
     const response = options.submitResponse ?? { status: 204 }
     return fulfill(route, response.status, response.json)
   })
@@ -282,13 +323,20 @@ test('[AC-STORE-E2E-002] 전송 중에는 제출·임시저장이 모두 잠겨,
   page,
 }) => {
   // 초기값을 둔다 — Promise 실행자 안의 대입을 제어 흐름 분석이 못 보고 never로 좁히기 때문이다.
-  let release: () => void = () => {}
+  let releaseDraft: () => void = () => {}
   const holdDraft = new Promise<void>(resolve => {
-    release = resolve
+    releaseDraft = resolve
+  })
+  // 체인이 2단이라 **구간이 둘**이다 — 저장 대기와 제출 대기를 따로 붙들어야 둘 다 검사된다.
+  // 저장만 붙들면 isBusy에서 submitApplication.isPending을 빼도 이 테스트가 통과한다.
+  let releaseSubmit: () => void = () => {}
+  const holdSubmit = new Promise<void>(resolve => {
+    releaseSubmit = resolve
   })
   const recorded = await stubSellerApi(page, {
     snapshots: ['notFound', detail({ status: 'SUBMITTED', documents: UPLOADED_DOCS })],
     holdDraft,
+    holdSubmit,
   })
 
   await page.goto('/store-settings')
@@ -297,21 +345,38 @@ test('[AC-STORE-E2E-002] 전송 중에는 제출·임시저장이 모두 잠겨,
 
   const submit = page.getByRole('button', { name: '제출하기' })
   const save = page.getByRole('button', { name: '임시저장' })
+  const draftRequest = page.waitForRequest(
+    request => request.method() === 'POST' && request.url().endsWith('/seller-applications'),
+  )
   await submit.click()
+  await draftRequest
 
-  // 저장이 떠 있는 동안 두 버튼이 함께 잠긴다 — 잠긴 버튼은 강제로 눌러도 click이 발화하지 않는다.
+  // (1) 저장이 떠 있는 동안 두 버튼이 함께 잠긴다 — 잠긴 버튼은 강제로 눌러도 click이 발화하지 않는다.
   await expect(submit).toBeDisabled()
   await expect(save).toBeDisabled()
   await submit.click({ force: true })
   await save.click({ force: true })
 
-  release()
+  // (2) 저장이 끝나고 submit 응답을 기다리는 구간. 여기서 버튼이 풀리면 두 번째 제출이 겹쳐
+  // 나가고 BE는 이미 SUBMITTED인 신청에 10101을 준다.
+  const submitRequest = page.waitForRequest(
+    request => request.method() === 'POST' && request.url().endsWith('/seller-applications/submit'),
+  )
+  releaseDraft()
+  await submitRequest
+  await expect(submit).toBeDisabled()
+  await expect(save).toBeDisabled()
+  await submit.click({ force: true })
+  await save.click({ force: true })
+
+  releaseSubmit()
   await expect(page.getByText('제출했어요. 심사 결과를 알림으로 알려드릴게요.')).toBeVisible()
   expect(recorded.calls.filter(call => call === 'POST /seller-applications')).toHaveLength(1)
   expect(recorded.calls.filter(call => call === 'POST /seller-applications/submit')).toHaveLength(1)
   // 업로드도 한 번씩만 — 다시 눌릴 때마다 presigned를 또 받으면 S3에 고아 객체가 쌓인다.
   expect(recorded.calls.filter(call => call.startsWith('POST /files/presigned-url'))).toHaveLength(2)
   expect(recorded.leaks).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
 })
 
 // ── 3. 계좌 재입력 가드는 네트워크 전에 막는다 ───────────────────────────────
@@ -328,13 +393,21 @@ test('[AC-STORE-E2E-003] 서버에 계좌가 있는데 계좌번호를 비우고
   await expect(page.getByText('작성 중', { exact: true })).toBeVisible()
   // 응답에는 마스킹만 오므로 폼의 계좌번호 칸은 항상 빈 채로 시드된다.
   await expect(page.getByLabel('계좌번호')).toHaveValue('')
-  await expect(page.getByText('보안을 위해 계좌번호는 저장할 때마다 다시 입력해야 해요.')).toBeVisible()
+  // 같은 문구가 **입력칸 helperText로 항상** 떠 있다 — 거절 안내를 그 문구로 단언하면
+  // setActionError를 지워도 통과한다. 누르기 전 1건이라는 사실을 먼저 못박는다.
+  const reentryMessage = page.getByText('보안을 위해 계좌번호는 저장할 때마다 다시 입력해야 해요.')
+  await expect(reentryMessage).toHaveCount(1)
+  // DS Alert는 role=alert이다 — 거절 안내를 여기로 좁혀야 helperText와 섞이지 않는다.
+  const guardAlert = page
+    .getByRole('alert')
+    .filter({ hasText: '보안을 위해 계좌번호는 저장할 때마다 다시 입력해야 해요.' })
+  await expect(guardAlert).toHaveCount(0)
 
   await page.getByRole('button', { name: '임시저장' }).click()
   // 저장은 전체 덮어쓰기라 빈 계좌번호를 보내면 서버에 저장된 계좌가 조용히 소거된다 — 막아야 한다.
-  await expect(
-    page.getByText('보안을 위해 계좌번호는 저장할 때마다 다시 입력해야 해요.').last(),
-  ).toBeVisible()
+  // 거절은 helperText가 아니라 **오류 Alert**로 새로 떠야 한다(helper 1 + Alert 1 = 2).
+  await expect(guardAlert).toBeVisible()
+  await expect(reentryMessage).toHaveCount(2)
   expect(recorded.calls).toEqual(['GET /seller-applications'])
   await shot(page, 'store-04-account-reentry-required')
 
@@ -466,4 +539,76 @@ test('[AC-STORE-E2E-007] 신청 조회 500은 백지가 아니라 다시 시도�
   await expect(page.getByText('작성 중', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '임시저장' })).toBeEnabled()
   expect(recorded.leaks).toEqual([])
+})
+
+// ── 8. 업로드가 깨지면 체인이 거기서 멈춘다 ──────────────────────────────────
+test('[AC-STORE-E2E-008] 두 번째 서류 업로드가 실패하면 저장도 submit도 나가지 않고 선택이 남는다', async ({
+  page,
+}) => {
+  // 서류별 발급 → PUT이 직렬 짝이라 두 번째 PUT에서 끊는다. 성공 경로만 보면 "업로드가 깨졌는데
+  // 저장은 나가는" 회귀를 못 잡는다 — 그러면 서버엔 tmpKey 없는 신청서가 저장된다.
+  const recorded = await stubSellerApi(page, {
+    snapshots: ['notFound'],
+    failPutAt: 2,
+  })
+
+  await page.goto('/store-settings')
+  await page.getByLabel('신분증 파일 선택').setInputFiles(PNG)
+  await page.getByLabel('통장 사본 파일 선택').setInputFiles(PDF)
+  await page.getByRole('button', { name: '제출하기' }).click()
+
+  await expect(page.getByText('서류 업로드 실패 (403)')).toBeVisible()
+  // 첫 서류는 올라갔지만 두 번째에서 멈췄다 — 저장·submit은 한 건도 나가면 안 된다.
+  expect(recorded.calls).toEqual([
+    'GET /seller-applications',
+    'POST /files/presigned-url SELLER_DOCUMENT image/png',
+    'PUT /put/tmp/seller-doc-1',
+    'POST /files/presigned-url SELLER_DOCUMENT application/pdf',
+    'PUT /put/tmp/seller-doc-2',
+  ])
+  expect(recorded.drafts).toEqual([])
+  // 선택한 파일이 날아가면 운영자가 둘 다 다시 고른다 — 첨부 상태는 남아 있어야 한다.
+  await expect(page.getByText('첨부됨 (저장 전)')).toHaveCount(2)
+  // 버튼이 풀려 다시 시도할 수 있어야 한다(전송 중 상태로 굳으면 화면이 잠겨 버린다).
+  await expect(page.getByRole('button', { name: '제출하기' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '임시저장' })).toBeEnabled()
+  await expect(page.getByText('심사 대기 중이에요')).toHaveCount(0)
+  expect(recorded.leaks).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
+  await shot(page, 'store-08-upload-failed')
+})
+
+// ── 9. 저장이 실패하면 submit은 아예 나가지 않는다 ───────────────────────────
+test('[AC-STORE-E2E-009] 임시저장이 400으로 거절되면 submit이 나가지 않고 사유만 뜬다', async ({
+  page,
+}) => {
+  // submit은 saveDraft의 onSuccess 안에서만 불려야 한다 — 저장 실패 후에도 submit이 나가면
+  // BE가 낡은 신청서를 심사로 올린다(반려 상태라면 10101).
+  const recorded = await stubSellerApi(page, {
+    snapshots: ['notFound'],
+    onDraft: () => ({
+      status: 400,
+      // 10103은 본인 인증 미완이다. BE message는 격식체라 화면이 자체 카피로 갈아 끼운다 —
+      // 그대로 흘려보내면 -해요체 규칙(AGENTS.md 5절)이 깨진다.
+      json: { errorCode: 10103, message: '휴대폰 본인 인증이 필요합니다.' },
+    }),
+  })
+
+  await page.goto('/store-settings')
+  await page.getByLabel('신분증 파일 선택').setInputFiles(PNG)
+  await page.getByLabel('통장 사본 파일 선택').setInputFiles(PDF)
+  await page.getByRole('button', { name: '제출하기' }).click()
+
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: '휴대폰 본인 인증이 필요해요. 구매자 앱 마이페이지에서 인증한 뒤 다시 시도해 주세요.' }),
+  ).toBeVisible()
+  expect(recorded.calls.filter(call => call === 'POST /seller-applications')).toHaveLength(1)
+  expect(recorded.calls.filter(call => call === 'POST /seller-applications/submit')).toHaveLength(0)
+  await expect(page.getByText('심사 대기 중이에요')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '제출하기' })).toBeEnabled()
+  expect(recorded.leaks).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
+  await shot(page, 'store-09-draft-rejected')
 })
