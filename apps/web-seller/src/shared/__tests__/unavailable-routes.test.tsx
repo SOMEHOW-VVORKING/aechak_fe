@@ -56,7 +56,11 @@ describe('목업 화면 진입 차단', () => {
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '스토어 설정' })).toBeInTheDocument()
     for (const label of ['대시보드', '주문/배송 관리', '취소/반품/교환', '배송 정책', '정산/매출']) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+      // **접두 정규식으로 묻는다.** SideNav 배지가 버튼 안에 들어가 접근성 이름이
+      // "<항목> 준비 중"이 되므로, 정확 이름(`name: label`)으로 물으면 항목이 nav에 배지와 함께
+      // 올라와 있어도 못 찾고 부재 단언이 그냥 통과한다 — 이 단언의 전제가 깨져도 빨개지지
+      // 않는다는 뜻이다(실측 확인). 접두로 물어야 복원 시 실제로 실패해 이 목록을 갱신하게 된다.
+      expect(screen.queryByRole('button', { name: new RegExp(`^${label}`) })).not.toBeInTheDocument()
     }
   })
 })
