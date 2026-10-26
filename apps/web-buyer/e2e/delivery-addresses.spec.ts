@@ -304,7 +304,13 @@ test('[AC-ADDR-E2E-002] 저장 중에는 저장이 잠겨, 다시 눌러도 POST
   await page.getByPlaceholder('상세 주소를 입력해주세요').fill('4층 애착')
 
   const save = page.getByRole('button', { name: '저장' })
+  // 요청이 스텁 핸들러에 도착한 것까지 기다린다 — 버튼이 disabled로 바뀌는 것은 mutation이
+  // 시작됐다는 뜻일 뿐, Node 쪽 핸들러가 이미 돌았다는 보장이 아니다(경합).
+  const firstPost = page.waitForRequest(
+    request => request.method() === 'POST' && request.url().endsWith('/delivery-addresses'),
+  )
   await save.click()
+  await firstPost
   // 전송 중에는 버튼이 잠긴다 — 잠긴 버튼은 강제로 눌러도 click 이벤트가 발화하지 않는다.
   await expect(save).toBeDisabled()
   await save.click({ force: true })
@@ -389,9 +395,10 @@ test('[AC-ADDR-E2E-004] 기본 배송지 삭제는 확인 Modal을 거치고 서
   await shot(page, 'addr-05-delete-confirm')
 
   await page.getByRole('dialog').getByRole('button', { name: '삭제' }).click()
-  expect(deleted).toEqual([`/api/v1/delivery-addresses/${HOME.addressId}`])
-  // 승격은 서버 판정이라 화면이 추측하지 않고 응답의 id로 이름을 찾아 알린다.
+  // 승격은 서버 판정이라 화면이 추측하지 않고 응답의 id로 이름을 찾아 알린다. 기록은 토스트가
+  // 뜬 뒤에 읽는다 — click() 직후에 읽으면 요청이 아직 핸들러에 닿지 않았을 수 있다.
   await expect(page.getByText("'회사' 배송지가 기본으로 설정됐어요")).toBeVisible()
+  expect(deleted).toEqual([`/api/v1/delivery-addresses/${HOME.addressId}`])
   await expect(page.getByText('1/10')).toBeVisible()
   await expect(page.getByText('집')).toHaveCount(0)
   expect(recorded.leaks).toEqual([])
@@ -481,9 +488,10 @@ test('[AC-ADDR-E2E-006] 10건 한도 안내가 뜨고, 422/30500은 폼을 닫�
   await page.getByPlaceholder('상세 주소를 입력해주세요').fill('101호')
   await page.getByRole('button', { name: '저장' }).click()
 
-  expect(postCount).toBe(1)
-  // 실패해도 폼은 열린 채 남아 입력이 사라지지 않는다.
+  // 실패해도 폼은 열린 채 남아 입력이 사라지지 않는다. 기록 배열은 **화면에 결과가 닿은 뒤**
+  // 읽는다 — click()은 브라우저 이벤트까지만 보장해, 바로 읽으면 정상 구현에서도 0건일 수 있다.
   await expect(page.getByText('배송지는 최대 10개까지 등록할 수 있어요').last()).toBeVisible()
+  expect(postCount).toBe(1)
   await expect(page.getByLabel('받는 사람')).toHaveValue('김재헌')
   await expect(page.getByRole('button', { name: '저장' })).toBeEnabled()
   expect(recorded.leaks).toEqual([])
@@ -516,5 +524,61 @@ test('[AC-ADDR-E2E-007] 목록 조회 500은 빈 상태가 아니라 다시 시�
   await page.getByRole('button', { name: '다시 시도' }).click()
   await expect(page.getByText('1/10')).toBeVisible()
   await expect(page.getByText('배송지를 불러오지 못했어요')).toHaveCount(0)
+  expect(recorded.leaks).toEqual([])
+})
+
+// ── 8. 메뉴에서 닿는 길이 살아 있는지 ────────────────────────────────────────
+test('[AC-ADDR-E2E-008] 마이 탭 5탭과 허브 메뉴가 그대로 있고, 배송지 주소록 행이 /addresses로 간다', async ({
+  page,
+}) => {
+  // 이 화면의 **유일한 진입점**은 마이 허브 메뉴 행이다. 화면이 멀쩡해도 그 행이 빠지거나 다른
+  // 라우트로 걸리면 운영에서는 "화면이 사라진" 것과 같다 — 경로로 바로 열면 그걸 못 잡는다.
+  const recorded = await stubSession(page)
+  await stubList(page, { snapshots: [[HOME]] })
+
+  await page.route(`${API}/users/me`, route =>
+    fulfill(route, 200, {
+      data: {
+        status: 'ACTIVE',
+        nickname: '김운경',
+        profileImageUrl: null,
+        profileImageKey: null,
+        bio: null,
+        email: 'buyer@aechak.test',
+        phoneNumber: '010-****-5678',
+        isPhoneVerified: true,
+      },
+    }),
+  )
+  await page.route(`${API}/users/me/points`, route => fulfill(route, 200, { data: { balance: 3200 } }))
+
+  await page.goto('/mypage')
+
+  // 5탭 구조와 순서 — 탭이 빠지거나 중복되면 여기서 깨진다(라벨은 버튼 안 텍스트로 렌더된다).
+  const tabs = page.getByRole('tab')
+  await expect(tabs).toHaveText(['홈', '마켓', 'SNS', '채팅', '마이'])
+  await expect(page.getByRole('tab', { name: '마이' })).toHaveAttribute('aria-selected', 'true')
+  await shot(page, 'addr-10-mypage-hub')
+
+  // 허브 메뉴는 한 벌뿐이어야 한다 — 같은 행이 두 번 그려지면 중복 진입점이다. 행의 접근 이름은
+  // 제목 + trailing을 합친 것이라(본인 인증은 '본인 인증 인증완료') 부분 일치로 잡는다.
+  for (const label of ['주문 내역', '찜 목록', '상품 리뷰', '배송지 주소록', '펫 프로필 관리', '본인 인증', '회원 탈퇴']) {
+    await expect(page.getByRole('button', { name: label })).toHaveCount(1)
+  }
+  // 그 trailing이 서버 값이다 — 인증 상태가 pill로 붙는다.
+  await expect(page.getByRole('button', { name: '본인 인증 인증완료' })).toHaveCount(1)
+  // '설정'은 둘이 정상이다 — AppBar 액션(aria-label)과 메뉴 행. 하나로 줄면 한쪽이 사라진 것이다.
+  await expect(page.getByRole('button', { name: '설정', exact: true })).toHaveCount(2)
+  // 컷된 메뉴와 아직 안 연 SNS 진입점은 되살아나면 안 된다(SNS_SERVER_AVAILABLE=false).
+  for (const cut of ['쿠폰', '최근 본 상품', '고객센터', '내 SNS 프로필', '차단/뮤트 관리']) {
+    await expect(page.getByRole('button', { name: cut })).toHaveCount(0)
+  }
+
+  await page.getByRole('button', { name: '배송지 주소록', exact: true }).click()
+  await expect(page).toHaveURL(/\/addresses$/)
+  await expect(page.getByText('등록된 배송지')).toBeVisible()
+  await expect(page.getByText('1/10')).toBeVisible()
+  // /addresses는 _tabs 바깥이라 탭바가 따라오면 안 된다(라우트 파일이 _tabs/ 밑에 잘못 들어간 신호).
+  await expect(page.getByRole('tab')).toHaveCount(0)
   expect(recorded.leaks).toEqual([])
 })
