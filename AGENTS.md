@@ -32,7 +32,7 @@ dev는 `api-dev` · `seller-api-dev` · `admin-api-dev`.aechak.co.kr이다. 어�
 
 ### 앱 셸 — 새 화면은 셸을 다시 만들지 말고 라우트 파일만 추가한다
 
-- **web-seller**: `src/shared/components/AppShell.tsx`가 `SideNav` + `<Outlet/>`을 조립한다. nav에는 BE가 있는 화면(상품 관리·스토어 설정)만 올라 있고, BE가 없는 라우트(대시보드·주문·클레임·정산·배송 정책)는 라우트 파일의 `SERVER_*_AVAILABLE` 상수 게이트로 "준비 중" 안내만 보인다 — BE가 생기면 상수를 올리고 nav 항목을 복원한다. 새 화면은 `src/routes/<segment>/index.tsx`를 추가하고 nav 그룹에 항목을 넣으면 활성 탭이 자동 처리된다.
+- **web-seller**: `src/shared/components/AppShell.tsx`가 `SideNav` + `<Outlet/>`을 조립한다. **nav는 원래 메뉴 구성을 그대로 보여주고, 항목을 지우지 않는다**(SCRUM-301 — 메뉴를 빼면 운영자는 기능이 사라진 줄 안다). BE가 없는 항목은 `badge: PENDING_BADGE`(`'준비 중'`)로 구별하고, 그 라우트는 `UnavailableScreen`(라우트 파일이 없던 문의·리뷰·쿠폰·공지·계정) 또는 라우트 파일의 `SERVER_*_AVAILABLE` 상수 게이트(목업이 남아 있는 대시보드·주문·클레임·정산·배송 정책)로 "준비 중" 안내만 보인다 — **숨기지 않고, 속이지도 않는다**(규약 10). BE가 생기면 상수를 올리고 배지를 떼는 것이 복원 절차다. 아이콘은 원래 구성(`04c402c`)의 lucide 이름을 그대로 쓴다 — 복원하면서 바꾸지 말 것. 새 화면은 `src/routes/<segment>/index.tsx`를 추가하고 nav 그룹에 항목을 넣으면 활성 탭이 자동 처리된다.
 - **web-admin**: `src/routes/__root.tsx` 안에 `AdminShell`을 **인라인**으로 정의(web-seller와 위치 다름). 마찬가지로 `src/routes/`에 파일만 추가.
 - **web-buyer**: 탭 셸은 별도 파일이 아니라 **pathless layout route** `src/routes/_tabs.tsx`. 5개 탭(index/market/sns/chat/mypage)이 자식으로 하단 탭바 공유. 온보딩 라우트는 `__root` 직속이라 탭바가 안 뜬다(탭바가 보이면 파일이 `_tabs/` 밑에 잘못 들어간 것).
 - 라우트 파일 추가 후 `routeTree.gen.ts` 갱신은 아래 "개발 명령어" 참고(standalone `generate-routes`는 무효).
