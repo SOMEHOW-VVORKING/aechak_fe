@@ -12,8 +12,6 @@ export type {
   CartItem,
   DeliveryAddress,
   PaymentMethod,
-  Order,
-  OrderStatus,
   BuyerOrderStatus,
   BuyerOrderItemStatus,
   BuyerOrderItem,

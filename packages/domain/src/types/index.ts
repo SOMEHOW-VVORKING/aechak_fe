@@ -93,32 +93,15 @@ export interface DeliveryAddress {
 // 구매자 결제 수단(b1-st-4 목업의 3종). 실제 PG 연동은 범위 밖 — 순수 목업 분기용.
 export type PaymentMethod = 'kakaopay' | 'tosspay' | 'card'
 
-export type OrderStatus = 'new_order' | 'preparing' | 'shipping' | 'delivered'
-
-export interface Order {
-  id: OrderId
-  buyerId: UserId
-  sellerId: SellerId
-  productId: ProductId
-  productName: string
-  quantity: number
-  buyerName: string
-  recipientName: string
-  totalPrice: number
-  status: OrderStatus
-  courier?: string
-  trackingNumber?: string
-  purchaseConfirmDeadline?: string
-  createdAt: string
-}
-
 // ── 구매자 주문 여정(web-buyer, b4-st-1 목록 / b1-st-6 상세) ──
-// 셀러용 `Order`/`OrderStatus`는 "셀러 한 명의 단일 상품 주문 행"이고 상태머신도 셀러 관점
-// (new_order/preparing/shipping/delivered)이다. 구매자 주문은 결제 한 번(주문그룹) 아래 셀러별 주문이
-// 여럿 달리고 구매확정·취소완료까지 포함하는 다른 상태머신이라, 기존 `OrderStatus` 유니온을 확장하면
-// web-seller의 `Record<OrderStatus, ...>`(주문 상태 라벨/색 맵)가 키 누락으로 typecheck가 깨진다.
-// 따라서 구매자 전용 타입을 additive로 둔다 — 임의 병렬 타입이 아니라 셀러 주문과 별개인
-// 구매자 주문 집계 도메인이다(셀러가 web-buyer 주문 상태를 다뤄야 하면 이 타입을 재사용/확장할 것).
+// 여기에 셀러용 `Order`/`OrderStatus`(new_order/preparing/shipping/delivered)가 함께 있었다.
+// 셀러 주문 API가 서버에 올라와 web-seller가 와이어 타입(@aechak/api의 `OrderStatus` 8종)을 바로 쓰게
+// 되면서 참조가 0건이 돼 지웠다(SCRUM-291). 그 타입에는 서버에 없는 필드(`purchaseConfirmDeadline:
+// 'D-5'`)가 있어 남겨 두면 새 코드가 지어낸 필드를 다시 요구한다. 셀러 주문 상태가 다시 도메인 타입을
+// 필요로 하면 서버 enum을 정본으로 새로 세울 것.
+//
+// 구매자 주문은 결제 한 번(주문그룹) 아래 셀러별 주문이 여럿 달리는 집계 도메인이라 셀러 주문과
+// 상태머신 자체가 다르다 — 그래서 아래 타입들은 임의 병렬 타입이 아니다(AGENTS 1-7).
 //
 // 서버 enum(PAID/DISPATCH_PENDING/…)은 어댑터(shared/order)가 아래 표시 상태로 접고, 원문은
 // `rawStatus`에 보존한다. 서버 응답에 없는 값(결제수단 등)은 가짜 기본값으로 채우지 않고
