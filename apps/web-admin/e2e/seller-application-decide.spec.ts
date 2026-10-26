@@ -119,6 +119,8 @@ const SEED: Wire[] = [
 ]
 
 interface Decided {
+  /** 메서드를 함께 기록한다 — 경로만 보면 approve가 DELETE로 나가도 테스트가 통과한다. */
+  method: string
   path: string
   body: unknown
 }
@@ -129,18 +131,36 @@ interface Recorded {
   decisions: Decided[]
   /** 어드민 요청이 api 호스트(8080)로 샜는지. 0건이어야 한다. */
   leakedToApiHost: string[]
+  /**
+   * 계약과 다른 메서드로 온 요청. BE는 조회가 GET, 결정이 POST뿐이라 그 밖은 서버에서 405다 —
+   * 스텁이 메서드를 안 보면 생성기가 메서드를 잘못 바꿔도 아무 테스트가 깨지지 않는다.
+   */
+  wrongMethods: string[]
 }
 
 interface StubOptions {
   applications?: Wire[]
   /** 결정 응답을 붙들어 전송 중 구간을 만든다. */
   holdDecision?: Promise<void>
+  /** 상세 조회에 주입할 실패 상태(미지정이면 200). */
+  detailFailure?: { status: number; json: unknown }
 }
 
 async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Recorded> {
   const applications = (options.applications ?? SEED).map(row => ({ ...row }))
-  const recorded: Recorded = { listQueries: [], decisions: [], leakedToApiHost: [] }
+  const recorded: Recorded = {
+    listQueries: [],
+    decisions: [],
+    leakedToApiHost: [],
+    wrongMethods: [],
+  }
   let downloadIssue = 0
+
+  /** 계약 밖 메서드는 서버와 같게 405로 떨어뜨리고 기록한다. */
+  function rejectMethod(route: Route, method: string, pathname: string) {
+    recorded.wrongMethods.push(`${method} ${pathname}`)
+    return fulfillAdmin(route, 405, { errorCode: 90000, message: '허용되지 않는 메서드' })
+  }
 
   await page.route(`${ADMIN_API_ORIGIN}/api/v1/admin/seller-applications**`, async route => {
     const method = route.request().method()
@@ -152,6 +172,7 @@ async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Reco
     const action = match?.[2] ?? null
 
     if (id == null) {
+      if (method !== 'GET') return rejectMethod(route, method, url.pathname)
       const status = url.searchParams.get('status')
       const size = url.searchParams.get('size')
       // 심사 대기 수는 size=1짜리 별도 조회다 — 목록 쿼리 기록에서 가른다.
@@ -189,6 +210,10 @@ async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Reco
     }
 
     if (action == null) {
+      if (method !== 'GET') return rejectMethod(route, method, url.pathname)
+      if (options.detailFailure) {
+        return fulfillAdmin(route, options.detailFailure.status, options.detailFailure.json)
+      }
       downloadIssue += 1
       return fulfillAdmin(route, 200, {
         data: {
@@ -203,7 +228,14 @@ async function stubAdminApi(page: Page, options: StubOptions = {}): Promise<Reco
       })
     }
 
-    recorded.decisions.push({ path: url.pathname, body: route.request().postDataJSON() ?? null })
+    // 승인·반려는 POST뿐이다(생성된 fetcher 계약). 메서드를 기록해 두면 approve가 DELETE로
+    // 바뀌어도 "본문 없는 approve" 단언이 조용히 통과하는 일이 없다.
+    if (method !== 'POST') return rejectMethod(route, method, url.pathname)
+    recorded.decisions.push({
+      method,
+      path: url.pathname,
+      body: route.request().postDataJSON() ?? null,
+    })
     if (options.holdDecision) await options.holdDecision
 
     if (row.status !== 'SUBMITTED' && row.status !== 'REVIEWING') {
@@ -273,7 +305,14 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   page,
 }) => {
   const recorded = await stubAdminApi(page)
-  await page.goto('/sellers/applications')
+  // 경로로 바로 들어가지 않고 **nav를 거친다** — 항목이 빠지거나 다른 라우트로 잘못 걸리면
+  // 화면 자체는 멀쩡해도 운영자가 닿을 길이 없어진다(화면이 사라졌다는 지적의 실제 원인).
+  await page.goto('/')
+  const applicationsNav = page.getByRole('button', { name: '셀러 입점 심사' })
+  // nav 배지도 심사 대기 수와 같은 쿼리키를 쓴다 — 목록에 들어가기 전부터 서버 값이 실린다.
+  await expect(applicationsNav).toContainText('2')
+  await applicationsNav.click()
+  await expect(page).toHaveURL(/\/sellers\/applications$/)
 
   await expect(page.getByText('심사 대기 2')).toBeVisible()
   await page.getByRole('button', { name: '펫프렌즈상사' }).click()
@@ -293,18 +332,21 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   await modal.getByRole('button', { name: '승인' }).click()
   await expect(page.getByText('입점을 승인했어요.')).toBeVisible()
 
-  // 승인은 본문 없는 POST 한 번이다 — 반려와 달리 사유 필드를 싣지 않는다.
+  // 승인은 본문 없는 POST 한 번이다 — 반려와 달리 사유 필드를 싣지 않는다. 메서드까지 단언해야
+  // 한다: 경로만 보면 approve가 DELETE로 나가도 이 단언이 통과한다(실측으로 확인했다).
   expect(recorded.decisions).toEqual([
-    { path: '/api/v1/admin/seller-applications/1/approve', body: null },
+    { method: 'POST', path: '/api/v1/admin/seller-applications/1/approve', body: null },
   ])
   // 204라 낙관적 갱신이 아니라 무효화 후 재조회로 반영한다 — Drawer는 닫히고 행이 승인으로 바뀐다.
   await expect(page.getByRole('heading', { name: '입점 신청 상세' })).toHaveCount(0)
   await expect(
     page.getByRole('row').filter({ hasText: '펫프렌즈상사' }).getByText('승인', { exact: true }),
   ).toBeVisible()
-  // 심사 대기 수도 같은 접두 키라 함께 갱신된다(2 → 1).
+  // 심사 대기 수도 같은 접두 키라 함께 갱신된다(2 → 1) — 화면 머리말과 nav 배지가 같이 줄어든다.
   await expect(page.getByText('심사 대기 1')).toBeVisible()
+  await expect(page.getByRole('button', { name: '셀러 입점 심사' })).toContainText('1')
   expect(recorded.leakedToApiHost).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
   await shot(page, 'admin-03-after-approve')
 })
 
@@ -325,7 +367,15 @@ test('[AC-ADM-E2E-021] 전송 중 확인 버튼이 잠겨, 다시 눌러도 appr
   await page.getByRole('button', { name: '제출' }).click()
 
   const confirm = modalConfirm(page, '입점을 승인할까요?')
+  // 요청이 스텁 핸들러에 **도착한 것까지** 기다린다 — click()은 브라우저에서 이벤트를 쏜 시점에
+  // 끝나므로, 바로 기록 배열을 읽으면 정상 구현에서도 아직 0건일 수 있다(경합).
+  const firstApprove = page.waitForRequest(
+    request =>
+      request.method() === 'POST' &&
+      request.url().endsWith('/admin/seller-applications/1/approve'),
+  )
   await confirm.click()
+  await firstApprove
   // 전송 중에는 확인이 잠긴다 — 잠긴 버튼은 강제로 눌러도 click 이벤트가 발화하지 않는다.
   await expect(confirm).toBeDisabled()
   await expect(confirm).toHaveAttribute('aria-busy', 'true')
@@ -339,6 +389,7 @@ test('[AC-ADM-E2E-021] 전송 중 확인 버튼이 잠겨, 다시 눌러도 appr
   await expect(page.getByText('입점을 승인했어요.')).toBeVisible()
   expect(recorded.decisions).toHaveLength(1)
   expect(recorded.leakedToApiHost).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
 })
 
 // ── 3. 상태 필터는 서버 쿼리로 나간다 ───────────────────────────────────────
@@ -346,6 +397,11 @@ test('[AC-ADM-E2E-022] 상태 필터는 status 쿼리로 나가고 전체 상태
   const recorded = await stubAdminApi(page)
   await page.goto('/sellers/applications')
   await expect(page.getByRole('button', { name: '펫프렌즈상사' })).toBeVisible()
+
+  // 꼬리말이 실제로 **있는 것**부터 확인한다 — 뒤의 부재 단언만 두면 문구가 통째로 바뀌어도
+  // (또는 셀렉터에 오타가 나도) 0건으로 조용히 통과한다.
+  const allStatesNote = page.getByText('(작성 중 / 신청 취소 포함)')
+  await expect(allStatesNote).toBeVisible()
 
   // 전체는 status를 보내지 않는다 — 빈 값(`?status=`)으로 보내면 서버가 형식 오류로 거절한다.
   expect(recorded.listQueries).toHaveLength(1)
@@ -359,8 +415,8 @@ test('[AC-ADM-E2E-022] 상태 필터는 status 쿼리로 나가고 전체 상태
   await expect(page.getByRole('button', { name: '펫프렌즈상사' })).toHaveCount(0)
   expect(recorded.listQueries.length).toBeGreaterThan(1)
   expect(recorded.listQueries.at(-1)).toContain('status=REJECTED')
-  // 필터 기준 건수로 바뀌고, 전체일 때만 붙는 꼬리말이 사라진다.
-  await expect(page.getByText('(작성 중 / 신청 취소 포함)')).toHaveCount(0)
+  // 필터 기준 건수로 바뀌고, 전체일 때만 붙는 꼬리말이 사라진다(위에서 본 그 요소다).
+  await expect(allStatesNote).toHaveCount(0)
   await shot(page, 'admin-04-filter-rejected')
 
   // 심사 대기만 — 두 건이 남는다.
@@ -403,6 +459,7 @@ test('[AC-ADM-E2E-023] 사유를 고르기 전에는 제출이 잠기고, 직접
   // 프리셋이 아닌 사유는 운영자가 쓴 원문이 그대로 통보된다(앞뒤 공백만 걷는다).
   expect(recorded.decisions).toEqual([
     {
+      method: 'POST',
       path: '/api/v1/admin/seller-applications/2/reject',
       body: { reason: '통장 사본 계좌주와 대표자명이 달라요.' },
     },
@@ -411,5 +468,32 @@ test('[AC-ADM-E2E-023] 사유를 고르기 전에는 제출이 잠기고, 직접
     page.getByRole('row').filter({ hasText: '해피독몰' }).getByText('반려', { exact: true }),
   ).toBeVisible()
   expect(recorded.leakedToApiHost).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
   await shot(page, 'admin-06-after-reject')
+})
+
+// ── 5. 상세 조회 실패는 빈 Drawer가 아니라 사유다 ───────────────────────────
+test('[AC-ADM-E2E-024] 상세 조회 500이면 Drawer가 사유를 알리고 결정 입력은 아예 뜨지 않는다', async ({
+  page,
+}) => {
+  // 목록은 성공, 상세만 실패하는 조합 — 목록 403만 덮여 있던 자리라 이 경로는 아무도 보지 않았다.
+  const recorded = await stubAdminApi(page, {
+    detailFailure: { status: 500, json: { errorCode: 90000, message: 'server error' } },
+  })
+  await page.goto('/sellers/applications')
+
+  // 목록 자체는 멀쩡하다 — 실패가 목록 오류로 번지면 운영자가 원인을 잘못 짚는다.
+  await expect(page.getByText('심사 대기 2')).toBeVisible()
+  await page.getByRole('button', { name: '펫프렌즈상사' }).click()
+  await expect(page.getByRole('heading', { name: '입점 신청 상세' })).toBeVisible()
+
+  await expect(page.getByText('신청 상세를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')).toBeVisible()
+  // 백지 Drawer가 뜨면 "신청서가 비었다"로 읽힌다 — 요약 필드도, 결정 입력도 없어야 한다.
+  await expect(page.getByText('신청 반려 / 사유 통보 후 재제출 유도')).toHaveCount(0)
+  // 상세를 못 받은 상태에서 결정 버튼이 눌리면 낡은 대상으로 승인·반려가 나간다.
+  await expect(page.getByRole('button', { name: '제출' })).toHaveCount(0)
+  expect(recorded.decisions).toEqual([])
+  expect(recorded.leakedToApiHost).toEqual([])
+  expect(recorded.wrongMethods).toEqual([])
+  await shot(page, 'admin-07-detail-load-error')
 })
