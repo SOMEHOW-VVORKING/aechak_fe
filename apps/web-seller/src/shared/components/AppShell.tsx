@@ -1,25 +1,66 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
-import { Package, Store } from 'lucide-react'
+import { Bell, MessageSquare, Package, ShieldCheck, Star, Store, Ticket } from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
 
-// nav에는 seller 모듈에 API가 있는 화면만 둔다(상품 관리·스토어 설정). 대시보드/주문/클레임/배송 정책/
-// 정산은 목업이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이 없는 항목
-// (문의/리뷰/쿠폰/공지/계정)은 404로 가는 죽은 nav라 함께 뺐다. BE가 생기면 항목을 되돌린다.
+// nav는 원래 메뉴 구성(4그룹)을 그대로 보여준다 — 메뉴를 숨기면 운영자는 기능이 사라진 줄 안다.
+// 대신 BE 엔드포인트가 없는 항목에는 `badge: PENDING_BADGE`를 달아 한눈에 구별되게 하고, 눌러서
+// 들어가면 각 라우트가 "준비 중" 안내만 보여준다(AGENTS.md 규약 10 — 숨기지 않고, 속이지도 않는다).
+// 배지를 떼는 것은 그 경로에 seller BE가 생겼을 때뿐이다.
+const PENDING_BADGE = '준비 중'
+
 const groups: NavGroup[] = [
+  {
+    key: '운영',
+    label: '운영',
+    items: [
+      {
+        key: '/inquiries',
+        label: '고객 문의',
+        icon: <MessageSquare className={iconClass} />,
+        badge: PENDING_BADGE,
+      },
+      {
+        key: '/reviews',
+        label: '리뷰 관리',
+        icon: <Star className={iconClass} />,
+        badge: PENDING_BADGE,
+      },
+    ],
+  },
   {
     key: '판매 설정',
     label: '판매 설정',
-    items: [{ key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> }],
+    items: [
+      { key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> },
+      {
+        key: '/coupons',
+        label: '혜택/쿠폰/할인',
+        icon: <Ticket className={iconClass} />,
+        badge: PENDING_BADGE,
+      },
+    ],
   },
   {
     key: '스토어',
     label: '스토어',
     items: [
       { key: '/store-settings', label: '스토어 설정', icon: <Store className={iconClass} /> },
+      {
+        key: '/notices',
+        label: '알림/공지',
+        icon: <Bell className={iconClass} />,
+        badge: PENDING_BADGE,
+      },
+      {
+        key: '/account',
+        label: '계정/보안',
+        icon: <ShieldCheck className={iconClass} />,
+        badge: PENDING_BADGE,
+      },
     ],
   },
 ]

@@ -47,20 +47,15 @@ describe('목업 화면 진입 차단', () => {
     },
   )
 
-  it('[AC-SELLER-GATE-003] SideNav에는 서버가 있는 화면(상품 관리·스토어 설정)만 남는다', async () => {
+  // 문의/리뷰/쿠폰/공지/계정은 SCRUM-301에서 nav로 복원됐다("준비 중" 배지 + 안내 화면) —
+  // 그쪽 검증은 unbuilt-routes.test.tsx에 있다. 여기 남은 목록은 목업이 있어 아직 진입점을
+  // 빼 둔 화면들이다.
+  it('[AC-SELLER-GATE-003] 목업만 있는 화면은 SideNav 진입점이 없다', async () => {
     renderAt('/')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '스토어 설정' })).toBeInTheDocument()
-    for (const label of [
-      '대시보드',
-      '주문/배송 관리',
-      '취소/반품/교환',
-      '배송 정책',
-      '정산/매출',
-      '고객 문의',
-      '혜택/쿠폰/할인',
-    ]) {
+    for (const label of ['대시보드', '주문/배송 관리', '취소/반품/교환', '배송 정책', '정산/매출']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
     }
   })
