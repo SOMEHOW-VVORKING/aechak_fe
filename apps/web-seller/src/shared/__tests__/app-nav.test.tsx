@@ -2,8 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
+import { makeApplicationWire, seedSellerApplication } from '@/testing/msw/server'
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -32,7 +33,15 @@ const normalizePath = (pathname: string) =>
 // 뒤바뀌어도 통과한다). 라우트별 실 연동 검증은 features/*/__tests__/*-route.test.tsx가 맡고,
 // 준비 중 다섯 화면의 안내 내용은 unbuilt-routes.test.tsx가 맡는다.
 describe('셀러센터 SideNav', () => {
-  /** BE가 있어 배지 없이 실연동으로 쓰는 항목 — 접근명이 라벨 그대로다. */
+  // `/store-settings`의 제목은 입점 신청 상태에 따라 갈린다(개설 신청 → 개설 심사 → 서류 보완 →
+  // 스토어 설정). nav 라벨과 같은 "스토어 설정"이 걸리는 것은 APPROVED일 때뿐이므로, 메뉴를
+  // 실제로 쓰는 상태인 승인 셀러로 시드한다 — 시드가 없으면 신청 조회가 404라 "스토어 개설 신청"이
+  // 뜨고, 아래 "제목 = nav 라벨" 단언이 그 한 항목에서만 깨진다.
+  beforeEach(() => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+  })
+
+  /** BE가 있어 꼬리표 없이 실연동으로 쓰는 항목 — 접근명이 라벨 그대로다. */
   const LIVE_ITEMS = [
     '대시보드',
     '주문/배송 관리',
@@ -43,7 +52,7 @@ describe('셀러센터 SideNav', () => {
     '스토어 설정',
   ] as const
 
-  /** BE가 없어 "준비 중" 배지가 붙는 항목 — 배지가 버튼 안에 있어 접근명 끝에 붙는다. */
+  /** BE가 없어 "준비 중" 꼬리표가 붙는 항목 — 꼬리표가 버튼 안에 있어 접근명 끝에 붙는다. */
   const PENDING_ITEMS = [
     '고객 문의',
     '리뷰 관리',
@@ -98,21 +107,21 @@ describe('셀러센터 SideNav', () => {
   })
 
   // SCRUM-301이 라우트를 신설해 다섯 항목이 nav로 돌아왔다(그전에는 404로 가는 죽은 nav라 빠져
-  // 있었다). 배지는 BE가 없는 항목에만 붙어야 한다 — 양쪽을 다 단언해야 배지가 통째로 빠지거나
+  // 있었다). 꼬리표는 BE가 없는 항목에만 붙어야 한다 — 양쪽을 다 단언해야 꼬리표가 통째로 빠지거나
   // 실연동 항목에 잘못 붙은 것을 잡는다.
-  it('[AC-SELLER-NAV-003] "준비 중" 배지는 BE 없는 다섯 항목에만 붙는다', async () => {
+  it('[AC-SELLER-NAV-003] "준비 중" 꼬리표는 BE 없는 다섯 항목에만 붙는다', async () => {
     renderAt('/products')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
     for (const label of PENDING_ITEMS) {
-      // 배지가 빠지면 접근명이 라벨 그대로가 되어 이 쌍이 뒤집힌다.
+      // 꼬리표가 빠지면 접근명이 라벨 그대로가 되어 이 쌍이 뒤집힌다.
       expect(screen.getByRole('button', { name: pendingName(label) })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
     }
     for (const label of LIVE_ITEMS) {
       expect(screen.queryByRole('button', { name: pendingName(label) })).not.toBeInTheDocument()
     }
-    // 배지 글자는 준비 중 항목 수만큼만 그려진다(실연동 항목으로 번지지 않는다).
+    // 꼬리표 글자는 준비 중 항목 수만큼만 그려진다(실연동 항목으로 번지지 않는다).
     expect(screen.getAllByText('준비 중')).toHaveLength(PENDING_ITEMS.length)
   })
 

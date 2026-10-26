@@ -801,9 +801,14 @@ interface Column<T> {
 ```
 
 ```ts
-interface NavItem  { key: string; label: string; icon?: ReactNode; badge?: number }
+interface NavItem  { key: string; label: string; icon?: ReactNode; badge?: number; tag?: string }
 interface NavGroup { label?: string; items: NavItem[] }
 ```
+
+`badge`(숫자)와 `tag`(글자)는 쓰임이 달라 필드가 나뉘어 있고 한 항목에 둘을 함께 줄 수 있다 —
+`badge`는 "처리할 일이 몇 건 쌓였다"(0·null이면 안 그린다), `tag`는 "이 목적지가 아직 열리지
+않았다"(`'준비 중'`)다. `tag` 글자는 버튼 접근명에 포함되므로 테스트·스크린리더가 보는 이름은
+`"항목 이름 준비 중"`이 된다(색이나 점만으로 구별하게 두지 않는다).
 
 | prop | 타입 |
 |---|---|

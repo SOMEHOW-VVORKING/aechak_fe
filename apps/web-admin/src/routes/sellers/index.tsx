@@ -44,7 +44,7 @@ function SellersGate() {
     return (
       <UnavailableScreen
         title="셀러 관리"
-        description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다."
+        description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리해요."
         message="셀러 관리는 준비 중이에요"
       />
     )
@@ -196,7 +196,7 @@ function SellersPage() {
 
   return (
     <div className="p-6">
-      <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다." />
+      <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리해요." />
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
@@ -210,7 +210,7 @@ function SellersPage() {
         rowKey={row => row.id}
         onRowClick={openDrawer}
         loading={isLoading}
-        emptyLabel="조건에 맞는 셀러가 없습니다."
+        emptyLabel="조건에 맞는 셀러가 없어요."
       />
 
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="셀러 상세" width="lg">
@@ -256,7 +256,7 @@ function SellersPage() {
             </DrawerSummaryCard>
 
             <DetailField label="제재 이력">
-              <HistoryList items={selected.sanctionHistory} emptyLabel="제재 이력이 없습니다." />
+              <HistoryList items={selected.sanctionHistory} emptyLabel="제재 이력이 없어요." />
             </DetailField>
 
             <DetailField label="판매정지 사유">

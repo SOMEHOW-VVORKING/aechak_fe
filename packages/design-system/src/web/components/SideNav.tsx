@@ -4,8 +4,15 @@ export interface NavItem {
   key: string
   label: string
   icon: ReactNode
-  /** 숫자는 미처리 건수(brand 강조), 문자는 상태 표시(예: '준비 중', muted). */
-  badge?: number | string
+  /** 처리 대기 건수 등 서버가 채우는 숫자 배지. `tag`와 겸할 수 있다(쓰임이 서로 다르다). */
+  badge?: number
+  /**
+   * 라벨 옆에 **글자로** 붙는 상태 꼬리표(예: `'준비 중'`). 숫자 배지와 별개 필드인 이유:
+   * 하나는 "일이 몇 건 쌓였다"이고 다른 하나는 "이 목적지가 아직 열리지 않았다"라 한 자리에
+   * 겹쳐 쓸 수 없다. 색이나 점으로만 구별하면 운영자가 알아보지 못하므로 글자로 적는다 —
+   * 버튼 접근명에도 포함되어 스크린리더가 "항목 이름 + 꼬리표"로 읽는다.
+   */
+  tag?: string
   href?: string
 }
 
@@ -66,18 +73,20 @@ function ToggleChevron({ pointing }: { pointing: 'left' | 'right' }) {
   )
 }
 
-// 숫자 배지는 처리할 건수라 brand로 띄우고, 문자 배지는 항목의 상태(예: '준비 중')라 muted로
-// 가라앉힌다 — 둘을 같은 색으로 그리면 "준비 중"이 처리할 일처럼 읽힌다.
-function NavBadge({ badge }: { badge?: number | string }) {
-  if (typeof badge === 'string') {
-    if (!badge) return null
-    return (
-      <span className="flex-none rounded-full border border-muted-border bg-muted-surface px-2 py-0.5 text-badge font-semibold text-muted">
-        {badge}
-      </span>
-    )
-  }
+// 꼬리표(`tag`)는 "이 목적지가 아직 열리지 않았다"라 muted로 가라앉히고, 숫자 배지(`badge`)는
+// "처리할 일이 몇 건 쌓였다"라 brand로 띄운다 — 둘을 같은 색·같은 자리에 그리면 "준비 중"이
+// 처리할 일처럼 읽힌다. 그래서 한 필드를 겸하게 하지 않고 자리도 따로 쓴다(꼬리표가 먼저).
+function NavTag({ tag }: { tag?: string }) {
+  if (tag == null || tag === '') return null
 
+  return (
+    <span className="flex-none rounded-full border border-muted-border bg-muted-surface px-2 py-0.5 text-badge font-semibold text-muted">
+      {tag}
+    </span>
+  )
+}
+
+function NavBadge({ badge }: { badge?: number }) {
   if (badge == null || badge <= 0) return null
 
   return (
@@ -163,6 +172,7 @@ export function SideNav({
                     {item.icon}
                   </span>
                   <span className="flex-1 truncate">{item.label}</span>
+                  <NavTag tag={item.tag} />
                   <NavBadge badge={item.badge} />
                 </>
               )

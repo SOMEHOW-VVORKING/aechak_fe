@@ -2,31 +2,183 @@ import { useMemo } from 'react'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
-import { ClipboardCheck, LayoutDashboard, ShieldCheck, UserCog } from 'lucide-react'
+import {
+  ClipboardCheck,
+  Flag,
+  LayoutDashboard,
+  LifeBuoy,
+  Megaphone,
+  MessagesSquare,
+  PackageSearch,
+  RotateCcw,
+  ScanEye,
+  ScrollText,
+  ShieldCheck,
+  Star,
+  Store,
+  Truck,
+  UserCog,
+  Users,
+} from 'lucide-react'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
 
 const APPLICATIONS_NAV_KEY = '/sellers/applications'
 
-// nav에는 admin 모듈에 API가 있는 화면(입점 심사)과 홈만 둔다. 셀러 관리/회원 관리/상품 검수/AI 검수 큐는
-// 목업 배열뿐이라 라우트는 보존하되 진입점을 빼고(각 라우트가 "준비 중" 안내), 라우트 파일이 없던
-// 14개 항목과 상수 배지(7·12·9·15·6·3·2)는 죽은 nav·장식 UI라 함께 뺐다. BE가 생기면 항목을 되돌린다.
+/**
+ * 서버가 아직 없어 들어가도 "준비 중" 안내만 보이는 항목의 꼬리표.
+ *
+ * 규약 10("BE에 대응 엔드포인트가 없는 화면은 운영 진입점을 막고 코드는 보존한다")의 목적은
+ * 메뉴를 숨기는 것이 아니라 **운영자가 속지 않게** 하는 것이다. 메뉴에서 빼 버리면 운영자는
+ * 어드민이 무엇을 다루는 도구인지조차 알 수 없고(2026-10-18 SCRUM-238에서 14항목이 통째로
+ * 사라졌다), 멀쩡한 화면처럼 보여주면 저장된 줄 안다. 그래서 **메뉴에는 올리고 글자로 밝힌다** —
+ * 꼬리표가 붙은 항목은 라우트가 목업을 그리지 않고 `UnavailableScreen` 안내만 보여준다.
+ *
+ * 숫자 배지(`badge`)와 별개 필드인 이유는 쓰임이 다르기 때문이다. 배지는 "처리 대기 N건"이고
+ * 꼬리표는 "아직 열리지 않았다"라, 입점 심사처럼 둘을 겸해야 하는 항목이 생기면 한 자리에
+ * 겹쳐 쓸 수 없다. BE가 생기면 그 항목에서 이 꼬리표만 떼고 라우트 게이트 상수를 올린다.
+ */
+const PENDING_TAG = '준비 중'
+
+// nav 구성은 SCRUM-238 차단 이전(26e4b89^)의 5그룹을 되살린 것이고, 그 뒤 생긴 `/admins`를
+// 운영 관리 그룹에 더해 15항목이다(차단 이전 nav의 "확장 예정" 6항목 — 홈 배너·카테고리·정산·
+// 어드민 계정 권한·고급 통계·세금 신고 — 은 복원 대상이 아니고, 그중 어드민 계정 권한 관리는
+// `/admins`가 대신한다).
+//
+// 꼬리표 유무는 2026-10-26 dev 실측으로 갈랐다. admin-api-dev에 있는 경로는
+// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷이 전부다. seller·api
+// 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도 셀러·구매자
+// 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을 설정하지
+// 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
 const navGroups: NavGroup[] = [
   {
     key: 'operations',
     label: '운영',
     items: [
-      { key: '/', label: '홈', icon: <LayoutDashboard className={iconClass} /> },
+      // 로그인 복귀 지점이라 라우트를 비울 수 없다 — admin 모듈에 운영 지표 집계 API가 없어
+      // 가짜 숫자 대신 안내 + 열려 있는 화면으로의 바로가기를 보여준다(routes/index.tsx).
       {
-        // 배지 숫자는 아래 AdminShell이 서버 심사 대기 수로 채운다 — 상수 배지는 AGENTS.md가
+        key: '/',
+        label: '대시보드',
+        icon: <LayoutDashboard className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        // 배지 숫자는 아래 AdminNavShell이 서버 심사 대기 수로 채운다 — 상수 배지는 AGENTS.md가
         // 금지한 장식 UI이고, 심사 화면이 같은 수를 실데이터로 띄우는 지금은 서로 모순된다.
         key: APPLICATIONS_NAV_KEY,
         label: '셀러 입점 심사',
         icon: <ClipboardCheck className={iconClass} />,
       },
-      // 관리자 명부는 admin 모듈에 EP 3종(GET·POST·DELETE /admin/admins)이 있어 nav에 올린다.
+      // 입점 심사와 별개다 — 승인된 셀러의 계정 조회·제재 API가 admin 모듈에 없다.
+      {
+        key: '/sellers',
+        label: '셀러 관리',
+        icon: <Store className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        key: '/members',
+        label: '일반 회원 관리',
+        icon: <Users className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+    ],
+  },
+  {
+    key: 'review',
+    label: '검수',
+    items: [
+      // 검수 두 항목의 BE는 열린 PR에 있다(머지되면 꼬리표를 뗀다) — #149(SCRUM-282 관리자
+      // 확인 큐)가 본체고 #153~#157(SCRUM-284~288)이 판정 계약·지표·이의 제기를 얹는다.
+      {
+        key: '/products/review',
+        label: '상품 검수 관리',
+        icon: <PackageSearch className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        key: '/products/ai-queue',
+        label: 'AI 검수 큐',
+        icon: <ScanEye className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+    ],
+  },
+  {
+    key: 'reports-inquiries',
+    label: '신고 / 문의',
+    items: [
+      // 신고 **접수**(구매자)는 열린 PR #100(SCRUM-231)에 있다. 운영자용 제재 조회·처리는
+      // 그 PR에도 없어, 머지돼도 이 화면이 바로 열리지는 않는다.
+      {
+        key: '/reports',
+        label: '신고 제재 관리',
+        icon: <Flag className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      // api 호스트의 `/inquiries`는 구매자가 자기 문의를 넣는 경로다 — 운영자 전체 조회가 아니다.
+      {
+        key: '/inquiries',
+        label: '서비스 문의 관리',
+        icon: <LifeBuoy className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+    ],
+  },
+  {
+    key: 'orders-claims',
+    label: '주문 / 클레임',
+    items: [
+      // 주문·클레임·리뷰는 seller 호스트(셀러 본인 스코프)와 api 호스트(구매자 본인 스코프)에만
+      // 있다. 플랫폼 전체를 보는 운영자용 경로는 admin 모듈에 아직 없다.
+      {
+        key: '/orders/monitoring',
+        label: '주문 배송 모니터링',
+        icon: <Truck className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        key: '/claims',
+        label: '취소/반품/교환',
+        icon: <RotateCcw className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        key: '/reviews',
+        label: '리뷰 관리',
+        icon: <Star className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      // 채팅 자체가 BE에 없다(SNS 쪽 `/sns/*`만 열려 있다).
+      {
+        key: '/chat-monitoring',
+        label: '채팅 CS 모니터링',
+        icon: <MessagesSquare className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+    ],
+  },
+  {
+    key: 'ops-management',
+    label: '운영 관리',
+    items: [
+      // 관리자 명부는 admin 모듈에 EP 3종(GET·POST /admin/admins, DELETE /admin/admins/{userId})이
+      // 있어 꼬리표 없이 실연동이다. 차단 이전 nav의 "어드민 계정 권한 관리"를 이것이 대신한다.
       { key: '/admins', label: '관리자 관리', icon: <UserCog className={iconClass} /> },
+      {
+        key: '/notices',
+        label: '알림/공지 관리',
+        icon: <Megaphone className={iconClass} />,
+        tag: PENDING_TAG,
+      },
+      {
+        key: '/audit-log',
+        label: '어드민 액션 로그',
+        icon: <ScrollText className={iconClass} />,
+        tag: PENDING_TAG,
+      },
     ],
   },
 ]

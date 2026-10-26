@@ -28,7 +28,7 @@ const UNBUILT = [
 
 // nav에만 이름이 있고 라우트 파일은 한 번도 없던 다섯 화면. 메뉴는 되살리되(사장님이 보고 싶어
 // 하는 것이 메뉴 구성 자체다) seller BE가 없다는 사실을 운영자가 속지 않게 드러내야 한다 —
-// "준비 중" 배지 + 안내 화면이고, 그럴듯한 데이터 행은 그리지 않는다(AGENTS.md 규약 10).
+// "준비 중" 꼬리표 + 안내 화면이고, 그럴듯한 데이터 행은 그리지 않는다(AGENTS.md 규약 10).
 describe('라우트가 없던 셀러 화면 신설', () => {
   it.each(UNBUILT)(
     '[AC-SELLER-UNBUILT-001] %s 는 제목·준비 중 안내·들어올 항목을 보여주고 지어낸 데이터 행은 그리지 않는다',
@@ -46,18 +46,18 @@ describe('라우트가 없던 셀러 화면 신설', () => {
     },
   )
 
-  it('[AC-SELLER-UNBUILT-002] 다섯 항목이 nav에 "준비 중" 배지와 함께 올라온다', async () => {
+  it('[AC-SELLER-UNBUILT-002] 다섯 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
     renderAt('/inquiries')
 
-    // 배지 텍스트가 버튼 안에 있어 접근성 이름이 "<항목> 준비 중"이 된다 — 배지가 빠지면 이름이
-    // 달라져 이 단정이 깨진다(배지 유무를 이름으로 검증하는 셈).
+    // 꼬리표 텍스트가 버튼 안에 있어 접근성 이름이 "<항목> 준비 중"이 된다 — 꼬리표가 빠지면 이름이
+    // 달라져 이 단정이 깨진다(꼬리표 유무를 이름으로 검증하는 셈).
     expect(await screen.findByRole('button', { name: '고객 문의 준비 중' })).toBeInTheDocument()
     for (const label of ['리뷰 관리', '혜택/쿠폰/할인', '알림/공지', '계정/보안']) {
       expect(screen.getByRole('button', { name: `${label} 준비 중` })).toBeInTheDocument()
     }
   })
 
-  it('[AC-SELLER-UNBUILT-003] 서버가 붙어 있는 항목에는 배지가 붙지 않는다', async () => {
+  it('[AC-SELLER-UNBUILT-003] 서버가 붙어 있는 항목에는 꼬리표가 붙지 않는다', async () => {
     renderAt('/inquiries')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()

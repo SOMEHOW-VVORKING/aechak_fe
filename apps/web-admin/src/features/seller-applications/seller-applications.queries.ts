@@ -86,6 +86,10 @@ export function usePendingApplicationCount(): number | null {
         response => response.data.totalCount,
       ),
   })
+  // 실패하면 직전 성공 값을 흘려보내지 않고 null을 돌려준다 — react-query는 재조회가 403·5xx로
+  // 실패해도 캐시된 `data`를 그대로 들고 있어, 그대로 반환하면 권한이 끊긴 뒤에도 nav에 옛 숫자가
+  // 남는다(상세 재조회의 ApplicationDetailRefetch와 같은 판단).
+  if (query.isError) return null
   return query.data ?? null
 }
 
