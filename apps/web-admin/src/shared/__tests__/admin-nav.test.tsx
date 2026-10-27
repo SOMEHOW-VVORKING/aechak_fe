@@ -40,7 +40,10 @@ const normalizePath = (pathname: string) =>
  */
 const LIVE_LABELS = ['셀러 입점 심사', '관리자 관리'] as const
 
-/** 서버가 없어 들어가도 안내만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러난다. */
+/**
+ * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
+ * 화면에서는 상단 띠로 드러난다(SCRUM-308).
+ */
 const PENDING_LABELS = [
   '대시보드',
   '셀러 관리',
@@ -195,40 +198,54 @@ describe('어드민 nav', () => {
     expect(screen.getByRole('button', { name: pendingName('상품 검수 관리') })).toBeInTheDocument()
   })
 
-  it.each([
-    ['/', '운영 지표 대시보드는 준비 중이에요'],
-    ['/sellers', '셀러 관리는 준비 중이에요'],
-    ['/members', '일반 회원 관리는 준비 중이에요'],
-    ['/products/review', '상품 검수 관리는 준비 중이에요'],
-    ['/products/ai-queue', 'AI 검수 큐는 준비 중이에요'],
-    ['/reports', '신고 제재 관리는 준비 중이에요'],
-    ['/inquiries', '서비스 문의 관리는 준비 중이에요'],
-    ['/orders/monitoring', '주문 배송 모니터링은 준비 중이에요'],
-    ['/claims', '취소/반품/교환 관리는 준비 중이에요'],
-    ['/reviews', '리뷰 관리는 준비 중이에요'],
-    ['/chat-monitoring', '채팅 CS 모니터링은 준비 중이에요'],
-    ['/notices', '알림/공지 관리는 준비 중이에요'],
-    ['/audit-log', '어드민 액션 로그는 준비 중이에요'],
-  ])(
-    '[AC-ADMIN-NAV-004] 꼬리표가 붙은 %s 는 404가 아니라 준비 중 안내를 보여준다',
-    async (path, message) => {
+  /**
+   * nav의 "준비 중" 꼬리표와 화면 상단의 예시 데이터 띠는 **짝이 맞아야 한다.**
+   *
+   * 2026-10-26까지는 꼬리표가 붙은 목적지가 `UnavailableScreen` 안내만 보여줬고 이 자리에서
+   * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
+   * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
+   * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
+   * 꼬리표가 붙은 13항목의 목적지에는 띠가 **있어야** 하고, 실연동 2항목에는 **없어야** 한다.
+   *
+   * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
+   * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).
+   * 화면 내용과 쓰기 차단은 `admin-mock-screens.test.tsx`가 화면 이름으로 따로 고정한다.
+   */
+  const destinationsFor = (labels: readonly string[]) =>
+    NAV_DESTINATIONS.filter(([label]) => labels.includes(label))
+
+  it.each(destinationsFor(PENDING_LABELS))(
+    '[AC-ADMIN-NAV-004] 꼬리표가 붙은 %s(%s) 화면은 예시 데이터 띠를 달고 열린다',
+    async (label, path) => {
       renderAt(path)
 
-      expect(await screen.findByText(message)).toBeInTheDocument()
-      // 안내만 보여준다 — 목업 표·저장 버튼이 함께 그려지면 운영자가 처리된 줄 안다.
-      expect(screen.queryByRole('table')).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: '제출' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+      // 경로만 맞고 라우트가 없으면 404라 제목이 없다 — 띠보다 화면이 열렸는지를 먼저 본다.
+      expect(await screen.findByRole('heading', { name: label })).toBeInTheDocument()
+      const notice = screen.getByRole('alert')
+      expect(notice).toHaveTextContent('예시 데이터예요')
+      // 제목만 보면 "저장되지 않는다"를 뺀 띠도 통과한다 — 그 문장이 규약의 핵심이다.
+      expect(notice).toHaveTextContent('저장되지 않아요')
     },
   )
 
-  it('[AC-ADMIN-NAV-005] 대시보드 안내의 바로가기는 실제로 입점 심사 화면으로 보낸다', async () => {
+  it.each(destinationsFor(LIVE_LABELS))(
+    '[AC-ADMIN-NAV-010] 실연동 %s(%s) 화면에는 예시 데이터 띠를 붙이지 않는다',
+    async (label, path) => {
+      renderAt(path)
+
+      expect(await screen.findByRole('heading', { name: label })).toBeInTheDocument()
+      expect(screen.queryByText('예시 데이터예요')).not.toBeInTheDocument()
+    },
+  )
+
+  it('[AC-ADMIN-NAV-005] 대시보드의 심사 대기 카드는 실제로 입점 심사 화면으로 보낸다', async () => {
     const user = userEvent.setup()
     const { router } = renderAt('/')
 
-    await user.click(await screen.findByRole('button', { name: '셀러 입점 심사로' }))
+    // 대시보드 지표는 예시지만 **심사 대기 수만 실 API 값**이고, 그 카드가 유일한 실연동
+    // 진입점이다(routes/index.tsx). 카드 존재만 보면 onClick을 떼어도 통과한다 — 도착지까지 본다.
+    await user.click(await screen.findByRole('button', { name: /셀러 입점 심사 대기/ }))
 
-    // 버튼 존재만 보면 onClick을 떼어도 통과한다 — 도착지까지 단언한다.
     await waitFor(() => expect(router.state.location.pathname).toBe('/sellers/applications'))
     expect(await screen.findByRole('heading', { name: '셀러 입점 심사' })).toBeInTheDocument()
   })
