@@ -55,7 +55,7 @@ export const memberAccountsMock: MemberAccount[] = [
     phoneMasked: '010-****-11**',
     joinChannel: '이메일 가입',
     reportHistory: [
-      { label: '신고 누적 · 악성 활동', date: '06-18' },
+      { label: '신고 누적 / 악성 활동', date: '06-18' },
     ],
   },
   {

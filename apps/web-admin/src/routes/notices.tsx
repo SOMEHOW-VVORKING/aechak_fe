@@ -244,7 +244,7 @@ function NoticesPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="공지 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.publishAt}`}
+            subtitle={`${selected.id} / ${selected.publishAt}`}
             actions={
               <Button
                 variant="primary"

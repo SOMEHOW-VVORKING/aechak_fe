@@ -223,7 +223,7 @@ function ProductReviewPage() {
         <FilterSelect options={saleStatusFilterOptions} value={saleStatusFilter} onChange={setSaleStatusFilter} />
         <FilterSelect options={aiReviewFilterOptions} value={aiReviewFilter} onChange={setAiReviewFilter} />
         <FilterSelect options={categoryFilterOptions} value={categoryFilter} onChange={setCategoryFilter} />
-        <SearchInput value={search} onChange={setSearch} placeholder="상품명 · 셀러 검색" className="w-64" />
+        <SearchInput value={search} onChange={setSearch} placeholder="상품명 / 셀러 검색" className="w-64" />
       </FilterBar>
 
       <DataTable
@@ -263,7 +263,7 @@ function ProductReviewPage() {
               <div className="min-w-0 space-y-1.5">
                 <p className="font-semibold text-text-primary">{selected.name}</p>
                 <p className="text-caption text-text-tertiary">
-                  {selected.category} · {selected.price.toLocaleString('ko-KR')}원 · 등록 {selected.registeredAt}
+                  {selected.category} / {selected.price.toLocaleString('ko-KR')}원 / 등록 {selected.registeredAt}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {selected.reviewActor && <ActorTag actor={selected.reviewActor} />}

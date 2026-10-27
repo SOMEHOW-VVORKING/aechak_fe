@@ -94,7 +94,7 @@ export const adminDashboardSummaryMock: AdminDashboardSummary = {
     {
       key: 'chat',
       label: '위험 신호 채팅방',
-      detail: '외부 거래 유도·욕설이 감지된 상담방',
+      detail: '외부 거래 유도/욕설이 감지된 상담방',
       count: 2,
       to: '/chat-monitoring',
     },

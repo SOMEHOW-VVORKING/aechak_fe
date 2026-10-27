@@ -60,9 +60,9 @@ const ratingFilterOptions = [
 type ReviewDecision = 'keep' | 'blind' | 'delete'
 
 const blindReasonOptions = [
-  { value: 'abuse', label: '욕설·비방' },
+  { value: 'abuse', label: '욕설/비방' },
   { value: 'external-trade', label: '외부 거래 유도' },
-  { value: 'ad-spam', label: '광고·스팸' },
+  { value: 'ad-spam', label: '광고/스팸' },
   { value: 'privacy', label: '개인정보 노출' },
   { value: 'irrelevant', label: '상품과 무관' },
 ]
@@ -231,7 +231,7 @@ function ReviewsPage() {
       <PageIntro title="리뷰 관리" description="등록된 리뷰를 확인하고 부적절한 리뷰를 숨겨요." />
 
       <MockDataNotice>
-        운영자용 리뷰 조회·블라인드 경로가 admin 모듈에 생기면 그대로 실연동돼요.
+        운영자용 리뷰 조회/블라인드 경로가 admin 모듈에 생기면 그대로 실연동돼요.
       </MockDataNotice>
 
       <FilterBar className="mb-3.5">
@@ -245,7 +245,7 @@ function ReviewsPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="리뷰 내용 · 상품 검색"
+          placeholder="리뷰 내용 / 상품 검색"
           className="w-64"
         />
       </FilterBar>
@@ -262,7 +262,7 @@ function ReviewsPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="리뷰 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.writerMasked}`}
+            subtitle={`${selected.id} / ${selected.writerMasked}`}
             actions={
               <Button
                 variant="primary"
@@ -303,7 +303,7 @@ function ReviewsPage() {
               </div>
             </DetailField>
 
-            <DetailField label={`처리 이력 · ${selected.history.length}건`}>
+            <DetailField label={`처리 이력 / ${selected.history.length}건`}>
               <HistoryList items={selected.history} emptyLabel="처리 이력이 없어요." />
             </DetailField>
 

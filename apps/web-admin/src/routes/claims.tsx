@@ -272,7 +272,7 @@ function ClaimsPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="클레임 · 주문번호 · 상품 검색"
+          placeholder="클레임 / 주문번호 / 상품 검색"
           className="w-72"
         />
       </FilterBar>
@@ -289,7 +289,7 @@ function ClaimsPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="클레임 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.orderId}`}
+            subtitle={`${selected.id} / ${selected.orderId}`}
             actions={
               <Button
                 variant="primary"
@@ -331,7 +331,7 @@ function ClaimsPage() {
               </p>
             </DetailField>
 
-            <DetailField label={`처리 이력 · ${selected.history.length}건`}>
+            <DetailField label={`처리 이력 / ${selected.history.length}건`}>
               <HistoryList items={selected.history} emptyLabel="처리 이력이 없어요." />
             </DetailField>
 

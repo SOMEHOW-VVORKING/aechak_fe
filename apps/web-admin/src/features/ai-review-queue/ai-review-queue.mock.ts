@@ -66,7 +66,7 @@ export const aiReviewQueueItemsMock: AiReviewQueueItem[] = [
     reviewStatus: 'admin-rejected',
     reviewHistory: [
       { actor: 'ai', label: '자동 블라인드', date: '06-17 14:30' },
-      { actor: 'admin', label: '반려 · 수정 요청', date: '06-18 09:30' },
+      { actor: 'admin', label: '반려 / 수정 요청', date: '06-18 09:30' },
     ],
   },
 ]

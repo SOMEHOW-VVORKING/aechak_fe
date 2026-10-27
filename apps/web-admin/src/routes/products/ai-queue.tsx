@@ -75,7 +75,7 @@ const reviewStatusFilterOptions = [
 ]
 
 const processReasonOptions = [
-  { value: 'banned-content', label: '금지 콘텐츠 · 효능 표현' },
+  { value: 'banned-content', label: '금지 콘텐츠 / 효능 표현' },
   { value: 'abusive-language', label: '욕설/비방' },
   { value: 'adult-content', label: '성인성 콘텐츠' },
 ]
@@ -261,7 +261,7 @@ function AiReviewQueuePage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="AI 검수 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${targetTypeMeta[selected.targetType].label}`}
+            subtitle={`${selected.id} / ${targetTypeMeta[selected.targetType].label}`}
             actions={
               <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
                 제출
@@ -360,7 +360,7 @@ function AiReviewQueuePage() {
         >
           <SummaryGrid
             items={[
-              { label: '대상', value: `${targetTypeMeta[selected.targetType].label} · ${selected.id}` },
+              { label: '대상', value: `${targetTypeMeta[selected.targetType].label} / ${selected.id}` },
               { label: '사유', value: processReasonLabel },
             ]}
           />

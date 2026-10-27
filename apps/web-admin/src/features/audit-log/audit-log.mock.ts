@@ -48,7 +48,7 @@ export const adminAuditEntriesMock: AdminAuditEntry[] = [
     result: 'success',
     ip: '10.42.8.104',
     requestId: 'req_01JB6YT8PA',
-    detail: '사업자등록증·통장 사본 확인 완료. 판매 권한을 부여했어요.',
+    detail: '사업자등록증/통장 사본 확인 완료. 판매 권한을 부여했어요.',
   },
   {
     id: 'log_90377',
@@ -87,7 +87,7 @@ export const adminAuditEntriesMock: AdminAuditEntry[] = [
     result: 'success',
     ip: '10.42.8.104',
     requestId: 'req_01JB5CF3NN',
-    detail: '허위·과장 광고 신고 7건 확인. 셀러에게 수정 요청을 보냈어요.',
+    detail: '허위/과장 광고 신고 7건 확인. 셀러에게 수정 요청을 보냈어요.',
   },
   {
     id: 'log_90302',

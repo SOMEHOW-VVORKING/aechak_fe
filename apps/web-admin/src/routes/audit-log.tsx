@@ -137,7 +137,7 @@ function AuditLogPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="액션 · 대상 검색"
+          placeholder="액션 / 대상 검색"
           className="w-64"
         />
         {failureCount > 0 && <StatusPill variant="error">실패 {failureCount}건</StatusPill>}
@@ -156,7 +156,7 @@ function AuditLogPage() {
         {selected && (
           <div className="space-y-5">
             <p className="-mt-2 text-body-sm text-text-tertiary">
-              {selected.id} · {selected.actedAt}
+              {selected.id} / {selected.actedAt}
             </p>
 
             <DrawerSummaryCard

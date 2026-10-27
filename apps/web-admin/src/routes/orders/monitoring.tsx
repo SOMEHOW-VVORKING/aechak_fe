@@ -227,7 +227,7 @@ function OrdersMonitoringPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="주문번호 · 셀러 · 구매자 검색"
+          placeholder="주문번호 / 셀러 / 구매자 검색"
           className="w-72"
         />
       </FilterBar>
@@ -244,7 +244,7 @@ function OrdersMonitoringPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="주문 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.sellerName}`}
+            subtitle={`${selected.id} / ${selected.sellerName}`}
             actions={
               <Button
                 variant="secondary"

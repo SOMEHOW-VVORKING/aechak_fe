@@ -69,7 +69,7 @@ const decisionModalMeta: Record<
 > = {
   normal: {
     title: '정상 상태로 되돌릴까요?',
-    description: '계정 제한 · 정지가 해제되고 서비스를 정상적으로 이용할 수 있어요.',
+    description: '계정 제한 / 정지가 해제되고 서비스를 정상적으로 이용할 수 있어요.',
     confirmLabel: '정상 전환',
     confirmVariant: 'primary',
   },
@@ -197,11 +197,11 @@ function MembersPage() {
         description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
       />
 
-      <MockDataNotice>admin 모듈에 회원 조회·제재 경로가 생기면 그대로 실연동돼요.</MockDataNotice>
+      <MockDataNotice>admin 모듈에 회원 조회/제재 경로가 생기면 그대로 실연동돼요.</MockDataNotice>
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
-        <SearchInput value={search} onChange={setSearch} placeholder="회원 ID · 닉네임 검색" className="w-64" />
+        <SearchInput value={search} onChange={setSearch} placeholder="회원 ID / 닉네임 검색" className="w-64" />
       </FilterBar>
 
       <DataTable
@@ -216,7 +216,7 @@ function MembersPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="회원 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.nickname}`}
+            subtitle={`${selected.id} / ${selected.nickname}`}
             actions={
               <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
                 제출
@@ -244,7 +244,7 @@ function MembersPage() {
               />
             </DrawerSummaryCard>
 
-            <DetailField label={`신고 누적 이력 · ${selected.reportHistory.length}건`}>
+            <DetailField label={`신고 누적 이력 / ${selected.reportHistory.length}건`}>
               <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없어요." />
             </DetailField>
 

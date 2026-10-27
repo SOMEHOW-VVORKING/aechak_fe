@@ -214,7 +214,7 @@ function ChatMonitoringPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="상담방 · 셀러 · 구매자 검색"
+          placeholder="상담방 / 셀러 / 구매자 검색"
           className="w-72"
         />
         {highRiskCount > 0 && (
@@ -237,7 +237,7 @@ function ChatMonitoringPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="상담 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.productName}`}
+            subtitle={`${selected.id} / ${selected.productName}`}
             actions={
               <Button
                 variant="primary"

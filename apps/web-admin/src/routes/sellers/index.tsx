@@ -186,7 +186,7 @@ function SellersPage() {
       <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리해요." />
 
       <MockDataNotice>
-        입점 심사는 실연동이에요. 승인된 셀러의 계정 조회·제재 경로가 admin 모듈에 아직 없어요.
+        입점 심사는 실연동이에요. 승인된 셀러의 계정 조회/제재 경로가 admin 모듈에 아직 없어요.
       </MockDataNotice>
 
       <FilterBar className="mb-3.5">
@@ -207,7 +207,7 @@ function SellersPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="셀러 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.shopName} · ${sellerTypeLabel(selected.sellerType)}`}
+            subtitle={`${selected.shopName} / ${sellerTypeLabel(selected.sellerType)}`}
             actions={
               <>
                 <Button

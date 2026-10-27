@@ -175,7 +175,7 @@ function InquiriesPage() {
       <PageIntro title="서비스 문의 관리" description="접수된 서비스 문의를 확인하고 답변해요." />
 
       <MockDataNotice>
-        운영자용 문의 조회·답변 경로가 admin 모듈에 생기면 그대로 실연동돼요.
+        운영자용 문의 조회/답변 경로가 admin 모듈에 생기면 그대로 실연동돼요.
       </MockDataNotice>
 
       <FilterBar className="mb-3.5">
@@ -188,7 +188,7 @@ function InquiriesPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="제목 · 문의자 검색"
+          placeholder="제목 / 문의자 검색"
           className="w-64"
         />
         {delayedCount > 0 && (
@@ -211,7 +211,7 @@ function InquiriesPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="문의 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.writerMasked}`}
+            subtitle={`${selected.id} / ${selected.writerMasked}`}
             actions={
               <Button
                 variant="primary"
@@ -253,7 +253,7 @@ function InquiriesPage() {
               </p>
             </DetailField>
 
-            <DetailField label={`이전 문의 · ${selected.previousInquiries.length}건`}>
+            <DetailField label={`이전 문의 / ${selected.previousInquiries.length}건`}>
               <HistoryList
                 items={selected.previousInquiries}
                 emptyLabel="이전 문의 이력이 없어요."

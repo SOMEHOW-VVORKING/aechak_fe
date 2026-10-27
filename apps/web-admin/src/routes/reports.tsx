@@ -76,10 +76,10 @@ const targetFilterOptions = [
 type ReportDecision = 'dismiss' | 'hide' | 'sanction'
 
 const processReasonOptions = [
-  { value: 'false-ad', label: '허위·과장 광고' },
-  { value: 'abuse', label: '욕설·비방' },
+  { value: 'false-ad', label: '허위/과장 광고' },
+  { value: 'abuse', label: '욕설/비방' },
   { value: 'external-trade', label: '외부 거래 유도' },
-  { value: 'illegal', label: '불법·미취급 상품' },
+  { value: 'illegal', label: '불법/미취급 상품' },
   { value: 'false-report', label: '허위 신고 반복' },
   { value: 'not-confirmed', label: '신고 내용 확인 불가' },
 ]
@@ -218,7 +218,7 @@ function ReportsPage() {
       <PageIntro title="신고 제재 관리" description="접수된 신고를 확인하고 제재를 처리해요." />
 
       <MockDataNotice>
-        신고 접수는 열린 BE PR에 있고, 운영자용 조회·제재 경로가 생기면 그대로 실연동돼요.
+        신고 접수는 열린 BE PR에 있고, 운영자용 조회/제재 경로가 생기면 그대로 실연동돼요.
       </MockDataNotice>
 
       <FilterBar className="mb-3.5">
@@ -235,7 +235,7 @@ function ReportsPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="대상 · 작성자 검색"
+          placeholder="대상 / 작성자 검색"
           className="w-64"
         />
       </FilterBar>
@@ -252,7 +252,7 @@ function ReportsPage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="신고 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${selected.targetName}`}
+            subtitle={`${selected.id} / ${selected.targetName}`}
             actions={
               <Button
                 variant="primary"
@@ -288,7 +288,7 @@ function ReportsPage() {
               </p>
             </DetailField>
 
-            <DetailField label={`신고 이력 · ${selected.reportHistory.length}건`}>
+            <DetailField label={`신고 이력 / ${selected.reportHistory.length}건`}>
               <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없어요." />
             </DetailField>
 

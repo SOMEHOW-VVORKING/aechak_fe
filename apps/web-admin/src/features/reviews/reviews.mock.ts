@@ -42,8 +42,8 @@ export const adminReviewsMock: AdminReview[] = [
     reportCount: 4,
     status: 'reported',
     history: [
-      { label: '욕설·비방 신고', date: '10-25' },
-      { label: '욕설·비방 신고', date: '10-25' },
+      { label: '욕설/비방 신고', date: '10-25' },
+      { label: '욕설/비방 신고', date: '10-25' },
     ],
   },
   {
@@ -103,10 +103,10 @@ export const adminReviewsMock: AdminReview[] = [
     reportCount: 3,
     status: 'deleted',
     blindActor: 'admin',
-    blindReason: '광고·스팸',
+    blindReason: '광고/스팸',
     writerNotice: '광고성 리뷰로 판단되어 삭제됐어요. 반복되면 이용이 제한돼요.',
     history: [
-      { label: '광고·스팸 신고', date: '10-21' },
+      { label: '광고/스팸 신고', date: '10-21' },
       { label: '관리자 삭제', date: '10-22' },
     ],
   },
