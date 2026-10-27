@@ -1,43 +1,126 @@
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { Button, FilterBar, MetricCard, PageHeader, Select, StatusPill } from '@aechak/design-system/web'
+import {
+  RatingSummaryPanel,
+  ReviewReplyList,
+  SAMPLE_RATING_SUMMARY,
+  SAMPLE_REVIEWS,
+  SAMPLE_REVIEW_PRODUCTS,
+} from '@/features/reviews'
+import { SAMPLE_ACTION_TOAST, SampleDataNotice } from '@/shared/components/SampleDataNotice'
+import { useToast } from '@/shared/hooks/useToast'
 
 export const Route = createFileRoute('/reviews/')({
   component: ReviewsRoute,
 })
 
 /**
- * 셀러 nav에는 "리뷰 관리"가 처음부터 있었지만 라우트 파일은 한 번도
- * 만들어진 적이 없어 메뉴만 되살리면 404로 갔다 — 자리를 만들고 안내를 둔다.
+ * 리뷰 관리 — 셀러 nav에 처음부터 있던 항목이고 SCRUM-301이 라우트 파일을 신설했다.
  *
- * BE 실측(2026-10-26, dev 스펙 전수): 리뷰 경로는 구매자 호스트에만 있다
- * (`GET /api/v1/products/{productId}/reviews`·`GET /api/v1/users/me/reviews`). 둘 다 구매자
- * 시점이라 "내가 판 상품 전체의 리뷰"로 묶을 수 없고 셀러 답글 경로도 없다. seller 호스트에는
- * 리뷰 경로가 아예 없다. 셀러용 조회·답글이 생기면 이 안내 대신 실화면을 그린다.
+ * SCRUM-307에서 **안내만 있던 화면을 예시 데이터로 채웠다**(`UnavailableScreen` → 별점 요약 + 리뷰
+ * 목록 + 답글 폼). 지운 것은 없고, 저장되지 않는다는 사실은 상단 `SampleDataNotice` 띠가 말한다.
+ *
+ * 예시 데이터와 BE가 생겼을 때의 교체 방법은 `features/reviews/reviews.mock.ts` 머리에 있다.
  */
+
+const PRODUCT_OPTIONS = [
+  { value: '', label: '전체 상품' },
+  ...SAMPLE_REVIEW_PRODUCTS.map(name => ({ value: name, label: name })),
+]
+
+const RATING_OPTIONS = [
+  { value: '', label: '전체 별점' },
+  ...[5, 4, 3, 2, 1].map(rating => ({ value: String(rating), label: `${rating}점` })),
+]
+
+const REPLY_OPTIONS = [
+  { value: '', label: '답글 전체' },
+  { value: 'NONE', label: '답글 없음' },
+  { value: 'DONE', label: '답글 완료' },
+]
+
 function ReviewsRoute() {
+  const [product, setProduct] = useState('')
+  const [rating, setRating] = useState('')
+  const [reply, setReply] = useState('')
+  const toast = useToast()
+
+  const noReplyCount = SAMPLE_REVIEWS.filter(review => review.reply == null).length
+  const reportedCount = SAMPLE_REVIEWS.filter(review => review.reported).length
+
+  // 필터는 예시 배열에 실제로 적용한다 — 눌러도 아무 일 없는 컨트롤은 장식 UI다(AGENTS.md 2절).
+  const rows = useMemo(
+    () =>
+      SAMPLE_REVIEWS.filter(review => {
+        if (product !== '' && review.productName !== product) return false
+        if (rating !== '' && String(review.rating) !== rating) return false
+        if (reply === 'NONE' && review.reply != null) return false
+        if (reply === 'DONE' && review.reply == null) return false
+        return true
+      }),
+    [product, rating, reply],
+  )
+
+  const notSent = () => toast.show(SAMPLE_ACTION_TOAST, 'info')
+
   return (
-    <UnavailableScreen
-      title="리뷰 관리"
-      message="리뷰 관리는 준비 중이에요"
-      description="내 상품에 달린 리뷰를 모아 보고 답글을 쓰는 화면이에요. 서버가 준비되면 열어 둘게요."
-      upcoming={[
-        {
-          label: '내 상품 리뷰 목록',
-          description: '내가 판 상품에 달린 리뷰를 상품/별점/작성일로 골라 봐요.',
-        },
-        {
-          label: '셀러 답글',
-          description: '리뷰에 답글을 쓰고 고쳐요.',
-        },
-        {
-          label: '별점 요약',
-          description: '상품별 평균 별점과 별점 분포를 봐요.',
-        },
-        {
-          label: '리뷰 신고',
-          description: '허위/비방 리뷰를 운영자에게 신고하고 처리 결과를 봐요.',
-        },
-      ]}
-    />
+    <div className="p-6">
+      <PageHeader title="리뷰 관리" actions={<StatusPill variant="muted">준비 중</StatusPill>} />
+
+      <SampleDataNotice
+        replaceWhen={
+          <>
+            seller 호스트에 <strong>GET /sellers/me/reviews</strong>와 답글 경로가 생기면 내 상품의
+            실제 리뷰로 바뀌어요.
+          </>
+        }
+      />
+
+      <RatingSummaryPanel summary={SAMPLE_RATING_SUMMARY} />
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <MetricCard
+          label="답글 없는 리뷰"
+          value={`${noReplyCount}건`}
+          variant={noReplyCount > 0 ? 'urgent' : 'default'}
+        />
+        <MetricCard
+          label="신고 접수"
+          value={`${reportedCount}건`}
+          variant={reportedCount > 0 ? 'urgent' : 'default'}
+        />
+        <MetricCard label="최근 30일 리뷰" value="47건" variant="quiet" />
+      </div>
+
+      <FilterBar className="mt-4">
+        <Select aria-label="상품" options={PRODUCT_OPTIONS} value={product} onChange={setProduct} />
+        <Select aria-label="별점" options={RATING_OPTIONS} value={rating} onChange={setRating} />
+        <Select aria-label="답글 여부" options={REPLY_OPTIONS} value={reply} onChange={setReply} />
+        <Button
+          variant="ghost"
+          size="md"
+          onClick={() => {
+            setProduct('')
+            setRating('')
+            setReply('')
+          }}
+        >
+          초기화
+        </Button>
+      </FilterBar>
+
+      <p className="mt-4 text-caption text-text-tertiary">총 {rows.length}건</p>
+
+      <div className="mt-2">
+        <ReviewReplyList reviews={rows} onReply={notSent} onReport={notSent} />
+      </div>
+
+      <p className="mt-3.5 text-caption text-text-tertiary">
+        답글은 구매자와 다른 방문자 모두에게 보여요. 허위/비방 리뷰는 신고하면 운영자가 확인해요.
+      </p>
+
+      {toast.element}
+    </div>
   )
 }
