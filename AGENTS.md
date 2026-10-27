@@ -172,6 +172,8 @@ cd packages/api && pnpm openapi:generate   # API 코드 생성
 - **nav 그룹 소속은 머리글·항목 존재 단언으로 잡히지 않는다** — `SideNav`가 `label` 있는 그룹을 `role="group"` + `aria-labelledby`로 묶으므로 `within(getByRole('group', { name }))`으로 소속과 그룹별 개수까지 단언할 것. 항목을 다른 그룹으로 옮겨도 항목 수·머리글 수·클릭 도착지는 그대로라, 안 묶으면 전부 초록으로 지나간다(SCRUM-304에서 실측).
 - **`SegmentedControl`은 `inline-flex`(shrink-to-content)** — 좁은 부모에서 라벨이 줄바꿈되면 `className="w-full"`을 줄 것.
 - **`RatingInput` 별 간격은 모듈 상수 `STAR_GAP`(px, `style`로 적용)로만** 바꿀 것 — className gap과 픽셀 clip 계산이 갈라지면 소수 별점 부분 채움이 정수처럼 꽉 차 보인다.
+- **필터 `Select`의 `'all'` 미선택 센티넬은 도메인 값에 `'all'`이 없는 축에서만 쓸 수 있다** — 어드민 목록 화면 관례가 `{ value: 'all', label: '… 전체' }`인데, 값 자체가 `'all'`인 축(공지의 대상: 전체/구매자/셀러)에 그대로 쓰면 같은 `value`가 옵션에 두 번 들어가 React가 `Encountered two children with the same key, 'all'`을 띄우고, **운영자가 "전체 대상"을 골라도 `filter`가 미선택으로 읽어 전체가 그대로 남는다**(동작 안 하는 필터 = 2절 금지). 센티넬을 `'any'` 같은 별도 값으로 가를 것(`routes/notices.tsx`의 `AUDIENCE_ANY`). 필터 테스트는 옵션 존재가 아니라 **고른 뒤 남는 행 수**를 단언해야 이 버그가 드러난다.
+- **`Toast` variant는 `role`을 바꾼다** — warning·error만 `role="alert"`이고 success·info는 `role="status"`다(`Toast.tsx`의 `variantStyle`). 그래서 토스트 **문구만** 단언하는 테스트는 variant 회귀를 못 잡는다(예시 화면의 `warning`을 `success`로 되돌려도 통과). 의미를 고정해야 하면 토스트 노드에서 `closest('[role="alert"]')`로 거슬러 올라갈 것 — `Alert` 띠도 `role="alert"`이라 전역 `getByRole('alert')`로는 둘을 가를 수 없다.
 - **`Alert`/`Toast`는 variant별 아이콘을 자체 렌더** — children/message 앞에 lucide 아이콘을 또 넣지 말 것(아이콘 2개).
 - **`EmptyState.title`은 `string`** — 강조 span 등 마크업 불가. 동적 텍스트 강조가 필요하면 EmptyState 레이아웃을 feature에서 미러링(DS에 markup 슬롯 추가 금지).
 - **`MetricCard.footer`는 단일 슬롯** — 여러 요소는 컴포넌트를 고치지 말고 footer 안을 `flex-col` div로 감싸 합성.
