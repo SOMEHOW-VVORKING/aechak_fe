@@ -1,4 +1,5 @@
 export {
+  anyReplyPending,
   formatAverageRating,
   normalizeReviewSearchParams,
   pendingReplyReviewId,

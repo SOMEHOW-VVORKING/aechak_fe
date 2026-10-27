@@ -90,17 +90,33 @@ export function photoCountOf(review: SellerReviewItemResponse): number {
   return review.images.length
 }
 
+/** `useMutation` 결과 중 이 판정에 필요한 부분만. */
+export interface ReplyMutationState {
+  isPending: boolean
+  variables?: { reviewId: number } | undefined
+}
+
 /**
  * 지금 처리 중인 답글 요청의 대상 리뷰. 없으면 null이다.
  *
  * react-query의 `variables`는 mutation이 **끝난 뒤에도 남는다**. 그래서 `isPending`을 먼저 보지
- * 않으면 리뷰 A에 답글을 쓴 다음 리뷰 B를 지울 때 A가 처리 중인 행으로 잠기고(엉뚱한 행의 버튼이
- * 멈춘다) 정작 진행 중인 B의 버튼은 열려 있어 같은 요청을 두 번 보낼 수 있다.
+ * 않으면 리뷰 A에 답글을 쓴 다음 리뷰 B를 지울 때 A가 처리 중인 행으로 잠긴다(엉뚱한 행의 버튼이
+ * 멈춘다).
  */
-export function pendingReplyReviewId(
-  mutations: readonly { isPending: boolean; variables?: { reviewId: number } | undefined }[],
-): number | null {
+export function pendingReplyReviewId(mutations: readonly ReplyMutationState[]): number | null {
   return mutations.find(mutation => mutation.isPending)?.variables?.reviewId ?? null
+}
+
+/**
+ * 답글 요청이 하나라도 날아가 있는지. 그동안은 **모든 행**의 답글 버튼을 잠근다.
+ *
+ * 처리 중인 행 하나만 잠그면 모자란다 — mutation 하나로 A행 삭제가 날아간 상태에서 B행 삭제를
+ * 누르면 같은 observer의 `variables`가 B로 바뀌어 A의 버튼이 다시 열리고, 거기서 또 누르면
+ * 이미 지워진 답글에 DELETE가 한 번 더 나간다(404/110200). 한 셀러가 한 번에 답글 하나를
+ * 다루는 화면이라 전체를 잠그는 쪽이 맞다.
+ */
+export function anyReplyPending(mutations: readonly ReplyMutationState[]): boolean {
+  return mutations.some(mutation => mutation.isPending)
 }
 
 /** 날짜만 쓰는 자리(목록 행·답글 머리). 서버 값이 벽시계라 앞 10자가 곧 날짜다. */

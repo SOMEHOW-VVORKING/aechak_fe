@@ -10,6 +10,7 @@ import {
   Skeleton,
 } from '@aechak/design-system/web'
 import {
+  anyReplyPending,
   RatingSummaryPanel,
   ReviewReplyList,
   RATING_VALUES,
@@ -74,7 +75,9 @@ function ReviewsRoute() {
   const editReply = useEditReviewReply()
   const deleteReply = useDeleteReviewReply()
   // 끝난 mutation의 variables가 남아 엉뚱한 행을 잠그지 않도록 판정은 한 곳에 모아 둔다.
-  const pendingReviewId = pendingReplyReviewId([writeReply, editReply, deleteReply])
+  const replyMutations = [writeReply, editReply, deleteReply]
+  const pendingReviewId = pendingReplyReviewId(replyMutations)
+  const isReplyPending = anyReplyPending(replyMutations)
 
   const productOptions = useMemo(
     () => [{ value: ALL, label: '전체 상품' }, ...(productOptionsQuery.data ?? [])],
@@ -198,7 +201,8 @@ function ReviewsRoute() {
             // 실패를 빈 결과로 흘리면 셀러가 필터를 의심한다(위 Alert이 이유를 말한다).
             hideEmptyState={isError}
             // 조회가 실패한 동안에는 그 데이터로 하는 처리를 잠근다 — 폼은 낡은 행의 값으로 만들어진다.
-            locked={isError}
+            // 답글 요청이 날아가 있는 동안에도 전체를 잠근다(한 행만 잠그면 다른 행을 눌러 중복이 난다).
+            locked={isError || isReplyPending}
           />
         )}
       </div>

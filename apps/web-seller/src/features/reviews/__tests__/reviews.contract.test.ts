@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  anyReplyPending,
   formatAverageRating,
   normalizeReviewSearchParams,
   pendingReplyReviewId,
@@ -81,5 +82,16 @@ describe('pendingReplyReviewId', () => {
     expect(pendingReplyReviewId([])).toBeNull()
     // mutate 직후 variables가 아직 비어 있어도 터지지 않는다
     expect(pendingReplyReviewId([{ isPending: true, variables: undefined }])).toBeNull()
+  })
+
+  it('[AC-SELLER-REVIEW-009] 요청이 날아가 있는 동안은 처리 중인 행만이 아니라 전체를 잠근다', () => {
+    // 한 행만 잠그면 모자란다 — A행 삭제가 날아간 상태에서 B행 삭제를 누르면 같은 observer의
+    // variables가 B로 바뀌어 A가 다시 열리고, 거기서 또 누르면 DELETE가 한 번 더 나간다.
+    const settled = { isPending: false, variables: { reviewId: 1 } }
+    const pending = { isPending: true, variables: { reviewId: 2 } }
+
+    expect(anyReplyPending([settled, pending])).toBe(true)
+    expect(anyReplyPending([settled, { isPending: false, variables: { reviewId: 2 } }])).toBe(false)
+    expect(anyReplyPending([])).toBe(false)
   })
 })
