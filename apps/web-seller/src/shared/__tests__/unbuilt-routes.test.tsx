@@ -35,7 +35,6 @@ function trackRequests() {
 afterEach(() => server.events.removeAllListeners())
 
 const SCREENS = [
-  ['/inquiries', '고객 문의'],
   ['/reviews', '리뷰 관리'],
   ['/coupons', '혜택/쿠폰/할인'],
   ['/notices', '알림/공지'],
@@ -44,6 +43,7 @@ const SCREENS = [
 
 /**
  * nav에만 이름이 있고 라우트 파일은 한 번도 없던 다섯 화면(SCRUM-301 신설).
+ * 그중 고객 문의는 SCRUM-316에서 실서버에 붙어 이 파일의 대상에서 빠졌다(네 화면이 남았다).
  *
  * SCRUM-301은 "지어낸 데이터 행을 그리지 않는다"로 규약 10을 지켰는데 "기능에 들어가도 아무것도
  * 없다"는 지적을 받았다. SCRUM-307에서 **예시 데이터로 실제 목록·폼을 그리고**, 저장되지 않는다는
@@ -70,30 +70,6 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
       expect(within(pageHeader as HTMLElement).getByText('준비 중')).toBeInTheDocument()
     },
   )
-
-  it('[AC-SELLER-SAMPLE-002] 고객 문의는 문의 목록과 답변 폼을 보여주고 답변이 서버로 나가지 않는다', async () => {
-    const requests = trackRequests()
-    renderAt('/inquiries')
-
-    // 목록: 행이 그려지고 상태·유형이 함께 읽힌다.
-    const row = (await screen.findByText('소형견도 쓸 수 있는 크기인가요?')).closest(
-      'tr',
-    ) as HTMLElement
-    expect(within(row).getByText('자동 급식기 5L')).toBeInTheDocument()
-    expect(within(row).getByText('답변 대기')).toBeInTheDocument()
-
-    // 답변 폼: 행을 눌러 Drawer를 열고 답변을 적는다.
-    await userEvent.click(row)
-    const drawer = await screen.findByRole('dialog')
-    // 답변을 적어 보내는 자리가 Drawer 안이다 — 띠가 바깥에만 있으면 여기서 속는다.
-    expect(within(within(drawer).getByRole('alert')).getByText(SAMPLE_DATA_TITLE)).toBeInTheDocument()
-    expect(within(drawer).getByText(/급식기 입구 높이/)).toBeInTheDocument()
-    await userEvent.type(within(drawer).getByLabelText('답변'), '입구까지 높이는 12cm예요.')
-    await userEvent.click(within(drawer).getByRole('button', { name: '답변 보내기' }))
-
-    expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
-    expect(requests).toEqual([])
-  })
 
   it('[AC-SELLER-SAMPLE-003] 리뷰 관리는 별점 분포와 리뷰 목록을 보여주고 답글이 서버로 나가지 않는다', async () => {
     const requests = trackRequests()
@@ -231,16 +207,21 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(requests).toEqual([])
   })
 
-  it('[AC-SELLER-SAMPLE-008] 목록 필터는 예시 데이터에 실제로 적용된다', async () => {
-    renderAt('/inquiries')
+  // 원래 고객 문의 화면으로 이 규약을 확인했는데(SCRUM-307) 그 화면이 실서버에 붙어
+  // (SCRUM-316) 예시 데이터가 아니게 됐다 — 같은 모양의 탭을 가진 알림/공지로 옮겼다.
+  it('[AC-SELLER-SAMPLE-008] 목록 탭은 예시 데이터에 실제로 적용된다', async () => {
+    renderAt('/notices')
 
-    expect(await screen.findByText('소형견도 쓸 수 있는 크기인가요?')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: /답변 완료/ }))
+    expect(await screen.findByText('9월 정산 지급이 완료됐어요')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /안 읽음/ }))
 
+    // 읽은 공지는 빠지고 안 읽은 공지만 남는다.
     await waitFor(() =>
-      expect(screen.queryByText('소형견도 쓸 수 있는 크기인가요?')).not.toBeInTheDocument(),
+      expect(screen.queryByText('9월 정산 지급이 완료됐어요')).not.toBeInTheDocument(),
     )
-    expect(screen.getByText('동결건조 간식 유통기한이 언제까지인가요?')).toBeInTheDocument()
+    expect(
+      screen.getByText('11월 1일부터 반품 배송비 부담 기준이 바뀌어요'),
+    ).toBeInTheDocument()
   })
 
   it('[AC-SELLER-SAMPLE-010] 필터가 0건이 되면 화면이 말없이 비지 않고 빈 상태 문구가 나온다', async () => {
@@ -292,19 +273,21 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(notice).toHaveTextContent('저장되지 않')
   })
 
-  it('[AC-SELLER-UNBUILT-002] 다섯 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
-    renderAt('/inquiries')
+  it('[AC-SELLER-UNBUILT-002] 네 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
+    renderAt('/reviews')
 
     // 꼬리표 텍스트가 버튼 안에 있어 접근성 이름이 "<항목> 준비 중"이 된다 — 꼬리표가 빠지면 이름이
     // 달라져 이 단정이 깨진다(꼬리표 유무를 이름으로 검증하는 셈).
-    expect(await screen.findByRole('button', { name: '고객 문의 준비 중' })).toBeInTheDocument()
-    for (const label of ['리뷰 관리', '혜택/쿠폰/할인', '알림/공지', '계정/보안']) {
+    expect(await screen.findByRole('button', { name: '리뷰 관리 준비 중' })).toBeInTheDocument()
+    for (const label of ['혜택/쿠폰/할인', '알림/공지', '계정/보안']) {
       expect(screen.getByRole('button', { name: `${label} 준비 중` })).toBeInTheDocument()
     }
+    // 고객 문의는 SCRUM-316에서 실연동으로 올라갔다 — 꼬리표가 남아 있으면 접근명이 달라진다.
+    expect(screen.getByRole('button', { name: '고객 문의' })).toBeInTheDocument()
   })
 
   it('[AC-SELLER-UNBUILT-003] 서버가 붙어 있는 항목에는 꼬리표가 붙지 않는다', async () => {
-    renderAt('/inquiries')
+    renderAt('/reviews')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '스토어 설정' })).toBeInTheDocument()

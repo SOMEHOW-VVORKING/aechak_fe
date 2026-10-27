@@ -19,3 +19,6 @@ export const SERVER_ORDERS_AVAILABLE = true
 
 /** `GET /sellers/me/claims` 외 8경로 연동 완료(SCRUM-295). dev seller 모듈에 배포돼 있다. */
 export const SERVER_CLAIMS_AVAILABLE = true
+
+/** `GET /sellers/me/inquiries`와 답변 등록 연동 완료(SCRUM-316). dev seller 모듈에 배포돼 있다. */
+export const SERVER_INQUIRIES_AVAILABLE = true

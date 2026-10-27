@@ -26,6 +26,7 @@ export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-pol
 export const SELLER_SETTLEMENTS_URL = `${sellerBase}/sellers/me/settlements`
 export const SELLER_SETTLEMENT_MONTHS_URL = `${sellerBase}/sellers/me/settlements/months`
 export const SELLER_DASHBOARD_SUMMARY_URL = `${sellerBase}/sellers/me/dashboard/summary`
+export const SELLER_INQUIRIES_URL = `${sellerBase}/sellers/me/inquiries`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -1980,6 +1981,173 @@ const dashboardHandlers = [
   }),
 ]
 
+
+// ─── 상품 문의(SCRUM-316) ────────────────────────────────────────────────────
+// BE SellerInquirySummaryResponse 모양. 지표와 overdue는 **서버가 센 값**이므로 이 스텁도 행에서
+// 다시 계산하지 않고 심어 둔 값을 그대로 돌려준다 — 화면이 날짜를 빼서 세는 회귀를 잡으려면
+// 스텁과 화면이 같은 계약을 지켜야 한다.
+export interface InquiryWire {
+  inquiryId: string
+  productId: string
+  productName: string
+  category: 'PRODUCT' | 'DELIVERY' | 'CLAIM' | 'ETC'
+  title: string
+  content: string
+  authorMasked: string
+  secret: boolean
+  status: 'RECEIVED' | 'ANSWERED'
+  askedAt: string
+  answerDueAt: string
+  overdue: boolean
+  answer: { content: string; answeredAt: string } | null
+}
+
+let inquirySeq = 1
+let inquiries: InquiryWire[] = []
+let lastInquiriesQuery: string | null = null
+let inquiryAnswerRequestCount = 0
+
+export function makeInquiryWire(overrides: Partial<InquiryWire> = {}): InquiryWire {
+  const inquiryId = overrides.inquiryId ?? `01INQUIRY${String(inquirySeq++).padStart(17, '0')}`
+  return {
+    inquiryId,
+    productId: '01PRODUCTPUBLICID000000001',
+    productName: '자동 급식기 5L',
+    category: 'PRODUCT',
+    title: '소형견도 쓸 수 있는 크기인가요?',
+    content: '입구 높이가 너무 높지 않을까 걱정돼요. 몇 cm인지 알 수 있을까요?',
+    authorMasked: '김**',
+    secret: false,
+    status: 'RECEIVED',
+    askedAt: '2026-10-26T09:14:00',
+    answerDueAt: '2026-10-28T23:59:59',
+    overdue: false,
+    answer: null,
+    ...overrides,
+  }
+}
+
+export const DEFAULT_INQUIRIES: InquiryWire[] = [
+  makeInquiryWire({ inquiryId: '01INQUIRYA0000000000000001' }),
+  makeInquiryWire({
+    inquiryId: '01INQUIRYB0000000000000002',
+    category: 'DELIVERY',
+    title: '제주도 추가 배송비가 따로 붙나요?',
+    content: '제주시로 받으려는데 결제 화면에 추가 배송비가 안 보여서 확인 부탁드려요.',
+    productName: '원목 캣타워 3단',
+    productId: '01PRODUCTPUBLICID000000002',
+    authorMasked: '이**',
+    askedAt: '2026-10-20T21:38:00',
+    answerDueAt: '2026-10-22T23:59:59',
+    overdue: true,
+  }),
+  makeInquiryWire({
+    inquiryId: '01INQUIRYC0000000000000003',
+    title: '동결건조 간식 유통기한이 언제까지인가요?',
+    content: '지금 발송되는 물건의 유통기한을 알고 싶어요.',
+    productName: '동결건조 간식 100g',
+    productId: '01PRODUCTPUBLICID000000003',
+    authorMasked: '최**',
+    secret: true,
+    status: 'ANSWERED',
+    askedAt: '2026-10-24T11:27:00',
+    answerDueAt: '2026-10-27T23:59:59',
+    answer: { content: '2027년 4월 30일까지예요.', answeredAt: '2026-10-24T13:05:00' },
+  }),
+]
+
+export function seedInquiries(rows: InquiryWire[] = DEFAULT_INQUIRIES): void {
+  inquiries = rows.map(row => ({ ...row }))
+  lastInquiriesQuery = null
+  inquiryAnswerRequestCount = 0
+}
+
+/** 목록 핸들러가 받은 마지막 쿼리스트링 — 빈 값 제거를 단언할 때 쓴다. */
+export function lastSellerInquiriesQuery(): string | null {
+  return lastInquiriesQuery
+}
+
+/** 답변 경로가 받은 요청 수(seedInquiries가 0으로 되돌린다). */
+export function inquiryAnswerCount(): number {
+  return inquiryAnswerRequestCount
+}
+
+/** 핸들러가 반영한 현재 목록 — 테스트가 답변 결과를 읽을 때 쓴다. */
+export function currentInquiries(): InquiryWire[] {
+  return inquiries.map(row => ({ ...row }))
+}
+
+/** 지표는 필터를 무시하고 전체 범위를 센다 — 화면이 탭을 눌러도 흔들리지 않아야 한다. */
+function inquiryMetrics() {
+  const pending = inquiries.filter(row => row.status === 'RECEIVED').length
+  return {
+    pending,
+    overdue: inquiries.filter(row => row.status === 'RECEIVED' && row.overdue).length,
+    total: inquiries.length,
+  }
+}
+
+const inquiryHandlers = [
+  http.get(SELLER_INQUIRIES_URL, ({ request }) => {
+    const url = new URL(request.url)
+    lastInquiriesQuery = url.search.replace(/^\?/, '')
+    const params = url.searchParams
+    // 빈 값은 BE가 미입력이 아니라 형식 오류로 거절한다 — 정규화가 새면 테스트가 여기서 터진다.
+    for (const [key, value] of params.entries()) {
+      if (value === '') return badRequest(`${key}: 지원하지 않는 값입니다.`)
+    }
+    const status = params.get('status')
+    const category = params.get('category')
+    const keyword = params.get('keyword')
+    const filtered = inquiries.filter(row => {
+      if (status != null && row.status !== status) return false
+      if (category != null && row.category !== category) return false
+      if (keyword != null) {
+        const needle = keyword.toLowerCase()
+        if (
+          !row.title.toLowerCase().includes(needle) &&
+          !row.productName.toLowerCase().includes(needle)
+        ) {
+          return false
+        }
+      }
+      return true
+    })
+    const size = Number(params.get('size') ?? 20)
+    const page = Number(params.get('page') ?? 0)
+    const totalCount = filtered.length
+    const totalPages = Math.ceil(totalCount / size)
+    return HttpResponse.json({
+      data: {
+        inquiries: filtered.slice(page * size, (page + 1) * size),
+        metrics: inquiryMetrics(),
+        totalCount,
+        page,
+        size,
+        totalPages,
+        hasNext: page + 1 < totalPages,
+      },
+    })
+  }),
+  // 답변 — 201. 문의당 한 번만 받는다(두 번째는 409/120109).
+  http.post(`${SELLER_INQUIRIES_URL}/:inquiryId/answer`, async ({ params, request }) => {
+    inquiryAnswerRequestCount += 1
+    const row = inquiries.find(item => item.inquiryId === params['inquiryId'])
+    if (!row) return errorAt(404, 120100, '상품 문의를 찾을 수 없습니다.')
+    if (row.answer != null) return errorAt(409, 120109, '이미 답변이 등록된 문의입니다.')
+    const { content } = (await request.json()) as { content: string }
+    if (content.trim() === '') return errorAt(400, 120105, '답변 내용은 필수입니다.')
+    const answeredAt = '2026-10-27T15:00:00'
+    row.answer = { content: content.trim(), answeredAt }
+    row.status = 'ANSWERED'
+    row.overdue = false
+    return HttpResponse.json(
+      { data: { inquiryId: row.inquiryId, status: row.status, answeredAt } },
+      { status: 201 },
+    )
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
@@ -1989,5 +2157,6 @@ export const handlers = [
   ...shippingPolicyHandlers,
   ...settlementHandlers,
   ...dashboardHandlers,
+  ...inquiryHandlers,
 ]
 export const server = setupServer(...handlers)

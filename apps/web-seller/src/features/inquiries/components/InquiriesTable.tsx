@@ -4,18 +4,19 @@ import {
   INQUIRY_CATEGORY_LABEL,
   INQUIRY_STATUS_LABEL,
   INQUIRY_STATUS_VARIANT,
-  isOverdue,
-  type SampleInquiry,
-} from '../inquiries.mock'
+  formatInquiryDate,
+  type SellerInquirySummary,
+} from '../inquiries.contract'
 
 interface InquiriesTableProps {
-  inquiries: SampleInquiry[]
-  onOpen: (inquiryPublicId: string) => void
+  inquiries: SellerInquirySummary[]
+  onOpen: (inquiryId: string) => void
+  emptyLabel?: string
 }
 
 // 상품 관리·주문 관리와 같은 표 패턴(DataTable + TwoLineCell + StatusPill)을 그대로 따른다.
-export function InquiriesTable({ inquiries, onOpen }: InquiriesTableProps) {
-  const columns: Column<SampleInquiry>[] = [
+export function InquiriesTable({ inquiries, onOpen, emptyLabel }: InquiriesTableProps) {
+  const columns: Column<SellerInquirySummary>[] = [
     {
       key: 'title',
       label: '문의 / 상품',
@@ -33,12 +34,7 @@ export function InquiriesTable({ inquiries, onOpen }: InquiriesTableProps) {
               )}
             </span>
           }
-          secondary={
-            <>
-              {inquiry.productName}
-              {inquiry.orderPublicId != null && ` / ${inquiry.orderPublicId}`}
-            </>
-          }
+          secondary={inquiry.productName}
         />
       ),
     },
@@ -54,13 +50,17 @@ export function InquiriesTable({ inquiries, onOpen }: InquiriesTableProps) {
     {
       key: 'author',
       label: '작성자',
-      render: inquiry => <span className="text-body-sm text-text-secondary">{inquiry.authorMasked}</span>,
+      render: inquiry => (
+        <span className="text-body-sm text-text-secondary">{inquiry.authorMasked}</span>
+      ),
     },
     {
       key: 'askedAt',
       label: '작성일',
       align: 'right',
-      render: inquiry => <span className="tabular-nums">{inquiry.askedAt}</span>,
+      render: inquiry => (
+        <span className="tabular-nums">{formatInquiryDate(inquiry.askedAt)}</span>
+      ),
     },
     {
       key: 'status',
@@ -70,8 +70,9 @@ export function InquiriesTable({ inquiries, onOpen }: InquiriesTableProps) {
           <StatusPill variant={INQUIRY_STATUS_VARIANT[inquiry.status]}>
             {INQUIRY_STATUS_LABEL[inquiry.status]}
           </StatusPill>
-          {/* 기한 넘긴 미답변은 상태 아래 한 줄로 — pill 두 개를 겹쳐 쓰지 않는다(표 머리 정렬 규칙). */}
-          {isOverdue(inquiry) && (
+          {/* 기한 넘김 판정은 서버가 내려준 overdue를 그대로 쓴다 — 화면이 날짜를 빼서 다시 세면
+              상단 지표와 기준이 갈린다. pill 두 개를 겹쳐 쓰지 않고 상태 아래 한 줄로 적는다. */}
+          {inquiry.overdue && (
             <p className="mt-1.5 pl-2.5 text-caption text-warning-fg">답변 기한 지남</p>
           )}
         </div>
@@ -83,9 +84,9 @@ export function InquiriesTable({ inquiries, onOpen }: InquiriesTableProps) {
     <DataTable
       columns={columns}
       rows={inquiries}
-      rowKey={inquiry => inquiry.inquiryPublicId}
-      onRowClick={inquiry => onOpen(inquiry.inquiryPublicId)}
-      emptyLabel="조건에 맞는 문의가 없어요."
+      rowKey={inquiry => inquiry.inquiryId}
+      onRowClick={inquiry => onOpen(inquiry.inquiryId)}
+      emptyLabel={emptyLabel ?? '조건에 맞는 문의가 없어요.'}
     />
   )
 }
