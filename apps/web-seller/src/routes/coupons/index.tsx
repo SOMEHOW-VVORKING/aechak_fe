@@ -120,7 +120,7 @@ function CouponsRoute() {
       <p className="mt-4 text-caption text-text-tertiary">총 {rows.length}개</p>
 
       <div className="mt-2">
-        <CouponsTable coupons={rows} />
+        <CouponsTable coupons={rows} onStop={() => toast.show(SAMPLE_ACTION_TOAST, 'info')} />
       </div>
 
       <p className="mt-3.5 text-caption text-text-tertiary">

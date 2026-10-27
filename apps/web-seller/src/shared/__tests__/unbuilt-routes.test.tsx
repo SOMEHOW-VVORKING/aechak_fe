@@ -57,13 +57,17 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     async (path, title) => {
       renderAt(path)
 
-      expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+      const heading = await screen.findByRole('heading', { name: title })
       // 띠는 DS Alert(role="alert")라 역할로 집는다 — 문구가 다듬어져도 띠의 존재는 지켜진다.
       const notice = screen.getByRole('alert')
       expect(within(notice).getByText(SAMPLE_DATA_TITLE)).toBeInTheDocument()
       expect(notice).toHaveTextContent('저장되지 않')
-      // 화면 안에도 서버가 없다는 사실을 남긴다(nav 꼬리표와 같은 글자).
-      expect(screen.getAllByText('준비 중').length).toBeGreaterThan(0)
+
+      // 화면 안의 "준비 중" 표시는 **PageHeader 안에서만** 찾는다. 화면 전체(`screen`)에서 세면
+      // nav 꼬리표 5개가 늘 걸려서, 화면 머리의 pill을 지워도 초록으로 지나간다(교차검토 지적).
+      const pageHeader = heading.parentElement
+      expect(pageHeader).not.toBeNull()
+      expect(within(pageHeader as HTMLElement).getByText('준비 중')).toBeInTheDocument()
     },
   )
 
@@ -81,6 +85,8 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     // 답변 폼: 행을 눌러 Drawer를 열고 답변을 적는다.
     await userEvent.click(row)
     const drawer = await screen.findByRole('dialog')
+    // 답변을 적어 보내는 자리가 Drawer 안이다 — 띠가 바깥에만 있으면 여기서 속는다.
+    expect(within(within(drawer).getByRole('alert')).getByText(SAMPLE_DATA_TITLE)).toBeInTheDocument()
     expect(within(drawer).getByText(/급식기 입구 높이/)).toBeInTheDocument()
     await userEvent.type(within(drawer).getByLabelText('답변'), '입구까지 높이는 12cm예요.')
     await userEvent.click(within(drawer).getByRole('button', { name: '답변 보내기' }))
@@ -163,23 +169,57 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     const historyRow = screen.getByText('45.133.1.207').closest('tr') as HTMLElement
     expect(within(historyRow).getByText('낯선 접속')).toBeInTheDocument()
     expect(within(historyRow).getByText('실패')).toBeInTheDocument()
-    expect(screen.getByText(/이배송 \/ 주문·배송 담당|이배송 \/ 주문\/배송 담당/)).toBeInTheDocument()
+    // 카피 규칙(5절)이 정하는 구분자는 '/'다 — 가운뎃점까지 허용하는 or 정규식은 규칙 위반을
+    // 그대로 통과시킨다(교차검토 지적). 정확한 문구로 못 박는다.
+    expect(screen.getByText('이배송 / 주문/배송 담당')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '계정 정보 저장' }))
 
     expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
+
+    // 담당자 초대도 같은 공통 토스트로 끝나고 요청을 보내지 않는다.
+    await userEvent.click(screen.getByRole('button', { name: '담당자 초대' }))
+    expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
     expect(requests).toEqual([])
   })
 
-  it('[AC-SELLER-SAMPLE-007] 비밀번호 변경은 확인이 어긋나면 잠기고, 맞으면 눌러도 서버로 나가지 않는다', async () => {
+  it('[AC-SELLER-SAMPLE-009] 2단계 인증을 켜면 켜진 채로 남지만 저장되지 않음을 글자로 알린다', async () => {
+    const requests = trackRequests()
+    renderAt('/account')
+
+    // 토글은 실제로 움직인다(움직이지 않는 토글은 2절 금지의 장식 UI다).
+    const mfa = await screen.findByRole('switch', { name: '2단계 인증 사용' })
+    expect(mfa).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(mfa)
+    expect(mfa).toHaveAttribute('aria-checked', 'true')
+
+    // 그런데 pill이 "사용 중"으로 바뀌므로, 토스트가 사라진 뒤에도 **화면에 남는 글자**로
+    // 저장되지 않았음을 말해야 한다 — 이 단언이 없으면 계정이 보호된다고 믿는 화면이 된다.
+    // '사용 중'은 담당자 목록의 상태 pill에도 있다 — 2단계 인증 줄 안에서만 찾는다.
+    const mfaRow = screen.getByText('2단계 인증')
+    expect(within(mfaRow).getByText('사용 중')).toBeInTheDocument()
+    expect(within(mfaRow).getByText('저장 안 됨')).toBeInTheDocument()
+    expect(requests).toEqual([])
+  })
+
+  it('[AC-SELLER-SAMPLE-007] 비밀번호 변경은 확인이 어긋나거나 비어 있으면 잠기고, 맞으면 눌러도 서버로 나가지 않는다', async () => {
     const requests = trackRequests()
     renderAt('/account')
 
     const next = await screen.findByLabelText('새 비밀번호')
     await userEvent.type(screen.getByLabelText('지금 비밀번호'), 'old-password-1!')
-    await userEvent.type(next, 'new-password-1!')
-    await userEvent.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-2!')
 
+    // 폼이 글자로 약속한 길이("10자 이상")를 실제로 검사한다.
+    await userEvent.type(next, 'short')
+    expect(screen.getByText('10자 이상이어야 해요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '비밀번호 변경' })).toBeDisabled()
+    await userEvent.clear(next)
+    await userEvent.type(next, 'new-password-1!')
+
+    // 확인 칸이 **비어 있을 때도** 잠겨야 한다 — 빈 확인은 "어긋남"이 아니라서 통과했던 자리다.
+    expect(screen.getByRole('button', { name: '비밀번호 변경' })).toBeDisabled()
+
+    await userEvent.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-2!')
     expect(screen.getByText('새 비밀번호와 달라요.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '비밀번호 변경' })).toBeDisabled()
 
@@ -201,6 +241,55 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
       expect(screen.queryByText('소형견도 쓸 수 있는 크기인가요?')).not.toBeInTheDocument(),
     )
     expect(screen.getByText('동결건조 간식 유통기한이 언제까지인가요?')).toBeInTheDocument()
+  })
+
+  it('[AC-SELLER-SAMPLE-010] 필터가 0건이 되면 화면이 말없이 비지 않고 빈 상태 문구가 나온다', async () => {
+    renderAt('/reviews')
+
+    // 이 조합(방수 하네스 + 5점)은 예시 데이터에 없다 — 걸러서 0건이 되는 자리다.
+    expect(await screen.findByText(/출근이 늦어지는 날에도/)).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('상품'), '방수 하네스 (M)')
+    await userEvent.selectOptions(screen.getByLabelText('별점'), '5')
+
+    // "아무것도 없다"가 다시 생기지 않게, 0건은 글자로 알리고 초기화로 돌아올 수 있어야 한다.
+    expect(await screen.findByText('조건에 맞는 리뷰가 없어요.')).toBeInTheDocument()
+    expect(screen.getByText('총 0건')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '초기화' }))
+    expect(await screen.findByText(/출근이 늦어지는 날에도/)).toBeInTheDocument()
+  })
+
+  it('[AC-SELLER-SAMPLE-011] 발급 중 쿠폰은 중단 버튼이 있고 끝난 쿠폰에는 없으며, 눌러도 서버로 나가지 않는다', async () => {
+    const requests = trackRequests()
+    renderAt('/coupons')
+
+    const activeRow = (await screen.findByText('첫 구매 10% 할인')).closest('tr') as HTMLElement
+    const stopButton = within(activeRow).getByRole('button', { name: '첫 구매 10% 할인 발급 중단' })
+
+    // 이미 중단된 쿠폰에는 버튼 자체가 없다(비활성 버튼은 "권한이 없다"로 읽힌다).
+    const stoppedRow = screen.getByText('재고 정리 20%').closest('tr') as HTMLElement
+    expect(within(stoppedRow).queryByRole('button')).toBeNull()
+
+    await userEvent.click(stopButton)
+
+    expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
+    expect(requests).toEqual([])
+  })
+
+  it('[AC-SELLER-SAMPLE-012] 상세 Drawer 안에도 "예시 데이터" 띠가 있다', async () => {
+    renderAt('/notices')
+
+    // Drawer는 fixed inset-0 + aria-modal + 바디 스크롤 잠금이라 화면 맨 위의 띠가 닿지 않는다.
+    // 지어낸 정책 날짜를 사실로 믿을 자리라 띠가 Drawer 안에도 있어야 한다(교차검토 지적).
+    const row = (
+      await screen.findByText('11월 1일부터 반품 배송비 부담 기준이 바뀌어요')
+    ).closest('tr') as HTMLElement
+    await userEvent.click(row)
+
+    const drawer = await screen.findByRole('dialog')
+    const notice = within(drawer).getByRole('alert')
+    expect(within(notice).getByText(SAMPLE_DATA_TITLE)).toBeInTheDocument()
+    expect(notice).toHaveTextContent('저장되지 않')
   })
 
   it('[AC-SELLER-UNBUILT-002] 다섯 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {

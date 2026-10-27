@@ -25,6 +25,12 @@ export function NotificationChannelCard({ onSave }: NotificationChannelCardProps
       <p className="mt-0.5 text-caption text-text-tertiary">
         어떤 일이 생겼을 때 메일과 문자 중 무엇으로 받을지 골라요.
       </p>
+      {/* 이 카드는 공지 표 아래라 화면 맨 위의 띠가 보이지 않는 자리에 있다 — 토글이 움직여 설정이
+          바뀐 것처럼 읽히므로 카드 안에도 저장되지 않는다는 사실을 글자로 남긴다(교차검토 지적). */}
+      <p className="mt-1 text-caption text-warning-fg">
+        예시 화면이라 토글을 움직이거나 저장을 눌러도 저장되지 않아요. 새로고침하면 원래 값으로
+        돌아가요.
+      </p>
 
       <ul className="mt-3">
         {channels.map(row => (

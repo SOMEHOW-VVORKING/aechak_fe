@@ -4,6 +4,7 @@ export {
   COUPON_STATUS_VARIANT,
   SAMPLE_COUPONS,
   SAMPLE_COUPON_SCOPES,
+  canStopCoupon,
   couponDiscountText,
   couponIssueText,
   type CouponDiscountType,

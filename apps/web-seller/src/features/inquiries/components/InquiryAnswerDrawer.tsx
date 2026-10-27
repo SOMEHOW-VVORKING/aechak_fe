@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Drawer, StatusPill, Textarea } from '@aechak/design-system/web'
+import { SampleDataNotice } from '@/shared/components/SampleDataNotice'
 import {
   INQUIRY_CATEGORY_LABEL,
   INQUIRY_STATUS_LABEL,
@@ -24,6 +25,10 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 // 행 클릭 → 상세 Drawer(web-admin 심사 화면·셀러 클레임 화면과 같은 패턴).
+//
+// **띠를 Drawer 안에도 둔다**: DS Drawer는 `fixed inset-0` + `aria-modal` + 바디 스크롤 잠금이라
+// 열려 있는 동안 화면 맨 위의 띠가 보이지도, 닿지도 않는다. 답변을 적어 보내는 자리가 이 안이므로
+// 여기서 속으면 띠를 둔 의미가 없다(교차검토 지적).
 export function InquiryAnswerDrawer({ inquiry, onClose, onSend }: InquiryAnswerDrawerProps) {
   const [draft, setDraft] = useState('')
 
@@ -37,6 +42,15 @@ export function InquiryAnswerDrawer({ inquiry, onClose, onSend }: InquiryAnswerD
   return (
     <Drawer open onClose={onClose} title="문의 상세" width="lg">
       <div className="flex flex-col gap-4">
+        <SampleDataNotice
+          className="mb-0"
+          replaceWhen={
+            <>
+              seller 호스트에 답변 전송 경로가 생기면 이 답변이 구매자에게 실제로 가요.
+            </>
+          }
+        />
+
         <div>
           <div className="flex items-center gap-2">
             <StatusPill variant={INQUIRY_STATUS_VARIANT[inquiry.status]}>

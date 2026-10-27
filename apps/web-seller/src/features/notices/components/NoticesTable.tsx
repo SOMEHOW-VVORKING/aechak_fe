@@ -16,6 +16,8 @@ export function NoticesTable({ notices, onOpen }: NoticesTableProps) {
     {
       key: 'category',
       label: '분류',
+      // 보조텍스트 없는 StatusPill 단독 컬럼은 center(AGENTS 4절).
+      align: 'center',
       render: notice => (
         <StatusPill variant={NOTICE_CATEGORY_VARIANT[notice.category]}>
           {NOTICE_CATEGORY_LABEL[notice.category]}
@@ -63,7 +65,7 @@ export function NoticesTable({ notices, onOpen }: NoticesTableProps) {
       rows={notices}
       rowKey={notice => notice.noticePublicId}
       onRowClick={notice => onOpen(notice.noticePublicId)}
-      emptyLabel="받은 공지가 없어요."
+      emptyLabel="조건에 맞는 공지가 없어요."
     />
   )
 }

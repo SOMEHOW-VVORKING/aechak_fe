@@ -149,6 +149,14 @@ export function couponDiscountText(coupon: SampleCoupon): string {
     : `${coupon.discountValue}% / 최대 ${coupon.maxDiscount.toLocaleString()}원`
 }
 
+/**
+ * 발급을 멈출 수 있는 쿠폰 — 아직 끝나지 않은 것만이다. 표의 액션 컬럼이 이 판정으로 버튼을
+ * 그릴지 정한다(서버가 생기면 `POST /sellers/me/coupons/{id}/stop`이 같은 조건을 쓴다).
+ */
+export function canStopCoupon(coupon: SampleCoupon): boolean {
+  return coupon.status === 'SCHEDULED' || coupon.status === 'ACTIVE'
+}
+
 export function couponIssueText(coupon: SampleCoupon): string {
   const limit = coupon.issueLimit == null ? '무제한' : coupon.issueLimit.toLocaleString()
   return `${coupon.issuedCount.toLocaleString()} / ${limit}`

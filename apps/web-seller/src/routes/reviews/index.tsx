@@ -90,7 +90,11 @@ function ReviewsRoute() {
           value={`${reportedCount}건`}
           variant={reportedCount > 0 ? 'urgent' : 'default'}
         />
-        <MetricCard label="최근 30일 리뷰" value="47건" variant="quiet" />
+        <MetricCard
+          label="최근 30일 리뷰"
+          value={`${SAMPLE_RATING_SUMMARY.recent30Days}건`}
+          variant="quiet"
+        />
       </div>
 
       <FilterBar className="mt-4">

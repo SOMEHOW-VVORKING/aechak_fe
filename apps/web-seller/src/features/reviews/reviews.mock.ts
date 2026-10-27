@@ -28,6 +28,8 @@ export interface SampleReview {
 export interface RatingSummary {
   average: number
   total: number
+  /** 최근 30일에 쌓인 리뷰 건수 — 지표 카드가 쓴다. */
+  recent30Days: number
   /** 5점부터 1점까지의 건수. */
   distribution: Record<ReviewRating, number>
 }
@@ -112,6 +114,7 @@ export const SAMPLE_REVIEWS: SampleReview[] = [
 export const SAMPLE_RATING_SUMMARY: RatingSummary = {
   average: 4.3,
   total: 318,
+  recent30Days: 47,
   distribution: { 5: 196, 4: 71, 3: 29, 2: 14, 1: 8 },
 }
 

@@ -12,6 +12,8 @@ export function LoginHistoryTable() {
     {
       key: 'at',
       label: '접속 시각',
+      // tabular-nums 날짜 컬럼은 right(AGENTS 4절 — align이 없으면 회귀 신호).
+      align: 'right',
       render: record => <span className="tabular-nums">{record.at}</span>,
     },
     {
@@ -37,6 +39,8 @@ export function LoginHistoryTable() {
     {
       key: 'result',
       label: '결과',
+      // 보조텍스트 없는 StatusPill 단독 컬럼은 center(AGENTS 4절).
+      align: 'center',
       render: record => (
         <StatusPill variant={LOGIN_RESULT_VARIANT[record.result]}>
           {LOGIN_RESULT_LABEL[record.result]}
