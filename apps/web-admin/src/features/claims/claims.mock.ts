@@ -22,6 +22,13 @@ export type AdminClaimStatus =
 
 export type AdminClaimParty = 'buyer' | 'seller' | 'undecided'
 
+/**
+ * 반품·교환 배송비를 누가 내는가. **귀책(`responsibleParty`)과 따로 들고 있다** — 귀책은
+ * 셀러/구매자 둘뿐이지만 배송비는 플랫폼이 떠안는 결정(택배사 과실·운영 사과 등)이 있어,
+ * 귀책에서 계산해 버리면 그 결정을 적을 자리가 없다.
+ */
+export type AdminClaimShippingBearer = 'buyer' | 'seller' | 'platform'
+
 export interface AdminClaim {
   id: string
   orderId: string
@@ -33,6 +40,8 @@ export interface AdminClaim {
   requestedAt: string
   status: AdminClaimStatus
   responsibleParty: AdminClaimParty
+  /** 중재에서 정한 배송비 부담 주체. 아직 정하지 않았으면 비운다. */
+  shippingBearer?: AdminClaimShippingBearer
   refundAmount: number
   shippingFee: number
   buyerClaim: string
@@ -75,6 +84,7 @@ export const adminClaimsMock: AdminClaim[] = [
     requestedAt: '10-26 09:30',
     status: 'requested',
     responsibleParty: 'seller',
+    shippingBearer: 'seller',
     refundAmount: 23_500,
     shippingFee: 0,
     buyerClaim: '결제한 지 이틀이 지났는데 아직 발송되지 않았어요. 취소하고 싶어요.',
@@ -92,6 +102,7 @@ export const adminClaimsMock: AdminClaim[] = [
     requestedAt: '10-25 11:15',
     status: 'approved',
     responsibleParty: 'seller',
+    shippingBearer: 'seller',
     refundAmount: 0,
     shippingFee: 0,
     buyerClaim: '3L를 주문했는데 5L가 왔어요.',
@@ -113,6 +124,7 @@ export const adminClaimsMock: AdminClaim[] = [
     requestedAt: '10-24 14:02',
     status: 'seller-rejected',
     responsibleParty: 'buyer',
+    shippingBearer: 'buyer',
     refundAmount: 31_200,
     shippingFee: 5_000,
     buyerClaim: '필터 규격이 제 기기와 맞지 않아요.',
@@ -134,6 +146,7 @@ export const adminClaimsMock: AdminClaim[] = [
     requestedAt: '10-21 08:44',
     status: 'rejected',
     responsibleParty: 'buyer',
+    shippingBearer: 'buyer',
     refundAmount: 0,
     shippingFee: 0,
     buyerClaim: '실수로 두 번 결제했어요.',

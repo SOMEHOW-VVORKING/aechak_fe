@@ -24,7 +24,13 @@ import {
 } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
 import { useAdminClaims } from '@/features/claims'
-import type { AdminClaim, AdminClaimParty, AdminClaimStatus, AdminClaimType } from '@/features/claims'
+import type {
+  AdminClaim,
+  AdminClaimParty,
+  AdminClaimShippingBearer,
+  AdminClaimStatus,
+  AdminClaimType,
+} from '@/features/claims'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
 import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
@@ -75,11 +81,21 @@ const typeFilterOptions = [
   ...Object.entries(claimTypeMeta).map(([value, meta]) => ({ value, label: meta.label })),
 ]
 
-const shippingBearerOptions = [
+// 값이 타입에서 벗어나면(철자 오류·옵션 추가) 여기서 바로 걸린다 — Select의 value는 string이라
+// 느슨하게 두면 patchRow에 저장되지 않는 값이 들어간다.
+const shippingBearerOptions: { value: AdminClaimShippingBearer; label: string }[] = [
   { value: 'buyer', label: '구매자 부담' },
   { value: 'seller', label: '셀러 부담' },
   { value: 'platform', label: '플랫폼 부담' },
 ]
+
+/**
+ * DS `Select`의 `onChange`는 `(value: string) => void`라 상태 타입으로 바로 꽂을 수 없다.
+ * `as`로 눌러 두면 옵션 목록과 타입이 어긋났을 때 조용히 저장되지 않는 값이 들어가므로,
+ * **옵션 목록을 근거로** 좁힌다.
+ */
+const isShippingBearer = (value: string): value is AdminClaimShippingBearer =>
+  shippingBearerOptions.some(option => option.value === value)
 
 const decisionModalMeta: Record<
   AdminClaimParty,
@@ -206,14 +222,15 @@ function ClaimsPage() {
   )
 
   const [decision, setDecision] = useState<AdminClaimParty>('undecided')
-  const [shippingBearer, setShippingBearer] = useState('')
+  const [shippingBearer, setShippingBearer] = useState<AdminClaimShippingBearer | ''>('')
   const [arbitrationNote, setArbitrationNote] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
 
   function openDrawer(row: AdminClaim) {
     select(row.id)
     setDecision(row.responsibleParty)
-    setShippingBearer(row.responsibleParty === 'undecided' ? '' : row.responsibleParty)
+    // 귀책에서 계산하지 않는다 — 플랫폼 부담은 귀책으로 표현할 수 없다(claims.mock.ts).
+    setShippingBearer(row.shippingBearer ?? '')
     setArbitrationNote(row.arbitrationNote ?? '')
     setInternalMemo(row.internalMemo ?? '')
   }
@@ -223,6 +240,9 @@ function ClaimsPage() {
     patchRow(target.id, {
       status: nextStatus,
       responsibleParty: decision,
+      // 배송비 부담을 빼면 운영자가 고른 값이 조용히 버려진다 — 드로어를 다시 열면 사라지고,
+      // 확인 Modal은 그 값을 보여주고 있어 "정한 대로 들어갔다"고 읽힌다(동작 안 하는 입력).
+      shippingBearer: shippingBearer === '' ? undefined : shippingBearer,
       arbitrationNote,
       internalMemo,
     })
@@ -332,7 +352,7 @@ function ClaimsPage() {
               <Select
                 options={shippingBearerOptions}
                 value={shippingBearer}
-                onChange={setShippingBearer}
+                onChange={value => setShippingBearer(isShippingBearer(value) ? value : '')}
                 placeholder="부담 주체 선택"
               />
             </DetailField>

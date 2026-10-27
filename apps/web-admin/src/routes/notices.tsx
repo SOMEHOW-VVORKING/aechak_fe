@@ -76,8 +76,16 @@ const statusFilterOptions = [
   ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
 ]
 
+/**
+ * 대상 필터의 "미선택" 센티넬. 다른 어드민 화면은 `'all'`을 쓰지만 **이 축에는 `'all'`이 실제
+ * 값으로 있다**(전체 회원 대상 공지) — 그대로 쓰면 같은 `value`가 옵션에 두 번 들어가 React가
+ * `Encountered two children with the same key, 'all'`을 띄우고, 더 나쁜 건 "전체 대상"을 골라도
+ * 아래 조건이 미선택으로 읽어 전체가 그대로 보이는 것이다(동작 안 하는 필터 = 2절 금지).
+ */
+const AUDIENCE_ANY = 'any'
+
 const audienceFilterOptions = [
-  { value: 'all', label: '대상 전체' },
+  { value: AUDIENCE_ANY, label: '대상 전체' },
   ...Object.entries(audienceLabel).map(([value, label]) => ({ value, label: `${label} 대상` })),
 ]
 
@@ -150,14 +158,14 @@ function NoticesPage() {
   } = useDetailList(data)
 
   const [statusFilter, setStatusFilter] = useState('all')
-  const [audienceFilter, setAudienceFilter] = useState('all')
+  const [audienceFilter, setAudienceFilter] = useState(AUDIENCE_ANY)
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(
     () =>
       items.filter(row => {
         if (statusFilter !== 'all' && row.status !== statusFilter) return false
-        if (audienceFilter !== 'all' && row.audience !== audienceFilter) return false
+        if (audienceFilter !== AUDIENCE_ANY && row.audience !== audienceFilter) return false
         if (search && !row.title.includes(search)) return false
         return true
       }),
