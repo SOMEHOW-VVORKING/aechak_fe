@@ -42,10 +42,12 @@ export function InquiryAnswerDrawer({
 }: InquiryAnswerDrawerProps) {
   const [draft, setDraft] = useState('')
 
-  // 다른 문의를 열면 앞 문의에 쓰던 초안이 남지 않게 비운다.
+  // 다른 문의를 열면 앞 문의에 쓰던 초안이 남지 않게 비운다. **문의 객체가 아니라 id로 거른다** —
+  // 열어 둔 행은 목록 재조회(창 복귀 등)마다 새 객체로 올 수 있고, 답변 기한이 지나는 순간
+  // 같은 문의의 `overdue`가 false→true로 바뀐다. 객체를 의존으로 두면 그때 쓰던 답변이 사라진다.
   useEffect(() => {
     setDraft('')
-  }, [inquiry])
+  }, [inquiry?.inquiryId])
 
   if (inquiry == null) return null
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -13,6 +13,7 @@ import {
   seedInquiries,
   seedSellerApplication,
   server,
+  updateInquiryRow,
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -30,7 +31,8 @@ function renderInquiries() {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return router
+  // queryClient도 돌려준다 — 재조회를 테스트가 직접 일으켜야 하는 경우가 있다.
+  return { router, queryClient }
 }
 
 const rowOf = async (text: string) => (await screen.findByText(text)).closest('tr') as HTMLElement
@@ -229,5 +231,42 @@ describe('셀러 문의 답변', () => {
     await userEvent.type(within(drawer).getByLabelText('답변'), '   ')
     expect(within(drawer).getByRole('button', { name: '답변 보내기' })).toBeDisabled()
     expect(inquiryAnswerCount()).toBe(0)
+  })
+
+  // 열어 둔 행은 목록을 다시 불러올 때마다(창 복귀·답변 무효화) 새 객체로 온다. 그중 같은
+  // 문의의 `overdue`는 답변 기한이 지나는 순간 false→true로 바뀐다 — 초안을 문의 객체에
+  // 걸어 비우면 그 순간 적고 있던 답변이 사라진다. 비우는 기준은 문의 id여야 한다.
+  it('[AC-SELLER-INQUIRY-012] 같은 문의의 기한이 지나 목록이 갱신돼도 적던 답변이 남는다', async () => {
+    const { queryClient } = renderInquiries()
+
+    await userEvent.click(await rowOf('소형견도 쓸 수 있는 크기인가요?'))
+    const drawer = await screen.findByRole('dialog')
+    await userEvent.type(within(drawer).getByLabelText('답변'), '입구까지 높이는 12cm예요.')
+
+    // 서버 쪽에서 같은 문의가 기한 지남으로 바뀌고 목록이 다시 내려온다.
+    updateInquiryRow('01INQUIRYA0000000000000001', { overdue: true })
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    await waitFor(() => expect(metricValueOf('답변 기한 지남')).toBe('2건'))
+    expect(within(screen.getByRole('dialog')).getByLabelText('답변')).toHaveValue(
+      '입구까지 높이는 12cm예요.',
+    )
+  })
+
+  it('[AC-SELLER-INQUIRY-013] 다른 문의를 열면 앞 문의에 적던 답변은 남지 않는다', async () => {
+    renderInquiries()
+
+    await userEvent.click(await rowOf('소형견도 쓸 수 있는 크기인가요?'))
+    await userEvent.type(
+      within(await screen.findByRole('dialog')).getByLabelText('답변'),
+      '앞 문의 초안',
+    )
+    // Drawer 머리의 X도 접근명이 '닫기'다 — 글자를 가진 쪽(바닥 버튼)으로 좁힌다.
+    await userEvent.click(within(screen.getByRole('dialog')).getByText('닫기', { selector: 'button' }))
+
+    await userEvent.click(await rowOf('제주도 추가 배송비가 따로 붙나요?'))
+    expect(within(await screen.findByRole('dialog')).getByLabelText('답변')).toHaveValue('')
   })
 })

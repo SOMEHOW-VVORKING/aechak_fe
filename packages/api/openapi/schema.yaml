@@ -2498,6 +2498,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnswerInquiryResponse"
+        "400":
+          description: >-
+            공백만(errorCode 120105) / 2000자 초과(errorCode 120106). 둘 다 도메인이 던지는 코드가
+            그대로 나온다 — 요청 DTO에 같은 제약을 거울로 두지 않기 때문이다
         "403":
           description: "남의 상품 문의(errorCode 120108) / ACTIVE 셀러 아님(errorCode 120112)"
         "404":

@@ -2077,6 +2077,14 @@ export function currentInquiries(): InquiryWire[] {
   return inquiries.map(row => ({ ...row }))
 }
 
+/**
+ * 심어 둔 문의 한 행을 서버 쪽에서 고친다(claims의 `updateClaimRow`와 같은 쓰임) —
+ * 재조회 사이에 서버 값이 바뀐 상황을 만들 때 쓴다.
+ */
+export function updateInquiryRow(inquiryId: string, patch: Partial<InquiryWire>): void {
+  inquiries = inquiries.map(row => (row.inquiryId === inquiryId ? { ...row, ...patch } : row))
+}
+
 /** 지표는 필터를 무시하고 전체 범위를 센다 — 화면이 탭을 눌러도 흔들리지 않아야 한다. */
 function inquiryMetrics() {
   const pending = inquiries.filter(row => row.status === 'RECEIVED').length
