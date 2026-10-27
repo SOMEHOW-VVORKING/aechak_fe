@@ -109,15 +109,30 @@ const SCREENS = [
 const TABLE_SCREENS = SCREENS.filter(([, path]) => path !== '/')
 
 /**
- * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이다.
+ * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이고,
+ * `prefill`은 버튼이 잠겨 있을 때 먼저 골라야 하는 Select 옵션이다.
  * 어드민 액션 로그는 읽기 전용이라 여기 없고, 아래에서 쓰기 버튼이 **없다는 것**을 단언한다.
+ *
+ * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러다(셀러의
+ * `handleSaveMemo`/`handleConfirmSuspend`, 상품 검수의 `handlePass`/`handleKeepBlinded`/
+ * `handleConfirmStopSale`). 대표 하나만 누르면 나머지 핸들러에 요청이 들어가도 잡히지 않는다
+ * (교차검토 2라운드 지적).
  */
 const WRITE_FLOWS = [
   {
-    screen: '셀러 관리',
+    screen: '셀러 관리 — 메모 저장',
     path: '/sellers',
     openRow: '냥이상점',
     action: '저장',
+  },
+  {
+    screen: '셀러 관리 — 판매정지',
+    path: '/sellers',
+    openRow: '냥이상점',
+    // 사유·기간이 비면 버튼이 잠긴다(빈 제재 방지) — 둘을 채워 흐름을 끝까지 본다.
+    prefill: ['신고 누적', '7일 정지'],
+    action: '판매정지',
+    confirm: { dialog: "'냥이상점'을 판매정지할까요?", button: '판매정지' },
   },
   {
     screen: '일반 회원 관리',
@@ -127,10 +142,24 @@ const WRITE_FLOWS = [
     confirm: { dialog: '정상 상태로 되돌릴까요?', button: '정상 전환' },
   },
   {
-    screen: '상품 검수 관리',
+    screen: '상품 검수 관리 — 검수 통과',
     path: '/products/review',
     openRow: '동결건조 닭가슴살 100g',
     action: '검수 통과',
+  },
+  {
+    screen: '상품 검수 관리 — 블라인드 유지',
+    path: '/products/review',
+    openRow: '동결건조 닭가슴살 100g',
+    action: '블라인드 유지',
+  },
+  {
+    screen: '상품 검수 관리 — 판매 중지',
+    path: '/products/review',
+    openRow: '동결건조 닭가슴살 100g',
+    action: '판매 중지',
+    // 드로어 액션과 Modal 확인 버튼이 같은 이름이라, 확인은 Modal 안으로 좁혀서 누른다.
+    confirm: { dialog: '상품을 판매 중지할까요?', button: '판매 중지' },
   },
   {
     screen: 'AI 검수 큐',
@@ -254,6 +283,13 @@ describe('어드민 예시 데이터 화면', () => {
       renderAt(flow.path)
 
       await user.click(await screen.findByRole('button', { name: flow.openRow }))
+
+      if ('prefill' in flow && flow.prefill) {
+        for (const optionName of flow.prefill) {
+          await chooseOption(selectWithOption(optionName), optionName)
+        }
+      }
+
       await user.click(await screen.findByRole('button', { name: flow.action }))
 
       if ('confirm' in flow && flow.confirm) {
