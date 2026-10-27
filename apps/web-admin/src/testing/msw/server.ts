@@ -591,6 +591,16 @@ const memberHandlers = [
     }
     const terminal = terminalStateError(row)
     if (terminal) return terminal
+    // 온보딩 전 계정은 돌아올 상태를 잃어 되돌아오는 제재를 받지 못한다(BE 30023).
+    if (row.storedStatus === 'PENDING_ONBOARDING' && (action === 'RESTRICT' || action === 'SUSPEND')) {
+      return HttpResponse.json(
+        errorBody(
+          30023,
+          '가입을 마치지 않은 계정에는 이용 제한·임시 정지를 걸 수 없습니다. 영구 정지나 탈퇴 처리를 사용해 주세요.',
+        ),
+        { status: 409 },
+      )
+    }
 
     const effectiveUntil =
       action === 'SUSPEND'

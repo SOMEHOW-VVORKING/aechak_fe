@@ -159,6 +159,8 @@ export function sanctionErrorMessage(error: unknown): string {
     return '해제할 제재가 없어요. 목록을 다시 불러왔어요.'
   if (status === 409 && errorCode === 30021)
     return '관리자 계정은 제재할 수 없어요. 관리자 명부에서 먼저 강등해 주세요.'
+  if (status === 409 && errorCode === 30023)
+    return '가입을 마치지 않은 계정에는 이용 제한·임시 정지를 걸 수 없어요. 영구 정지나 탈퇴 처리를 사용해 주세요.'
   if (status === 403 && errorCode === 30020) return '자신을 제재할 수 없어요.'
   if (status === 403) return '이 작업을 처리할 권한이 없어요. 관리자 권한을 확인해 주세요.'
   if (status === 404) return '회원을 찾을 수 없어요. 목록을 다시 불러와 주세요.'

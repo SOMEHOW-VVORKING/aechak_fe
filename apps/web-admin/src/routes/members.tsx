@@ -150,7 +150,15 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
       key: 'accountStatus',
       label: '계정 상태',
       align: 'center',
-      render: row => <StatusMetaPill meta={statusMeta[row.accountStatus]} />,
+      // 상태 필터는 저장값으로 고르고 이 칸은 유효 상태를 보여 준다 — 둘이 갈리는 행은 이유를 함께 적는다.
+      render: row => (
+        <div className="flex flex-col items-center gap-0.5">
+          <StatusMetaPill meta={statusMeta[row.accountStatus]} />
+          {isExpiredSuspension(row) && (
+            <span className="text-caption text-text-tertiary">임시 정지 기간 만료</span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'joinedAt',
@@ -164,6 +172,27 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
 /** 저장값이 임시 정지인데 유효 상태가 정상이면 기간이 지나 자동으로 풀린 계정이다. */
 function isExpiredSuspension(member: MemberAccount): boolean {
   return member.storedAccountStatus === 'suspended' && member.accountStatus === 'normal'
+}
+
+/**
+ * 서버가 받아 주는 결정만 남긴다 — 나머지는 누르는 즉시 409/400으로 돌아오므로 고를 수 있게 두지 않는다.
+ * 저장값으로 판정한다: 만료된 임시 정지는 유효 상태가 정상이어도 저장값을 정리하는 해제가 필요하다.
+ */
+function allowedDecisions(member: MemberAccount): MemberDecision[] {
+  switch (member.storedAccountStatus) {
+    // 영구 정지·탈퇴 처리는 종단이라 추가 제재도 해제도 없다
+    case 'banned':
+    case 'withdrawing':
+      return []
+    // 온보딩 전 계정은 돌아올 상태를 잃어 되돌아오는 제재를 받지 못한다
+    case 'pending':
+      return ['banned', 'withdrawing']
+    case 'restricted':
+    case 'suspended':
+      return ['normal', 'restricted', 'suspended', 'banned', 'withdrawing']
+    default:
+      return ['restricted', 'suspended', 'banned', 'withdrawing']
+  }
 }
 
 function MembersPage() {
@@ -199,12 +228,17 @@ function MembersPage() {
     [],
   )
 
+  const allowed = useMemo<MemberDecision[]>(
+    () => (member ? allowedDecisions(member) : []),
+    [member],
+  )
   const isRelease = decision === 'normal'
   const needsReasonDetail = reasonCode === 'OTHER'
   const needsPeriod = decision === 'suspended'
   const canSubmit =
     member != null &&
     !sanction.isPending &&
+    allowed.includes(decision) &&
     (isRelease
       ? true
       : reasonCode !== '' &&
@@ -295,6 +329,9 @@ function MembersPage() {
       )}
 
       <Drawer open={selectedUserId !== null} onClose={closeDrawer} title="회원 상세" width="lg">
+        {detail.isLoading && (
+          <p className="text-body-sm text-text-tertiary">회원 정보를 불러오고 있어요.</p>
+        )}
         {detail.isError && (
           <Alert variant="error" title="상세를 불러오지 못했어요">
             <p>{detailErrorMessage(detail.error)}</p>
@@ -351,16 +388,54 @@ function MembersPage() {
             </DetailField>
 
             <DetailField label="계정 상태">
+              {allowed.length === 0 && (
+                <Alert variant="info" title="상태를 바꿀 수 없는 계정이에요" className="mb-2.5">
+                  <p>
+                    영구 정지와 탈퇴 처리는 되돌릴 수 없어서 추가 제재도 해제도 할 수 없어요.
+                  </p>
+                </Alert>
+              )}
               <DecisionRadioGroup<MemberDecision>
                 name="member-status"
                 value={decision}
                 onChange={setDecision}
                 options={[
-                  { value: 'normal', label: '정상', caption: '걸려 있는 제재를 해제' },
-                  { value: 'restricted', label: '이용 제한', caption: '리뷰/SNS/문의 쓰기 제한' },
-                  { value: 'suspended', label: '임시 정지', caption: '기간제 전면 차단' },
-                  { value: 'banned', label: '영구 정지', caption: '해제 불가' },
-                  { value: 'withdrawing', label: '탈퇴 처리', caption: '되돌릴 수 없음' },
+                  {
+                    value: 'normal',
+                    label: '정상',
+                    caption: allowed.includes('normal')
+                      ? '걸려 있는 제재를 해제'
+                      : '해제할 제재가 없어요',
+                    disabled: !allowed.includes('normal'),
+                  },
+                  {
+                    value: 'restricted',
+                    label: '이용 제한',
+                    caption: allowed.includes('restricted')
+                      ? '리뷰/SNS/문의 쓰기 제한'
+                      : '가입을 마치지 않은 계정에는 걸 수 없어요',
+                    disabled: !allowed.includes('restricted'),
+                  },
+                  {
+                    value: 'suspended',
+                    label: '임시 정지',
+                    caption: allowed.includes('suspended')
+                      ? '기간제 전면 차단'
+                      : '가입을 마치지 않은 계정에는 걸 수 없어요',
+                    disabled: !allowed.includes('suspended'),
+                  },
+                  {
+                    value: 'banned',
+                    label: '영구 정지',
+                    caption: '해제 불가',
+                    disabled: !allowed.includes('banned'),
+                  },
+                  {
+                    value: 'withdrawing',
+                    label: '탈퇴 처리',
+                    caption: '되돌릴 수 없음',
+                    disabled: !allowed.includes('withdrawing'),
+                  },
                 ]}
               />
             </DetailField>

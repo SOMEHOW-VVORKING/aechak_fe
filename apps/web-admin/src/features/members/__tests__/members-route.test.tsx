@@ -206,25 +206,63 @@ describe('/members', () => {
     expect(release?.reasonDetail).toBe('오인 제재 확인')
   })
 
-  it('[AC-MEMBER-008] 영구 정지된 계정의 추가 제재는 409 문구로 드러나고 상태가 그대로다', async () => {
+  it('[AC-MEMBER-008] 영구 정지된 계정은 어떤 결정도 고를 수 없고 제출도 막힌다', async () => {
     seedAdminMembers([makeAdminMemberWire({ ...제한회원, storedStatus: 'BANNED' })])
     const user = userEvent.setup()
     renderAt('/members')
     await user.click(await screen.findByRole('button', { name: '1002' }))
 
+    const open = await drawer()
+    expect(open.getByText(/추가 제재도 해제도 할 수 없어요/)).toBeInTheDocument()
+    for (const radio of open.getAllByRole('radio')) expect(radio).toBeDisabled()
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+  })
+
+  it('[AC-MEMBER-008b] 화면이 낡아 영구 정지를 모른 채 제출하면 409 문구로 드러나고 상태가 그대로다', async () => {
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
     await choose('이용 제한')
     const open = await drawer()
     await user.selectOptions(
       open.getByRole('combobox'),
       open.getByRole('option', { name: '허위 신고 반복' }),
     )
+    // 운영자가 사유를 고르는 동안 다른 운영자가 영구 정지했다 — 열린 화면은 그 사실을 모른다.
+    seedAdminMembers([makeAdminMemberWire({ ...정상회원, storedStatus: 'BANNED' })])
+
     await user.click(open.getByRole('button', { name: '제출' }))
     const confirm = within(await screen.findByRole('dialog', { name: '이용을 제한할까요?' }))
     await user.click(confirm.getByRole('button', { name: '이용 제한' }))
 
     expect(await screen.findByText(/이미 영구 정지된 계정이라/)).toBeInTheDocument()
-    expect(currentAdminMember(1002)?.storedStatus).toBe('BANNED')
-    expect(currentAdminMember(1002)?.sanctions).toHaveLength(0)
+    expect(currentAdminMember(1001)?.storedStatus).toBe('BANNED')
+    expect(currentAdminMember(1001)?.sanctions).toHaveLength(0)
+  })
+
+  it('[AC-MEMBER-008c] 제재가 없는 계정은 해제를 고를 수 없다 — 누르면 반드시 409가 된다', async () => {
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+
+    const open = await drawer()
+    expect(open.getByText('해제할 제재가 없어요')).toBeInTheDocument()
+    expect(open.getAllByRole('radio')[0]).toBeDisabled()
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+  })
+
+  it('[AC-MEMBER-008d] 온보딩 전 계정은 되돌아오는 제재를 고를 수 없고 종단 제재만 남는다', async () => {
+    seedAdminMembers([makeAdminMemberWire({ ...정상회원, storedStatus: 'PENDING_ONBOARDING' })])
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+
+    const open = await drawer()
+    const radios = open.getAllByRole('radio')
+    // 정상(해제)·이용 제한·임시 정지는 막히고 영구 정지·탈퇴 처리만 열린다.
+    expect(radios.slice(0, 3).every(radio => (radio as HTMLInputElement).disabled)).toBe(true)
+    expect(radios.slice(3).every(radio => (radio as HTMLInputElement).disabled)).toBe(false)
+    expect(open.getAllByText(/가입을 마치지 않은 계정에는 걸 수 없어요/)).toHaveLength(2)
   })
 
   it('[AC-MEMBER-009] 기간이 지난 임시 정지는 정상으로 보이고 기록은 임시 정지로 남는다', async () => {
@@ -240,7 +278,10 @@ describe('/members', () => {
 
     expect(await screen.findByRole('button', { name: '1001' })).toBeInTheDocument()
     // 필터 <option>에도 '정상'이 있어 표 안으로 좁힌다.
-    expect(within(screen.getByRole('table')).getByText('정상')).toBeInTheDocument()
+    const table = within(screen.getByRole('table'))
+    expect(table.getByText('정상')).toBeInTheDocument()
+    // 상태 필터는 저장값으로 고르므로, 목록이 '정상'으로 보이는 이유가 행에 남아야 한다.
+    expect(table.getByText('임시 정지 기간 만료')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '1001' }))
     const open = await drawer()

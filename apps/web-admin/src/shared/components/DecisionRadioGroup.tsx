@@ -4,6 +4,8 @@ export interface DecisionOption<V extends string = string> {
   value: V
   label: string
   caption?: string
+  /** 서버가 받지 않는 결정 — 고를 수 없게 두고 이유는 caption이 말한다. */
+  disabled?: boolean
 }
 
 interface DecisionRadioGroupProps<V extends string> {
@@ -30,19 +32,29 @@ export function DecisionRadioGroup<V extends string>({
     <div className="space-y-2">
       {options.map(option => {
         const selected = value === option.value
+        const disabled = option.disabled === true
         return (
           <div
             key={option.value}
-            onClick={() => onChange(option.value)}
+            aria-disabled={disabled || undefined}
+            onClick={() => {
+              if (!disabled) onChange(option.value)
+            }}
             className={[
-              'flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors',
-              selected ? 'border-brand bg-brand-subtle' : 'border-border-subtle hover:bg-surface-hover',
+              'flex items-start gap-2.5 rounded-md border p-3 transition-colors',
+              disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+              selected
+                ? 'border-brand bg-brand-subtle'
+                : disabled
+                  ? 'border-border-subtle'
+                  : 'border-border-subtle hover:bg-surface-hover',
             ].join(' ')}
           >
             <Radio
               name={name}
               value={option.value}
               checked={selected}
+              disabled={disabled}
               onChange={() => onChange(option.value)}
             />
             <div className="min-w-0">
