@@ -119,6 +119,17 @@ describe('리뷰 라우트', () => {
     expect(screen.getByText('3.8')).toBeInTheDocument()
   })
 
+  it('[AC-REVIEW-ROUTE-016] 셀러 답글이 달린 리뷰는 본문 아래에 판매자 답글을 함께 보여준다', async () => {
+    // 답글이 셀러센터에만 보이면 쓸모가 없다(SCRUM-315) — 구매자 목록에도 실리는지 고정한다.
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+
+    expect(await screen.findByText('냥집사')).toBeInTheDocument()
+    expect(screen.getByText(/판매자 답글/)).toBeInTheDocument()
+    expect(screen.getByText(/설치면을 평평하게 두면/)).toBeInTheDocument()
+    // 답글이 없는 리뷰까지 답글 블록을 그리지 않는다(픽스처 5건 중 답글은 1건이다).
+    expect(screen.getAllByText(/판매자 답글/)).toHaveLength(1)
+  })
+
   it('[AC-REVIEW-ROUTE-009] 포토리뷰만 토글은 사진 없는 리뷰를 감춘다', async () => {
     const user = userEvent.setup()
     renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
