@@ -2867,6 +2867,131 @@ export interface SnsRelationPageResponse {
 }
 
 /**
+ * 상품 문의 유형
+ */
+export type ProductInquiryCategory =
+  (typeof ProductInquiryCategory)[keyof typeof ProductInquiryCategory]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryCategory = {
+  PRODUCT: 'PRODUCT',
+  DELIVERY: 'DELIVERY',
+  CLAIM: 'CLAIM',
+  ETC: 'ETC',
+} as const
+
+/**
+ * 상품 문의 상태. RECEIVED가 화면의 '답변 대기'다 — 서버 어휘가 '접수'라 PENDING이 아니다. WITHDRAWN은 구매자가 질문을 거둬간 것이고 셀러 목록에는 내려오지 않는다
+ */
+export type ProductInquiryStatus = (typeof ProductInquiryStatus)[keyof typeof ProductInquiryStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryStatus = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 셀러 목록의 상태 탭. 도메인 상태(ProductInquiryStatus)와 값이 다른 이유 — 철회된 문의는 셀러 목록에 아예 나오지 않으므로 고를 수 있는 값이 아니다
+ */
+export type SellerInquiryStatusFilter =
+  (typeof SellerInquiryStatusFilter)[keyof typeof SellerInquiryStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerInquiryStatusFilter = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+} as const
+
+/**
+ * 셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다
+ */
+export interface SellerInquiryAnswer {
+  content: string
+  answeredAt: string
+}
+
+/**
+ * 화면 상단 지표 3종. **탭·유형·검색어와 무관한 셀러 전체 범위**이고 철회된 문의는 세지 않는다. overdue는 서버가 저장한 answerDueAt으로 판정한 값이라 화면이 다시 계산하면 안 된다
+ */
+export interface SellerInquiryMetrics {
+  /** 답변 대기(RECEIVED) 건수 */
+  pending: number
+  /** 답변 대기 중 답변 기한을 넘긴 건수 */
+  overdue: number
+  /** 답변 대기 + 답변 완료 건수(철회 제외) */
+  total: number
+}
+
+/**
+ * @nullable
+ */
+export type SellerInquirySummaryAnswer = SellerInquiryAnswer | null
+
+/**
+ * 셀러가 받은 문의 한 행. `authorMasked`는 서버가 닉네임 첫 글자만 남긴 값이고 원문 닉네임은 내려오지 않는다. `productId`는 접수 시점에 복사한 상품 공개 식별자라 상품이 내려가도 남는다
+ */
+export interface SellerInquirySummary {
+  /** 문의 공개 식별자(ULID 26자) */
+  inquiryId: string
+  /** 상품 공개 식별자(접수 시점 복사본) */
+  productId: string
+  /** 접수 시점 상품명 복사본 */
+  productName: string
+  category: ProductInquiryCategory
+  title: string
+  /** 비밀글도 셀러에게는 본문이 그대로 내려온다(답변 당사자) */
+  content: string
+  /** 마스킹된 작성자 표시명(예: 김**). 닉네임이 없으면 '익명' */
+  authorMasked: string
+  /** 비밀글 — 작성자와 이 셀러만 본문을 읽는다 */
+  secret: boolean
+  status: ProductInquiryStatus
+  askedAt: string
+  /** 서버가 접수 시점에 계산한 답변 기한(영업일 2일, 주말 제외) */
+  answerDueAt: string
+  /** 미답변 상태로 기한을 넘겼는지 — 서버 판정 결과다 */
+  overdue: boolean
+  /** @nullable */
+  answer: SellerInquirySummaryAnswer
+}
+
+export interface SellerInquiryListData {
+  inquiries: SellerInquirySummary[]
+  metrics: SellerInquiryMetrics
+  /** 필터를 모두 반영한 건수 — metrics와 기준이 다르다 */
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerInquiryListResponse {
+  data: SellerInquiryListData
+}
+
+export interface AnswerInquiryRequest {
+  /**
+   * 공백만이면 400 errorCode 120105, 2000자 초과면 400 errorCode 120106
+   * @minLength 1
+   * @maxLength 2000
+   */
+  content: string
+}
+
+export interface AnswerInquiryData {
+  inquiryId: string
+  status: ProductInquiryStatus
+  answeredAt: string
+}
+
+export interface AnswerInquiryResponse {
+  data: AnswerInquiryData
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -3214,6 +3339,33 @@ export type GetSellerClaimsParams = {
    * @pattern ^\d{4}-\d{2}-\d{2}$
    */
   requestedTo?: string
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerInquiriesParams = {
+  /**
+   * 비우면 답변 대기와 답변 완료를 함께 돌려준다(화면의 '전체' 탭). 빈 값(`?status=`)은 미입력이 아니라 형식 오류이므로 키째 빼서 보낼 것
+   */
+  status?: SellerInquiryStatusFilter
+  /**
+   * 비우면 전체 유형. 빈 값은 status와 같은 규칙
+   */
+  category?: ProductInquiryCategory
+  /**
+   * 문의 제목 또는 상품명 부분일치(대소문자 무시). 공백만이면 키째 뺄 것
+   * @maxLength 100
+   */
+  keyword?: string
   /**
    * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
    * @minimum 0
@@ -15318,6 +15470,298 @@ export const useReshipSellerClaim = <TError = void, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getReshipSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 접수 시점에 복사해 둔 sellerId로 잠그므로 **자기 상품에 온 문의만** 나온다. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다(정렬 파라미터 없음). **철회(WITHDRAWN)된 문의는 어느 탭에도 나오지 않고 지표에도 세지 않는다** — 구매자가 질문을 거둬간 것이라 status 필터로 고를 수도 없다(RECEIVED·ANSWERED 둘뿐). `metrics`는 **탭·유형·검색어를 무시하고** 셀러 전체 범위를 센다(탭을 눌러도 상단 지표가 흔들리지 않아야 하기 때문). `overdue`와 `metrics.overdue`는 **서버가 저장한 `answerDueAt`과 서버 시각으로 같은 규칙으로 판정한 결과**다 — 화면이 날짜를 빼서 다시 세면 두 숫자가 어긋난다. 비밀글(`secret`)도 셀러는 답변 당사자라 본문이 그대로 내려온다. 자격 게이트는 상품 조회와 같다: 정지·탈퇴 셀러는 403 errorCode 120112이고 휴점·탈퇴신청 셀러는 받은 문의를 읽는다. 형식 오류는 전부 400 errorCode 90001이다.
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+export const getSellerInquiries = (params?: GetSellerInquiriesParams, signal?: AbortSignal) => {
+  return customInstance<SellerInquiryListResponse>({
+    url: `/sellers/me/inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerInquiriesQueryKey = (params?: GetSellerInquiriesParams) => {
+  return [`/sellers/me/inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesQueryError = void
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesSuspenseQueryError = void
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **문의당 한 번만 받는다** — 이미 답변한 문의는 409 errorCode 120109이고 수정 경로가 없다 (구매자가 이미 읽은 답변이 조용히 바뀌지 않게 한 결정). 철회된 문의는 409 errorCode 120114, 남의 상품에 온 문의는 403 errorCode 120108, 없는 문의는 404 errorCode 120100이다. 답변은 ACTIVE 셀러만 등록한다(정지·휴점 포함 그 외는 403 errorCode 120112) — 읽기보다 게이트가 좁다. 응답은 201이고 바뀐 상태와 답변 시각을 돌려준다.
+ * @summary 상품 문의 답변 등록
+ */
+export const answerSellerInquiry = (
+  inquiryId: string,
+  answerInquiryRequest: AnswerInquiryRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AnswerInquiryResponse>({
+    url: `/sellers/me/inquiries/${inquiryId}/answer`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: answerInquiryRequest,
+    signal,
+  })
+}
+
+export const getAnswerSellerInquiryMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    TError,
+    { inquiryId: string; data: AnswerInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['answerSellerInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    { inquiryId: string; data: AnswerInquiryRequest }
+  > = props => {
+    const { inquiryId, data } = props ?? {}
+
+    return answerSellerInquiry(inquiryId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AnswerSellerInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof answerSellerInquiry>>
+>
+export type AnswerSellerInquiryMutationBody = AnswerInquiryRequest
+export type AnswerSellerInquiryMutationError = void
+
+/**
+ * @summary 상품 문의 답변 등록
+ */
+export const useAnswerSellerInquiry = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof answerSellerInquiry>>,
+      TError,
+      { inquiryId: string; data: AnswerInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getAnswerSellerInquiryMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
