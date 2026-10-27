@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
-import { seedAdminApplications, server } from '@/testing/msw/server'
+import { ADMIN_APPLICATIONS_URL, seedAdminApplications, server } from '@/testing/msw/server'
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -21,18 +21,47 @@ function renderAt(path: string) {
 }
 
 /**
- * 그 화면으로 **나간 요청의 URL**을 모은다.
+ * 그 화면에서 **나간 요청**을 마운트 순간부터 모은다.
  *
- * 셸이 nav 배지를 채우려고 입점 심사 대기 수를 한 번 조회하므로 "요청이 0건"은 참이 아니다 —
- * 그래서 총 건수가 아니라 **버튼을 누른 뒤에 늘어난 요청**을 본다. MSW는 `onUnhandledRequest:
- * 'error'`라 서버에 없는 경로로 나가면 테스트가 깨지지만, 그것만 믿으면 **핸들러가 있는 경로로
- * 잘못 나가는 쓰기**(예: 어드민 명부 POST)를 놓친다.
+ * MSW는 `onUnhandledRequest: 'error'`라 서버에 없는 경로로 나가면 테스트가 깨지지만, 그것만
+ * 믿으면 **핸들러가 있는 경로로 잘못 나가는 쓰기**(예: 어드민 명부 POST)를 놓친다 — 그래서
+ * 나간 요청을 직접 본다.
  */
 function recordRequests(): string[] {
   const urls: string[] = []
   server.events.on('request:start', ({ request }) => urls.push(`${request.method} ${request.url}`))
   return urls
 }
+
+/**
+ * 예시 화면에서 **유일하게 허용되는 요청** — 셸이 nav 배지를 채우려고 부르는 입점 심사 대기 수.
+ *
+ * "버튼을 누른 뒤에 늘어난 요청"을 보는 방식으로는 쓰기 회귀를 못 잡는다. 확인 Modal이 없는
+ * 흐름(셀러 `저장`·상품 `검수 통과`)은 **액션 클릭 자체가 쓰기 실행**이라, 기준선을 그 클릭
+ * 뒤에 잡으면 그 요청이 기준선에 삼켜져 단언이 영원히 통과한다(2026-10-27 실측: `handleSaveMemo`에
+ * `POST /admin/admins`를 넣어도 통과했고, 확인 Modal이 있는 회원 관리에서는 같은 주입이
+ * 잡혔다). 그래서 기준선을 쓰지 않고 **셸 조회 하나만 허용 목록에 두고 나머지 전부**를 본다 —
+ * 타이밍에 기대지 않으므로 늦게 나가는 요청도 목록에 남는다.
+ */
+const isShellBadgeRead = (entry: string) => entry.startsWith(`GET ${ADMIN_APPLICATIONS_URL}?`)
+
+const unexpectedRequests = (requests: readonly string[]) =>
+  requests.filter(entry => !isShellBadgeRead(entry))
+
+/**
+ * FilterBar와 상세 Drawer의 `<select>`는 라벨이 없다(앞의 FilterSelect/DetailField가 맥락을
+ * 준다) — 그래서 **그 안에 있는 옵션 이름**으로 집는다. 못 찾으면 던져서 `!`로 눌러 두지 않는다.
+ */
+function selectWithOption(optionName: string): HTMLElement {
+  const found = screen
+    .getAllByRole('combobox')
+    .find(element => within(element).queryByRole('option', { name: optionName }))
+  if (!found) throw new Error(`"${optionName}" 옵션을 가진 select를 찾지 못했다`)
+  return found
+}
+
+const chooseOption = (select: HTMLElement, optionName: string) =>
+  userEvent.setup().selectOptions(select, within(select).getByRole('option', { name: optionName }))
 
 const MOCK_NOTICE_TITLE = '예시 데이터예요'
 const NOT_SAVED = '저장되지 않아요'
@@ -227,26 +256,109 @@ describe('어드민 예시 데이터 화면', () => {
       await user.click(await screen.findByRole('button', { name: flow.openRow }))
       await user.click(await screen.findByRole('button', { name: flow.action }))
 
-      // 버튼을 누른 **직후**를 기준선으로 잡는다 — 셸의 배지 조회는 이미 여기 들어와 있다.
-      const before = requests.length
-
       if ('confirm' in flow && flow.confirm) {
         const dialog = await screen.findByRole('dialog', { name: flow.confirm.dialog })
         await user.click(within(dialog).getByRole('button', { name: flow.confirm.button }))
       }
 
-      expect(await screen.findByText(WRITE_TOAST)).toBeInTheDocument()
-      // 서버에 없는 경로로 나가면 운영자 화면에 500·404가 찍힌다.
-      await waitFor(() => expect(requests.slice(before)).toEqual([]))
+      const toast = await screen.findByText(WRITE_TOAST)
+      // 문구만 보면 variant를 success로 되돌려도 통과한다 — DS는 warning/error만 `role="alert"`로
+      // 올리고 success는 `role="status"`라, 토스트가 alert 안에 있는지로 그 되돌림을 잡는다.
+      // (띠도 alert이라 전역 `getByRole('alert')`로는 가를 수 없어 토스트에서 거슬러 올라간다.)
+      expect(toast.closest('[role="alert"]')).not.toBeNull()
+      // 서버에 없는 경로로 나가면 운영자 화면에 500·404가 찍히고, 핸들러가 있는 경로로 잘못
+      // 나가면 남의 데이터가 바뀐다. 셸 배지 조회를 뺀 **전부**를 본다(기준선을 쓰지 않는 이유는
+      // isShellBadgeRead 주석에).
+      expect(unexpectedRequests(requests)).toEqual([])
     },
   )
 
-  it('[AC-ADMIN-MOCK-006] 어드민 액션 로그는 읽기 전용이라 쓰기 버튼이 없다', async () => {
+  /**
+   * 예시 화면의 입력은 저장되지 않지만 **고른 값이 화면에서 사라지지는 않아야 한다.**
+   *
+   * 클레임의 배송비 부담은 귀책과 별개 축이다(플랫폼 부담은 귀책으로 표현할 수 없다). 처리에
+   * 이 값을 빼면 운영자가 고른 값이 조용히 버려지는데, 확인 Modal은 그 값을 보여주고 있어
+   * "정한 대로 들어갔다"고 읽힌다 — 저장되지 않는 것보다 나쁜 것은 정해진 척하는 것이다.
+   */
+  it('[AC-ADMIN-MOCK-008] 클레임의 배송비 부담은 처리 뒤에도 화면에 남는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/claims')
+
+    expect(await screen.findByRole('heading', { name: '취소/반품/교환' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+
+    await chooseOption(selectWithOption('플랫폼 부담'), '플랫폼 부담')
+
+    await user.click(screen.getByRole('button', { name: '제출' }))
+    const dialog = await screen.findByRole('dialog', { name: '클레임을 불가로 종결할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '불가 종결' }))
+    expect(await screen.findByText(WRITE_TOAST)).toBeInTheDocument()
+
+    // 다시 열면 고른 값이 그대로 있어야 한다 — patchRow에서 빠지면 여기서 빈 값으로 돌아온다.
+    await user.click(screen.getByRole('button', { name: 'CLM-2041' }))
+    expect(selectWithOption('플랫폼 부담')).toHaveValue('platform')
+  })
+
+  /**
+   * 예시 데이터라도 **필터는 실제로 걸러야 한다** — 동작하지 않는 필터는 AGENTS.md 2절이 금지한
+   * 장식 UI다. 공지의 대상 축만 이 테스트를 따로 갖는 이유는, 그 축에 `'all'`이 **실제 값**으로
+   * 있어서 다른 화면의 `'all'` 센티넬 관례를 그대로 쓰면 둘이 겹치기 때문이다(겹치면 "전체 대상"을
+   * 골라도 미선택으로 읽혀 전체가 그대로 남고, 옵션 key도 충돌한다 — 2026-10-27 실측).
+   */
+  it('[AC-ADMIN-MOCK-007] 공지의 대상 필터는 고른 대상의 공지만 남긴다', async () => {
+    renderAt('/notices')
+
+    expect(await screen.findByRole('heading', { name: '알림/공지 관리' })).toBeInTheDocument()
+    const bodyRowCount = () => within(screen.getByRole('table')).getAllByRole('row').length - 1
+    await waitFor(() => expect(bodyRowCount()).toBe(6))
+
+    const audienceSelect = selectWithOption('대상 전체')
+
+    // "전체 대상"(전체 회원에게 가는 공지)과 "대상 전체"(필터 미선택)는 **다른 것**이다.
+    await chooseOption(audienceSelect, '전체 대상')
+    expect(bodyRowCount()).toBe(3)
+
+    await chooseOption(audienceSelect, '셀러 대상')
+    expect(bodyRowCount()).toBe(1)
+
+    await chooseOption(audienceSelect, '대상 전체')
+    expect(bodyRowCount()).toBe(6)
+  })
+
+  /**
+   * 어드민 액션 로그는 **읽기 전용**이다 — 감사 기록을 운영자가 고칠 수 있으면 기록의 의미가 없다.
+   *
+   * 이름 목록으로만 없음을 단언하면 두 군데서 샌다: 상세 Drawer를 열지 않으면 그 안에 붙은 쓰기
+   * 버튼을 못 보고, 목록에 없는 이름(`승인`·`내보내기` 등)으로 붙이면 그대로 통과한다. 그래서
+   * **목록과 상세 각각에서 허용 목록 밖의 버튼이 하나도 없는지**를 본다.
+   */
+  it('[AC-ADMIN-MOCK-006] 어드민 액션 로그는 읽기 전용이라 목록과 상세 모두 쓰기 버튼이 없다', async () => {
+    const user = userEvent.setup()
+    const requests = recordRequests()
     renderAt('/audit-log')
 
     expect(await screen.findByRole('heading', { name: '어드민 액션 로그' })).toBeInTheDocument()
-    for (const name of ['제출', '저장', '게시하기', '발송']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+
+    // nav를 빼고 화면 본문만 본다 — 본문에 있어도 되는 버튼은 행을 여는 시각 링크뿐이다.
+    // 이름 목록으로 금지하는 대신 **허용 목록 밖이 없는지**를 보므로, 어떤 이름으로 쓰기 버튼을
+    // 붙여도 걸린다.
+    const main = screen.getByRole('main')
+    const [firstRow, ...otherRows] = await within(main).findAllByRole('button')
+    if (!firstRow) throw new Error('액션 로그 목록에 행이 없다')
+    for (const button of [firstRow, ...otherRows]) {
+      expect(button).toHaveAccessibleName(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
     }
+
+    await user.click(firstRow)
+
+    const drawer = await screen.findByRole('dialog', { name: '액션 로그 상세' })
+    // 상세에 허용되는 조작은 닫기 하나다.
+    const drawerButtons = within(drawer).getAllByRole('button')
+    expect(drawerButtons.map(button => button.getAttribute('aria-label') ?? button.textContent)).toEqual([
+      '닫기',
+    ])
+
+    // 읽기 전용 화면은 셸 배지 조회 말고는 아무 요청도 만들지 않는다.
+    expect(unexpectedRequests(requests)).toEqual([])
   })
 })
