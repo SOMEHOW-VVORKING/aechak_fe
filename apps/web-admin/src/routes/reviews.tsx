@@ -59,6 +59,12 @@ const ratingFilterOptions = [
 
 type ReviewDecision = 'keep' | 'blind' | 'delete'
 
+/**
+ * 사유는 **옵션 코드**로 들고 라벨은 `blindReasonText`로만 만든다(ai-review-queue와 같은 패턴).
+ * 데이터에 라벨 문자열을 넣어 두면 `Select`의 `value`와 맞지 않아 상세에서 기존 사유가 선택되지
+ * 않고(빈 칸으로 보인다), 표는 반대로 코드를 그대로 그려 `ad-spam`이 운영자에게 노출된다 —
+ * 표와 상세가 같은 변환을 보도록 한 자리에 모은다.
+ */
 const blindReasonOptions = [
   { value: 'abuse', label: '욕설/비방' },
   { value: 'external-trade', label: '외부 거래 유도' },
@@ -66,6 +72,9 @@ const blindReasonOptions = [
   { value: 'privacy', label: '개인정보 노출' },
   { value: 'irrelevant', label: '상품과 무관' },
 ]
+
+const blindReasonText = (value: string | undefined) =>
+  blindReasonOptions.find(option => option.value === value)?.label ?? value
 
 const decisionModalMeta: Record<
   ReviewDecision,
@@ -155,7 +164,9 @@ function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<Adm
         <div className="min-w-0">
           <StatusMetaPill meta={statusMeta[row.status]} />
           {row.blindReason && (
-            <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">{row.blindReason}</p>
+            <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">
+              {blindReasonText(row.blindReason)}
+            </p>
           )}
         </div>
       ),
@@ -223,8 +234,7 @@ function ReviewsPage() {
 
   const reviewColumns = useMemo(() => makeReviewColumns(openDrawer), [])
   const decisionMeta = decisionModalMeta[decision]
-  const blindReasonLabel =
-    blindReasonOptions.find(opt => opt.value === blindReason)?.label ?? blindReason
+  const blindReasonLabel = blindReasonText(blindReason)
 
   return (
     <div className="p-6">

@@ -58,7 +58,7 @@ export const adminReviewsMock: AdminReview[] = [
     reportCount: 1,
     status: 'blinded',
     blindActor: 'ai',
-    blindReason: '외부 거래 유도',
+    blindReason: 'external-trade',
     history: [
       { label: 'AI 1차 탐지 — 외부 링크', date: '10-24' },
       { label: 'AI 자동 블라인드', date: '10-24' },
@@ -103,7 +103,7 @@ export const adminReviewsMock: AdminReview[] = [
     reportCount: 3,
     status: 'deleted',
     blindActor: 'admin',
-    blindReason: '광고/스팸',
+    blindReason: 'ad-spam',
     writerNotice: '광고성 리뷰로 판단되어 삭제됐어요. 반복되면 이용이 제한돼요.',
     history: [
       { label: '광고/스팸 신고', date: '10-21' },

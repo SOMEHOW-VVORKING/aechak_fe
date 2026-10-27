@@ -94,7 +94,7 @@ export const adminReportsMock: AdminReport[] = [
       { label: '불법/미취급 상품 신고', date: '10-24' },
       { label: '불법/미취급 상품 신고', date: '10-23' },
     ],
-    processReason: '불법/미취급 상품 거래 유도',
+    processReason: 'illegal',
     sanctionNotice: '게시물이 비공개로 전환됐고 7일 게시 제한이 적용돼요.',
   },
   {
@@ -124,7 +124,7 @@ export const adminReportsMock: AdminReport[] = [
     status: 'dismissed',
     detail: '원산지가 다르게 적혀 있다는 신고였는데 셀러가 제출한 수입 신고서와 일치해요.',
     reportHistory: [{ label: '상품 정보 오류 신고', date: '10-22' }],
-    processReason: '신고 내용 확인 불가',
+    processReason: 'not-confirmed',
     internalMemo: '수입 신고서 사본 확인 완료.',
   },
 ]
