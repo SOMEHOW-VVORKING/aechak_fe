@@ -2616,6 +2616,178 @@ export interface PromoteAdminRequest {
 }
 
 /**
+ * 목록 상태 필터. 저장 상태와 1:1이 아니다 — NORMAL은 제재가 없는 계정이라 온보딩 전 (PENDING_ONBOARDING)까지 포함한다. 알 수 없는 값은 서버가 ALL로 본다
+ */
+export type AdminMemberStatusFilter =
+  (typeof AdminMemberStatusFilter)[keyof typeof AdminMemberStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminMemberStatusFilter = {
+  ALL: 'ALL',
+  NORMAL: 'NORMAL',
+  RESTRICTED: 'RESTRICTED',
+  SUSPENDED: 'SUSPENDED',
+  BANNED: 'BANNED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 계정 상태. 제재는 생애주기와 한 축이다. WITHDRAWN(본인 의사)과 BANNED(운영 조치)는 차단 효과가 같아도 다른 값이다 — 섞으면 사후에 가릴 수 없다
+ */
+export type AdminMemberStatus = (typeof AdminMemberStatus)[keyof typeof AdminMemberStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminMemberStatus = {
+  PENDING_ONBOARDING: 'PENDING_ONBOARDING',
+  ACTIVE: 'ACTIVE',
+  RESTRICTED: 'RESTRICTED',
+  SUSPENDED: 'SUSPENDED',
+  BANNED: 'BANNED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 제재 이력 한 행의 조치. RELEASE는 해제 경로가 만드는 값이라 제재 요청에 보내면 400/90001이다
+ */
+export type SanctionAction = (typeof SanctionAction)[keyof typeof SanctionAction]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SanctionAction = {
+  RESTRICT: 'RESTRICT',
+  SUSPEND: 'SUSPEND',
+  BAN: 'BAN',
+  FORCE_WITHDRAW: 'FORCE_WITHDRAW',
+  RELEASE: 'RELEASE',
+} as const
+
+/**
+ * 제재 사유 고정 어휘. 자유 문자열이 아닌 이유는 "같은 사유로 몇 번 제재했는가"를 답할 수 있어야 하기 때문이다. OTHER는 reasonDetail이 필수다(없으면 400/30800)
+ */
+export type SanctionReasonCode = (typeof SanctionReasonCode)[keyof typeof SanctionReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SanctionReasonCode = {
+  ABUSIVE_REVIEW: 'ABUSIVE_REVIEW',
+  CHAT_DISPUTE: 'CHAT_DISPUTE',
+  FALSE_REPORT: 'FALSE_REPORT',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 목록·상세의 한 회원. `status`는 지금 실제로 적용되는 상태이고 `storedStatus`는 저장값이다 — 임시 정지 기간이 지나면 status는 ACTIVE로 내려가고 storedStatus는 SUSPENDED로 남는다. 화면은 둘을 함께 써야 "이미 풀렸다"와 "정지를 걸었던 이력이 있다"를 구분할 수 있다
+ */
+export interface AdminMemberSummary {
+  userId: number
+  /** 외부 노출용 26자 식별자 */
+  publicId: string
+  /**
+   * 온보딩 전이거나 탈퇴로 프로필이 지워진 계정이면 null
+   * @nullable
+   */
+  nickname: string | null
+  status: AdminMemberStatus
+  storedStatus: AdminMemberStatus
+  /**
+   * 임시 정지의 만료 시각(오프셋 없는 LocalDateTime). 다른 상태면 null
+   * @nullable
+   */
+  sanctionUntil: string | null
+  warningCount: number
+  /** 이 회원을 대상으로 접수된 신고 누적 수 */
+  reportCount: number
+  /** 가입 시각(오프셋 없는 LocalDateTime) = users.created_at */
+  joinedAt: string
+}
+
+export interface AdminMemberListData {
+  items: AdminMemberSummary[]
+  /**
+   * 현재 필터 기준 전체 행 수
+   * @nullable
+   */
+  totalCount: number | null
+  /**
+   * 다음 페이지 앵커. hasNext가 false면 null이다
+   * @nullable
+   */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminMemberListResponse {
+  data: AdminMemberListData
+}
+
+/**
+ * 해제 행은 제재 어휘를 쓰지 않아 null이다
+ * @nullable
+ */
+export type AdminSanctionHistoryReasonCode = SanctionReasonCode | null
+
+/**
+ * 제재 이력 한 행. 추가 전용이라 해제도 action=RELEASE 행으로 쌓인다
+ */
+export interface AdminSanctionHistory {
+  sanctionId: number
+  action: SanctionAction
+  /**
+   * 해제 행은 제재 어휘를 쓰지 않아 null이다
+   * @nullable
+   */
+  reasonCode: AdminSanctionHistoryReasonCode
+  /** @nullable */
+  reasonDetail: string | null
+  /**
+   * 임시 정지의 만료 시각. 다른 조치는 null
+   * @nullable
+   */
+  effectiveUntil: string | null
+  /**
+   * 운영자 내부 메모 — 회원에게 노출하지 않는다
+   * @nullable
+   */
+  memo: string | null
+  actedByAdminId: number
+  /** 조치 시각(오프셋 없는 LocalDateTime) */
+  actedAt: string
+}
+
+export interface AdminMemberDetailData {
+  member: AdminMemberSummary
+  /** 최신순, 최대 50건 */
+  sanctions: AdminSanctionHistory[]
+}
+
+export interface AdminMemberDetailResponse {
+  data: AdminMemberDetailData
+}
+
+export interface SanctionMemberRequest {
+  action: SanctionAction
+  reasonCode: SanctionReasonCode
+  /**
+   * reasonCode=OTHER면 필수
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /**
+   * SUSPEND에만 보낸다. 다른 조치에 보내면 400/30802
+   * @minimum 1
+   * @maximum 365
+   */
+  durationDays?: number
+  /** @maxLength 300 */
+  memo?: string
+}
+
+export interface ReleaseSanctionRequest {
+  /** @maxLength 500 */
+  reasonDetail?: string
+  /** @maxLength 300 */
+  memo?: string
+}
+
+/**
  * 목록 행. 사업자등록번호·전화번호는 목록 응답에 아예 없다(상세에만 사업자등록번호가 있다). 화면에 신청인 이름을 보일 때는 상호명이 없으면 대표자명으로 접는다 — 서버 승인 로직이 스토어명을 정할 때 쓰는 폴백과 같은 규칙이다
  */
 export interface AdminApplicationSummary {
@@ -3232,6 +3404,31 @@ export type GetAdminRosterParams = {
    * @minimum 0
    */
   page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminMembersParams = {
+  status?: AdminMemberStatusFilter
+  /**
+   * 닉네임 부분일치 또는 회원 id 완전일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 가입일 하한(포함), YYYY-MM-DD
+   */
+  joinedFrom?: string
+  /**
+   * 가입일 상한(포함), YYYY-MM-DD
+   */
+  joinedTo?: string
+  /**
+   * 직전 응답의 nextCursor. 상태 필터가 바뀌면 재사용 금지(400/90002)
+   */
+  cursor?: string
   /**
    * @minimum 1
    * @maximum 100
@@ -15668,6 +15865,599 @@ export const useDemoteAdmin = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getDemoteAdminMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). `users.role = GENERAL`만 본다 — 관리자 계정은 명부 경로 (`/admin/admins`)가 따로 있어 이 목록에 없다. 정렬은 가입 역순(userId 내림차순) 고정이고 **커서 페이징**이다(오프셋 page 없음). `status`·`size` 형식 오류는 서버가 보정한다 (알 수 없는 status→전체, size는 1~100 절삭) — 400을 내지 않는다. 단, **상태 필터를 바꾼 채 옛 커서를 보내면 400 errorCode 90002**다(두 집합이 한 목록에 섞이지 않게 서버가 끊는다) — 필터를 바꿀 때는 커서를 버리고 처음부터 받아야 한다. 망가진 커서도 같은 90002다. `joinedFrom`·`joinedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날 0시 미만으로 변환한다). `keyword`는 닉네임 부분일치 또는 회원 id 완전일치 중 하나만 맞아도 잡힌다. `nickname`은 온보딩 전 계정이거나 탈퇴로 프로필이 지워진 계정이면 null이다.
+ * @summary 어드민 일반 회원 목록
+ */
+export const getAdminMembers = (params?: GetAdminMembersParams, signal?: AbortSignal) => {
+  return customInstance<AdminMemberListResponse>({
+    url: `/admin/members`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminMembersQueryKey = (params?: GetAdminMembersParams) => {
+  return [`/admin/members`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMembersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMembers>>> = ({ signal }) =>
+    getAdminMembers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMembers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMembersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminMembers>>>
+export type GetAdminMembersQueryError = unknown
+
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminMembersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMembers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMembers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMembers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMembers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 일반 회원 목록
+ */
+
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMembersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminMembersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMembersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMembers>>> = ({ signal }) =>
+    getAdminMembers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMembers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMembersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMembers>>
+>
+export type GetAdminMembersSuspenseQueryError = unknown
+
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminMembersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 일반 회원 목록
+ */
+
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMembersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다** (관리자는 이 경로의 대상이 아니다).
+ * @summary 어드민 회원 상세
+ */
+export const getAdminMemberDetail = (userId: number, signal?: AbortSignal) => {
+  return customInstance<AdminMemberDetailResponse>({
+    url: `/admin/members/${userId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminMemberDetailQueryKey = (userId?: number) => {
+  return [`/admin/members/${userId}`] as const
+}
+
+export const getGetAdminMemberDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMemberDetailQueryKey(userId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMemberDetail>>> = ({ signal }) =>
+    getAdminMemberDetail(userId, signal)
+
+  return { queryKey, queryFn, enabled: !!userId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMemberDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMemberDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMemberDetail>>
+>
+export type GetAdminMemberDetailQueryError = unknown
+
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMemberDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMemberDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMemberDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMemberDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 회원 상세
+ */
+
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMemberDetailQueryOptions(userId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminMemberDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMemberDetailQueryKey(userId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMemberDetail>>> = ({ signal }) =>
+    getAdminMemberDetail(userId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMemberDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMemberDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMemberDetail>>
+>
+export type GetAdminMemberDetailSuspenseQueryError = unknown
+
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 회원 상세
+ */
+
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMemberDetailSuspenseQueryOptions(userId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이용 제한·임시 정지·영구 정지·탈퇴 처리 네 조치를 적용하고 제재 이력 한 행을 남긴다. 성공은 204 No Content(본문 없음)다. 거부된 요청은 상태도 이력도 바꾸지 않는다. `durationDays`는 **임시 정지(SUSPEND)에만** 쓴다 — 만료 시각은 서버가 계산한다. 400 errorCode 90001 — action·reasonCode 누락, `RELEASE` 전송(해제는 release 경로), durationDays 범위 밖(1~365), reasonDetail 500자/memo 300자 초과. 400 errorCode 30801 — SUSPEND인데 durationDays 누락. 400 errorCode 30802 — SUSPEND가 아닌데 durationDays를 보냄. 400 errorCode 30800 — reasonCode=OTHER인데 reasonDetail이 비었음. 403 errorCode 30020 — 자기 자신 제재. 404 errorCode 30000 — 없는 계정. 409 errorCode 30021 — 관리자 계정(먼저 강등해야 한다). 409 errorCode 30018 — 영구 정지된 계정(종단 상태라 추가 제재 없음). 409 errorCode 30003 — 이미 탈퇴한 계정.
+ * @summary 어드민 회원 제재
+ */
+export const sanctionAdminMember = (
+  userId: number,
+  sanctionMemberRequest: SanctionMemberRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/members/${userId}/sanctions`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sanctionMemberRequest,
+    signal,
+  })
+}
+
+export const getSanctionAdminMemberMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sanctionAdminMember>>,
+    TError,
+    { userId: number; data: SanctionMemberRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sanctionAdminMember>>,
+  TError,
+  { userId: number; data: SanctionMemberRequest },
+  TContext
+> => {
+  const mutationKey = ['sanctionAdminMember']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sanctionAdminMember>>,
+    { userId: number; data: SanctionMemberRequest }
+  > = props => {
+    const { userId, data } = props ?? {}
+
+    return sanctionAdminMember(userId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SanctionAdminMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sanctionAdminMember>>
+>
+export type SanctionAdminMemberMutationBody = SanctionMemberRequest
+export type SanctionAdminMemberMutationError = unknown
+
+/**
+ * @summary 어드민 회원 제재
+ */
+export const useSanctionAdminMember = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sanctionAdminMember>>,
+      TError,
+      { userId: number; data: SanctionMemberRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sanctionAdminMember>>,
+  TError,
+  { userId: number; data: SanctionMemberRequest },
+  TContext
+> => {
+  const mutationOptions = getSanctionAdminMemberMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 이용 제한·임시 정지를 풀어 ACTIVE로 되돌리고 해제 이력 한 행을 남긴다(UPDATE가 아니다). 성공은 204 No Content(본문 없음)다. DELETE가 아닌 이유는 사유·메모를 본문으로 받기 때문이다 — 감사 기록이 비면 안 된다. 409 errorCode 30019 — 걸려 있는 제재가 없음(영구 정지·탈퇴도 여기에 든다. 둘은 해제 불가). 403 errorCode 30020 — 자기 자신. 409 errorCode 30021 — 관리자 계정. 404 errorCode 30000 — 없는 계정. **기간이 지난 임시 정지는 해제할 수 있다** — 접근은 이미 풀려 있지만 저장값을 정리하는 경로다.
+ * @summary 어드민 회원 제재 해제
+ */
+export const releaseAdminMemberSanction = (
+  userId: number,
+  releaseSanctionRequest?: ReleaseSanctionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/members/${userId}/sanctions/release`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: releaseSanctionRequest,
+    signal,
+  })
+}
+
+export const getReleaseAdminMemberSanctionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+    TError,
+    { userId: number; data: ReleaseSanctionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+  TError,
+  { userId: number; data: ReleaseSanctionRequest },
+  TContext
+> => {
+  const mutationKey = ['releaseAdminMemberSanction']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+    { userId: number; data: ReleaseSanctionRequest }
+  > = props => {
+    const { userId, data } = props ?? {}
+
+    return releaseAdminMemberSanction(userId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReleaseAdminMemberSanctionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>
+>
+export type ReleaseAdminMemberSanctionMutationBody = ReleaseSanctionRequest
+export type ReleaseAdminMemberSanctionMutationError = unknown
+
+/**
+ * @summary 어드민 회원 제재 해제
+ */
+export const useReleaseAdminMemberSanction = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+      TError,
+      { userId: number; data: ReleaseSanctionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+  TError,
+  { userId: number; data: ReleaseSanctionRequest },
+  TContext
+> => {
+  const mutationOptions = getReleaseAdminMemberSanctionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

@@ -415,22 +415,35 @@ export interface SellerAccount {
   internalMemo?: string
 }
 
-export type MemberAccountStatus = 'normal' | 'restricted' | 'suspended' | 'banned' | 'withdrawing'
+// BE UserStatus(PENDING_ONBOARDING/ACTIVE/RESTRICTED/SUSPENDED/BANNED/WITHDRAWN)를 화면 어휘로
+// 옮긴 값. 제재는 계정 생애주기와 한 축이라 상태 하나가 "제재 여부"까지 말한다.
+// withdrawing(탈퇴)과 banned(영구 정지)는 둘 다 접근이 끊기지만 서로 다른 값이다 — 탈퇴는 본인
+// 의사이고 정지는 운영 조치라, 한 값으로 묶으면 사후에 가릴 수 없다(서버도 같은 이유로 분리했다).
+export type MemberAccountStatus =
+  | 'pending'
+  | 'normal'
+  | 'restricted'
+  | 'suspended'
+  | 'banned'
+  | 'withdrawing'
 
+// 목업 시절의 orderCount·hasActiveOrder·emailMasked·phoneMasked·joinChannel·reportHistory는
+// admin 모듈 응답에 없어서 제거했다(AGENTS 규약 10 — 서버에 없는 필드를 화면이 요구하면 안 된다).
 export interface MemberAccount {
-  id: string
-  nickname: string
-  orderCount: number
-  reportCount: number
+  userId: number
+  /** 외부 노출용 26자 식별자 */
+  publicId: string
+  /** 온보딩 전이거나 탈퇴로 프로필이 지워진 계정이면 null */
+  nickname: string | null
+  /** 지금 실제로 적용되는 상태 — 기간이 지난 임시 정지는 normal로 내려온다 */
   accountStatus: MemberAccountStatus
-  hasActiveOrder: boolean
-  emailMasked: string
-  phoneMasked: string
-  joinChannel: string
-  reportHistory: HistoryEntry[]
-  sanctionReason?: string
-  sanctionPeriod?: string
-  internalMemo?: string
+  /** 저장값 — 만료된 임시 정지에서 accountStatus와 갈린다 */
+  storedAccountStatus: MemberAccountStatus
+  /** 임시 정지의 만료 시각. 다른 상태면 null */
+  sanctionUntil: string | null
+  warningCount: number
+  reportCount: number
+  joinedAt: string
 }
 
 export type ProductReviewSaleStatus = 'on-sale' | 'suspended' | 'pending-review' | 'rejected'
