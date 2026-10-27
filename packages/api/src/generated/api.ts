@@ -975,7 +975,7 @@ export interface SellerReviewReplyEnvelope {
 
 export interface ReviewReplyWriteRequest {
   /**
-   * 서버가 앞뒤 공백을 잘라낸 뒤 1~500자인지 본다 — 공백뿐인 값은 400이다
+   * 길이는 **공백을 포함한 원문**으로 센다(공백 1개 + 500자는 잘라내면 500자여도 거절된다 — 공백으로 한도를 늘릴 수 없게 했다). 저장은 앞뒤 공백을 잘라낸 값으로 하고, 공백뿐인 값은 400 errorCode 90001이다.
    * @minLength 1
    * @maxLength 500
    */
@@ -3318,7 +3318,7 @@ export type GetSellerReviewsParams = {
    */
   productId?: string
   /**
-   * 별점 필터. 1~5 밖은 400 errorCode 90001 message "rating: 1~5 사이여야 합니다."
+   * 별점 필터. 1~5 밖은 400 errorCode 90001 message 'rating: 1~5 사이여야 합니다.'
    */
   rating?: GetSellerReviewsRating
   /**
@@ -14796,7 +14796,7 @@ export function useGetSellerReviewsSuspense<
 }
 
 /**
- * 리뷰당 답글은 하나다. 이미 답글이 있으면 덮어쓰지 않고 409 errorCode 110201로 거절하고 기존 답글을 그대로 둔다 — 수정은 PUT이 받는다. 답글 주소가 답글 id가 아니라 리뷰 id인 이유도 1:1이기 때문이다(화면이 답글 id를 들고 다니지 않아도 된다). 남의 상품 리뷰·없는 리뷰·비노출(차단·숨김·삭제) 리뷰는 모두 404 errorCode 110000이다 — 403을 주지 않는 것은 남의 리뷰가 있다는 사실 자체를 알리지 않기 위함이다. 답글 쓰기 자격은 조회보다 좁다: ACTIVE·휴점(PAUSED) 셀러만 통과하고 탈퇴신청 셀러는 403 errorCode 110011이다. 내용은 공백을 잘라낸 뒤 1~500자여야 한다(위반은 400 errorCode 90001).
+ * 리뷰당 답글은 하나다. 이미 답글이 있으면 덮어쓰지 않고 409 errorCode 110201로 거절하고 기존 답글을 그대로 둔다 — 수정은 PUT이 받는다. 답글 주소가 답글 id가 아니라 리뷰 id인 이유도 1:1이기 때문이다(화면이 답글 id를 들고 다니지 않아도 된다). 남의 상품 리뷰·없는 리뷰·비노출(차단·숨김·삭제) 리뷰는 모두 404 errorCode 110000이다 — 403을 주지 않는 것은 남의 리뷰가 있다는 사실 자체를 알리지 않기 위함이다. 답글 쓰기 자격은 조회보다 좁다: ACTIVE·휴점(PAUSED) 셀러만 통과하고 탈퇴신청 셀러는 403 errorCode 110011이다. 내용은 **공백을 포함한 원문**이 1~500자여야 하고(위반은 400 errorCode 90001), 저장은 앞뒤 공백을 잘라낸 값으로 한다 — 공백으로 한도를 늘릴 수는 없다.
  * @summary 셀러 답글 등록
  */
 export const writeSellerReviewReply = (
