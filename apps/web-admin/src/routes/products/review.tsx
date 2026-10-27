@@ -28,29 +28,15 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
+// admin 모듈에 상품 검수 API가 없어 목록·통과·블라인드·판매중지가 전부 예시 데이터다. 진입을 막는
+// 대신 상단 띠로 예시임을 밝히고 쓰기를 막는다(SCRUM-308) — 검수 BE는 열린 PR 스택(#149·#153~#157,
+// SCRUM-282·284~288)에 있고 머지되면 product-review.queries.ts만 갈아끼우고 띠를 뗀다.
 export const Route = createFileRoute('/products/review')({
-  component: ProductReviewGate,
+  component: ProductReviewPage,
 })
-
-// 운영 진입 차단 스위치. admin 모듈에 상품 검수 API가 없어 목록·통과·블라인드·판매중지가 전부 목업이다 —
-// 주소로 들어와도 열지 않는다. 아래 ProductReviewPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
-const SERVER_PRODUCT_REVIEW_AVAILABLE = false
-
-function ProductReviewGate() {
-  if (!SERVER_PRODUCT_REVIEW_AVAILABLE) {
-    return (
-      <UnavailableScreen
-        title="상품 검수 관리"
-        description="셀러 등록 상품 / 신고 상품 / 블라인드 상품을 검수해요."
-        message="상품 검수 관리는 준비 중이에요"
-      />
-    )
-  }
-  return <ProductReviewPage />
-}
 
 const saleStatusMeta: Record<ProductReviewSaleStatus, StatusMeta> = {
   'on-sale': { label: '판매중', variant: 'success' },
@@ -185,6 +171,7 @@ function ProductReviewPage() {
     setInternalMemo(row.internalMemo ?? '')
   }
 
+  // 아래 셋 다 서버로 나가는 요청이 없다 — 결정 결과를 화면에만 겹쳐 보여준다.
   function handlePass(target: ProductReviewItem) {
     patchRow(target.id, {
       saleStatus: 'on-sale',
@@ -193,7 +180,7 @@ function ProductReviewPage() {
       isBlinded: false,
       internalMemo,
     })
-    setToast('검수를 통과 처리했어요.')
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -206,7 +193,7 @@ function ProductReviewPage() {
       sellerNotice,
       internalMemo,
     })
-    setToast('블라인드를 유지했어요.')
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -218,7 +205,7 @@ function ProductReviewPage() {
       sellerNotice,
       internalMemo,
     })
-    setToast(`'${target.name}' 판매를 중지했어요.`)
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -229,6 +216,8 @@ function ProductReviewPage() {
   return (
     <div className="p-6">
       <PageIntro title="상품 검수 관리" description="셀러 등록 상품 / 신고 상품 / 블라인드 상품을 검수해요." />
+
+      <MockDataNotice>검수 BE가 머지되면 같은 화면이 실데이터로 열려요.</MockDataNotice>
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={saleStatusFilterOptions} value={saleStatusFilter} onChange={setSaleStatusFilter} />
@@ -352,7 +341,7 @@ function ProductReviewPage() {
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
     </div>
   )
 }

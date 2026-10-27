@@ -27,29 +27,16 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
+// admin 모듈에 회원 조회·제재 API가 없어(컨트롤러는 관리자 명부·입점 심사뿐) 목록·제재가 전부
+// 예시 데이터다. 2026-10-18에는 이 화면을 UnavailableScreen으로 돌려보냈는데, 그러면 운영자가
+// 기능의 모양조차 볼 수 없어 되돌렸다(SCRUM-308) — 화면은 열어 두고 상단 띠로 예시임을 밝히고
+// 쓰기를 막는다. `GET/PATCH /admin/members`가 생기면 members.queries.ts만 갈아끼우고 띠를 뗀다.
 export const Route = createFileRoute('/members')({
-  component: MembersGate,
+  component: MembersPage,
 })
-
-// 운영 진입 차단 스위치. admin 모듈에 회원 조회·제재 API가 없어(컨트롤러는 입점 심사뿐) 목록·제재가
-// 전부 목업이다 — 주소로 들어와도 열지 않는다. 아래 MembersPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
-const SERVER_MEMBERS_AVAILABLE = false
-
-function MembersGate() {
-  if (!SERVER_MEMBERS_AVAILABLE) {
-    return (
-      <UnavailableScreen
-        title="일반 회원 관리"
-        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
-        message="일반 회원 관리는 준비 중이에요"
-      />
-    )
-  }
-  return <MembersPage />
-}
 
 const statusMeta: Record<MemberAccountStatus, StatusMeta> = {
   normal: { label: '정상', variant: 'success', icon: CheckCircle },
@@ -193,10 +180,9 @@ function MembersPage() {
   }
 
   function applyStatus(target: MemberAccount, nextStatus: MemberAccountStatus) {
+    // 서버로 나가는 요청이 없다 — 바꾼 값을 화면에만 겹쳐 보여준다(useDetailList의 edits).
     patchRow(target.id, { accountStatus: nextStatus, sanctionReason, sanctionPeriod, internalMemo })
-    setToast(
-      nextStatus === 'banned' ? `'${target.nickname}' 계정을 영구 정지했어요.` : '계정 상태를 변경했어요.',
-    )
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -210,6 +196,8 @@ function MembersPage() {
         title="일반 회원 관리"
         description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
       />
+
+      <MockDataNotice>admin 모듈에 회원 조회·제재 경로가 생기면 그대로 실연동돼요.</MockDataNotice>
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
@@ -324,7 +312,7 @@ function MembersPage() {
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
     </div>
   )
 }
