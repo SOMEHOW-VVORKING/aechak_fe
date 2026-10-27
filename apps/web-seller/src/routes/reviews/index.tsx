@@ -15,6 +15,7 @@ import {
   RATING_VALUES,
   REPLY_FILTER_DONE,
   REPLY_FILTER_NONE,
+  pendingReplyReviewId,
   reviewErrorMessage,
   useDeleteReviewReply,
   useEditReviewReply,
@@ -72,12 +73,8 @@ function ReviewsRoute() {
   const writeReply = useWriteReviewReply()
   const editReply = useEditReviewReply()
   const deleteReply = useDeleteReviewReply()
-  const pendingReviewId =
-    writeReply.variables?.reviewId ??
-    editReply.variables?.reviewId ??
-    deleteReply.variables?.reviewId ??
-    null
-  const isMutating = writeReply.isPending || editReply.isPending || deleteReply.isPending
+  // 끝난 mutation의 variables가 남아 엉뚱한 행을 잠그지 않도록 판정은 한 곳에 모아 둔다.
+  const pendingReviewId = pendingReplyReviewId([writeReply, editReply, deleteReply])
 
   const productOptions = useMemo(
     () => [{ value: ALL, label: '전체 상품' }, ...(productOptionsQuery.data ?? [])],
@@ -196,7 +193,10 @@ function ReviewsRoute() {
             reviews={view.reviews}
             onSubmit={onSubmit}
             onDelete={onDelete}
-            pendingReviewId={isMutating ? pendingReviewId : null}
+            pendingReviewId={pendingReviewId}
+            // 조회가 실패해 들고 있는 행이 없으면 "조건에 맞는 리뷰가 없어요"를 띄우지 않는다 —
+            // 실패를 빈 결과로 흘리면 셀러가 필터를 의심한다(위 Alert이 이유를 말한다).
+            hideEmptyState={isError}
             // 조회가 실패한 동안에는 그 데이터로 하는 처리를 잠근다 — 폼은 낡은 행의 값으로 만들어진다.
             locked={isError}
           />

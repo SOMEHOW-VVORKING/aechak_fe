@@ -20,6 +20,11 @@ interface ReviewReplyListProps {
    * 보고 지시하게 된다(AGENTS.md 규약 7). 행 자체는 지우지 않는다 — 마지막으로 본 내용은 정보다.
    */
   locked?: boolean
+  /**
+   * 빈 상태 문구를 숨긴다. 목록 조회가 **실패**해 행이 없는 경우로, 그때 "조건에 맞는 리뷰가 없어요"를
+   * 띄우면 셀러가 서버 오류를 필터 탓으로 읽는다(AGENTS.md 규약 7). 이유는 화면 위 오류 안내가 말한다.
+   */
+  hideEmptyState?: boolean
 }
 
 // 리뷰 본문은 DS ReviewCard를 그대로 쓰고, 셀러 답글만 아래에 덧붙인다(DS를 고치지 않는다).
@@ -29,12 +34,14 @@ export function ReviewReplyList({
   onDelete,
   pendingReviewId = null,
   locked = false,
+  hideEmptyState = false,
 }: ReviewReplyListProps) {
   // 어느 리뷰의 답글 폼을 열었는지와 그 초안. 리뷰마다 폼을 늘 펼치면 목록이 읽히지 않는다.
   const [openId, setOpenId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
 
   if (reviews.length === 0) {
+    if (hideEmptyState) return null
     return (
       <Card padding="md">
         <p className="py-6 text-center text-body-sm text-text-tertiary">

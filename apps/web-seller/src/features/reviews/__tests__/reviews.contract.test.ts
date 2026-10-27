@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatAverageRating,
   normalizeReviewSearchParams,
+  pendingReplyReviewId,
   ratingBars,
   reviewErrorMessage,
   REPLY_FILTER_DONE,
@@ -65,5 +66,20 @@ describe('reviewErrorMessage', () => {
     // 모르는 코드와 네트워크 오류는 같은 기본 문구로 떨어진다(빈 화면으로 흘리지 않는다).
     expect(at(99999)).toContain('요청을 처리하지 못했어요')
     expect(reviewErrorMessage(new Error('network'))).toContain('요청을 처리하지 못했어요')
+  })
+})
+
+describe('pendingReplyReviewId', () => {
+  it('[AC-SELLER-REVIEW-008] 끝난 mutation의 variables는 처리 중 행으로 읽지 않는다', () => {
+    // react-query는 mutation이 끝난 뒤에도 variables를 들고 있다. isPending을 먼저 보지 않으면
+    // 리뷰 1에 답글을 쓴 다음 리뷰 2를 지울 때 1이 잠기고 2의 버튼은 열려 중복 요청이 나간다.
+    const settledWrite = { isPending: false, variables: { reviewId: 1 } }
+    const pendingDelete = { isPending: true, variables: { reviewId: 2 } }
+
+    expect(pendingReplyReviewId([settledWrite, pendingDelete])).toBe(2)
+    expect(pendingReplyReviewId([settledWrite, { isPending: false, variables: { reviewId: 2 } }])).toBeNull()
+    expect(pendingReplyReviewId([])).toBeNull()
+    // mutate 직후 variables가 아직 비어 있어도 터지지 않는다
+    expect(pendingReplyReviewId([{ isPending: true, variables: undefined }])).toBeNull()
   })
 })

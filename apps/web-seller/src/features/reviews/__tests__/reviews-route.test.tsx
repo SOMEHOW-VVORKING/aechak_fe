@@ -154,14 +154,33 @@ describe('셀러 리뷰 목록', () => {
     expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SELLER-REVIEW-108] 목록 조회 실패는 빈 상태가 아니라 오류 안내로 드러나고 답글 처리를 잠근다', async () => {
+  it('[AC-SELLER-REVIEW-108] 목록 조회 실패는 빈 상태로 흘리지 않는다', async () => {
     failSellerReviewsList({ status: 403, errorCode: 110011, message: '리뷰를 조회할 수 없습니다.' })
     renderReviews()
 
     expect(await screen.findByText(/판매 활동이 가능한 계정만/)).toBeInTheDocument()
-    // "조건에 맞는 리뷰가 없어요"로 떨어지면 셀러가 필터를 의심한다
-    expect(screen.getByText('조건에 맞는 리뷰가 없어요.')).toBeInTheDocument()
+    // 실패를 "조건에 맞는 리뷰가 없어요"로 보여주면 셀러가 서버 오류를 필터 탓으로 읽는다.
+    // 교차검토에서 잡힌 자리다 — 이전 단언은 이 문구가 **있어야** 한다고 고정하고 있었다.
+    expect(screen.queryByText('조건에 맞는 리뷰가 없어요.')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeEnabled()
+  })
+
+  it('[AC-SELLER-REVIEW-109] 재조회가 실패하면 직전 행은 남기고 답글 처리만 잠근다', async () => {
+    renderReviews()
+    const card = await cardOf('사이즈표보다 작게 나왔어요.')
+
+    // 한 번 성공한 뒤 서버가 넘어진다 — 답글 삭제 뒤의 무효화가 재조회를 일으킨다
+    failSellerReviewsList({ status: 500, errorCode: 90000, message: '서버 오류' })
+    await userEvent.click(within(card).getByRole('button', { name: '답글 삭제' }))
+
+    expect(await screen.findByText(/서버에 문제가 생겼어요/)).toBeInTheDocument()
+    // 마지막으로 본 내용은 지우지 않는다(정보다) — 대신 그 낡은 행으로 하는 처리를 잠근다
+    const stale = await cardOf('사이즈표보다 작게 나왔어요.')
+    await waitFor(() =>
+      expect(within(stale).getByRole('button', { name: '답글 수정' })).toBeDisabled(),
+    )
+    expect(within(stale).getByRole('button', { name: '답글 삭제' })).toBeDisabled()
+    expect(screen.getByText(/마지막으로 불러온 내용이라/)).toBeInTheDocument()
   })
 })
 

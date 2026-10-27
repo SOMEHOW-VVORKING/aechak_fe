@@ -90,6 +90,19 @@ export function photoCountOf(review: SellerReviewItemResponse): number {
   return review.images.length
 }
 
+/**
+ * 지금 처리 중인 답글 요청의 대상 리뷰. 없으면 null이다.
+ *
+ * react-query의 `variables`는 mutation이 **끝난 뒤에도 남는다**. 그래서 `isPending`을 먼저 보지
+ * 않으면 리뷰 A에 답글을 쓴 다음 리뷰 B를 지울 때 A가 처리 중인 행으로 잠기고(엉뚱한 행의 버튼이
+ * 멈춘다) 정작 진행 중인 B의 버튼은 열려 있어 같은 요청을 두 번 보낼 수 있다.
+ */
+export function pendingReplyReviewId(
+  mutations: readonly { isPending: boolean; variables?: { reviewId: number } | undefined }[],
+): number | null {
+  return mutations.find(mutation => mutation.isPending)?.variables?.reviewId ?? null
+}
+
 /** 날짜만 쓰는 자리(목록 행·답글 머리). 서버 값이 벽시계라 앞 10자가 곧 날짜다. */
 export function toDateLabel(localDateTime: string): string {
   return localDateTime.slice(0, 10)

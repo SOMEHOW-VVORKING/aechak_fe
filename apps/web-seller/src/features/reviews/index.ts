@@ -1,6 +1,7 @@
 export {
   formatAverageRating,
   normalizeReviewSearchParams,
+  pendingReplyReviewId,
   photoCountOf,
   ratingBars,
   reviewErrorMessage,
