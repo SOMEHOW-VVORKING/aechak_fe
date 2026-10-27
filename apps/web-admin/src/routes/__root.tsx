@@ -51,7 +51,8 @@ const PENDING_TAG = '준비 중'
 // `/admins`가 대신한다).
 //
 // 꼬리표 유무는 2026-10-26 dev 실측으로 갈랐다. admin-api-dev에 있는 경로는
-// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷이 전부다. seller·api
+// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷, 그리고 뒤에 더해진
+// `/admin/members` 계열 넷(목록·상세·제재·해제)이다. seller·api
 // 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도 셀러·구매자
 // 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을 설정하지
 // 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -82,11 +83,11 @@ const navGroups: NavGroup[] = [
         icon: <Store className={iconClass} />,
         tag: PENDING_TAG,
       },
+      // `/admin/members` 넷(목록·상세·제재·해제)이 생겨 실연동됐다 — 꼬리표를 떼고 화면의 띠도 걷었다.
       {
         key: '/members',
         label: '일반 회원 관리',
         icon: <Users className={iconClass} />,
-        tag: PENDING_TAG,
       },
     ],
   },

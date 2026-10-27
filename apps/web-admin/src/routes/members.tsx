@@ -1,7 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { AlertTriangle, Ban, Check, CheckCircle, MessageCircle, Minus, Package, PauseCircle, UserX } from 'lucide-react'
 import {
+  AlertTriangle,
+  Ban,
+  Check,
+  CheckCircle,
+  Hourglass,
+  PauseCircle,
+  UserX,
+} from 'lucide-react'
+import {
+  Alert,
   Button,
   DataTable,
   Drawer,
@@ -9,13 +18,23 @@ import {
   Modal,
   SearchInput,
   Select,
-  StatusPill,
   Textarea,
   Toast,
 } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
 import type { MemberAccount, MemberAccountStatus } from '@aechak/domain'
-import { useMemberAccounts } from '@/features/members'
+import type { SanctionReasonCode } from '@aechak/api'
+import {
+  SANCTION_REASON_LABELS,
+  detailErrorMessage,
+  listErrorMessage,
+  sanctionErrorMessage,
+  toDateLabel,
+  useAdminMemberDetail,
+  useAdminMembers,
+  useSanctionMember,
+  type MemberStatusFilterValue,
+} from '@/features/members'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
 import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
@@ -27,18 +46,15 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
-import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
-import { useDetailList } from '@/shared/hooks/useDetailList'
 
-// admin 모듈에 회원 조회·제재 API가 없어(컨트롤러는 관리자 명부·입점 심사뿐) 목록·제재가 전부
-// 예시 데이터다. 2026-10-18에는 이 화면을 UnavailableScreen으로 돌려보냈는데, 그러면 운영자가
-// 기능의 모양조차 볼 수 없어 되돌렸다(SCRUM-308) — 화면은 열어 두고 상단 띠로 예시임을 밝히고
-// 쓰기를 막는다. `GET/PATCH /admin/members`가 생기면 members.queries.ts만 갈아끼우고 띠를 뗀다.
 export const Route = createFileRoute('/members')({
   component: MembersPage,
 })
 
+// BE UserStatus 6값 1:1. pending(온보딩 전)은 제재 대상이 아니라 결정 옵션에는 없지만 목록에
+// 실리므로 pill은 6값을 다 채운다 — 비면 어떤 계정인지 읽을 수 없다.
 const statusMeta: Record<MemberAccountStatus, StatusMeta> = {
+  pending: { label: '가입 진행 중', variant: 'muted', icon: Hourglass },
   normal: { label: '정상', variant: 'success', icon: CheckCircle },
   restricted: { label: '이용 제한', variant: 'warning', icon: AlertTriangle },
   suspended: { label: '임시 정지', variant: 'error', icon: PauseCircle },
@@ -46,25 +62,32 @@ const statusMeta: Record<MemberAccountStatus, StatusMeta> = {
   withdrawing: { label: '탈퇴 처리', variant: 'muted', icon: UserX },
 }
 
-const statusFilterOptions = [
+// 'pending'은 운영자가 만들 수 있는 상태가 아니라 필터에서도 뺀다(서버 NORMAL이 온보딩 전까지 포함한다).
+const statusFilterOptions: { value: MemberStatusFilterValue; label: string }[] = [
   { value: 'all', label: '계정 상태 전체' },
-  ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
+  { value: 'normal', label: statusMeta.normal.label },
+  { value: 'restricted', label: statusMeta.restricted.label },
+  { value: 'suspended', label: statusMeta.suspended.label },
+  { value: 'banned', label: statusMeta.banned.label },
+  { value: 'withdrawing', label: statusMeta.withdrawing.label },
 ]
 
-const sanctionReasonOptions = [
-  { value: 'abuse-review', label: '리뷰 욕설/비방 반복' },
-  { value: 'chat-dispute', label: '채팅 분쟁 반복' },
-  { value: 'fraud-report', label: '허위 신고 반복' },
-]
+const sanctionReasonOptions = (
+  Object.keys(SANCTION_REASON_LABELS) as SanctionReasonCode[]
+).map(value => ({ value, label: SANCTION_REASON_LABELS[value] }))
 
+/** 서버는 1~365일을 받지만 운영 합의는 세 가지다 — 임의 숫자 입력을 두지 않는다. */
 const sanctionPeriodOptions = [
-  { value: '7d', label: '7일' },
-  { value: '14d', label: '14일' },
-  { value: '30d', label: '30일' },
+  { value: '7', label: '7일' },
+  { value: '14', label: '14일' },
+  { value: '30', label: '30일' },
 ]
+
+/** 제출 가능한 결정. 'normal'은 제재가 아니라 해제라 서버 경로가 다르다. */
+type MemberDecision = 'normal' | 'restricted' | 'suspended' | 'banned' | 'withdrawing'
 
 const decisionModalMeta: Record<
-  MemberAccountStatus,
+  MemberDecision,
   { title: string; description: string; confirmLabel: string; confirmVariant: 'primary' | 'danger' }
 > = {
   normal: {
@@ -75,25 +98,25 @@ const decisionModalMeta: Record<
   },
   restricted: {
     title: '이용을 제한할까요?',
-    description: '일부 기능(리뷰 작성, 채팅 등) 이용이 제한되고 대상자에게 통보돼요.',
+    description: '로그인과 조회는 되지만 리뷰 작성 / SNS 활동 / 문의 등록이 막혀요.',
     confirmLabel: '이용 제한',
     confirmVariant: 'primary',
   },
   suspended: {
     title: '계정을 임시 정지할까요?',
-    description: '설정한 기간 동안 로그인 및 서비스 이용이 제한돼요.',
+    description: '설정한 기간 동안 로그인과 서비스 이용이 막혀요. 기간이 지나면 자동으로 풀려요.',
     confirmLabel: '임시 정지',
     confirmVariant: 'primary',
   },
   banned: {
     title: '계정을 영구 정지할까요?',
-    description: '영구 정지된 계정은 다시 로그인할 수 없고, 되돌릴 수 없어요. 진행 중 주문이 없는지 먼저 확인하세요.',
+    description: '영구 정지된 계정은 다시 로그인할 수 없고 해제도 할 수 없어요.',
     confirmLabel: '영구 정지',
     confirmVariant: 'danger',
   },
   withdrawing: {
     title: '회원을 탈퇴 처리할까요?',
-    description: '탈퇴 처리된 계정은 서비스를 다시 이용할 수 없어요. 되돌릴 수 없으니 신중히 확인하세요.',
+    description: '탈퇴 처리된 계정은 서비스를 다시 이용할 수 없고 닉네임 점유도 풀려요. 되돌릴 수 없어요.',
     confirmLabel: '탈퇴 처리',
     confirmVariant: 'danger',
   },
@@ -102,26 +125,26 @@ const decisionModalMeta: Record<
 function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<MemberAccount>[] {
   return [
     {
-      key: 'id',
+      key: 'userId',
       label: '회원 ID',
       render: row => (
         <RowLinkButton numeric onClick={() => onOpenDetail(row)}>
-          {row.id}
+          {row.userId}
         </RowLinkButton>
       ),
     },
-    { key: 'nickname', label: '닉네임' },
-    {
-      key: 'orderCount',
-      label: '주문',
-      align: 'right',
-      render: row => <span className="tabular-nums">{row.orderCount}</span>,
-    },
+    { key: 'nickname', label: '닉네임', render: row => row.nickname ?? '-' },
     {
       key: 'reportCount',
       label: '신고',
       align: 'right',
       render: row => <span className="tabular-nums">{row.reportCount}</span>,
+    },
+    {
+      key: 'warningCount',
+      label: '경고',
+      align: 'right',
+      render: row => <span className="tabular-nums">{row.warningCount}</span>,
     },
     {
       key: 'accountStatus',
@@ -130,155 +153,251 @@ function makeMemberColumns(onOpenDetail: (row: MemberAccount) => void): Column<M
       render: row => <StatusMetaPill meta={statusMeta[row.accountStatus]} />,
     },
     {
-      key: 'hasActiveOrder',
-      label: '탈퇴',
-      align: 'center',
-      render: row =>
-        row.hasActiveOrder ? (
-          <StatusPill variant="info">
-            <Package className="size-3" />
-            진행 주문
-          </StatusPill>
-        ) : (
-          <StatusPill variant="neutral">
-            <Minus className="size-3" />
-          </StatusPill>
-        ),
+      key: 'joinedAt',
+      label: '가입일',
+      align: 'right',
+      render: row => <span className="tabular-nums">{toDateLabel(row.joinedAt)}</span>,
     },
   ]
 }
 
+/** 저장값이 임시 정지인데 유효 상태가 정상이면 기간이 지나 자동으로 풀린 계정이다. */
+function isExpiredSuspension(member: MemberAccount): boolean {
+  return member.storedAccountStatus === 'suspended' && member.accountStatus === 'normal'
+}
+
 function MembersPage() {
-  const { data, isLoading } = useMemberAccounts()
-  const { items, patchRow, selected, select, closeDrawer, confirmOpen, setConfirmOpen, toast, setToast } =
-    useDetailList(data)
-
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<MemberStatusFilterValue>('all')
   const [search, setSearch] = useState('')
+  const list = useAdminMembers({ status: statusFilter, keyword: search })
 
-  const filtered = useMemo(
-    () =>
-      items.filter(row => {
-        if (statusFilter !== 'all' && row.accountStatus !== statusFilter) return false
-        if (search && !row.id.includes(search) && !row.nickname.includes(search)) return false
-        return true
-      }),
-    [items, statusFilter, search],
-  )
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
+  const detail = useAdminMemberDetail(selectedUserId)
+  const sanction = useSanctionMember()
 
-  const [decision, setDecision] = useState<MemberAccountStatus>('normal')
-  const [sanctionReason, setSanctionReason] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [decision, setDecision] = useState<MemberDecision>('normal')
+  const [reasonCode, setReasonCode] = useState('')
+  const [reasonDetail, setReasonDetail] = useState('')
   const [sanctionPeriod, setSanctionPeriod] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
 
-  function openDrawer(row: MemberAccount) {
-    select(row.id)
-    setDecision(row.accountStatus)
-    setSanctionReason(row.sanctionReason ?? '')
-    setSanctionPeriod(row.sanctionPeriod ?? '')
-    setInternalMemo(row.internalMemo ?? '')
+  const member = detail.member
+  // 상세가 도착한 뒤 한 번만 시드한다 — 매 렌더 재시딩하면 운영자가 고른 값이 되돌아간다.
+  useEffect(() => {
+    if (!member) return
+    setDecision(member.accountStatus === 'pending' ? 'normal' : member.accountStatus)
+    setReasonCode('')
+    setReasonDetail('')
+    setSanctionPeriod('')
+    setInternalMemo('')
+  }, [member?.userId])
+
+  const memberColumns = useMemo(
+    () => makeMemberColumns(row => setSelectedUserId(row.userId)),
+    [],
+  )
+
+  const isRelease = decision === 'normal'
+  const needsReasonDetail = reasonCode === 'OTHER'
+  const needsPeriod = decision === 'suspended'
+  const canSubmit =
+    member != null &&
+    !sanction.isPending &&
+    (isRelease
+      ? true
+      : reasonCode !== '' &&
+        (!needsReasonDetail || reasonDetail.trim() !== '') &&
+        (!needsPeriod || sanctionPeriod !== ''))
+
+  function closeDrawer() {
+    setSelectedUserId(null)
+    setConfirmOpen(false)
   }
 
-  function applyStatus(target: MemberAccount, nextStatus: MemberAccountStatus) {
-    // 서버로 나가는 요청이 없다 — 바꾼 값을 화면에만 겹쳐 보여준다(useDetailList의 edits).
-    patchRow(target.id, { accountStatus: nextStatus, sanctionReason, sanctionPeriod, internalMemo })
-    setToast(MOCK_WRITE_TOAST)
-    closeDrawer()
+  function submit() {
+    if (!member) return
+    sanction.mutate(
+      {
+        userId: member.userId,
+        decision: isRelease ? 'release' : decision,
+        reasonCode: isRelease ? null : (reasonCode as SanctionReasonCode),
+        reasonDetail,
+        durationDays: needsPeriod ? Number(sanctionPeriod) : null,
+        memo: internalMemo,
+      },
+      {
+        onSuccess: () => {
+          setToast(`${decisionModalMeta[decision].confirmLabel} 처리했어요.`)
+          closeDrawer()
+        },
+        onError: error => {
+          setToast(sanctionErrorMessage(error))
+          setConfirmOpen(false)
+        },
+      },
+    )
   }
-
-  const memberColumns = useMemo(() => makeMemberColumns(openDrawer), [])
-  const sanctionReasonLabel =
-    sanctionReasonOptions.find(opt => opt.value === sanctionReason)?.label ?? sanctionReason
 
   return (
     <div className="p-6">
       <PageIntro
         title="일반 회원 관리"
-        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
+        description="구매자 회원의 이용 상태와 제재 이력을 운영 목적 범위에서 확인해요."
       />
 
-      <MockDataNotice>admin 모듈에 회원 조회/제재 경로가 생기면 그대로 실연동돼요.</MockDataNotice>
+      {/* 목록 실패는 빈 상태로 떨어뜨리지 않는다 — "회원 없음"과 "못 불러옴"이 구분되지 않는다. */}
+      {list.isError && (
+        <Alert variant="error" title="목록을 불러오지 못했어요" className="mb-5">
+          <p>{listErrorMessage(list.error)}</p>
+        </Alert>
+      )}
 
       <FilterBar className="mb-3.5">
-        <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
-        <SearchInput value={search} onChange={setSearch} placeholder="회원 ID / 닉네임 검색" className="w-64" />
+        <FilterSelect
+          options={statusFilterOptions}
+          value={statusFilter}
+          onChange={value => setStatusFilter(value as MemberStatusFilterValue)}
+        />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="회원 ID / 닉네임 검색"
+          className="w-64"
+        />
+        {list.totalCount != null && (
+          <span className="text-body-sm text-text-tertiary tabular-nums">
+            조건에 맞는 회원 {list.totalCount}명
+          </span>
+        )}
       </FilterBar>
 
       <DataTable
         columns={memberColumns}
-        rows={filtered}
-        rowKey={row => row.id}
-        onRowClick={openDrawer}
-        loading={isLoading}
-        emptyLabel="조건에 맞는 회원이 없어요."
+        rows={list.rows}
+        rowKey={row => String(row.userId)}
+        onRowClick={row => setSelectedUserId(row.userId)}
+        loading={list.isLoading}
+        emptyLabel={list.isError ? '목록을 불러오지 못했어요.' : '조건에 맞는 회원이 없어요.'}
       />
 
-      <Drawer open={selected !== undefined} onClose={closeDrawer} title="회원 상세" width="lg">
-        {selected && (
+      {list.hasNext && (
+        <div className="mt-3.5 flex justify-center">
+          <Button
+            variant="secondary"
+            onClick={list.fetchNextPage}
+            disabled={list.isFetchingNextPage}
+          >
+            {list.isFetchingNextPage ? '불러오는 중' : '더 보기'}
+          </Button>
+        </div>
+      )}
+
+      <Drawer open={selectedUserId !== null} onClose={closeDrawer} title="회원 상세" width="lg">
+        {detail.isError && (
+          <Alert variant="error" title="상세를 불러오지 못했어요">
+            <p>{detailErrorMessage(detail.error)}</p>
+          </Alert>
+        )}
+        {member && (
           <DetailDrawerBody
-            subtitle={`${selected.id} / ${selected.nickname}`}
+            subtitle={`${member.userId} / ${member.nickname ?? '닉네임 없음'}`}
             actions={
-              <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
+              <Button
+                variant="primary"
+                leftIcon={<Check className="size-4" />}
+                onClick={() => setConfirmOpen(true)}
+                disabled={!canSubmit}
+              >
                 제출
               </Button>
             }
           >
-            <DrawerSummaryCard
-              pills={
-                <>
-                  <StatusMetaPill meta={statusMeta[selected.accountStatus]} />
-                  <StatusPill variant="neutral">
-                    <MessageCircle className="size-3" />
-                    {selected.joinChannel}
-                  </StatusPill>
-                </>
-              }
-            >
+            <DrawerSummaryCard pills={<StatusMetaPill meta={statusMeta[member.accountStatus]} />}>
               <SummaryGrid
                 items={[
-                  { label: '이메일', value: selected.emailMasked },
-                  { label: '휴대폰', value: selected.phoneMasked },
-                  { label: '주문 건수', value: `${selected.orderCount}건` },
-                  { label: '진행 중 주문', value: selected.hasActiveOrder ? '있음' : '없음' },
+                  { label: '가입일', value: toDateLabel(member.joinedAt) },
+                  { label: '공개 ID', value: member.publicId },
+                  { label: '신고 누적', value: `${member.reportCount}건` },
+                  { label: '경고 누적', value: `${member.warningCount}회` },
+                  {
+                    label: '정지 만료',
+                    value: member.sanctionUntil ? toDateLabel(member.sanctionUntil) : '-',
+                  },
                 ]}
               />
+              {isExpiredSuspension(member) && (
+                <p className="text-caption text-text-tertiary">
+                  임시 정지 기간이 지나 이용이 다시 열렸어요. 상태 기록은 임시 정지로 남아 있어요.
+                </p>
+              )}
             </DrawerSummaryCard>
 
-            <DetailField label={`신고 누적 이력 / ${selected.reportHistory.length}건`}>
-              <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없어요." />
+            <DetailField label={`제재 이력 / ${detail.sanctions.length}건`}>
+              <HistoryList
+                items={detail.sanctions}
+                renderDescription={item =>
+                  [
+                    item.reason,
+                    item.effectiveUntil ? `${item.effectiveUntil}까지` : null,
+                    item.memo ? `메모: ${item.memo}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' / ') || null
+                }
+                emptyLabel="제재 이력이 없어요."
+              />
             </DetailField>
 
             <DetailField label="계정 상태">
-              <DecisionRadioGroup
+              <DecisionRadioGroup<MemberDecision>
                 name="member-status"
                 value={decision}
                 onChange={setDecision}
                 options={[
-                  { value: 'normal', label: '정상' },
-                  { value: 'restricted', label: '이용 제한', caption: '일부 기능 제한' },
-                  { value: 'suspended', label: '임시 정지', caption: '기간제 정지' },
-                  { value: 'banned', label: '영구 정지', caption: '계정 영구 차단' },
+                  { value: 'normal', label: '정상', caption: '걸려 있는 제재를 해제' },
+                  { value: 'restricted', label: '이용 제한', caption: '리뷰/SNS/문의 쓰기 제한' },
+                  { value: 'suspended', label: '임시 정지', caption: '기간제 전면 차단' },
+                  { value: 'banned', label: '영구 정지', caption: '해제 불가' },
+                  { value: 'withdrawing', label: '탈퇴 처리', caption: '되돌릴 수 없음' },
                 ]}
               />
             </DetailField>
 
-            <DetailField label="제재 사유">
-              <Select
-                options={sanctionReasonOptions}
-                value={sanctionReason}
-                onChange={setSanctionReason}
-                placeholder="사유 선택"
-              />
-            </DetailField>
+            {!isRelease && (
+              <DetailField label="제재 사유">
+                <Select
+                  options={sanctionReasonOptions}
+                  value={reasonCode}
+                  onChange={setReasonCode}
+                  placeholder="사유 선택"
+                />
+              </DetailField>
+            )}
 
-            <DetailField label="제재 기간">
-              <Select
-                options={sanctionPeriodOptions}
-                value={sanctionPeriod}
-                onChange={setSanctionPeriod}
-                placeholder="기간 선택"
-              />
-            </DetailField>
+            {(!isRelease && needsReasonDetail) || isRelease ? (
+              <DetailField label={isRelease ? '해제 사유' : '상세 사유'}>
+                <Textarea
+                  value={reasonDetail}
+                  onChange={setReasonDetail}
+                  maxLength={500}
+                  rows={3}
+                  placeholder={isRelease ? '해제 사유를 입력하세요.' : '상세 사유를 입력하세요.'}
+                />
+              </DetailField>
+            ) : null}
+
+            {needsPeriod && (
+              <DetailField label="제재 기간">
+                <Select
+                  options={sanctionPeriodOptions}
+                  value={sanctionPeriod}
+                  onChange={setSanctionPeriod}
+                  placeholder="기간 선택"
+                />
+              </DetailField>
+            )}
 
             <DetailField label="내부 메모" visibility="internal-only">
               <Textarea
@@ -293,7 +412,7 @@ function MembersPage() {
         )}
       </Drawer>
 
-      {selected && (
+      {member && (
         <Modal
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
@@ -301,18 +420,24 @@ function MembersPage() {
           description={decisionModalMeta[decision].description}
           confirmLabel={decisionModalMeta[decision].confirmLabel}
           confirmVariant={decisionModalMeta[decision].confirmVariant}
-          onConfirm={() => applyStatus(selected, decision)}
+          onConfirm={submit}
+          loading={sanction.isPending}
         >
           <SummaryGrid
             items={[
-              { label: '대상', value: `${selected.nickname} (${selected.id})` },
-              { label: '사유', value: sanctionReasonLabel },
+              { label: '대상', value: `${member.nickname ?? '닉네임 없음'} (${member.userId})` },
+              {
+                label: '사유',
+                value: isRelease
+                  ? reasonDetail.trim() || '-'
+                  : SANCTION_REASON_LABELS[reasonCode as SanctionReasonCode] ?? '-',
+              },
             ]}
           />
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="info" />}
     </div>
   )
 }
