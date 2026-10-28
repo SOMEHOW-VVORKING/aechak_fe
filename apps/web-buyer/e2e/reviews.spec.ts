@@ -1,6 +1,9 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
 import type { ReviewItemResponse } from '@aechak/api'
 
+// 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
+const API_ORIGIN = 'http://localhost:8080'
+
 // 상품 리뷰 목록 ↔ reviews API(SCRUM-181) 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을
 // 재현한다(product-detail/pet-breeds spec과 동일한 CORS/프리플라이트 규칙). 서버가 sort/photoOnly/cursor를
 // 실제로 반영한다고 보고, 스텁이 그 파라미터대로 응답을 만들어 정렬/포토 필터/페이지네이션을 검증한다.
@@ -263,6 +266,19 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
           headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
         })
       : route.fulfill({ status: 200, headers: CORS, json: DETAIL_FOR_PREVIEW }),
+  )
+  // 상세가 함께 부르는 리뷰 AI 요약(JWT 필수)도 스텁해 로컬 BE의 401 리다이렉트를 막는다.
+  await page.route(`${API_ORIGIN}/api/v1/products/${REAL_ID}/review-summary`, (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({
+          status: 200,
+          headers: CORS,
+          json: { data: { productSummary: null, similarPetSummary: null } },
+        }),
   )
   await page.goto(`/products/${REAL_ID}`)
   await expect(page.getByText('리얼 프리미엄 자동 급식기')).toBeVisible()
