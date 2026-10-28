@@ -15,6 +15,11 @@ interface InquiryAnswerDrawerProps {
   sending: boolean
   /** 답변 전송이 실패했을 때 Drawer 안에 띄울 문구 — 닫지 않고 그 자리에서 알린다. */
   errorMessage?: string | null
+  /**
+   * 목록 재조회가 실패해 이 문의가 **마지막으로 본 값**일 때 true. 행은 지우지 않고(정보다)
+   * 답변 전송만 잠근다 — 규약 7, `ReviewReplyList`의 `locked`와 같은 쓰임.
+   */
+  locked?: boolean
 }
 
 const ANSWER_MAX_LENGTH = 2000
@@ -39,6 +44,7 @@ export function InquiryAnswerDrawer({
   onSend,
   sending,
   errorMessage,
+  locked = false,
 }: InquiryAnswerDrawerProps) {
   const [draft, setDraft] = useState('')
 
@@ -106,6 +112,15 @@ export function InquiryAnswerDrawer({
 
         {errorMessage != null && <Alert variant="error">{errorMessage}</Alert>}
 
+        {/* 잠금 사유는 **Drawer 안에서** 말해야 한다 — 목록 쪽 Alert은 Drawer에 덮여 보이지 않고,
+            답변을 적어 보내는 자리는 여기다. 버튼만 비활성이면 왜 눌리지 않는지 알 수 없다. */}
+        {locked && !answered && (
+          <Alert variant="warning">
+            목록을 다시 불러오지 못해 이 문의는 마지막으로 본 내용이에요. 다시 시도해 최신 상태를
+            확인한 뒤 답변을 보내 주세요.
+          </Alert>
+        )}
+
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="md" onClick={onClose}>
             닫기
@@ -114,7 +129,7 @@ export function InquiryAnswerDrawer({
             <Button
               variant="primary"
               size="md"
-              disabled={draft.trim() === '' || sending}
+              disabled={draft.trim() === '' || sending || locked}
               onClick={() => onSend(draft.trim())}
             >
               답변 보내기
