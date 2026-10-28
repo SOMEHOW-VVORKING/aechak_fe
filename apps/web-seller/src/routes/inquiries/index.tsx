@@ -262,6 +262,9 @@ function InquiriesRoute() {
         inquiry={openInquiry}
         sending={answerInquiry.isPending}
         errorMessage={answerInquiry.isError ? inquiryErrorMessage(answerInquiry.error) : null}
+        // 재조회가 실패하면 캐시에 남은 직전 행으로 Drawer가 그려진다 — 그 값으로 답변을 보내면
+        // 이미 답변된 문의에 409를 받거나(다른 작업자) 권한이 끊긴 채로 요청이 나간다(규약 7).
+        locked={isError}
         onClose={() => {
           // 요청이 떠 있는 동안 창만 닫히면 셀러는 보내지 않은 줄로 읽는다 — 요청은 취소할 수 없다.
           if (answerInquiry.isPending) return
@@ -270,6 +273,8 @@ function InquiriesRoute() {
         }}
         onSend={content => {
           if (openInquiry == null) return
+          // 버튼 비활성만으로는 막히지 않는 자리(엔터·중복 클릭)를 콜백에서도 막는다.
+          if (isError) return
           answerInquiry.mutate(
             { inquiryId: openInquiry.inquiryId, content },
             {

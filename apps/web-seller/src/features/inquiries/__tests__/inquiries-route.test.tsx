@@ -255,6 +255,39 @@ describe('셀러 문의 답변', () => {
     )
   })
 
+  it('[AC-SELLER-INQUIRY-014] 재조회가 실패하면 적던 답변은 남기고 전송만 잠근다', async () => {
+    const { queryClient } = renderInquiries()
+
+    await userEvent.click(await rowOf('소형견도 쓸 수 있는 크기인가요?'))
+    const drawer = await screen.findByRole('dialog')
+    await userEvent.type(within(drawer).getByLabelText('답변'), '입구까지 높이는 12cm예요.')
+
+    // 한 번 성공한 뒤 서버가 넘어진다 — react-query는 직전 데이터를 들고 있어 Drawer가 그대로
+    // 그려지고, 그 낡은 행으로 답변을 보내면 이미 답변된 문의에 409를 받거나 권한이 끊긴 채로
+    // 요청이 나간다(규약 7 — 리뷰 쪽 AC-SELLER-REVIEW-109와 같은 자리).
+    server.use(
+      http.get(SELLER_INQUIRIES_URL, () =>
+        HttpResponse.json(
+          { error: { errorCode: 90000, message: '서버 오류' } },
+          { status: 500 },
+        ),
+      ),
+    )
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    const stale = await screen.findByRole('dialog')
+    // 적던 답변은 지우지 않는다(다시 쓰게 만들면 운영자가 잃는다) — 전송만 막는다.
+    expect(within(stale).getByLabelText('답변')).toHaveValue('입구까지 높이는 12cm예요.')
+    await waitFor(() =>
+      expect(within(stale).getByRole('button', { name: '답변 보내기' })).toBeDisabled(),
+    )
+    // 버튼만 잠그고 이유를 말하지 않으면 운영자는 화면이 고장난 줄로 읽는다 — Drawer 안에서 밝힌다.
+    expect(within(stale).getByText(/마지막으로 본 내용이에요/)).toBeInTheDocument()
+    expect(inquiryAnswerCount()).toBe(0)
+  })
+
   it('[AC-SELLER-INQUIRY-013] 다른 문의를 열면 앞 문의에 적던 답변은 남지 않는다', async () => {
     renderInquiries()
 

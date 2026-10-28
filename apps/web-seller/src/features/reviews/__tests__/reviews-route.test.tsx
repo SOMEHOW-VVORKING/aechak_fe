@@ -126,6 +126,31 @@ describe('셀러 리뷰 목록', () => {
     ).not.toBeInTheDocument()
   })
 
+  /**
+   * 예시 데이터 시절 `shared/__tests__/unbuilt-routes.test.tsx`의 AC-SELLER-SAMPLE-010이 고정하던
+   * 규약이다 — 화면이 실서버로 옮겨오면서 그 케이스가 사라졌는데(교차검토 지적) 규약은 그대로다:
+   * 걸러서 0건이 되면 **말없이 비지 않고** 글자로 알리고 초기화로 돌아올 수 있어야 한다.
+   * 조회 실패의 0건과 구분되는 자리라 AC-SELLER-REVIEW-108과 짝으로 둔다.
+   */
+  it('[AC-SELLER-REVIEW-110] 필터가 0건이 되면 빈 상태 문구와 총 0건을 보여주고 초기화로 돌아온다', async () => {
+    renderReviews()
+    await screen.findByText('리뷰 3건')
+
+    // 캣타워(4점 한 건)에 5점을 걸면 걸러서 0건이다 — 분포 막대는 상품 범위라 '리뷰 1건'으로 남는다.
+    await userEvent.selectOptions(screen.getByLabelText('상품'), TOWER_ID)
+    await userEvent.selectOptions(screen.getByLabelText('별점'), '5')
+
+    expect(await screen.findByText('조건에 맞는 리뷰가 없어요.')).toBeInTheDocument()
+    expect(screen.getByText('총 0건')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '초기화' }))
+
+    expect(
+      await screen.findByText('출근이 늦어지는 날에도 정해진 시간에 밥이 나와서 마음이 놓여요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('조건에 맞는 리뷰가 없어요.')).not.toBeInTheDocument()
+  })
+
   it('[AC-SELLER-REVIEW-107] 더 보기로 다음 커서 페이지를 이어 붙인다', async () => {
     const many: SellerReviewWire[] = Array.from({ length: 25 }, (_, index) => ({
       reviewId: 2000 + index,
