@@ -913,6 +913,14 @@ export interface ReviewImageResponse {
   sortOrder: number
 }
 
+export interface ReviewReplyResponse {
+  content: string
+  /** 답글을 처음 등록한 시각(ISO LocalDateTime, 오프셋 없음) */
+  repliedAt: string
+  /** 마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다 */
+  updatedAt: string
+}
+
 export type ReviewItemResponseRating =
   (typeof ReviewItemResponseRating)[keyof typeof ReviewItemResponseRating]
 
@@ -924,6 +932,12 @@ export const ReviewItemResponseRating = {
   NUMBER_4: 4,
   NUMBER_5: 5,
 } as const
+
+/**
+ * 셀러가 이 리뷰에 남긴 답글. 리뷰당 최대 하나이고 없으면 null이다. 답글 식별자는 셀러센터만 쓰므로 여기엔 담기지 않는다.
+ * @nullable
+ */
+export type ReviewItemResponseSellerReply = ReviewReplyResponse | null
 
 export interface ReviewItemResponse {
   reviewId: number
@@ -938,6 +952,117 @@ export interface ReviewItemResponse {
   /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-12T10:00:00) */
   createdAt: string
   images: ReviewImageResponse[]
+  /**
+   * 셀러가 이 리뷰에 남긴 답글. 리뷰당 최대 하나이고 없으면 null이다. 답글 식별자는 셀러센터만 쓰므로 여기엔 담기지 않는다.
+   * @nullable
+   */
+  sellerReply: ReviewItemResponseSellerReply
+}
+
+export interface SellerReviewReplyResponse {
+  replyId: number
+  reviewId: number
+  content: string
+  /** 처음 등록한 시각(ISO LocalDateTime, 오프셋 없음) */
+  repliedAt: string
+  /** 마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다 */
+  updatedAt: string
+}
+
+export interface SellerReviewReplyEnvelope {
+  data: SellerReviewReplyResponse
+}
+
+export interface ReviewReplyWriteRequest {
+  /**
+   * 길이는 **공백을 포함한 원문**으로 센다(공백 1개 + 500자는 잘라내면 500자여도 거절된다 — 공백으로 한도를 늘릴 수 없게 했다). 저장은 앞뒤 공백을 잘라낸 값으로 하고, 공백뿐인 값은 400 errorCode 90001이다.
+   * @minLength 1
+   * @maxLength 500
+   */
+  content: string
+}
+
+export type SellerReviewItemResponseRating =
+  (typeof SellerReviewItemResponseRating)[keyof typeof SellerReviewItemResponseRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerReviewItemResponseRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
+/**
+ * 내 답글. 없으면 null이다
+ * @nullable
+ */
+export type SellerReviewItemResponseReply = SellerReviewReplyResponse | null
+
+export interface SellerReviewItemResponse {
+  reviewId: number
+  /** 상품 공개 ULID. 목록 필터의 productId와 같은 값이다 */
+  productId: string
+  /** 지금의 상품명(주문 시점 스냅샷이 아니다) */
+  productName: string
+  rating: SellerReviewItemResponseRating
+  /** 마스킹된 리뷰는 공개 본문으로 치환된 값이 온다 — 셀러도 구매자와 같은 것을 본다 */
+  content: string
+  optionName: string
+  /** 구매자 목록과 같은 닉네임. 탈퇴한 작성자는 익명 라벨이다 */
+  authorNickname: string
+  /** ISO LocalDateTime(오프셋 없음) */
+  createdAt: string
+  images: ReviewImageResponse[]
+  /**
+   * 내 답글. 없으면 null이다
+   * @nullable
+   */
+  reply: SellerReviewItemResponseReply
+}
+
+/**
+ * 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5').
+ */
+export type SellerReviewSummaryResponseRatingDistribution = { [key: string]: number }
+
+export interface SellerReviewSummaryResponse {
+  reviewCount: number
+  /**
+   * 리뷰가 없으면 null
+   * @nullable
+   */
+  averageRating: number | null
+  /** 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5'). */
+  ratingDistribution: SellerReviewSummaryResponseRatingDistribution
+}
+
+/**
+ * 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null. 별점·답글 필터를 반영하지 않는다
+ * @nullable
+ */
+export type SellerReviewListDataSummary = SellerReviewSummaryResponse | null
+
+export interface SellerReviewListData {
+  /**
+   * 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null. 별점·답글 필터를 반영하지 않는다
+   * @nullable
+   */
+  summary: SellerReviewListDataSummary
+  reviews: SellerReviewItemResponse[]
+  /**
+   * 필터를 반영한 총건수 — 첫 페이지에만, 이후 null
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SellerReviewListEnvelope {
+  data: SellerReviewListData
 }
 
 /**
@@ -2867,6 +2992,131 @@ export interface SnsRelationPageResponse {
 }
 
 /**
+ * 상품 문의 유형
+ */
+export type ProductInquiryCategory =
+  (typeof ProductInquiryCategory)[keyof typeof ProductInquiryCategory]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryCategory = {
+  PRODUCT: 'PRODUCT',
+  DELIVERY: 'DELIVERY',
+  CLAIM: 'CLAIM',
+  ETC: 'ETC',
+} as const
+
+/**
+ * 상품 문의 상태. RECEIVED가 화면의 '답변 대기'다 — 서버 어휘가 '접수'라 PENDING이 아니다. WITHDRAWN은 구매자가 질문을 거둬간 것이고 셀러 목록에는 내려오지 않는다
+ */
+export type ProductInquiryStatus = (typeof ProductInquiryStatus)[keyof typeof ProductInquiryStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryStatus = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 셀러 목록의 상태 탭. 도메인 상태(ProductInquiryStatus)와 값이 다른 이유 — 철회된 문의는 셀러 목록에 아예 나오지 않으므로 고를 수 있는 값이 아니다
+ */
+export type SellerInquiryStatusFilter =
+  (typeof SellerInquiryStatusFilter)[keyof typeof SellerInquiryStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerInquiryStatusFilter = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+} as const
+
+/**
+ * 셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다
+ */
+export interface SellerInquiryAnswer {
+  content: string
+  answeredAt: string
+}
+
+/**
+ * 화면 상단 지표 3종. **탭·유형·검색어와 무관한 셀러 전체 범위**이고 철회된 문의는 세지 않는다. overdue는 서버가 저장한 answerDueAt으로 판정한 값이라 화면이 다시 계산하면 안 된다
+ */
+export interface SellerInquiryMetrics {
+  /** 답변 대기(RECEIVED) 건수 */
+  pending: number
+  /** 답변 대기 중 답변 기한을 넘긴 건수 */
+  overdue: number
+  /** 답변 대기 + 답변 완료 건수(철회 제외) */
+  total: number
+}
+
+/**
+ * @nullable
+ */
+export type SellerInquirySummaryAnswer = SellerInquiryAnswer | null
+
+/**
+ * 셀러가 받은 문의 한 행. `authorMasked`는 서버가 닉네임 첫 글자만 남긴 값이고 원문 닉네임은 내려오지 않는다. `productId`는 접수 시점에 복사한 상품 공개 식별자라 상품이 내려가도 남는다
+ */
+export interface SellerInquirySummary {
+  /** 문의 공개 식별자(ULID 26자) */
+  inquiryId: string
+  /** 상품 공개 식별자(접수 시점 복사본) */
+  productId: string
+  /** 접수 시점 상품명 복사본 */
+  productName: string
+  category: ProductInquiryCategory
+  title: string
+  /** 비밀글도 셀러에게는 본문이 그대로 내려온다(답변 당사자) */
+  content: string
+  /** 마스킹된 작성자 표시명(예: 김**). 닉네임이 없으면 '익명' */
+  authorMasked: string
+  /** 비밀글 — 작성자와 이 셀러만 본문을 읽는다 */
+  secret: boolean
+  status: ProductInquiryStatus
+  askedAt: string
+  /** 서버가 접수 시점에 계산한 답변 기한(영업일 2일, 주말 제외) */
+  answerDueAt: string
+  /** 미답변 상태로 기한을 넘겼는지 — 서버 판정 결과다 */
+  overdue: boolean
+  /** @nullable */
+  answer: SellerInquirySummaryAnswer
+}
+
+export interface SellerInquiryListData {
+  inquiries: SellerInquirySummary[]
+  metrics: SellerInquiryMetrics
+  /** 필터를 모두 반영한 건수 — metrics와 기준이 다르다 */
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerInquiryListResponse {
+  data: SellerInquiryListData
+}
+
+export interface AnswerInquiryRequest {
+  /**
+   * 공백만이면 400 errorCode 120105, 2000자 초과면 400 errorCode 120106
+   * @minLength 1
+   * @maxLength 2000
+   */
+  content: string
+}
+
+export interface AnswerInquiryData {
+  inquiryId: string
+  status: ProductInquiryStatus
+  answeredAt: string
+}
+
+export interface AnswerInquiryResponse {
+  data: AnswerInquiryData
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -3187,6 +3437,42 @@ export type GetSellerSettlementsParams = {
   size?: number
 }
 
+export type GetSellerReviewsParams = {
+  /**
+   * 상품 공개 ULID. 미지정이면 내 상품 전체
+   */
+  productId?: string
+  /**
+   * 별점 필터. 1~5 밖은 400 errorCode 90001 message 'rating: 1~5 사이여야 합니다.'
+   */
+  rating?: GetSellerReviewsRating
+  /**
+   * true면 답글 완료, false면 답글 없음. 미지정이면 전체
+   */
+  hasReply?: boolean
+  /**
+   * 이전 응답의 nextCursor. 커서에 셀러와 필터 셋이 함께 담겨 있어 필터를 바꾼 뒤 재사용하면 400 errorCode 90002다 — 조용히 엉뚱한 페이지를 주지 않는다.
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerReviewsRating =
+  (typeof GetSellerReviewsRating)[keyof typeof GetSellerReviewsRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetSellerReviewsRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
 export type GetSellerClaimsParams = {
   /**
    * 반복 파라미터로 보낸다(?claimType=CANCEL&claimType=RETURN). 미지 값은 400 errorCode 90001 message "claimType: 지원하지 않는 값입니다."
@@ -3214,6 +3500,33 @@ export type GetSellerClaimsParams = {
    * @pattern ^\d{4}-\d{2}-\d{2}$
    */
   requestedTo?: string
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerInquiriesParams = {
+  /**
+   * 비우면 답변 대기와 답변 완료를 함께 돌려준다(화면의 '전체' 탭). 빈 값(`?status=`)은 미입력이 아니라 형식 오류이므로 키째 빼서 보낼 것
+   */
+  status?: SellerInquiryStatusFilter
+  /**
+   * 비우면 전체 유형. 빈 값은 status와 같은 규칙
+   */
+  category?: ProductInquiryCategory
+  /**
+   * 문의 제목 또는 상품명 부분일치(대소문자 무시). 공백만이면 키째 뺄 것
+   * @maxLength 100
+   */
+  keyword?: string
   /**
    * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
    * @minimum 0
@@ -14427,6 +14740,451 @@ export const useUpdateSellerShippingPolicy = <TError = unknown, TContext = unkno
 }
 
 /**
+ * 셀러센터(seller 모듈) 전용. 내 상품에 달린 노출 상태 리뷰만 최신순(reviews.id 내림차순)으로 내린다 — 정렬 파라미터가 없다. 소유권은 reviews -> products.seller_id 조인 조건으로 판정하므로 남의 상품 리뷰는 조건에서 빠져 결과에 나타나지 않는다(권한 오류가 아니라 "없는 것"이다). `productId`에 남의 상품 공개 ULID를 넣어도 403/404가 아니라 빈 목록과 0건 요약이 온다. `summary`와 `totalCount`는 첫 페이지(cursor 없음)에만 실린다. `summary`는 **별점·답글 필터를 무시하고** 상품 범위 전체의 분포를 담는다(분포 막대가 지금 고른 별점과 무관해야 한다) — 반대로 `totalCount`는 필터를 반영한다. 차단·숨김·삭제 리뷰는 목록과 분포 모두에서 빠지고, 마스킹 리뷰의 `content`는 공개 본문으로 치환된 값이다. 자격 게이트는 탈퇴·정지·비셀러만 막는다(403 errorCode 110011) — 휴점·탈퇴신청 셀러는 조회할 수 있다. 형식 오류는 400 errorCode 90001이고, 필터를 바꾼 뒤 이전 커서를 다시 쓰면 400 errorCode 90002다.
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+export const getSellerReviews = (params?: GetSellerReviewsParams, signal?: AbortSignal) => {
+  return customInstance<SellerReviewListEnvelope>({
+    url: `/sellers/me/reviews`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerReviewsQueryKey = (params?: GetSellerReviewsParams) => {
+  return [`/sellers/me/reviews`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerReviews>>> = ({ signal }) =>
+    getSellerReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerReviews>>>
+export type GetSellerReviewsQueryError = void
+
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params: undefined | GetSellerReviewsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerReviewsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerReviewsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerReviews>>> = ({ signal }) =>
+    getSellerReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerReviewsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerReviews>>
+>
+export type GetSellerReviewsSuspenseQueryError = void
+
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params: undefined | GetSellerReviewsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerReviewsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 리뷰당 답글은 하나다. 이미 답글이 있으면 덮어쓰지 않고 409 errorCode 110201로 거절하고 기존 답글을 그대로 둔다 — 수정은 PUT이 받는다. 답글 주소가 답글 id가 아니라 리뷰 id인 이유도 1:1이기 때문이다(화면이 답글 id를 들고 다니지 않아도 된다). 남의 상품 리뷰·없는 리뷰·비노출(차단·숨김·삭제) 리뷰는 모두 404 errorCode 110000이다 — 403을 주지 않는 것은 남의 리뷰가 있다는 사실 자체를 알리지 않기 위함이다. 답글 쓰기 자격은 조회보다 좁다: ACTIVE·휴점(PAUSED) 셀러만 통과하고 탈퇴신청 셀러는 403 errorCode 110011이다. 내용은 **공백을 포함한 원문**이 1~500자여야 하고(위반은 400 errorCode 90001), 저장은 앞뒤 공백을 잘라낸 값으로 한다 — 공백으로 한도를 늘릴 수는 없다.
+ * @summary 셀러 답글 등록
+ */
+export const writeSellerReviewReply = (
+  reviewId: number,
+  reviewReplyWriteRequest: ReviewReplyWriteRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerReviewReplyEnvelope>({
+    url: `/sellers/me/reviews/${reviewId}/reply`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: reviewReplyWriteRequest,
+    signal,
+  })
+}
+
+export const getWriteSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeSellerReviewReply>>,
+    TError,
+    { reviewId: number; data: ReviewReplyWriteRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationKey = ['writeSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof writeSellerReviewReply>>,
+    { reviewId: number; data: ReviewReplyWriteRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return writeSellerReviewReply(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type WriteSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>
+>
+export type WriteSellerReviewReplyMutationBody = ReviewReplyWriteRequest
+export type WriteSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 등록
+ */
+export const useWriteSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof writeSellerReviewReply>>,
+      TError,
+      { reviewId: number; data: ReviewReplyWriteRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationOptions = getWriteSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 기존 답글 내용을 통째로 바꾼다. 답글이 없으면 404 errorCode 110200이고, 남의 상품 리뷰는 답글 유무와 무관하게 404 errorCode 110000이다. 자격·길이 규칙은 등록과 같다.
+ * @summary 셀러 답글 수정
+ */
+export const editSellerReviewReply = (
+  reviewId: number,
+  reviewReplyWriteRequest: ReviewReplyWriteRequest,
+) => {
+  return customInstance<SellerReviewReplyEnvelope>({
+    url: `/sellers/me/reviews/${reviewId}/reply`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: reviewReplyWriteRequest,
+  })
+}
+
+export const getEditSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof editSellerReviewReply>>,
+    TError,
+    { reviewId: number; data: ReviewReplyWriteRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof editSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationKey = ['editSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof editSellerReviewReply>>,
+    { reviewId: number; data: ReviewReplyWriteRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return editSellerReviewReply(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type EditSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof editSellerReviewReply>>
+>
+export type EditSellerReviewReplyMutationBody = ReviewReplyWriteRequest
+export type EditSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 수정
+ */
+export const useEditSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof editSellerReviewReply>>,
+      TError,
+      { reviewId: number; data: ReviewReplyWriteRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof editSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationOptions = getEditSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 답글 행을 지운다(소프트 삭제가 아니다). 지운 뒤 같은 리뷰에 다시 등록할 수 있다. 답글이 없으면 404 errorCode 110200이다.
+ * @summary 셀러 답글 삭제
+ */
+export const deleteSellerReviewReply = (reviewId: number) => {
+  return customInstance<void>({ url: `/sellers/me/reviews/${reviewId}/reply`, method: 'DELETE' })
+}
+
+export const getDeleteSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+    TError,
+    { reviewId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationKey = ['deleteSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+    { reviewId: number }
+  > = props => {
+    const { reviewId } = props ?? {}
+
+    return deleteSellerReviewReply(reviewId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>
+>
+
+export type DeleteSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 삭제
+ */
+export const useDeleteSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+      TError,
+      { reviewId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이고 정렬은 claims.id 내림차순 고정이다 (정렬 파라미터가 없다). 키워드 검색이 없다 — 주문번호로 찾는 입력을 만들면 안 된다. 자격 게이트가 상품·주문보다 좁다: **조회까지 ACTIVE 셀러만** 통과하고(ClaimFacade가 모든 경로를 isActiveSeller로 감싼다) 휴점·탈퇴신청 셀러는 목록 조회도 403 errorCode 50404다. 형식 오류는 전부 400 errorCode 90001이고, 빈 값 파라미터(`?status=`·`?requestedFrom=`)는 미입력이 아니라 형식 오류로 거절된다 — 값이 없는 파라미터는 키째 빼서 보낼 것. `counts`는 **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다(유형 탭 배지가 지금 고른 탭과 무관해야 하기 때문) — 세 유형 키는 0이어도 빠지지 않는다.
  * @summary 셀러 클레임 목록
  */
@@ -15318,6 +16076,298 @@ export const useReshipSellerClaim = <TError = void, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getReshipSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 접수 시점에 복사해 둔 sellerId로 잠그므로 **자기 상품에 온 문의만** 나온다. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다(정렬 파라미터 없음). **철회(WITHDRAWN)된 문의는 어느 탭에도 나오지 않고 지표에도 세지 않는다** — 구매자가 질문을 거둬간 것이라 status 필터로 고를 수도 없다(RECEIVED·ANSWERED 둘뿐). `metrics`는 **탭·유형·검색어를 무시하고** 셀러 전체 범위를 센다(탭을 눌러도 상단 지표가 흔들리지 않아야 하기 때문). `overdue`와 `metrics.overdue`는 **서버가 저장한 `answerDueAt`과 서버 시각으로 같은 규칙으로 판정한 결과**다 — 화면이 날짜를 빼서 다시 세면 두 숫자가 어긋난다. 비밀글(`secret`)도 셀러는 답변 당사자라 본문이 그대로 내려온다. 자격 게이트는 상품 조회와 같다: 정지·탈퇴 셀러는 403 errorCode 120112이고 휴점·탈퇴신청 셀러는 받은 문의를 읽는다. 형식 오류는 전부 400 errorCode 90001이다.
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+export const getSellerInquiries = (params?: GetSellerInquiriesParams, signal?: AbortSignal) => {
+  return customInstance<SellerInquiryListResponse>({
+    url: `/sellers/me/inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerInquiriesQueryKey = (params?: GetSellerInquiriesParams) => {
+  return [`/sellers/me/inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesQueryError = void
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesSuspenseQueryError = void
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **문의당 한 번만 받는다** — 이미 답변한 문의는 409 errorCode 120109이고 수정 경로가 없다 (구매자가 이미 읽은 답변이 조용히 바뀌지 않게 한 결정). 철회된 문의는 409 errorCode 120114, 남의 상품에 온 문의는 403 errorCode 120108, 없는 문의는 404 errorCode 120100이다. 답변은 ACTIVE 셀러만 등록한다(정지·휴점 포함 그 외는 403 errorCode 120112) — 읽기보다 게이트가 좁다. 응답은 201이고 바뀐 상태와 답변 시각을 돌려준다.
+ * @summary 상품 문의 답변 등록
+ */
+export const answerSellerInquiry = (
+  inquiryId: string,
+  answerInquiryRequest: AnswerInquiryRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AnswerInquiryResponse>({
+    url: `/sellers/me/inquiries/${inquiryId}/answer`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: answerInquiryRequest,
+    signal,
+  })
+}
+
+export const getAnswerSellerInquiryMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    TError,
+    { inquiryId: string; data: AnswerInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['answerSellerInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    { inquiryId: string; data: AnswerInquiryRequest }
+  > = props => {
+    const { inquiryId, data } = props ?? {}
+
+    return answerSellerInquiry(inquiryId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AnswerSellerInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof answerSellerInquiry>>
+>
+export type AnswerSellerInquiryMutationBody = AnswerInquiryRequest
+export type AnswerSellerInquiryMutationError = void
+
+/**
+ * @summary 상품 문의 답변 등록
+ */
+export const useAnswerSellerInquiry = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof answerSellerInquiry>>,
+      TError,
+      { inquiryId: string; data: AnswerInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getAnswerSellerInquiryMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
