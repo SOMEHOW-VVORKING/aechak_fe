@@ -46,7 +46,10 @@ describe('셀러센터 SideNav', () => {
     '대시보드',
     '주문/배송 관리',
     '취소/반품/교환',
+    // SCRUM-316에서 상품 문의, SCRUM-315에서 리뷰 목록·답글 경로가 seller 호스트에 생겨
+    // 두 항목 모두 꼬리표를 떼고 실연동으로 옮겼다.
     '고객 문의',
+    '리뷰 관리',
     '상품 관리',
     '배송 정책',
     '정산/매출',
@@ -54,12 +57,7 @@ describe('셀러센터 SideNav', () => {
   ] as const
 
   /** BE가 없어 "준비 중" 꼬리표가 붙는 항목 — 꼬리표가 버튼 안에 있어 접근명 끝에 붙는다. */
-  const PENDING_ITEMS = [
-    '리뷰 관리',
-    '혜택/쿠폰/할인',
-    '알림/공지',
-    '계정/보안',
-  ] as const
+  const PENDING_ITEMS = ['혜택/쿠폰/할인', '알림/공지', '계정/보안'] as const
 
   const pendingName = (label: string) => `${label} 준비 중`
   const navButtonName = (label: string) =>
