@@ -52,10 +52,27 @@ export const Route = createRootRoute({
       const response = await getSellerApplication()
       needsApplication = response.data.status !== 'APPROVED'
     } catch (error) {
-      const status = errorResponse(error)?.status
-      // 404/10100 = 신청 이력 없음(아직 신청 전) → 입점 신청으로 보낸다.
+      const failure = errorResponse(error)
+      const status = failure?.status
       // 401 = 방금 복원한 세션이 그사이 끊김 → 로그인으로.
       if (status === 401) throw redirect({ to: '/login', replace: true })
+      // 403은 이 EP에서 UserStatusFilter만 쓴다 — 20006(온보딩 미완)·20005(정지·탈퇴)이고,
+      // 컨트롤러 경로에는 403이 아예 없다(미신청은 404/10100). 즉 서버가 계정 자체를 거부한
+      // 것이라 "자격을 모르는 것"이 아니다. 통과시키면 셀러가 아닌 계정에게 운영 화면이 열리고,
+      // 셀러센터에는 20006을 받아 줄 전역 핸들러도 없다(setOnOnboardingRequired 미등록 —
+      // 온보딩 화면 자체가 구매자 앱에만 있다). /login/complete가 PENDING 복귀를 되돌리는 자리와
+      // 같은 ?error=로 보내 로그인 화면이 사유를 말하게 한다.
+      if (status === 403) {
+        const errorCode = failure?.data?.errorCode
+        throw redirect({
+          to: '/login',
+          search: errorCode === undefined ? {} : { error: errorCode },
+          replace: true,
+        })
+      }
+      // 404 = 신청 이력 없음(계약상 errorCode 10100) → 입점 신청으로 보낸다. errorCode까지
+      // 요구하지 않는 이유는 실패 방향이다 — 본문 없는 404(프록시·호스트 오설정)를 '모름'으로
+      // 흘리면 자격 미확인 계정이 운영 화면에 들어간다. 404는 닫는 쪽으로 해석한다.
       if (status === 404) {
         needsApplication = true
       } else {
