@@ -217,6 +217,12 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-10T09:00:00',
     images: [{ imageUrl: placeholderImage(200), sortOrder: 0 }],
+    // 셀러 답글이 실린 유일한 행 — 구매자 목록에 답글이 함께 나오는지(SCRUM-315)를 이 행이 고정한다.
+    sellerReply: {
+      content: '소음은 설치면을 평평하게 두면 줄어요. 불편하셨다면 교환도 도와드릴게요.',
+      repliedAt: '2026-08-11T10:00:00',
+      updatedAt: '2026-08-11T10:00:00',
+    },
   },
   {
     reviewId: 504,
@@ -228,6 +234,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-09T09:00:00',
     images: [],
+  sellerReply: null,
   },
   {
     reviewId: 503,
@@ -239,6 +246,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-08T09:00:00',
     images: [{ imageUrl: placeholderImage(120), sortOrder: 0 }],
+  sellerReply: null,
   },
   {
     reviewId: 502,
@@ -250,6 +258,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-07T09:00:00',
     images: [],
+  sellerReply: null,
   },
   {
     reviewId: 501,
@@ -260,6 +269,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorNickname: '집사7**',
     authorProfileImageUrl: null,
     createdAt: '2026-08-06T09:00:00',
+    sellerReply: null,
     images: [
       { imageUrl: placeholderImage(40), sortOrder: 0 },
       { imageUrl: placeholderImage(70), sortOrder: 1 },

@@ -24,12 +24,14 @@ const iconClass = 'size-full'
 // **항목은 빼지 않고 전부 올린다**. 서버 유무는 숨김이 아니라 "준비 중" 꼬리표로 가른다
 // (AGENTS.md 규약 10 — 숨기지 않고, 속이지도 않는다).
 //
-// 꼬리표 없는 7항목은 seller 모듈에 API가 올라와 실연동이다(주문 SCRUM-291 · 대시보드 SCRUM-292 ·
-// 배송 정책·정산 SCRUM-293 · 클레임 SCRUM-295). 라우트 게이트 상수는 `shared/serverAvailability.ts`에
-// 남아 있어 서버가 내려가면 상수만 내려 진입점을 닫을 수 있다.
+// 꼬리표 없는 9항목은 seller 모듈에 API가 올라와 실연동이다(주문 SCRUM-291 · 대시보드 SCRUM-292 ·
+// 배송 정책·정산 SCRUM-293 · 클레임 SCRUM-295 · 리뷰 관리 SCRUM-315 · 고객 문의 SCRUM-316).
+// 라우트 게이트 상수는 `shared/serverAvailability.ts`에 남아 있어 서버가 내려가면 상수만 내려
+// 진입점을 닫을 수 있다.
 //
-// 꼬리표가 붙은 5항목은 BE가 없어 라우트가 "준비 중" 안내만 보여준다(SCRUM-301이 신설). 꼬리표를
-// 떼는 것은 그 경로에 seller BE가 생겼을 때뿐이고, 아이콘은 정본의 lucide 이름을 그대로 쓴다.
+// 꼬리표가 붙은 3항목(혜택/쿠폰 · 알림/공지 · 계정)은 BE가 없어 라우트가 예시 데이터와
+// "예시 데이터" 띠를 보여준다(SCRUM-307).
+// 꼬리표를 떼는 것은 그 경로에 seller BE가 생겼을 때뿐이고, 아이콘은 정본의 lucide 이름을 그대로 쓴다.
 //
 // 상태 표시에 `badge`가 아니라 `NavItem.tag`를 쓰는 이유는 어드민 nav(SCRUM-302)와 같다 — `badge`는
 // 서버가 채우는 숫자(처리 대기 건수)라 글자 상태와 자리를 겹쳐 쓸 수 없다.
@@ -43,18 +45,8 @@ const groups: NavGroup[] = [
       { key: '/', label: '대시보드', icon: <LayoutDashboard className={iconClass} /> },
       { key: '/orders', label: '주문/배송 관리', icon: <ClipboardList className={iconClass} /> },
       { key: '/claims', label: '취소/반품/교환', icon: <RotateCcw className={iconClass} /> },
-      {
-        key: '/inquiries',
-        label: '고객 문의',
-        icon: <MessageCircle className={iconClass} />,
-        tag: PENDING_TAG,
-      },
-      {
-        key: '/reviews',
-        label: '리뷰 관리',
-        icon: <Star className={iconClass} />,
-        tag: PENDING_TAG,
-      },
+      { key: '/inquiries', label: '고객 문의', icon: <MessageCircle className={iconClass} /> },
+      { key: '/reviews', label: '리뷰 관리', icon: <Star className={iconClass} /> },
     ],
   },
   {

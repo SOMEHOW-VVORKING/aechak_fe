@@ -1,48 +1,78 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { Button, PageHeader, StatusPill } from '@aechak/design-system/web'
+import {
+  AccountInfoForm,
+  LoginHistoryTable,
+  MemberList,
+  SecuritySettingsCard,
+} from '@/features/account'
+import { SAMPLE_ACTION_TOAST, SampleDataNotice } from '@/shared/components/SampleDataNotice'
+import { useToast } from '@/shared/hooks/useToast'
 
 export const Route = createFileRoute('/account/')({
   component: AccountRoute,
 })
 
 /**
- * 셀러 nav에는 "계정/보안"이 처음부터 있었지만 라우트 파일은 한 번도
- * 만들어진 적이 없어 메뉴만 되살리면 404로 갔다 — 자리를 만들고 안내를 둔다.
+ * 계정/보안 — 셀러 nav에 처음부터 있던 항목이고 SCRUM-301이 라우트 파일을 신설했다.
  *
- * BE 실측(2026-10-26, dev 스펙 전수): seller 호스트의 계정 관련 경로는 `/sellers/me/store`와
- * 입점 신청뿐이고 비밀번호 변경·2단계 인증·접속 기록·담당자 초대 경로가 없다. 구매자 호스트의
- * `/users/me/*`는 구매자 프로필이라 셀러 계정 보안과 다른 도메인이고 호스트도 다르다.
+ * SCRUM-307에서 **안내만 있던 화면을 예시 데이터로 채웠다**(`UnavailableScreen` → 계정 정보 폼 +
+ * 보안 설정 + 접속 기록 + 담당자 목록). 지운 것은 없고, 저장되지 않는다는 사실은 상단
+ * `SampleDataNotice` 띠가 말한다. "스토어 설정으로" 안내 버튼은 그대로 남긴다 — 사업자 정보와
+ * 제출 서류는 지금도 그 화면에서 **실제로** 저장된다.
+ *
+ * 예시 데이터와 BE가 생겼을 때의 교체 방법은 `features/account/account.mock.ts` 머리에 있다.
  */
 function AccountRoute() {
   const navigate = useNavigate()
+  const toast = useToast()
+  const notSent = () => toast.show(SAMPLE_ACTION_TOAST, 'info')
 
   return (
-    <UnavailableScreen
-      title="계정/보안"
-      message="계정/보안은 준비 중이에요"
-      description="로그인 정보와 접속 기록을 관리하는 화면이에요. 사업자 정보와 제출 서류는 지금도 스토어 설정에서 보고 고칠 수 있어요."
-      action={{
-        label: '스토어 설정으로',
-        onClick: () => void navigate({ to: '/store-settings' }),
-      }}
-      upcoming={[
-        {
-          label: '비밀번호 변경',
-          description: '지금 비밀번호를 확인하고 새 비밀번호로 바꿔요.',
-        },
-        {
-          label: '2단계 인증',
-          description: '문자/인증 앱으로 받는 2단계 인증을 켜고 꺼요.',
-        },
-        {
-          label: '접속 기록',
-          description: '최근 로그인 시각과 기기, 낯선 접속을 봐요.',
-        },
-        {
-          label: '담당자 계정',
-          description: '스토어를 함께 운영할 담당자를 초대하고 권한을 나눠요.',
-        },
-      ]}
-    />
+    <div className="p-6">
+      <PageHeader
+        title="계정/보안"
+        actions={
+          <>
+            <StatusPill variant="muted">준비 중</StatusPill>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => void navigate({ to: '/store-settings' })}
+            >
+              스토어 설정으로
+            </Button>
+          </>
+        }
+      />
+
+      <SampleDataNotice
+        replaceWhen={
+          <>
+            seller 호스트에 <strong>GET /sellers/me/account</strong>와 비밀번호/2단계 인증/접속 기록
+            경로가 생기면 내 계정의 실제 값으로 바뀌어요. 사업자 정보와 제출 서류는 지금도 스토어
+            설정에서 저장돼요.
+          </>
+        }
+      />
+
+      <div className="flex flex-col gap-4">
+        <AccountInfoForm onSave={notSent} />
+
+        <SecuritySettingsCard onChangePassword={notSent} onToggleMfa={notSent} />
+
+        <section>
+          <h2 className="mb-2 text-subheading font-semibold text-text-primary">접속 기록</h2>
+          <LoginHistoryTable />
+          <p className="mt-2.5 text-caption text-text-tertiary">
+            낯선 접속이 보이면 비밀번호를 바꾸고 2단계 인증을 켜 주세요.
+          </p>
+        </section>
+
+        <MemberList onInvite={notSent} />
+      </div>
+
+      {toast.element}
+    </div>
   )
 }

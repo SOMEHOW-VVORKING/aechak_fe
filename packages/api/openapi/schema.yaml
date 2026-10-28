@@ -2116,6 +2116,169 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /sellers/me/reviews:
+    get:
+      summary: "셀러 리뷰 목록(커서 페이지네이션)"
+      description: >-
+        셀러센터(seller 모듈) 전용. 내 상품에 달린 노출 상태 리뷰만 최신순(reviews.id 내림차순)으로
+        내린다 — 정렬 파라미터가 없다. 소유권은 reviews -> products.seller_id 조인 조건으로 판정하므로
+        남의 상품 리뷰는 조건에서 빠져 결과에 나타나지 않는다(권한 오류가 아니라 "없는 것"이다).
+        `productId`에 남의 상품 공개 ULID를 넣어도 403/404가 아니라 빈 목록과 0건 요약이 온다.
+        `summary`와 `totalCount`는 첫 페이지(cursor 없음)에만 실린다. `summary`는 **별점·답글 필터를
+        무시하고** 상품 범위 전체의 분포를 담는다(분포 막대가 지금 고른 별점과 무관해야 한다) —
+        반대로 `totalCount`는 필터를 반영한다. 차단·숨김·삭제 리뷰는 목록과 분포 모두에서 빠지고,
+        마스킹 리뷰의 `content`는 공개 본문으로 치환된 값이다. 자격 게이트는 탈퇴·정지·비셀러만
+        막는다(403 errorCode 110011) — 휴점·탈퇴신청 셀러는 조회할 수 있다. 형식 오류는 400
+        errorCode 90001이고, 필터를 바꾼 뒤 이전 커서를 다시 쓰면 400 errorCode 90002다.
+      operationId: "getSellerReviews"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: query
+          required: false
+          description: "상품 공개 ULID. 미지정이면 내 상품 전체"
+          schema:
+            type: string
+        - name: rating
+          in: query
+          required: false
+          description: "별점 필터. 1~5 밖은 400 errorCode 90001 message 'rating: 1~5 사이여야 합니다.'"
+          schema:
+            type: integer
+            enum: [1, 2, 3, 4, 5]
+        - name: hasReply
+          in: query
+          required: false
+          description: "true면 답글 완료, false면 답글 없음. 미지정이면 전체"
+          schema:
+            type: boolean
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            이전 응답의 nextCursor. 커서에 셀러와 필터 셋이 함께 담겨 있어 필터를 바꾼 뒤 재사용하면
+            400 errorCode 90002다 — 조용히 엉뚱한 페이지를 주지 않는다.
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerReviewListEnvelope"
+        "400":
+          description: "형식 오류(90001), 유효하지 않은 커서(90002)"
+        "403":
+          description: "탈퇴·정지 셀러이거나 셀러가 아님(errorCode 110011)"
+  /sellers/me/reviews/{reviewId}/reply:
+    post:
+      summary: "셀러 답글 등록"
+      description: >-
+        리뷰당 답글은 하나다. 이미 답글이 있으면 덮어쓰지 않고 409 errorCode 110201로 거절하고
+        기존 답글을 그대로 둔다 — 수정은 PUT이 받는다. 답글 주소가 답글 id가 아니라 리뷰 id인 이유도
+        1:1이기 때문이다(화면이 답글 id를 들고 다니지 않아도 된다).
+        남의 상품 리뷰·없는 리뷰·비노출(차단·숨김·삭제) 리뷰는 모두 404 errorCode 110000이다 —
+        403을 주지 않는 것은 남의 리뷰가 있다는 사실 자체를 알리지 않기 위함이다.
+        답글 쓰기 자격은 조회보다 좁다: ACTIVE·휴점(PAUSED) 셀러만 통과하고 탈퇴신청 셀러는
+        403 errorCode 110011이다. 내용은 **공백을 포함한 원문**이 1~500자여야 하고(위반은 400
+        errorCode 90001), 저장은 앞뒤 공백을 잘라낸 값으로 한다 — 공백으로 한도를 늘릴 수는 없다.
+      operationId: "writeSellerReviewReply"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewReplyWriteRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerReviewReplyEnvelope"
+        "400":
+          description: "빈 내용·500자 초과(errorCode 90001)"
+        "403":
+          description: "답글을 쓸 자격이 없는 셀러(errorCode 110011)"
+        "404":
+          description: "없는 리뷰·남의 상품 리뷰·비노출 리뷰(errorCode 110000)"
+        "409":
+          description: "이미 답글이 있음(errorCode 110201)"
+    put:
+      summary: "셀러 답글 수정"
+      description: >-
+        기존 답글 내용을 통째로 바꾼다. 답글이 없으면 404 errorCode 110200이고, 남의 상품 리뷰는
+        답글 유무와 무관하게 404 errorCode 110000이다. 자격·길이 규칙은 등록과 같다.
+      operationId: "editSellerReviewReply"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewReplyWriteRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerReviewReplyEnvelope"
+        "400":
+          description: "빈 내용·500자 초과(errorCode 90001)"
+        "403":
+          description: "답글을 쓸 자격이 없는 셀러(errorCode 110011)"
+        "404":
+          description: "답글 없음(110200), 없는 리뷰·남의 상품 리뷰(110000)"
+    delete:
+      summary: "셀러 답글 삭제"
+      description: >-
+        답글 행을 지운다(소프트 삭제가 아니다). 지운 뒤 같은 리뷰에 다시 등록할 수 있다.
+        답글이 없으면 404 errorCode 110200이다.
+      operationId: "deleteSellerReviewReply"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+        "403":
+          description: "답글을 쓸 자격이 없는 셀러(errorCode 110011)"
+        "404":
+          description: "답글 없음(110200), 없는 리뷰·남의 상품 리뷰(110000)"
   /sellers/me/claims:
     get:
       summary: "셀러 클레임 목록"
@@ -2406,6 +2569,108 @@ paths:
                 $ref: "#/components/schemas/ReshipClaimResponse"
         "409":
           description: "재발송 불가(errorCode 50411) / 이미 등록(errorCode 50302)"
+  /sellers/me/inquiries:
+    get:
+      summary: "셀러가 받은 상품 문의 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. 접수 시점에 복사해 둔 sellerId로 잠그므로 **자기 상품에 온
+        문의만** 나온다. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다(정렬 파라미터 없음).
+        **철회(WITHDRAWN)된 문의는 어느 탭에도 나오지 않고 지표에도 세지 않는다** — 구매자가 질문을
+        거둬간 것이라 status 필터로 고를 수도 없다(RECEIVED·ANSWERED 둘뿐).
+        `metrics`는 **탭·유형·검색어를 무시하고** 셀러 전체 범위를 센다(탭을 눌러도 상단 지표가
+        흔들리지 않아야 하기 때문). `overdue`와 `metrics.overdue`는 **서버가 저장한
+        `answerDueAt`과 서버 시각으로 같은 규칙으로 판정한 결과**다 — 화면이 날짜를 빼서 다시 세면
+        두 숫자가 어긋난다. 비밀글(`secret`)도 셀러는 답변 당사자라 본문이 그대로 내려온다.
+        자격 게이트는 상품 조회와 같다: 정지·탈퇴 셀러는 403 errorCode 120112이고 휴점·탈퇴신청
+        셀러는 받은 문의를 읽는다. 형식 오류는 전부 400 errorCode 90001이다.
+      operationId: "getSellerInquiries"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/SellerInquiryStatusFilter"
+          description: >-
+            비우면 답변 대기와 답변 완료를 함께 돌려준다(화면의 '전체' 탭). 빈 값(`?status=`)은
+            미입력이 아니라 형식 오류이므로 키째 빼서 보낼 것
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/ProductInquiryCategory"
+          description: "비우면 전체 유형. 빈 값은 status와 같은 규칙"
+        - name: keyword
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: "문의 제목 또는 상품명 부분일치(대소문자 무시). 공백만이면 키째 뺄 것"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: "0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)"
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: "1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerInquiryListResponse"
+        "403":
+          description: "정지·탈퇴 셀러(errorCode 120112)"
+  /sellers/me/inquiries/{inquiryId}/answer:
+    post:
+      summary: "상품 문의 답변 등록"
+      description: >-
+        **문의당 한 번만 받는다** — 이미 답변한 문의는 409 errorCode 120109이고 수정 경로가 없다
+        (구매자가 이미 읽은 답변이 조용히 바뀌지 않게 한 결정). 철회된 문의는 409 errorCode 120114,
+        남의 상품에 온 문의는 403 errorCode 120108, 없는 문의는 404 errorCode 120100이다.
+        답변은 ACTIVE 셀러만 등록한다(정지·휴점 포함 그 외는 403 errorCode 120112) — 읽기보다
+        게이트가 좁다. 응답은 201이고 바뀐 상태와 답변 시각을 돌려준다.
+      operationId: "answerSellerInquiry"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inquiryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "문의 공개 식별자(ULID 26자)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnswerInquiryRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnswerInquiryResponse"
+        "400":
+          description: >-
+            공백만(errorCode 120105) / 2000자 초과(errorCode 120106). 둘 다 도메인이 던지는 코드가
+            그대로 나온다 — 요청 DTO에 같은 제약을 거울로 두지 않기 때문이다
+        "403":
+          description: "남의 상품 문의(errorCode 120108) / ACTIVE 셀러 아님(errorCode 120112)"
+        "404":
+          description: "없는 문의(errorCode 120100)"
+        "409":
+          description: "이미 답변함(errorCode 120109) / 철회된 문의(errorCode 120114)"
   /admin/admins:
     get:
       summary: "어드민 관리자 명부 목록"
@@ -3867,10 +4132,23 @@ components:
           type: string
         sortOrder:
           type: integer
+    ReviewReplyResponse:
+      type: object
+      required: [content, repliedAt, updatedAt]
+      properties:
+        content:
+          type: string
+        repliedAt:
+          type: string
+          description: "답글을 처음 등록한 시각(ISO LocalDateTime, 오프셋 없음)"
+        updatedAt:
+          type: string
+          description: "마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다"
     ReviewItemResponse:
       type: object
       required:
-        [reviewId, rating, content, optionName, authorNickname, authorProfileImageUrl, createdAt, images, isMine]
+        [reviewId, rating, content, optionName, authorNickname, authorProfileImageUrl, createdAt,
+         images, isMine, sellerReply]
       properties:
         reviewId:
           type: integer
@@ -3898,6 +4176,135 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReviewImageResponse"
+        sellerReply:
+          allOf:
+            - $ref: "#/components/schemas/ReviewReplyResponse"
+          nullable: true
+          description: >-
+            셀러가 이 리뷰에 남긴 답글. 리뷰당 최대 하나이고 없으면 null이다.
+            답글 식별자는 셀러센터만 쓰므로 여기엔 담기지 않는다.
+    SellerReviewReplyResponse:
+      type: object
+      required: [replyId, reviewId, content, repliedAt, updatedAt]
+      properties:
+        replyId:
+          type: integer
+          format: int64
+        reviewId:
+          type: integer
+          format: int64
+        content:
+          type: string
+        repliedAt:
+          type: string
+          description: "처음 등록한 시각(ISO LocalDateTime, 오프셋 없음)"
+        updatedAt:
+          type: string
+          description: "마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다"
+    SellerReviewReplyEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerReviewReplyResponse"
+    ReviewReplyWriteRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: >-
+            길이는 **공백을 포함한 원문**으로 센다(공백 1개 + 500자는 잘라내면 500자여도 거절된다 —
+            공백으로 한도를 늘릴 수 없게 했다). 저장은 앞뒤 공백을 잘라낸 값으로 하고,
+            공백뿐인 값은 400 errorCode 90001이다.
+    SellerReviewItemResponse:
+      type: object
+      required:
+        [reviewId, productId, productName, rating, content, optionName, authorNickname, createdAt,
+         images, reply]
+      properties:
+        reviewId:
+          type: integer
+          format: int64
+        productId:
+          type: string
+          description: "상품 공개 ULID. 목록 필터의 productId와 같은 값이다"
+        productName:
+          type: string
+          description: "지금의 상품명(주문 시점 스냅샷이 아니다)"
+        rating:
+          type: integer
+          enum: [1, 2, 3, 4, 5]
+        content:
+          type: string
+          description: "마스킹된 리뷰는 공개 본문으로 치환된 값이 온다 — 셀러도 구매자와 같은 것을 본다"
+        optionName:
+          type: string
+        authorNickname:
+          type: string
+          description: "구매자 목록과 같은 닉네임. 탈퇴한 작성자는 익명 라벨이다"
+        createdAt:
+          type: string
+          description: "ISO LocalDateTime(오프셋 없음)"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewImageResponse"
+        reply:
+          allOf:
+            - $ref: "#/components/schemas/SellerReviewReplyResponse"
+          nullable: true
+          description: "내 답글. 없으면 null이다"
+    SellerReviewSummaryResponse:
+      type: object
+      required: [reviewCount, averageRating, ratingDistribution]
+      properties:
+        reviewCount:
+          type: integer
+          format: int64
+        averageRating:
+          type: number
+          format: double
+          nullable: true
+          description: "리뷰가 없으면 null"
+        ratingDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: "별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5')."
+    SellerReviewListData:
+      type: object
+      required: [summary, reviews, totalCount, nextCursor, hasNext]
+      properties:
+        summary:
+          allOf:
+            - $ref: "#/components/schemas/SellerReviewSummaryResponse"
+          nullable: true
+          description: >-
+            첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null. 별점·답글 필터를 반영하지 않는다
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerReviewItemResponse"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "필터를 반영한 총건수 — 첫 페이지에만, 이후 null"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SellerReviewListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerReviewListData"
     ReviewRatingSummaryResponse:
       type: object
       required: [reviewCount, averageRating, ratingDistribution]
@@ -6594,6 +7001,157 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    ProductInquiryCategory:
+      type: string
+      description: "상품 문의 유형"
+      enum:
+        - PRODUCT
+        - DELIVERY
+        - CLAIM
+        - ETC
+    ProductInquiryStatus:
+      type: string
+      description: >-
+        상품 문의 상태. RECEIVED가 화면의 '답변 대기'다 — 서버 어휘가 '접수'라 PENDING이 아니다.
+        WITHDRAWN은 구매자가 질문을 거둬간 것이고 셀러 목록에는 내려오지 않는다
+      enum:
+        - RECEIVED
+        - ANSWERED
+        - WITHDRAWN
+    SellerInquiryStatusFilter:
+      type: string
+      description: >-
+        셀러 목록의 상태 탭. 도메인 상태(ProductInquiryStatus)와 값이 다른 이유 — 철회된 문의는
+        셀러 목록에 아예 나오지 않으므로 고를 수 있는 값이 아니다
+      enum:
+        - RECEIVED
+        - ANSWERED
+    SellerInquiryAnswer:
+      type: object
+      description: "셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다"
+      required: [content, answeredAt]
+      properties:
+        content:
+          type: string
+        answeredAt:
+          type: string
+    SellerInquiryMetrics:
+      type: object
+      description: >-
+        화면 상단 지표 3종. **탭·유형·검색어와 무관한 셀러 전체 범위**이고 철회된 문의는 세지 않는다.
+        overdue는 서버가 저장한 answerDueAt으로 판정한 값이라 화면이 다시 계산하면 안 된다
+      required: [pending, overdue, total]
+      properties:
+        pending:
+          type: integer
+          format: int64
+          description: "답변 대기(RECEIVED) 건수"
+        overdue:
+          type: integer
+          format: int64
+          description: "답변 대기 중 답변 기한을 넘긴 건수"
+        total:
+          type: integer
+          format: int64
+          description: "답변 대기 + 답변 완료 건수(철회 제외)"
+    SellerInquirySummary:
+      type: object
+      description: >-
+        셀러가 받은 문의 한 행. `authorMasked`는 서버가 닉네임 첫 글자만 남긴 값이고 원문 닉네임은
+        내려오지 않는다. `productId`는 접수 시점에 복사한 상품 공개 식별자라 상품이 내려가도 남는다
+      required:
+        [inquiryId, productId, productName, category, title, content, authorMasked, secret, status,
+         askedAt, answerDueAt, overdue, answer]
+      properties:
+        inquiryId:
+          type: string
+          description: "문의 공개 식별자(ULID 26자)"
+        productId:
+          type: string
+          description: "상품 공개 식별자(접수 시점 복사본)"
+        productName:
+          type: string
+          description: "접수 시점 상품명 복사본"
+        category:
+          $ref: "#/components/schemas/ProductInquiryCategory"
+        title:
+          type: string
+        content:
+          type: string
+          description: "비밀글도 셀러에게는 본문이 그대로 내려온다(답변 당사자)"
+        authorMasked:
+          type: string
+          description: "마스킹된 작성자 표시명(예: 김**). 닉네임이 없으면 '익명'"
+        secret:
+          type: boolean
+          description: "비밀글 — 작성자와 이 셀러만 본문을 읽는다"
+        status:
+          $ref: "#/components/schemas/ProductInquiryStatus"
+        askedAt:
+          type: string
+        answerDueAt:
+          type: string
+          description: "서버가 접수 시점에 계산한 답변 기한(영업일 2일, 주말 제외)"
+        overdue:
+          type: boolean
+          description: "미답변 상태로 기한을 넘겼는지 — 서버 판정 결과다"
+        answer:
+          allOf:
+            - $ref: "#/components/schemas/SellerInquiryAnswer"
+          nullable: true
+    SellerInquiryListData:
+      type: object
+      required: [inquiries, metrics, totalCount, page, size, totalPages, hasNext]
+      properties:
+        inquiries:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerInquirySummary"
+        metrics:
+          $ref: "#/components/schemas/SellerInquiryMetrics"
+        totalCount:
+          type: integer
+          format: int64
+          description: "필터를 모두 반영한 건수 — metrics와 기준이 다르다"
+        page:
+          type: integer
+        size:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+    SellerInquiryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerInquiryListData"
+    AnswerInquiryRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: "공백만이면 400 errorCode 120105, 2000자 초과면 400 errorCode 120106"
+    AnswerInquiryData:
+      type: object
+      required: [inquiryId, status, answeredAt]
+      properties:
+        inquiryId:
+          type: string
+        status:
+          $ref: "#/components/schemas/ProductInquiryStatus"
+        answeredAt:
+          type: string
+    AnswerInquiryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AnswerInquiryData"
   parameters:
     SnsPublicId:
       name: publicId
