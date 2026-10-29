@@ -30,29 +30,15 @@ import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
 import { Tag } from '@/shared/components/Tag'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
+// admin 모듈에 AI 검수 큐 API가 없어 목록·승인·반려·삭제가 전부 예시 데이터다. 진입을 막는 대신
+// 상단 띠로 예시임을 밝히고 쓰기를 막는다(SCRUM-308) — 검수 BE가 머지되면
+// ai-review-queue.queries.ts만 갈아끼우고 띠를 뗀다.
 export const Route = createFileRoute('/products/ai-queue')({
-  component: AiReviewQueueGate,
+  component: AiReviewQueuePage,
 })
-
-// 운영 진입 차단 스위치. admin 모듈에 AI 검수 큐 API가 없어 목록·승인·반려·삭제가 전부 목업이다 —
-// 주소로 들어와도 열지 않는다. 아래 AiReviewQueuePage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
-const SERVER_AI_REVIEW_QUEUE_AVAILABLE = false
-
-function AiReviewQueueGate() {
-  if (!SERVER_AI_REVIEW_QUEUE_AVAILABLE) {
-    return (
-      <UnavailableScreen
-        title="AI 검수 큐"
-        description="AI가 자동 숨김 처리한 상품 / 콘텐츠를 운영자가 다시 확인해요."
-        message="AI 검수 큐는 준비 중이에요"
-      />
-    )
-  }
-  return <AiReviewQueuePage />
-}
 
 const targetTypeMeta: Record<AiReviewTargetType, StatusMeta> = {
   'product-image': { label: '상품 이미지', variant: 'neutral', icon: Image },
@@ -89,7 +75,7 @@ const reviewStatusFilterOptions = [
 ]
 
 const processReasonOptions = [
-  { value: 'banned-content', label: '금지 콘텐츠 · 효능 표현' },
+  { value: 'banned-content', label: '금지 콘텐츠 / 효능 표현' },
   { value: 'abusive-language', label: '욕설/비방' },
   { value: 'adult-content', label: '성인성 콘텐츠' },
 ]
@@ -104,7 +90,6 @@ const decisionModalMeta: Record<
     confirmLabel: string
     confirmVariant: 'primary' | 'danger'
     nextStatus: AiReviewStatus
-    message: string
   }
 > = {
   approve: {
@@ -113,7 +98,6 @@ const decisionModalMeta: Record<
     confirmLabel: '승인',
     confirmVariant: 'primary',
     nextStatus: 'admin-approved',
-    message: '검수를 승인했어요.',
   },
   reject: {
     title: '반려하고 수정 요청을 보낼까요?',
@@ -121,7 +105,6 @@ const decisionModalMeta: Record<
     confirmLabel: '반려',
     confirmVariant: 'primary',
     nextStatus: 'admin-rejected',
-    message: '반려하고 수정 요청을 보냈어요.',
   },
   delete: {
     title: '콘텐츠를 강제 삭제할까요?',
@@ -129,7 +112,6 @@ const decisionModalMeta: Record<
     confirmLabel: '삭제',
     confirmVariant: 'danger',
     nextStatus: 'admin-deleted',
-    message: '콘텐츠를 삭제했어요.',
   },
 }
 
@@ -233,9 +215,10 @@ function AiReviewQueuePage() {
     setInternalMemo(row.internalMemo ?? '')
   }
 
-  function applyStatus(target: AiReviewQueueItem, nextStatus: AiReviewStatus, message: string) {
+  // 서버로 나가는 요청이 없다 — 결정 결과를 화면에만 겹쳐 보여준다.
+  function applyStatus(target: AiReviewQueueItem, nextStatus: AiReviewStatus) {
     patchRow(target.id, { reviewStatus: nextStatus, processReason, sellerNotice, internalMemo })
-    setToast(message)
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -247,6 +230,8 @@ function AiReviewQueuePage() {
   return (
     <div className="p-6">
       <PageIntro title="AI 검수 큐" description="AI가 자동 숨김 처리한 상품 / 콘텐츠를 운영자가 다시 확인해요." />
+
+      <MockDataNotice>검수 BE가 머지되면 같은 화면이 실데이터로 열려요.</MockDataNotice>
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={targetTypeFilterOptions} value={targetTypeFilter} onChange={setTargetTypeFilter} />
@@ -276,7 +261,7 @@ function AiReviewQueuePage() {
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="AI 검수 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.id} · ${targetTypeMeta[selected.targetType].label}`}
+            subtitle={`${selected.id} / ${targetTypeMeta[selected.targetType].label}`}
             actions={
               <Button variant="primary" leftIcon={<Check className="size-4" />} onClick={() => setConfirmOpen(true)}>
                 제출
@@ -371,18 +356,18 @@ function AiReviewQueuePage() {
           description={decisionMeta.description}
           confirmLabel={decisionMeta.confirmLabel}
           confirmVariant={decisionMeta.confirmVariant}
-          onConfirm={() => applyStatus(selected, decisionMeta.nextStatus, decisionMeta.message)}
+          onConfirm={() => applyStatus(selected, decisionMeta.nextStatus)}
         >
           <SummaryGrid
             items={[
-              { label: '대상', value: `${targetTypeMeta[selected.targetType].label} · ${selected.id}` },
+              { label: '대상', value: `${targetTypeMeta[selected.targetType].label} / ${selected.id}` },
               { label: '사유', value: processReasonLabel },
             ]}
           />
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
     </div>
   )
 }
