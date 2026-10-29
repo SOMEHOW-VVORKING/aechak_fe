@@ -314,7 +314,10 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   // 경로로 바로 들어가지 않고 **nav를 거친다** — 항목이 빠지거나 다른 라우트로 잘못 걸리면
   // 화면 자체는 멀쩡해도 운영자가 닿을 길이 없어진다(화면이 사라졌다는 지적의 실제 원인).
   await page.goto('/')
-  const applicationsNav = page.getByRole('button', { name: '셀러 입점 심사' })
+  // nav 항목은 **nav 랜드마크 안에서** 집는다. 이름만으로 찾으면 랜딩의 심사 대기 카드(접근성
+  // 이름이 "셀러 입점 심사 대기 2건 …")까지 함께 걸려 strict mode로 터진다 — SCRUM-308이 그 카드를
+  // 세우면서 드러났다. 배지를 읽을 대상은 nav 버튼이므로 범위를 좁히는 쪽이 맞다.
+  const applicationsNav = page.getByRole('navigation').getByRole('button', { name: '셀러 입점 심사' })
   // nav 배지도 심사 대기 수와 같은 쿼리키를 쓴다 — 목록에 들어가기 전부터 서버 값이 실린다.
   await expect(applicationsNav).toContainText('2')
   await applicationsNav.click()
@@ -350,7 +353,7 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   ).toBeVisible()
   // 심사 대기 수도 같은 접두 키라 함께 갱신된다(2 → 1) — 화면 머리말과 nav 배지가 같이 줄어든다.
   await expect(page.getByText('심사 대기 1')).toBeVisible()
-  await expect(page.getByRole('button', { name: '셀러 입점 심사' })).toContainText('1')
+  await expect(page.getByRole('navigation').getByRole('button', { name: '셀러 입점 심사' })).toContainText('1')
   expect(recorded.leakedToApiHost).toEqual([])
   expect(recorded.offContract).toEqual([])
   await shot(page, 'admin-03-after-approve')
