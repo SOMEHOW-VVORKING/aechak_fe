@@ -35,10 +35,10 @@ const normalizePath = (pathname: string) =>
  * BE가 dev에 있어 꼬리표 없이 실연동으로 쓰는 항목.
  *
  * 2026-10-26 admin-api-dev 실측: `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications`
- * 계열 넷이 전부다. 이 둘이 늘어나면 아래 두 배열 사이로 항목을 옮기고 `__root.tsx`에서
- * `tag`를 떼면 된다.
+ * 계열 넷. 그 뒤 `/admin/members` 계열 넷(목록·상세·제재·해제)이 더해져 일반 회원 관리도
+ * 실연동이 됐다. 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
-const LIVE_LABELS = ['셀러 입점 심사', '관리자 관리'] as const
+const LIVE_LABELS = ['셀러 입점 심사', '관리자 관리', '일반 회원 관리'] as const
 
 /**
  * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
@@ -47,7 +47,6 @@ const LIVE_LABELS = ['셀러 입점 심사', '관리자 관리'] as const
 const PENDING_LABELS = [
   '대시보드',
   '셀러 관리',
-  '일반 회원 관리',
   '상품 검수 관리',
   'AI 검수 큐',
   '신고 제재 관리',

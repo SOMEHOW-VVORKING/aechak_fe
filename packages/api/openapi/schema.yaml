@@ -2755,6 +2755,154 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /admin/members:
+    get:
+      summary: "어드민 일반 회원 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004,
+        비ADMIN 403 errorCode 20011). `users.role = GENERAL`만 본다 — 관리자 계정은 명부 경로
+        (`/admin/admins`)가 따로 있어 이 목록에 없다. 정렬은 가입 역순(userId 내림차순) 고정이고
+        **커서 페이징**이다(오프셋 page 없음). `status`·`size` 형식 오류는 서버가 보정한다
+        (알 수 없는 status→전체, size는 1~100 절삭) — 400을 내지 않는다.
+        단, **상태 필터를 바꾼 채 옛 커서를 보내면 400 errorCode 90002**다(두 집합이 한 목록에
+        섞이지 않게 서버가 끊는다) — 필터를 바꿀 때는 커서를 버리고 처음부터 받아야 한다.
+        망가진 커서도 같은 90002다.
+        `joinedFrom`·`joinedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날
+        0시 미만으로 변환한다). `keyword`는 닉네임 부분일치 또는 회원 id 완전일치 중 하나만 맞아도
+        잡힌다. `nickname`은 온보딩 전 계정이거나 탈퇴로 프로필이 지워진 계정이면 null이다.
+      operationId: "getAdminMembers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AdminMemberStatusFilter"
+        - name: keyword
+          in: query
+          description: "닉네임 부분일치 또는 회원 id 완전일치. 빈 값은 키째 빼서 보낼 것"
+          schema:
+            type: string
+        - name: joinedFrom
+          in: query
+          description: "가입일 하한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+        - name: joinedTo
+          in: query
+          description: "가입일 상한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+        - name: cursor
+          in: query
+          description: "직전 응답의 nextCursor. 상태 필터가 바뀌면 재사용 금지(400/90002)"
+          schema:
+            type: string
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMemberListResponse"
+  /admin/members/{userId}:
+    get:
+      summary: "어드민 회원 상세"
+      description: >-
+        가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다.
+        404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다**
+        (관리자는 이 경로의 대상이 아니다).
+      operationId: "getAdminMemberDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMemberDetailResponse"
+  /admin/members/{userId}/sanctions:
+    post:
+      summary: "어드민 회원 제재"
+      description: >-
+        이용 제한·임시 정지·영구 정지·탈퇴 처리 네 조치를 적용하고 제재 이력 한 행을 남긴다.
+        성공은 204 No Content(본문 없음)다. 거부된 요청은 상태도 이력도 바꾸지 않는다.
+        `durationDays`는 **임시 정지(SUSPEND)에만** 쓴다 — 만료 시각은 서버가 계산한다.
+        400 errorCode 90001 — action·reasonCode 누락, `RELEASE` 전송(해제는 release 경로),
+        durationDays 범위 밖(1~365), reasonDetail 500자/memo 300자 초과.
+        400 errorCode 30801 — SUSPEND인데 durationDays 누락.
+        400 errorCode 30802 — SUSPEND가 아닌데 durationDays를 보냄.
+        400 errorCode 30800 — reasonCode=OTHER인데 reasonDetail이 비었음.
+        403 errorCode 30020 — 자기 자신 제재.
+        404 errorCode 30000 — 없는 계정.
+        409 errorCode 30021 — 관리자 계정(먼저 강등해야 한다).
+        409 errorCode 30018 — 영구 정지된 계정(종단 상태라 추가 제재 없음).
+        409 errorCode 30003 — 이미 탈퇴한 계정.
+      operationId: "sanctionAdminMember"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SanctionMemberRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/members/{userId}/sanctions/release:
+    post:
+      summary: "어드민 회원 제재 해제"
+      description: >-
+        이용 제한·임시 정지를 풀어 ACTIVE로 되돌리고 해제 이력 한 행을 남긴다(UPDATE가 아니다).
+        성공은 204 No Content(본문 없음)다. DELETE가 아닌 이유는 사유·메모를 본문으로 받기 때문이다 —
+        감사 기록이 비면 안 된다.
+        409 errorCode 30019 — 걸려 있는 제재가 없음(영구 정지·탈퇴도 여기에 든다. 둘은 해제 불가).
+        403 errorCode 30020 — 자기 자신. 409 errorCode 30021 — 관리자 계정. 404 errorCode 30000 — 없는 계정.
+        **기간이 지난 임시 정지는 해제할 수 있다** — 접근은 이미 풀려 있지만 저장값을 정리하는 경로다.
+      operationId: "releaseAdminMemberSanction"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseSanctionRequest"
+      responses:
+        "204":
+          description: "No Content"
   /admin/seller-applications:
     get:
       summary: "어드민 셀러 심사 목록"
@@ -6364,6 +6512,167 @@ components:
           type: integer
           format: int64
           description: "승격할 계정의 내부 숫자 id. 누락은 400 errorCode 90001"
+    AdminMemberStatusFilter:
+      type: string
+      description: >-
+        목록 상태 필터. 저장 상태와 1:1이 아니다 — NORMAL은 제재가 없는 계정이라 온보딩 전
+        (PENDING_ONBOARDING)까지 포함한다. 알 수 없는 값은 서버가 ALL로 본다
+      enum: [ALL, NORMAL, RESTRICTED, SUSPENDED, BANNED, WITHDRAWN]
+    AdminMemberStatus:
+      type: string
+      description: >-
+        계정 상태. 제재는 생애주기와 한 축이다. WITHDRAWN(본인 의사)과 BANNED(운영 조치)는
+        차단 효과가 같아도 다른 값이다 — 섞으면 사후에 가릴 수 없다
+      enum: [PENDING_ONBOARDING, ACTIVE, RESTRICTED, SUSPENDED, BANNED, WITHDRAWN]
+    SanctionAction:
+      type: string
+      description: >-
+        제재 이력 한 행의 조치. RELEASE는 해제 경로가 만드는 값이라 제재 요청에 보내면 400/90001이다
+      enum: [RESTRICT, SUSPEND, BAN, FORCE_WITHDRAW, RELEASE]
+    SanctionReasonCode:
+      type: string
+      description: >-
+        제재 사유 고정 어휘. 자유 문자열이 아닌 이유는 "같은 사유로 몇 번 제재했는가"를 답할 수
+        있어야 하기 때문이다. OTHER는 reasonDetail이 필수다(없으면 400/30800)
+      enum: [ABUSIVE_REVIEW, CHAT_DISPUTE, FALSE_REPORT, OTHER]
+    AdminMemberSummary:
+      type: object
+      required: [userId, publicId, nickname, status, storedStatus, sanctionUntil, warningCount, reportCount, joinedAt]
+      description: >-
+        목록·상세의 한 회원. `status`는 지금 실제로 적용되는 상태이고 `storedStatus`는 저장값이다 —
+        임시 정지 기간이 지나면 status는 ACTIVE로 내려가고 storedStatus는 SUSPENDED로 남는다.
+        화면은 둘을 함께 써야 "이미 풀렸다"와 "정지를 걸었던 이력이 있다"를 구분할 수 있다
+      properties:
+        userId:
+          type: integer
+          format: int64
+        publicId:
+          type: string
+          description: "외부 노출용 26자 식별자"
+        nickname:
+          type: string
+          nullable: true
+          description: "온보딩 전이거나 탈퇴로 프로필이 지워진 계정이면 null"
+        status:
+          $ref: "#/components/schemas/AdminMemberStatus"
+        storedStatus:
+          $ref: "#/components/schemas/AdminMemberStatus"
+        sanctionUntil:
+          type: string
+          nullable: true
+          description: "임시 정지의 만료 시각(오프셋 없는 LocalDateTime). 다른 상태면 null"
+        warningCount:
+          type: integer
+        reportCount:
+          type: integer
+          format: int64
+          description: "이 회원을 대상으로 접수된 신고 누적 수"
+        joinedAt:
+          type: string
+          description: "가입 시각(오프셋 없는 LocalDateTime) = users.created_at"
+    AdminMemberListData:
+      type: object
+      required: [items, totalCount, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminMemberSummary"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "현재 필터 기준 전체 행 수"
+        nextCursor:
+          type: string
+          nullable: true
+          description: "다음 페이지 앵커. hasNext가 false면 null이다"
+        hasNext:
+          type: boolean
+    AdminMemberListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminMemberListData"
+    AdminSanctionHistory:
+      type: object
+      required: [sanctionId, action, reasonCode, reasonDetail, effectiveUntil, memo, actedByAdminId, actedAt]
+      description: "제재 이력 한 행. 추가 전용이라 해제도 action=RELEASE 행으로 쌓인다"
+      properties:
+        sanctionId:
+          type: integer
+          format: int64
+        action:
+          $ref: "#/components/schemas/SanctionAction"
+        reasonCode:
+          allOf:
+            - $ref: "#/components/schemas/SanctionReasonCode"
+          nullable: true
+          description: "해제 행은 제재 어휘를 쓰지 않아 null이다"
+        reasonDetail:
+          type: string
+          nullable: true
+        effectiveUntil:
+          type: string
+          nullable: true
+          description: "임시 정지의 만료 시각. 다른 조치는 null"
+        memo:
+          type: string
+          nullable: true
+          description: "운영자 내부 메모 — 회원에게 노출하지 않는다"
+        actedByAdminId:
+          type: integer
+          format: int64
+        actedAt:
+          type: string
+          description: "조치 시각(오프셋 없는 LocalDateTime)"
+    AdminMemberDetailData:
+      type: object
+      required: [member, sanctions]
+      properties:
+        member:
+          $ref: "#/components/schemas/AdminMemberSummary"
+        sanctions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminSanctionHistory"
+          description: "최신순, 최대 50건"
+    AdminMemberDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminMemberDetailData"
+    SanctionMemberRequest:
+      type: object
+      required: [action, reasonCode]
+      properties:
+        action:
+          $ref: "#/components/schemas/SanctionAction"
+        reasonCode:
+          $ref: "#/components/schemas/SanctionReasonCode"
+        reasonDetail:
+          type: string
+          maxLength: 500
+          description: "reasonCode=OTHER면 필수"
+        durationDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: "SUSPEND에만 보낸다. 다른 조치에 보내면 400/30802"
+        memo:
+          type: string
+          maxLength: 300
+    ReleaseSanctionRequest:
+      type: object
+      properties:
+        reasonDetail:
+          type: string
+          maxLength: 500
+        memo:
+          type: string
+          maxLength: 300
     AdminApplicationSummary:
       type: object
       required: [applicationId, status, businessType, businessName, representativeName, submittedAt]

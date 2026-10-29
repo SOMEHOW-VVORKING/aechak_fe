@@ -21,6 +21,10 @@ export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
 export const ADMIN_APPLICATION_REJECT_URL = `${ADMIN_APPLICATION_DETAIL_URL}/reject`
+export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
+export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
+export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`
+export const ADMIN_MEMBER_RELEASE_URL = `${ADMIN_MEMBER_SANCTION_URL}/release`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
 
 type WireStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
@@ -362,5 +366,341 @@ const rosterHandlers = [
   }),
 ]
 
-export const handlers = [...applicationHandlers, ...rosterHandlers]
+// ─── 일반 회원 관리 (admin 호스트 /admin/members) ──────────────────────────────
+// BE AdminMemberService + User의 제재 전이 가드를 그대로 미러한다. 가드 순서가 계약의 일부라
+// (자기 자신 → 존재 확인 → 관리자 → 종단 상태) FE 분기가 틀리면 이 스텁에서 드러난다.
+
+export type WireMemberStatus =
+  | 'PENDING_ONBOARDING'
+  | 'ACTIVE'
+  | 'RESTRICTED'
+  | 'SUSPENDED'
+  | 'BANNED'
+  | 'WITHDRAWN'
+
+export type WireSanctionAction = 'RESTRICT' | 'SUSPEND' | 'BAN' | 'FORCE_WITHDRAW' | 'RELEASE'
+export type WireSanctionReason = 'ABUSIVE_REVIEW' | 'CHAT_DISPUTE' | 'FALSE_REPORT' | 'OTHER'
+
+export interface MemberSanctionWire {
+  sanctionId: number
+  action: WireSanctionAction
+  reasonCode: WireSanctionReason | null
+  reasonDetail: string | null
+  effectiveUntil: string | null
+  memo: string | null
+  actedByAdminId: number
+  actedAt: string
+}
+
+/** 상세 응답 모양의 서버 상태. 목록 행은 member를 그대로 투영한다. */
+export interface AdminMemberWire {
+  userId: number
+  publicId: string
+  nickname: string | null
+  /** 저장값. 유효 상태(status)는 핸들러가 sanctionUntil로 계산한다 — 서버와 같은 규칙이다. */
+  storedStatus: WireMemberStatus
+  sanctionUntil: string | null
+  warningCount: number
+  reportCount: number
+  joinedAt: string
+  role: 'ADMIN' | 'GENERAL'
+  sanctions: MemberSanctionWire[]
+}
+
+let members: AdminMemberWire[] = []
+let sanctionIdSeq = 0
+
+export function makeAdminMemberWire(overrides: Partial<AdminMemberWire> = {}): AdminMemberWire {
+  return {
+    userId: 1001,
+    publicId: '01HZXK0000000000000000001',
+    nickname: '코코맘',
+    storedStatus: 'ACTIVE',
+    sanctionUntil: null,
+    warningCount: 0,
+    reportCount: 0,
+    joinedAt: '2026-05-02T09:00:00',
+    role: 'GENERAL',
+    sanctions: [],
+    ...overrides,
+  }
+}
+
+const cloneMember = (row: AdminMemberWire): AdminMemberWire => ({
+  ...row,
+  sanctions: row.sanctions.map(entry => ({ ...entry })),
+})
+
+export function seedAdminMembers(rows: AdminMemberWire[] = []): void {
+  members = rows.map(cloneMember)
+  sanctionIdSeq = 0
+}
+
+/** 핸들러가 반영한 현재 회원 상태 — 테스트가 제재·해제 결과를 읽는다. */
+export function currentAdminMember(userId: number): AdminMemberWire | null {
+  const found = members.find(row => row.userId === userId)
+  return found ? cloneMember(found) : null
+}
+
+/** 유효 상태 — 기간이 지난 임시 정지는 ACTIVE로 내려간다(BE UserStatus.effective와 같은 규칙). */
+function effectiveStatus(row: AdminMemberWire): WireMemberStatus {
+  if (row.storedStatus !== 'SUSPENDED' || row.sanctionUntil == null) return row.storedStatus
+  return new Date(row.sanctionUntil).getTime() <= Date.now() ? 'ACTIVE' : 'SUSPENDED'
+}
+
+function memberSummaryOf(row: AdminMemberWire) {
+  return {
+    userId: row.userId,
+    publicId: row.publicId,
+    nickname: row.nickname,
+    status: effectiveStatus(row),
+    storedStatus: row.storedStatus,
+    sanctionUntil: row.sanctionUntil,
+    warningCount: row.warningCount,
+    reportCount: row.reportCount,
+    joinedAt: row.joinedAt,
+  }
+}
+
+const STATUS_FILTERS: Record<string, WireMemberStatus[]> = {
+  ALL: [],
+  NORMAL: ['ACTIVE', 'PENDING_ONBOARDING'],
+  RESTRICTED: ['RESTRICTED'],
+  SUSPENDED: ['SUSPENDED'],
+  BANNED: ['BANNED'],
+  WITHDRAWN: ['WITHDRAWN'],
+}
+
+/** 커서는 서버와 같은 모양(base64url "m:필터:마지막id")이다 — FE가 값을 들여다보지 않는지도 함께 고정된다. */
+const encodeCursor = (filter: string, lastUserId: number) =>
+  btoa(`m:${filter}:${lastUserId}`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+function decodeCursor(raw: string): { filter: string; lastUserId: number } | null {
+  try {
+    const parts = atob(raw.replace(/-/g, '+').replace(/_/g, '/')).split(':')
+    if (parts.length !== 3 || parts[0] !== 'm') return null
+    const lastUserId = Number(parts[2])
+    return Number.isFinite(lastUserId) ? { filter: parts[1]!, lastUserId } : null
+  } catch {
+    return null
+  }
+}
+
+const memberHandlers = [
+  http.get(ADMIN_MEMBERS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const rawFilter = params.get('status')
+    // 알 수 없는 상태 필터는 400이 아니라 ALL로 본다(BE MemberStatusFilter.from).
+    const filter = rawFilter != null && rawFilter in STATUS_FILTERS ? rawFilter : 'ALL'
+    const cursorParam = params.get('cursor')
+    let lastUserId: number | null = null
+    if (cursorParam != null) {
+      const decoded = decodeCursor(cursorParam)
+      // 필터를 바꾼 채 보낸 옛 커서와 망가진 커서는 같은 400/90002다.
+      if (!decoded || decoded.filter !== filter) {
+        return HttpResponse.json(errorBody(90002, '유효하지 않은 커서입니다.'), { status: 400 })
+      }
+      lastUserId = decoded.lastUserId
+    }
+    const sizeParam = params.get('size')
+    const size =
+      sizeParam == null ? 20 : Math.min(100, Math.max(1, Math.trunc(Number(sizeParam)) || 1))
+    const keyword = params.get('keyword')
+    const joinedFrom = params.get('joinedFrom')
+    const joinedTo = params.get('joinedTo')
+    const statuses = STATUS_FILTERS[filter] ?? []
+
+    // 관리자 계정은 이 목록에 없다(명부 경로가 따로 있다).
+    const matched = members
+      .filter(row => row.role === 'GENERAL')
+      .filter(row => statuses.length === 0 || statuses.includes(row.storedStatus))
+      .filter(row => {
+        if (keyword == null) return true
+        return (row.nickname ?? '').includes(keyword) || String(row.userId) === keyword
+      })
+      .filter(row => (joinedFrom == null ? true : row.joinedAt.slice(0, 10) >= joinedFrom))
+      // 상한은 포함이다 — 서버가 다음 날 0시 미만으로 변환한다.
+      .filter(row => (joinedTo == null ? true : row.joinedAt.slice(0, 10) <= joinedTo))
+
+    const sorted = [...matched].sort((a, b) => b.userId - a.userId)
+    const afterCursor = lastUserId == null ? sorted : sorted.filter(row => row.userId < lastUserId!)
+    const page = afterCursor.slice(0, size)
+    const hasNext = afterCursor.length > size
+    return HttpResponse.json({
+      data: {
+        items: page.map(memberSummaryOf),
+        totalCount: matched.length,
+        nextCursor: hasNext ? encodeCursor(filter, page[page.length - 1]!.userId) : null,
+        hasNext,
+      },
+    })
+  }),
+
+  http.get(ADMIN_MEMBER_DETAIL_URL, ({ params }) => {
+    const row = members.find(item => item.userId === Number(params['userId']))
+    // 없는 계정과 관리자 계정이 같은 404다.
+    if (!row || row.role === 'ADMIN') {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+    }
+    return HttpResponse.json({
+      data: {
+        member: memberSummaryOf(row),
+        sanctions: [...row.sanctions].sort((a, b) => b.sanctionId - a.sanctionId),
+      },
+    })
+  }),
+
+  http.post(ADMIN_MEMBER_SANCTION_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      action?: WireSanctionAction
+      reasonCode?: WireSanctionReason
+      reasonDetail?: string
+      durationDays?: number
+      memo?: string
+    } | null
+    const action = body?.action
+    const reasonCode = body?.reasonCode
+    // @Valid가 먼저다 — action·reasonCode 누락과 RELEASE 전송은 모두 90001이다.
+    if (action == null || reasonCode == null) {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
+    }
+    if (action === 'RELEASE') {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
+    }
+    if ((body?.memo ?? '').length > 300 || (body?.reasonDetail ?? '').length > 500) {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
+    }
+    const guard = guardSanctionTarget(Number(params['userId']))
+    if (isRejection(guard)) return guard
+    const row = guard
+    // 입력 검증(기간·상세 사유)이 상태 전이보다 먼저다 — BE가 이력 행을 먼저 만든다.
+    if (action === 'SUSPEND' && body?.durationDays == null) {
+      return HttpResponse.json(errorBody(30801, '임시 정지는 제재 기간이 필요합니다.'), { status: 400 })
+    }
+    if (action !== 'SUSPEND' && body?.durationDays != null) {
+      return HttpResponse.json(
+        errorBody(30802, '임시 정지가 아닌 제재에는 기간을 지정할 수 없습니다.'),
+        { status: 400 },
+      )
+    }
+    if (reasonCode === 'OTHER' && (body?.reasonDetail ?? '').trim() === '') {
+      return HttpResponse.json(
+        errorBody(30800, '기타 사유 제재는 상세 사유가 필요합니다.'),
+        { status: 400 },
+      )
+    }
+    const terminal = terminalStateError(row)
+    if (terminal) return terminal
+    // 온보딩 전 계정은 돌아올 상태를 잃어 되돌아오는 제재를 받지 못한다(BE 30023).
+    if (row.storedStatus === 'PENDING_ONBOARDING' && (action === 'RESTRICT' || action === 'SUSPEND')) {
+      return HttpResponse.json(
+        errorBody(
+          30023,
+          '가입을 마치지 않은 계정에는 이용 제한·임시 정지를 걸 수 없습니다. 영구 정지나 탈퇴 처리를 사용해 주세요.',
+        ),
+        { status: 409 },
+      )
+    }
+
+    const effectiveUntil =
+      action === 'SUSPEND'
+        ? new Date(Date.now() + body!.durationDays! * 86_400_000).toISOString().slice(0, 19)
+        : null
+    if (action === 'RESTRICT') {
+      row.storedStatus = 'RESTRICTED'
+      row.sanctionUntil = null
+    } else if (action === 'SUSPEND') {
+      row.storedStatus = 'SUSPENDED'
+      row.sanctionUntil = effectiveUntil
+    } else if (action === 'BAN') {
+      row.storedStatus = 'BANNED'
+      row.sanctionUntil = null
+    } else {
+      row.storedStatus = 'WITHDRAWN'
+      row.sanctionUntil = null
+      // 탈퇴 처리는 닉네임 점유를 푼다(영구 정지는 유지한다).
+      row.nickname = null
+    }
+    sanctionIdSeq += 1
+    row.sanctions.push({
+      sanctionId: sanctionIdSeq,
+      action,
+      reasonCode,
+      reasonDetail: body?.reasonDetail?.trim() || null,
+      effectiveUntil,
+      memo: body?.memo?.trim() || null,
+      actedByAdminId: CURRENT_ADMIN_USER_ID,
+      actedAt: '2026-10-27T09:00:00',
+    })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(ADMIN_MEMBER_RELEASE_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      reasonDetail?: string
+      memo?: string
+    } | null
+    const guard = guardSanctionTarget(Number(params['userId']))
+    if (isRejection(guard)) return guard
+    const row = guard
+    // 해제할 제재가 없으면 30019다 — 영구 정지·탈퇴도 여기에 든다(둘은 해제 불가).
+    if (row.storedStatus !== 'RESTRICTED' && row.storedStatus !== 'SUSPENDED') {
+      return HttpResponse.json(errorBody(30019, '해제할 제재가 없습니다.'), { status: 409 })
+    }
+    row.storedStatus = 'ACTIVE'
+    row.sanctionUntil = null
+    sanctionIdSeq += 1
+    row.sanctions.push({
+      sanctionId: sanctionIdSeq,
+      action: 'RELEASE',
+      reasonCode: null,
+      reasonDetail: body?.reasonDetail?.trim() || null,
+      effectiveUntil: null,
+      memo: body?.memo?.trim() || null,
+      actedByAdminId: CURRENT_ADMIN_USER_ID,
+      actedAt: '2026-10-27T09:00:00',
+    })
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
+/**
+ * 제재·해제 공통 가드 — 자기 자신 → 존재 → 관리자 순서가 BE와 같다.
+ * 대상 행을 돌려주거나 거절 응답을 돌려준다(둘 중 하나).
+ */
+function guardSanctionTarget(userId: number): AdminMemberWire | Response {
+  if (userId === CURRENT_ADMIN_USER_ID) {
+    return HttpResponse.json(errorBody(30020, '자신을 제재할 수 없습니다.'), { status: 403 })
+  }
+  const row = members.find(item => item.userId === userId)
+  if (!row) {
+    return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+  }
+  if (row.role === 'ADMIN') {
+    return HttpResponse.json(
+      errorBody(30021, '관리자 계정은 제재할 수 없습니다. 먼저 강등해 주세요.'),
+      { status: 409 },
+    )
+  }
+  return row
+}
+
+const isRejection = (result: AdminMemberWire | Response): result is Response =>
+  result instanceof Response
+
+/** 종단 상태 — 탈퇴는 30003, 영구 정지는 30018이고 운영자가 할 일이 서로 다르다. */
+function terminalStateError(row: AdminMemberWire): Response | null {
+  if (row.storedStatus === 'WITHDRAWN') {
+    return HttpResponse.json(errorBody(30003, '이미 탈퇴한 계정입니다.'), { status: 409 })
+  }
+  if (row.storedStatus === 'BANNED') {
+    return HttpResponse.json(
+      errorBody(30018, '영구 정지된 계정은 상태를 바꿀 수 없습니다.'),
+      { status: 409 },
+    )
+  }
+  return null
+}
+
+export const handlers = [...applicationHandlers, ...rosterHandlers, ...memberHandlers]
 export const server = setupServer(...handlers)
