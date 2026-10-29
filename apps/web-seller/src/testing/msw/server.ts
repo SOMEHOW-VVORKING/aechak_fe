@@ -1980,6 +1980,234 @@ const dashboardHandlers = [
   }),
 ]
 
+// ─── 셀러 리뷰 관리·답글(SCRUM-315) ─────────────────────────────────────────────
+// BE SellerReviewController 미러. 고정하려는 계약 넷 —
+//  (1) summary/totalCount는 첫 페이지에만 실리고 뒤 페이지는 null이다,
+//  (2) summary는 별점·답글 필터를 반영하지 않는다(분포 막대는 상품 범위 전체),
+//  (3) 답글은 리뷰당 하나라 이미 있으면 POST가 409/110201이고 덮어쓰지 않는다,
+//  (4) 남의 상품 리뷰는 403이 아니라 404/110000이다.
+
+export const SELLER_REVIEWS_URL = `${sellerBase}/sellers/me/reviews`
+
+export interface ReviewReplyWire {
+  replyId: number
+  reviewId: number
+  content: string
+  repliedAt: string
+  updatedAt: string
+}
+
+export interface SellerReviewWire {
+  reviewId: number
+  productId: string
+  productName: string
+  rating: 1 | 2 | 3 | 4 | 5
+  content: string
+  optionName: string
+  authorNickname: string
+  createdAt: string
+  images: { imageUrl: string; sortOrder: number }[]
+  reply: ReviewReplyWire | null
+}
+
+const DEFAULT_SELLER_REVIEWS: SellerReviewWire[] = [
+  {
+    reviewId: 1180,
+    productId: '01JSELLERPRODUCT0000000001',
+    productName: '자동 급식기 5L',
+    rating: 5,
+    content: '출근이 늦어지는 날에도 정해진 시간에 밥이 나와서 마음이 놓여요.',
+    optionName: '화이트',
+    authorNickname: '코코',
+    createdAt: '2026-10-26T10:00:00',
+    images: [
+      { imageUrl: 'https://cdn.example.com/reviews/1180-0.jpg', sortOrder: 0 },
+      { imageUrl: 'https://cdn.example.com/reviews/1180-1.jpg', sortOrder: 1 },
+    ],
+    reply: null,
+  },
+  {
+    reviewId: 1176,
+    productId: '01JSELLERPRODUCT0000000002',
+    productName: '원목 캣타워 3단',
+    rating: 4,
+    content: '조립은 혼자서 30분쯤 걸렸어요.',
+    optionName: '기본',
+    authorNickname: '초코',
+    createdAt: '2026-10-25T09:00:00',
+    images: [],
+    reply: null,
+  },
+  {
+    reviewId: 1171,
+    productId: '01JSELLERPRODUCT0000000001',
+    productName: '자동 급식기 5L',
+    rating: 2,
+    content: '사이즈표보다 작게 나왔어요.',
+    optionName: '블랙',
+    authorNickname: '모카',
+    createdAt: '2026-10-24T08:00:00',
+    images: [],
+    reply: {
+      replyId: 9001,
+      reviewId: 1171,
+      content: '사이즈표를 실측값으로 다시 올렸어요.',
+      repliedAt: '2026-10-24T12:00:00',
+      updatedAt: '2026-10-24T12:00:00',
+    },
+  },
+]
+
+let sellerReviews: SellerReviewWire[] = []
+let reviewsQueries: string[] = []
+let nextReplyId = 9100
+let reviewsListError: { status: number; errorCode: number; message: string } | null = null
+
+export function seedSellerReviews(rows: SellerReviewWire[] = DEFAULT_SELLER_REVIEWS): void {
+  sellerReviews = rows.map(row => ({
+    ...row,
+    images: [...row.images],
+    reply: row.reply && { ...row.reply },
+  }))
+  reviewsQueries = []
+  nextReplyId = 9100
+  reviewsListError = null
+}
+
+/**
+ * 목록 핸들러가 받은 쿼리스트링 전부 — 빈 값 제거와 커서 전달을 단언할 때 쓴다.
+ * 화면은 목록(size=20)과 답글 없는 건수(size=1)로 같은 경로를 두 번 부르므로 "마지막 하나"로는
+ * 목록 쿼리를 집을 수 없다.
+ */
+export function sellerReviewsQueries(): string[] {
+  return [...reviewsQueries]
+}
+
+/** 목록 조회(size=20) 중 마지막 쿼리스트링. 건수 집계 호출(size=1)은 제외한다. */
+export function lastSellerReviewsListQuery(): string | null {
+  const listQueries = reviewsQueries.filter(
+    query => !query.includes('size=1&') && !query.endsWith('size=1'),
+  )
+  return listQueries.at(-1) ?? null
+}
+
+/** 핸들러가 반영한 현재 목록 — 테스트가 답글 결과를 읽을 때 쓴다. */
+export function currentSellerReviews(): SellerReviewWire[] {
+  return sellerReviews.map(row => ({ ...row }))
+}
+
+/** 목록 조회를 실패시킨다(실 API에만 있는 403·500 경로 검증용). */
+export function failSellerReviewsList(error: {
+  status: number
+  errorCode: number
+  message: string
+}): void {
+  reviewsListError = error
+}
+
+const REVIEW_PAGE_CURSOR_PREFIX = 'cursor-'
+
+const reviewsHandlers = [
+  http.get(SELLER_REVIEWS_URL, ({ request }) => {
+    const url = new URL(request.url)
+    reviewsQueries.push(url.search)
+    // 값이 빈 파라미터는 BE가 미입력이 아니라 형식 오류로 거절한다 — 스텁도 같이 거절해 회귀를 잡는다.
+    for (const [key, value] of url.searchParams.entries()) {
+      if (value === '') return errorAt(400, 90001, `${key}: 지원하지 않는 값입니다.`)
+    }
+    if (reviewsListError) {
+      return errorAt(reviewsListError.status, reviewsListError.errorCode, reviewsListError.message)
+    }
+
+    const productId = url.searchParams.get('productId')
+    const rating = url.searchParams.get('rating')
+    const hasReply = url.searchParams.get('hasReply')
+    const cursor = url.searchParams.get('cursor')
+    const size = Number(url.searchParams.get('size') ?? '20')
+
+    // 상품 범위만 반영한 집합 — summary가 이 집합을 센다(별점·답글 필터를 보지 않는다).
+    const inScope = sellerReviews.filter(row => productId == null || row.productId === productId)
+    const filtered = inScope.filter(row => {
+      if (rating != null && row.rating !== Number(rating)) return false
+      if (hasReply === 'true' && row.reply == null) return false
+      if (hasReply === 'false' && row.reply != null) return false
+      return true
+    })
+
+    const offset = cursor == null ? 0 : Number(cursor.slice(REVIEW_PAGE_CURSOR_PREFIX.length))
+    if (Number.isNaN(offset)) return errorAt(400, 90002, '유효하지 않은 커서입니다.')
+    const pageRows = filtered.slice(offset, offset + size)
+    const nextOffset = offset + pageRows.length
+    const hasNext = nextOffset < filtered.length
+
+    const distribution: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
+    for (const row of inScope)
+      distribution[String(row.rating)] = (distribution[String(row.rating)] ?? 0) + 1
+    const ratingSum = inScope.reduce((sum, row) => sum + row.rating, 0)
+
+    return HttpResponse.json({
+      data: {
+        // 첫 페이지에만 싣는다 — 뒤 페이지에서 null이 오는 것이 계약이다.
+        summary:
+          cursor == null
+            ? {
+                reviewCount: inScope.length,
+                averageRating:
+                  inScope.length === 0
+                    ? null
+                    : Math.round((ratingSum / inScope.length) * 100) / 100,
+                ratingDistribution: distribution,
+              }
+            : null,
+        reviews: pageRows,
+        totalCount: cursor == null ? filtered.length : null,
+        nextCursor: hasNext ? `${REVIEW_PAGE_CURSOR_PREFIX}${nextOffset}` : null,
+        hasNext,
+      },
+    })
+  }),
+
+  http.post(`${SELLER_REVIEWS_URL}/:reviewId/reply`, async ({ params, request }) => {
+    const row = sellerReviews.find(review => review.reviewId === Number(params['reviewId']))
+    // 남의 상품 리뷰·없는 리뷰·비노출 리뷰가 모두 같은 404다(403을 주지 않는다).
+    if (!row) return errorAt(404, 110000, '리뷰를 찾을 수 없습니다.')
+    if (row.reply) return errorAt(409, 110201, '이미 답글을 등록한 리뷰입니다.')
+    const { content } = (await request.json()) as { content: string }
+    const trimmed = content.trim()
+    if (trimmed === '' || trimmed.length > 500)
+      return errorAt(400, 90001, '답글은 1~500자여야 합니다.')
+    const now = '2026-10-27T13:00:00'
+    row.reply = {
+      replyId: nextReplyId++,
+      reviewId: row.reviewId,
+      content: trimmed,
+      repliedAt: now,
+      updatedAt: now,
+    }
+    return HttpResponse.json({ data: row.reply }, { status: 201 })
+  }),
+
+  http.put(`${SELLER_REVIEWS_URL}/:reviewId/reply`, async ({ params, request }) => {
+    const row = sellerReviews.find(review => review.reviewId === Number(params['reviewId']))
+    if (!row) return errorAt(404, 110000, '리뷰를 찾을 수 없습니다.')
+    if (!row.reply) return errorAt(404, 110200, '답글을 찾을 수 없습니다.')
+    const { content } = (await request.json()) as { content: string }
+    const trimmed = content.trim()
+    if (trimmed === '' || trimmed.length > 500)
+      return errorAt(400, 90001, '답글은 1~500자여야 합니다.')
+    row.reply = { ...row.reply, content: trimmed, updatedAt: '2026-10-27T14:00:00' }
+    return HttpResponse.json({ data: row.reply })
+  }),
+
+  http.delete(`${SELLER_REVIEWS_URL}/:reviewId/reply`, ({ params }) => {
+    const row = sellerReviews.find(review => review.reviewId === Number(params['reviewId']))
+    if (!row) return errorAt(404, 110000, '리뷰를 찾을 수 없습니다.')
+    if (!row.reply) return errorAt(404, 110200, '답글을 찾을 수 없습니다.')
+    row.reply = null
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
@@ -1989,5 +2217,6 @@ export const handlers = [
   ...shippingPolicyHandlers,
   ...settlementHandlers,
   ...dashboardHandlers,
+  ...reviewsHandlers,
 ]
 export const server = setupServer(...handlers)

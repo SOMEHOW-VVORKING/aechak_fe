@@ -49,12 +49,7 @@ const groups: NavGroup[] = [
         icon: <MessageCircle className={iconClass} />,
         tag: PENDING_TAG,
       },
-      {
-        key: '/reviews',
-        label: '리뷰 관리',
-        icon: <Star className={iconClass} />,
-        tag: PENDING_TAG,
-      },
+      { key: '/reviews', label: '리뷰 관리', icon: <Star className={iconClass} /> },
     ],
   },
   {

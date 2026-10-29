@@ -34,16 +34,17 @@ function trackRequests() {
 
 afterEach(() => server.events.removeAllListeners())
 
+// 리뷰 관리는 SCRUM-315에서 seller BE(목록·답글)가 생겨 이 목록에서 빠졌다 — 실연동 화면의
+// 계약은 `features/reviews/__tests__/reviews-route.test.tsx`가 고정한다.
 const SCREENS = [
   ['/inquiries', '고객 문의'],
-  ['/reviews', '리뷰 관리'],
   ['/coupons', '혜택/쿠폰/할인'],
   ['/notices', '알림/공지'],
   ['/account', '계정/보안'],
 ] as const
 
 /**
- * nav에만 이름이 있고 라우트 파일은 한 번도 없던 다섯 화면(SCRUM-301 신설).
+ * nav에만 이름이 있고 라우트 파일은 한 번도 없던 다섯 화면(SCRUM-301 신설) 중 서버가 아직 없는 넷.
  *
  * SCRUM-301은 "지어낸 데이터 행을 그리지 않는다"로 규약 10을 지켰는데 "기능에 들어가도 아무것도
  * 없다"는 지적을 받았다. SCRUM-307에서 **예시 데이터로 실제 목록·폼을 그리고**, 저장되지 않는다는
@@ -90,23 +91,6 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(within(drawer).getByText(/급식기 입구 높이/)).toBeInTheDocument()
     await userEvent.type(within(drawer).getByLabelText('답변'), '입구까지 높이는 12cm예요.')
     await userEvent.click(within(drawer).getByRole('button', { name: '답변 보내기' }))
-
-    expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
-    expect(requests).toEqual([])
-  })
-
-  it('[AC-SELLER-SAMPLE-003] 리뷰 관리는 별점 분포와 리뷰 목록을 보여주고 답글이 서버로 나가지 않는다', async () => {
-    const requests = trackRequests()
-    renderAt('/reviews')
-
-    expect(await screen.findByText('별점 분포')).toBeInTheDocument()
-    expect(screen.getByText('4.3')).toBeInTheDocument()
-    expect(screen.getByText('리뷰 318건')).toBeInTheDocument()
-    expect(screen.getByText(/출근이 늦어지는 날에도/)).toBeInTheDocument()
-
-    await userEvent.click(screen.getAllByRole('button', { name: '답글 쓰기' })[0]!)
-    await userEvent.type(await screen.findByLabelText('셀러 답글'), '잘 쓰신다니 기뻐요.')
-    await userEvent.click(screen.getByRole('button', { name: '답글 등록' }))
 
     expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
     expect(requests).toEqual([])
@@ -243,22 +227,6 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(screen.getByText('동결건조 간식 유통기한이 언제까지인가요?')).toBeInTheDocument()
   })
 
-  it('[AC-SELLER-SAMPLE-010] 필터가 0건이 되면 화면이 말없이 비지 않고 빈 상태 문구가 나온다', async () => {
-    renderAt('/reviews')
-
-    // 이 조합(방수 하네스 + 5점)은 예시 데이터에 없다 — 걸러서 0건이 되는 자리다.
-    expect(await screen.findByText(/출근이 늦어지는 날에도/)).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('상품'), '방수 하네스 (M)')
-    await userEvent.selectOptions(screen.getByLabelText('별점'), '5')
-
-    // "아무것도 없다"가 다시 생기지 않게, 0건은 글자로 알리고 초기화로 돌아올 수 있어야 한다.
-    expect(await screen.findByText('조건에 맞는 리뷰가 없어요.')).toBeInTheDocument()
-    expect(screen.getByText('총 0건')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '초기화' }))
-    expect(await screen.findByText(/출근이 늦어지는 날에도/)).toBeInTheDocument()
-  })
-
   it('[AC-SELLER-SAMPLE-011] 발급 중 쿠폰은 중단 버튼이 있고 끝난 쿠폰에는 없으며, 눌러도 서버로 나가지 않는다', async () => {
     const requests = trackRequests()
     renderAt('/coupons')
@@ -292,15 +260,17 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(notice).toHaveTextContent('저장되지 않')
   })
 
-  it('[AC-SELLER-UNBUILT-002] 다섯 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
+  it('[AC-SELLER-UNBUILT-002] 서버가 없는 네 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
     renderAt('/inquiries')
 
     // 꼬리표 텍스트가 버튼 안에 있어 접근성 이름이 "<항목> 준비 중"이 된다 — 꼬리표가 빠지면 이름이
     // 달라져 이 단정이 깨진다(꼬리표 유무를 이름으로 검증하는 셈).
     expect(await screen.findByRole('button', { name: '고객 문의 준비 중' })).toBeInTheDocument()
-    for (const label of ['리뷰 관리', '혜택/쿠폰/할인', '알림/공지', '계정/보안']) {
+    for (const label of ['혜택/쿠폰/할인', '알림/공지', '계정/보안']) {
       expect(screen.getByRole('button', { name: `${label} 준비 중` })).toBeInTheDocument()
     }
+    // 리뷰 관리는 서버가 생겨 꼬리표가 없다(SCRUM-315) — 꼬리표가 되살아나면 여기서 깨진다.
+    expect(screen.getByRole('button', { name: '리뷰 관리' })).toBeInTheDocument()
   })
 
   it('[AC-SELLER-UNBUILT-003] 서버가 붙어 있는 항목에는 꼬리표가 붙지 않는다', async () => {
