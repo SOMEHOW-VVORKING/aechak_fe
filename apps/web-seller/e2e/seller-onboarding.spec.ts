@@ -37,6 +37,34 @@ async function stubSession(page: Page) {
   )
 }
 
+/**
+ * 랜딩(`/`)이 부르는 대시보드 집계 — 이 spec의 관심사는 아니지만 스텁하지 않으면 실네트워크로
+ * 나간다. 값은 보지 않으므로 빈 집계로 내린다(대시보드 자체 검증은 seller-dashboard.spec.ts).
+ */
+async function stubDashboardSummary(page: Page) {
+  const zero = { value: 0, previousValue: null, supported: true }
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/dashboard/summary*`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        metrics: {
+          newOrders: zero,
+          awaitingShipment: zero,
+          shippingDelayed: zero,
+          cancelRequests: zero,
+          returnRequests: zero,
+          exchangeRequests: zero,
+          collectionInvoicePending: zero,
+          collectionCompletionPending: zero,
+          reshipPending: zero,
+          unansweredInquiries: { value: 0, previousValue: null, supported: false },
+        },
+        settlement: { totalAmount: 0, pendingAmount: 0, onHoldAmount: 0 },
+        productStatuses: { awaitingInspection: 0, rejected: 0, suspended: 0, soldOut: 0 },
+      },
+    }),
+  )
+}
+
 /** 입점 신청을 상태 있게 스텁한다(없음 → 저장 → DRAFT). */
 async function stubSellerApplication(page: Page) {
   let application: Record<string, unknown> | null = null
@@ -138,6 +166,7 @@ test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드�
 }) => {
   await stubSession(page)
   await stubApprovedApplication(page)
+  await stubDashboardSummary(page)
   await stubKakaoRedirect(page)
 
   await page.goto('/login')
@@ -146,7 +175,10 @@ test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드�
   // 화면 표식을 먼저 보고 주소를 그 뒤에 단언한다 — 주소만 보면 가드가 끝나기 전에 스쳐 간 `/`로
   // 통과할 수 있다(단위 스펙이 settled 뒤 한 번만 보는 것과 같은 이유). 표식이 뜬 뒤에도 `/`에
   // 남아 있어야 비로소 "승인된 셀러를 들여보냈다"가 된다.
-  await expect(page.getByText('대시보드는 준비 중이에요')).toBeVisible()
+  //
+  // 표식은 대시보드가 집계 응답을 받고 그리는 지표 이름이다. SCRUM-292가 진입 차단을 걷고
+  // 실 데이터를 그리게 바꾸면서 "준비 중" 안내가 사라졌으므로 그 문구로는 더 이상 가릴 수 없다.
+  await expect(page.getByText('신규 주문')).toBeVisible()
   await expect(page).toHaveURL(`${ORIGIN}/`)
 
   // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 승인 안내를 보여준다.

@@ -263,4 +263,37 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
     await user.click(previous)
     expect(await screen.findByText('관리자0')).toBeInTheDocument()
   })
+
+  it('[AC-ADM-ROSTER-014] 권한 없는 계정(403/20011)에서는 승격 버튼이 눌리지 않는다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    renderAt('/admins')
+    await screen.findByText('관리자 권한이 없는 계정이에요. 관리자 계정으로 다시 로그인해 주세요.')
+
+    await user.type(screen.getByLabelText('승격할 사용자 ID'), '45')
+
+    // 명부가 막힌 이유 자체가 권한이라, 같은 토큰으로 나가는 승격도 서버가 반드시 거절한다 —
+    // 누를 수 있게 둬서 실패를 보여 줄 이유가 없다(자기 자신 강등 버튼과 같은 판단).
+    expect(screen.getByRole('button', { name: '관리자로 승격' })).toBeDisabled()
+  })
+
+  it('[AC-ADM-ROSTER-015] 일시 장애(5xx)로 명부가 비어도 승격은 막지 않는다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/admins')
+    await screen.findByText('관리자 명부를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+
+    await user.type(screen.getByLabelText('승격할 사용자 ID'), '45')
+
+    // 재시도로 풀릴 수 있는 실패다 — 권한 오류와 같이 묶어 막으면 할 수 있는 일을 못 하게 된다.
+    expect(screen.getByRole('button', { name: '관리자로 승격' })).toBeEnabled()
+  })
 })

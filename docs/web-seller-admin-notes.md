@@ -770,11 +770,257 @@ E2E spec은 0개였다. 네 가지를 함께 세웠고, 어드민 E2E는 이 저
 web-admin은 spec이 0개"라고 적고 있었는데, 셀러 spec 2개가 두 달 전에 들어온 뒤로 갱신되지 않아
 그동안 CI 보호 없이 방치돼 있었다.
 
-## 목업 화면 진입 차단과 nav 축소 (2026-10-17)
+## 목업 화면 진입 차단과 nav 축소 (2026-10-17) — nav 축소는 2026-10-26에 뒤집혔다
+
+> **주의: 아래 "nav는 상품 관리·스토어 설정 두 항목만 남겼고" 서술은 더 이상 현재 상태가 아니다.**
+> 진입 차단(게이트) 자체는 유효하지만 nav 축소는 SCRUM-301에서 되돌렸다 — 바로 다음 절을 볼 것.
 
 구매자 앱의 장바구니·주문·결제 실연동(SCRUM-237)과 같은 PR에서, BE 컨트롤러가 없는 셀러·어드민 화면을 AGENTS 6-10 규약대로 정리했다.
 
 - **web-seller**: 대시보드(`/`)·주문(`/orders`)·클레임(`/claims`)·정산(`/settlements`)·배송 정책(`/shipping-policy`)은 라우트 파일 상단의 `SERVER_*_AVAILABLE = false` 게이트로 "준비 중" `UnavailableScreen`만 렌더한다(`/products/$productId/edit`의 `SERVER_PRODUCT_DETAIL_AVAILABLE` 선례). 원 컴포넌트·목업 queries·mutation 훅은 파일로 보존했지만 어떤 경로에서도 도달하지 않는다. nav는 상품 관리·스토어 설정 두 항목만 남겼고, 라우트 파일이 없던 항목(문의/리뷰/쿠폰/공지/계정)도 함께 뺐다. 대시보드는 로그인 복귀 URL이 `/`라 redirect 대신 안내 + "상품 관리로" 버튼으로 두었다. 상품 등록·수정 폼의 목업 배송 정책 요약은 `ShippingPolicyNotice`(준비 중 카드)로 바꿨다.
 - **web-admin**: 회원 관리·상품 검수·AI 검수 큐·셀러 계정 관리 네 화면을 같은 방식으로 게이트했고, nav는 홈·셀러 입점 심사(서버 배지)만 남겼다. 라우트가 없는 nav 14개와 상수 배지 7곳을 제거했다. BE에 없는 `POST /auth/login`을 부르던 `features/auth/auth.queries.ts`는 고아 코드라 삭제했고(`LoginForm`·`auth.store`는 보존), 어드민 실로그인은 BE가 ADMIN 역할을 세우는 운영 코드를 갖춘 뒤 web-seller의 카카오 웹 로그인을 이식하는 방향이다.
 - **되살리는 법**: 해당 BE API가 머지되면 라우트의 상수를 올리고 nav 항목을 복원한 뒤 `features/*/queries`의 목업 `queryFn`을 생성 fetcher로 바꾼다. 테스트는 `shared/__tests__/unavailable-routes.test.tsx`(seller)와 각 라우트 테스트의 게이트 AC를 그때 반전시킨다.
+- **주문(`/orders`)은 이 목록에서 빠졌다** — 셀러 주문 API가 올라와 게이트를 걷어냈다(아래 "셀러 주문 관리 실연동" 절). 위 목록은 2026-10-17 시점의 기록이다.
 
+
+## 셀러 주문 관리 실연동 (2026-10-25, SCRUM-291)
+
+셀러 주문 API 5경로가 seller 모듈에 올라와(`GET /sellers/me/orders`, `GET …/{orderPublicId}`,
+`POST …/accept`, `POST …/shipment`, `POST …/delivery-complete`) `/orders`의
+`SERVER_ORDERS_AVAILABLE` 게이트를 걷어내고 nav 항목을 되돌렸다. 위 "목업 화면 진입 차단"이 적어 둔
+되살리는 절차를 처음으로 실행한 자리다.
+
+**주문 상태는 서버 열거형이 정본이다.** 문서에 허용값이 빠져 있다고 보고된 자리(SCRUM-274)라
+be `domain/.../order/enums/OrderStatus.kt`를 직접 읽어 8종(`PENDING_PAYMENT` `PAID` `PREPARING`
+`DISPATCH_PENDING` `SHIPPING` `DELIVERED` `PURCHASE_CONFIRMED` `CANCELLED`)을 옮겼다. 확인해 보니 dev
+`/v3/api-docs`에도 8종이 다 실려 있어 이번에는 문서와 코드가 어긋나지 않았다.
+
+**함정 셋.**
+
+1. **목록 `status` 파라미터는 enum 이름이 아니라 세그먼트 어휘다.** be `SellerOrderStatusFilter`의
+   code(`all`·`new`·`awaiting-dispatch`·`shipping`·`delivered`·`cancelled`)를 보내야 하고 하나가 상태
+   여러 개를 묶는다(`awaiting-dispatch` = PREPARING + DISPATCH_PENDING, `delivered` = DELIVERED +
+   PURCHASE_CONFIRMED). `all`에도 `PENDING_PAYMENT`가 없다 — 결제 전 주문이 테이블에 남는 모델이라
+   셀러에게 미결제 건을 보이지 않는다. `PAID`처럼 enum 이름을 보내면 400/90001이다.
+2. **송장 등록 경로는 단수 `shipment`이고 정정 경로가 아니다.** 이미 최초 배송 행이 있으면
+   409/50302라서, 목업 시절의 "송장 수정" 버튼을 되살리면 셀러가 눌러도 반드시 실패한다 — 버튼을
+   지우고 `canRegisterShipment(status, hasShipment)`가 송장 유무까지 본다. Modal 문구도 "등록한 송장은
+   셀러센터에서 바꿀 수 없어요"로 알린다.
+3. **`PREPARING`에서 송장을 등록하면 서버가 2단 전이한다**(PREPARING → DISPATCH_PENDING → SHIPPING,
+   enum이 직행을 막는다). 응답 `orderStatus`가 SHIPPING으로 오는 이유이고, FE가 중간 상태를 따로
+   만들어 보낼 필요가 없다.
+
+**수령인명·연락처는 서버가 평문으로 준다**(be `SellerOrderSummaryResponse` 주석: "마스킹은 화면이
+한다"). 셀러는 송장을 붙이려면 둘 다 온전히 봐야 하므로 지울 수는 없다 — 목록에서만 연락처 가운데를
+가리고(`maskContactNumber`) 실제로 발송을 준비하는 상세 Drawer에서는 그대로 보여준다. 수령인명은 송장에
+찍히고 목록에서 주문을 분간하는 기준이라 가리지 않는다.
+
+**택배사는 `shared/couriers`가 이미 서버 마스터를 읽고 있었다**(`GET /sellers/couriers`, 배송 정책 화면이
+깔아둔 것). 하드코딩하지 않고 그대로 재사용했고 `courierCode`는 응답 값을 대소문자 그대로 보낸다
+(소문자는 404/50303).
+
+**되돌릴 수 없는 전이 둘(발주 확인·배송 완료)은 확인 Modal을 거친다.** 전이표가 PREPARING → PAID를
+막고 배송 완료는 구매확정 시계를 시작한다. AGENTS 4절대로 뮤테이션은 Modal이 아니라 라우트가 소유해
+그 `isPending`으로 목록의 다른 행 버튼까지 잠근다 — `action → {title,description,confirmLabel}` Record
+하나로 Modal을 공유한다.
+
+**`packages/domain`의 셀러 `Order`/`OrderStatus`를 지웠다.** 위 231행이 적어 둔 Batch 5 플레이스홀더
+재구성의 결과물인데, web-seller가 와이어 타입을 바로 쓰게 되면서 참조가 0건이 됐다. 서버에 없는 필드
+(`purchaseConfirmDeadline: 'D-5'`)를 들고 있어 남겨 두면 새 코드가 지어낸 필드를 다시 요구한다
+(AGENTS 6-10). 구매자 쪽 `BuyerOrder*`는 상태머신이 다른 집계 도메인이라 그대로 남는다.
+
+**교차검토로 드러난 함정 셋(같은 모듈을 쓰는 클레임 화면도 그대로 밟는다).**
+
+1. **`50003`(ORDER_ACCESS_DENIED)은 "남의 주문"이 아니라 "셀러 자격"이다.** 주문 모듈에서 이 코드를
+   던지는 자리는 be `SellerOrderFacade`의 `requireActiveSeller`·`requireOrderReadableSeller` 둘뿐이고,
+   남의 주문·없는 주문은 주문번호 존재를 숨기려고 404/50000으로 통일된다(`findSellerOrder`·`getOwned`).
+   조회는 ACTIVE·PAUSED·WITHDRAWAL_REQUESTED까지 열리지만 처리(발주확인·송장등록·배송완료)는 ACTIVE만
+   되므로 **휴점 셀러는 목록은 보이고 처리만 403**이다. 셀러 상태를 알려주는 경로가 셀러센터에 없어
+   버튼을 미리 감출 수는 없고(스펙의 `/sellers/**`는 couriers·orders·products뿐), 문구가 조회 실패와
+   처리 실패 양쪽에서 읽혀야 한다. 상품 화면의 `40004`·`40006`은 ProductErrorCode라 주문 경로로는 오지
+   않는다 — 매핑에 넣어 두면 닿지 않는 문구를 테스트가 대신 지켜 준다.
+2. **배송완료 거절은 `50002`가 아니다.** be `OrderDeliveryService.complete`는 최초 배송 행을 먼저 찾아
+   없으면 404/50300이고, `deliveredAt`이 있는 경우와 조건부 UPDATE(SHIPPING → DELIVERED) 실패를
+   **둘 다** 409/50301로 묶는다. 그래서 "SHIPPING이 아닌 주문"도 "이미 배송완료"와 같은 코드로 돌아온다
+   — 문구를 둘 다 읽히게 써야 한다. MSW 스텁을 상태만 보고 50002를 주게 두면 틀린 문구가 통과한다.
+3. **DS `Modal`은 `loading` 중에도 ESC·스크림·취소를 `onClose`로 흘린다**(`design-system/web/Modal`에
+   `confirmDisabled`도 없다). 되돌릴 수 없는 POST는 취소할 수도 없으니, 요청이 떠 있는 동안 창만 닫히면
+   셀러는 취소된 줄로 읽는다 — 호출부에서 `isPending`이면 닫지 않게 막는다. 같은 이유로 못 보내는
+   상태에서도 확인 버튼이 눌리므로, 조용히 `return`하지 말고 어느 칸이 비었는지 짚어 줘야 버튼이 죽은
+   것처럼 보이지 않는다.
+
+**뮤테이션 무효화는 `onSettled`다.** 전이 거절(409/50004·50005·50301·50302)은 대개 다른 탭·다른 사람이
+먼저 처리해서 내 목록이 낡았다는 뜻이다. 성공만 무효화하면 사라져야 할 버튼이 그대로 남아 같은 요청을
+다시 보내게 되고, 거절 문구가 "목록을 새로고침해 주세요"라고 말하는 일을 사람에게 떠넘긴다.
+
+## 셀러 nav 복원과 "준비 중" 꼬리표 (2026-10-26, SCRUM-301)
+
+위 2026-10-17 배치가 nav 항목까지 뺀 것이 **과했다.** 사장님 지적이 그대로 왔다 — "원래 셀러
+대시보드가 네이버 스마트스토어처럼 더 많았는데 지금은 달랑 메뉴 3개뿐이다, 복원해라." 메뉴를
+지우면 운영자는 **기능이 사라진 줄 안다.** 게이트의 목적은 "저장되지 않는다는 사실을 알리는
+것"(규약 10)이지 메뉴를 감추는 것이 아니었다.
+
+- **이제 nav는 항목을 지우지 않는다.** BE가 없는 항목은 `AppShell.tsx`의
+  `tag: PENDING_TAG`(`'준비 중'`)로 표시만 한다 — 꼬리표 유무가 곧 실연동 여부다.
+  꼬리표를 떼는 것은 그 경로에 seller BE가 생겼을 때뿐이다.
+- **라우트 파일이 한 번도 없던 다섯**(`/inquiries`·`/reviews`·`/coupons`·`/notices`·`/account`)은
+  메뉴만 되살리면 404로 갔다. 라우트를 신설하고 `UnavailableScreen`으로 제목 + muted "준비 중"
+  `StatusPill` + 안내 + **"이 화면에 들어올 것" 카드**(`upcoming` 프롭)를 보여준다. **지어낸 데이터
+  행·표 머리글·저장 버튼은 두지 않는다** — 행 없는 표는 "준비 중"이 아니라 "데이터가 없다"로 읽혀
+  규약 10의 취지를 거꾸로 깨뜨린다. 쿠폰과 계정에는 지금 실제로 되는 화면(상품 관리 / 스토어 설정)
+  으로 가는 대체 경로 버튼을 뒀다.
+- **아이콘은 원래 구성(`04c402c`)의 lucide 이름을 그대로 쓴다** — 고객 문의 `MessageCircle`,
+  리뷰 관리 `Star`, 혜택/쿠폰/할인 `Tag`, 알림/공지 `Megaphone`, 계정/보안 `UserCog`. 복원 작업에서
+  비슷한 다른 아이콘(`MessageSquare`/`Ticket`/`Bell`/`ShieldCheck`)으로 바꿨다가 codex 교차검토에서
+  지적받아 되돌렸다. 목업 `data-lucide`와 1:1이라 이름을 바꾸면 복원이 아니라 변경이 된다.
+- **DS는 `NavItem.tag`(글자 꼬리표)와 `NavItem.badge`(숫자 배지)를 별개 필드로 둔다.** 처음에는
+  `badge`를 `number | string`으로 넓혔는데, 어드민 nav(SCRUM-302)에 둘을 **겸하는** 항목이
+  있다(셀러 입점 심사 = 대기 N건 + 열려 있음). 한 필드로는 겸할 수 없어 통합(SCRUM-304)에서
+  `tag` 쪽으로 합쳤다. 렌더는 `NavTag`/`NavBadge`로 나뉘고 꼬리표가 배지보다 앞자리다 —
+  꼬리표는 muted(아직 열리지 않았다), 배지는 brand(처리할 일이 쌓였다)라 같은 색으로 그리면
+  "준비 중"이 처리할 일처럼 읽힌다. **숫자 경로의 0 숨김과 99+ 상한은 글자 그대로 보존했다.**
+- **꼬리표가 부재 단언을 조용히 통과시킨다 — 이 함정을 기억할 것.** 꼬리표 텍스트가 버튼 안에 들어가
+  접근성 이름이 `"<항목> 준비 중"`이 되므로, `queryByRole('button', { name: '대시보드' })`는 항목이
+  nav에 꼬리표와 함께 올라와 있어도 **못 찾고 그냥 통과한다**(실측 확인). nav 항목 부재를 물어야 할
+  때는 항목 이름 접두 정규식(`new RegExp('^' + label)` 꼴)으로 물 것. 반대로 존재를 물을 때는
+  `'고객 문의 준비 중'`처럼 꼬리표까지 포함한 이름으로 물어 꼬리표 유무를 같이 검증한다
+  (`unbuilt-routes.test.tsx`). 이 함정을 처음 발견한 자리는 `unavailable-routes.test.tsx`의
+  `AC-SELLER-GATE-003`이었는데, 그 파일은 SCRUM-300이 게이트를 모두 열면서 `app-nav.test.tsx`로
+  대체돼 사라졌다(막힌 라우트가 하나도 남지 않아 단언 대상이 없어졌다).
+- 라우트를 더했으니 `routeTree.gen.ts`를 `vite build`로 갱신해 커밋했다(standalone
+  `generate-routes`는 무효). 다시 돌려 diff가 비는 것으로 확인했다.
+
+---
+
+## 어드민 nav 복원 — 숨기지 않고 "준비 중"으로 밝히기 (2026-10-26, SCRUM-302)
+
+위 "목업 화면 진입 차단과 nav 축소"가 **메뉴 항목까지** 걷어낸 것이 문제로 돌아왔다. 어드민 메뉴가
+홈·셀러 입점 심사·관리자 관리 셋만 남아, 운영자는 이 도구가 무엇을 다루는지조차 알 수 없었다.
+
+**규약 10의 목적은 "메뉴를 숨겨라"가 아니라 "운영자가 속지 않게 하라"다.** 저장되지 않는 화면을
+멀쩡한 화면처럼 보여주면 운영자가 입력하고 저장한 줄 안다 — 막아야 하는 것은 그것이지 메뉴가 아니다.
+그래서 이번에는 **메뉴는 전부 되살리고, BE 유무를 글자로 밝히는** 쪽으로 바꿨다.
+
+- **nav 구성**: 차단 이전(26e4b89^)의 5그룹을 그대로 되살리고 그 뒤 생긴 `/admins`(관리자 관리)를
+  운영 관리 그룹에 더해 **15항목**이다. 차단 이전의 "확장 예정" 6항목(홈 배너·카테고리·정산·어드민
+  계정 권한·고급 통계·세금 신고)은 복원 대상이 아니고, 그중 어드민 계정 권한 관리는 `/admins`가 대신한다.
+- **꼬리표**: DS `NavItem`에 `tag?: string`을 더해 라벨 옆에 글자 pill(`'준비 중'`)을 그린다.
+  숫자 `badge`와 **필드를 나눈** 이유는 쓰임이 다르기 때문이다 — 배지는 "처리 대기 N건", 꼬리표는
+  "아직 열리지 않았다"라 입점 심사처럼 둘을 겸해야 하는 항목에서 한 자리에 겹쳐 쓸 수 없다.
+  색이나 점만으로 구별하게 두면 운영자가 알아보지 못하므로 글자로 적고, 그 글자가 **버튼 접근명에
+  포함**되어 테스트가 `name: '리뷰 관리 준비 중'`으로 "어느 항목에 붙었는지"까지 고정할 수 있다.
+- **BE 실측(2026-10-26 dev)**: admin-api-dev에 있는 것은 `/admin/admins`(+`/{userId}`)와
+  `/admin/seller-applications` 계열 넷이 **전부**다. seller·api 호스트에 이름이 닮은 경로
+  (`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도 셀러·구매자 **본인 스코프**라 운영자가
+  전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을 설정하지 않아 `/sellers/**`를 부르면
+  어드민이 아니라 api 호스트로 나간다. 그래서 실연동은 셀러 입점 심사·관리자 관리 둘뿐이다.
+- **열린 PR**: 상품 검수 관리·AI 검수 큐는 BE #149(SCRUM-282 관리자 확인 큐) + #153~#157이 본체고,
+  신고 제재 관리는 #100(SCRUM-231)에 **접수**만 있다(운영자용 제재 조회는 그 PR에도 없다).
+- **라우트 파일이 없던 8항목**: 어드민은 셀러와 달리 목업 화면조차 없던 항목이 많았다
+  (`/reports`·`/inquiries`·`/orders/monitoring`·`/claims`·`/reviews`·`/chat-monitoring`·
+  `/notices`·`/audit-log`). nav 항목만 올리면 404로 가는 죽은 nav(AGENTS 2절 금지)라,
+  목업 화면이 아니라 **`UnavailableScreen` 안내만 렌더하는 15줄짜리 라우트**를 새로 뒀다.
+- **대시보드(`/`)**: 로그인 복귀 지점이라 비울 수 없다. 집계 API가 없으므로 숫자를 만들지 않고
+  안내 + "셀러 입점 심사로" 바로가기를 둔다(web-seller 대시보드 게이트와 같은 모양).
+- **되살리는 법**: 해당 BE가 머지되면 `__root.tsx`에서 그 항목의 `tag`만 떼고, 라우트의 게이트
+  상수를 올리거나 안내 라우트를 실화면으로 바꾼다. 고정 테스트는
+  `apps/web-admin/src/shared/__tests__/admin-nav.test.tsx`의 `LIVE_LABELS`/`PENDING_LABELS`
+  두 배열 사이로 항목을 옮기면 된다.
+- **도착지까지 고정한다**(codex 교차검토 반영): 주소로 직접 열어 안내를 확인하는 단언은 라벨과
+  `key`가 어긋난 것을 **잡지 못한다** — 라벨을 그대로 두고 `key`만 다른 경로로 바꿔도 통과하기
+  때문이다. `NAV_DESTINATIONS`가 15항목을 실제로 눌러 (1) `location.pathname`이 그 `key`와 같고
+  (2) 도착지 화면의 `h1`이 nav 라벨과 같은 글자인지 본다(15항목 모두 제목=라벨이다). 항목을
+  더하면 이 배열에도 넣어야 한다. 대시보드 바로가기도 존재 단언이 아니라 도착지로 확인한다.
+- **배지는 실패하면 사라져야 한다**(같은 교차검토): react-query는 재조회가 403·5xx로 실패해도
+  캐시된 `data`를 들고 있어, 그대로 반환하면 권한이 끊긴 뒤에도 nav에 **옛 대기 건수**가 남는다.
+  `usePendingApplicationCount`는 `query.isError`면 `null`을 돌려준다(상세 재조회의
+  `ApplicationDetailRefetch`와 같은 판단). 서버 값을 쓰는 배지를 더할 때도 같게 할 것.
+- **권한으로 막힌 화면의 쓰기 버튼은 비활성이다**(같은 교차검토): 명부 조회가 401/20004·403/20005·
+  403/20011로 막혔다면 같은 토큰으로 나가는 쓰기도 반드시 거절된다 — `/admins`의 "관리자로 승격"은
+  `needsRelogin(error)`일 때 비활성이다. 재시도로 풀릴 수 있는 5xx는 막지 않는다(구별이 요점이다).
+- **안내 화면 문구도 -해요체다**: 차단 배치(SCRUM-238) 때 들어간 `~합니다`·가운뎃점 구분자를 네
+  게이트 화면(`members`·`sellers`·`products/review`·`products/ai-queue`)까지 함께 고쳤다(5절 카피
+  규칙). 게이트 뒤 목업 Drawer의 `${id} · ${닉네임}` 같은 **메타데이터 조합**은 렌더되지 않아
+  그대로 뒀다 — 게이트를 열 때 함께 본다.
+
+---
+
+## nav 복원 세 브랜치 통합 (2026-10-26, SCRUM-304)
+
+셀러 실연동(SCRUM-300) · 셀러 미구현 화면(SCRUM-301) · 어드민(SCRUM-302) 셋을 `origin/main` 위
+한 브랜치로 합쳤다. 세 브랜치가 모두 같은 커밋에서 갈라져 나왔고 충돌은 네 자리였다.
+
+**공유 파일 충돌과 결정.**
+
+| 자리 | 충돌 | 결정 |
+|---|---|---|
+| `web-seller AppShell.tsx` | 300이 실연동 7항목, 301이 준비 중 5항목을 같은 `groups`에 넣었다 | **양쪽 보존** — 차단 이전 정본(`26e4b89^`)의 4그룹 12항목 |
+| `design-system SideNav.tsx` | 301은 `badge: number \| string`, 302는 별도 `tag?: string` | **`tag`로 통일** (아래) |
+| `unavailable-routes.test.tsx` | 300이 삭제, 301이 수정 | **삭제 채택** — 게이트가 다 열려 막힌 라우트가 0건이라 단언 대상이 없다 |
+| `AGENTS.md`, `docs/web-seller-admin-notes.md` | 세 브랜치가 각자 서술을 더했다 | 한 벌로 합침 |
+
+**`badge`를 넓히는 길이 막히는 이유.** 어드민 nav에는 숫자 배지와 글자 꼬리표를 **겸하는** 항목이
+있다 — 셀러 입점 심사는 "대기 2건"(서버 값)이면서 동시에 "열려 있음"이다. 한 필드가 둘을 겸하면
+이 조합을 표현할 수 없고, 301의 `AC-SELLER-UNBUILT-002`·302의 `AC-ADMIN-NAV-003`이 양쪽에서 같은
+자리를 요구해 양립하지 않는다. 그래서 `tag`(글자, muted, 앞자리) / `badge`(숫자, brand, 뒷자리)로
+나눈 302 설계를 택하고 셀러도 `tag`를 쓴다. 꼬리표 글자가 버튼 접근명에 들어가는 성질은 두 설계가
+같아 **301의 테스트는 한 줄도 고치지 않고 통과**했다(`name: '고객 문의 준비 중'`).
+
+**셀러 nav는 12항목이다** — 운영 5(대시보드·주문/배송 관리·취소/반품/교환·고객 문의·리뷰 관리) /
+판매 설정 3(상품 관리·배송 정책·혜택/쿠폰/할인) / 정산 1(정산/매출) / 스토어 3(스토어 설정·
+알림/공지·계정/보안). 실연동 7 + 준비 중 5다. 통합 지시서에는 "11항목"으로 적혀 있었는데 정본
+파일을 세어 보면 12이고(300의 7 + 301의 5, 겹침 없음), 지시서가 "정본을 따른다"고 못박았으므로
+정본을 따랐다.
+
+**`/store-settings` 제목은 nav 라벨과 늘 같지 않다.** 입점 신청 상태별로 갈린다(none/draft →
+"스토어 개설 신청", submitted/reviewing → "스토어 개설 심사", rejected → "스토어 개설 · 서류 보완",
+approved → "스토어 설정"). nav 클릭 도착지를 `h1 === 라벨`로 고정하는 테스트는 **승인 셀러로
+시드해야** 한다 — 시드 없이 돌리면 신청 조회가 404(=none)라 그 한 항목만 빨개진다.
+
+**지운 파일과 대체물**(전부 SCRUM-300이 목업을 실 API 계약으로 바꾸면서 생긴 것이고, 통합에서
+새로 지운 것은 맨 아래 한 줄뿐이다).
+
+| 지운 것 | 대체물 |
+|---|---|
+| `features/{orders,claims,dashboard,settlements,shipping-policy}/*.mock.ts` (+ 그 `*.mock.test.ts`) | 각 feature의 `*.contract.ts` + MSW 핸들러 |
+| `features/orders/__tests__/OrdersTable.test.tsx` | `features/orders/__tests__/orders-route.test.tsx` |
+| `features/claims/components/{ClaimActionConfirmModal,RefundConfirmModal}.tsx` | `ClaimApproveModal` · `ClaimRejectModal` · `ClaimInvoiceModal` |
+| `features/shipping-policy/components/ShippingPolicyNotice.tsx` (목업 준비 중 카드) | 실 정책을 읽는 `ShippingPolicySummary` |
+| `shared/__tests__/unavailable-routes.test.tsx` | `shared/__tests__/app-nav.test.tsx` (통합에서 결정) |
+
+**화면 코드는 하나도 지우지 않았다.** 라우트 파일은 셀러 5개(`/inquiries`·`/reviews`·`/coupons`·
+`/notices`·`/account`) + 어드민 8개가 **늘었다**.
+
+**교차검토에서 고친 것 넷**(codex read-only, 2026-10-26). 메뉴 누락·중복은 없다고 나왔고 —
+셀러 12항목·어드민 15항목의 그룹·순서·아이콘이 정본과 일치하고 죽은 `key`가 없다 — 대신 결함
+하나와 테스트 구멍 셋이 걸렸다. 넷 다 코드로 재현해 확인한 뒤 고쳤다.
+
+1. **낡은 목록에서 처리 버튼이 계속 눌렸다**(목록 재조회 실패 시). 재조회가 403으로 떨어지면
+   react-query가 직전 성공 데이터를 들고 있어 행이 그대로 남는데, 행 버튼은 `isMutating`만 보고
+   있어 눌렸다. 확인 Modal은 **그 행의 값**으로 만들어지므로 셀러는 서버에 없는 상태를 보고
+   되돌릴 수 없는 전이를 지시하게 된다. 같은 레포의 `ClaimDetailDrawer`는 이미 상세 조회 실패에
+   `isMutating={isMutating || detail.isError}`로 처리를 잠그고 있었다 — 목록만 그 규칙을 안 따랐다.
+   `OrdersTable`에 `isError`를 더하고(`actionsLocked`), `ClaimsTable`의 판정 버튼을
+   `decisionsLocked`로 잠갔다. 행은 지우지 않는다(마지막으로 본 내용은 정보다). **클레임의
+   '회수 처리'는 예외** — mutation이 아니라 상세 Drawer를 여는 버튼이고 상세가 스스로 다시
+   조회하므로, 열어 보는 길까지 막으면 셀러가 확인할 방법이 없어진다.
+2. **꼬리 슬래시 경로에서 활성 메뉴가 사라졌다**(어드민만). 어드민 라우트는 대부분 index 라우트라
+   `/sellers/`로 들어온 경로가 그대로 유지되는데 셸이 pathname을 `activeKey`로 그냥 넘기고
+   `SideNav`는 완전 일치로 비교한다 — 화면은 열리지만 `aria-current`가 **0개**가 되어 운영자는
+   자기가 어느 메뉴에 있는지 알 수 없다(실측 확인). `navActiveKey`로 꼬리 슬래시만 떼어 고쳤고
+   루트(`/`)는 건드리지 않는다(떼면 빈 문자열이 되어 대시보드가 영구 비활성). 셀러 `AppShell`은
+   첫 세그먼트로 맞춰 와서 애초에 면역이었다. 테스트의 `normalizePath`는 **도착지 단언만** 보정해
+   이 차이를 잡지 못했다 — 헬퍼가 production 버그를 가려 준 자리다.
+3. **그룹 소속을 아무 테스트도 지키지 않았다.** 머리글 존재와 항목 존재를 각각 전역에서 찾기만
+   해서, 어드민 '리뷰 관리'를 주문/클레임에서 운영 관리로 옮겨 봤더니 **나머지 37개가 전부
+   초록**이었다(항목 수·머리글 수·클릭 도착지가 다 그대로다). 통합이 지킨 것이 바로 그 배치라
+   `SideNav`가 머리글을 `role="group"` + `aria-labelledby`로 항목과 묶게 하고(스크린리더가
+   그룹을 읽지 못하던 문제도 같이 해결) 두 nav 테스트에서 `within(getByRole('group'))`으로
+   소속과 그룹별 항목 수를 단언한다.
+4. **`tag`+`badge` 겸용을 아무 테스트도 지키지 않았다.** 필드를 나눈 근거가 "한 항목이 둘을
+   겸해야 한다"인데, 테스트는 배지가 붙은 항목과 꼬리표가 붙은 항목을 **서로 다른 항목에서**
+   확인해 둘 중 하나만 렌더해도 통과했다. 지금 겸하는 항목이 production에 없으므로 DS에 직접
+   조합을 넘기는 `side-nav-tag-badge.test.tsx`로 계약을 고정했다(순서·0 숨김·99+ 상한 포함).
+   DS 패키지에는 러너가 없어 소비앱에 둔다(AGENTS.md 4절).
+
+넷 다 **고치기 전에 먼저 실패하는지 확인**했다(production 수정을 되돌려 빨개지는 것을 보고 복구).

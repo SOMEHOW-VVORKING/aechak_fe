@@ -12,10 +12,13 @@ export interface MetricCardProps {
   className?: string
 }
 
+// 색만 variant가 정한다. 커서·hover는 variant가 아니라 **실제로 누를 수 있는지**가 정한다 —
+// onClick 없이 default/urgent로 그린 카드까지 cursor-pointer를 달면 눌리지 않는 카드가 눌리는
+// 것처럼 보인다(장식 UI).
 const variantClass: Record<MetricVariant, string> = {
-  default: 'bg-surface-raised border-border-subtle cursor-pointer hover:bg-surface-hover',
-  urgent:  'bg-surface-raised border-warning-border cursor-pointer hover:bg-surface-hover',
-  quiet:   'bg-surface-sunken border-border-subtle cursor-default',
+  default: 'bg-surface-raised border-border-subtle',
+  urgent:  'bg-surface-raised border-warning-border',
+  quiet:   'bg-surface-sunken border-border-subtle',
 }
 
 export function MetricCard({ label, value, icon, footer, variant = 'default', onClick, className = '' }: MetricCardProps) {
@@ -30,7 +33,9 @@ export function MetricCard({ label, value, icon, footer, variant = 'default', on
       className={[
         'rounded-card border px-4 py-3.5 flex flex-col gap-1.5 transition-colors',
         variantClass[variant],
-        isClickable ? 'focus-visible:outline-none focus-visible:shadow-focus-ring' : '',
+        isClickable
+          ? 'cursor-pointer hover:bg-surface-hover focus-visible:outline-none focus-visible:shadow-focus-ring'
+          : 'cursor-default',
         className,
       ].filter(Boolean).join(' ')}
     >

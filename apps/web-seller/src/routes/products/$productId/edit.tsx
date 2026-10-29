@@ -13,7 +13,7 @@ import {
   useProductDetail,
   useUpdateProduct,
 } from '@/features/products'
-import { ShippingPolicyNotice } from '@/features/shipping-policy'
+import { ShippingPolicySummary } from '@/features/shipping-policy'
 
 export const Route = createFileRoute('/products/$productId/edit')({
   component: ProductEditRoute,
@@ -98,7 +98,7 @@ function ProductEditRoute() {
         productId={productId}
         initial={toFormValues(product, categoriesQuery.data, key => productImageUrl(key) ?? '')}
         categories={categoriesQuery.data}
-        shippingSummary={<ShippingPolicyNotice />}
+        shippingSummary={<ShippingPolicySummary />}
         submitting={updateProduct.isPending}
         onSubmit={values =>
           // 남겨 둔 기존 이미지는 저장 키를 그대로, 새 이미지는 tmp 키를 보낸다(PUT은 목록 통째 교체).

@@ -429,10 +429,51 @@ function stubSellerProducts(page: Page) {
   return { ready: route, queries, updateBodies }
 }
 
+/**
+ * 배송 정책 요약 + 택배사 마스터 — 상품 등록/수정 폼의 배송 정책 칸이 둘 다 부른다(SCRUM-293).
+ * 스텁이 없으면 그 칸이 "불러오지 못했어요"로 떨어지고, 더 나쁘게는 요청이 엉뚱한 호스트로
+ * 새도 아무도 모른다. 두 경로 모두 seller 모듈이라 글롭에 seller origin을 적는다.
+ */
+async function stubShippingPolicy(page: Page) {
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/couriers`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        items: [
+          { courierCode: 'CJ', courierName: 'CJ대한통운', trackingFormatPattern: '^\\d{10,12}$' },
+          { courierCode: 'LOTTE', courierName: '롯데택배', trackingFormatPattern: null },
+        ],
+      },
+    }),
+  )
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/shipping-policy`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        defaultCourierCode: 'CJ',
+        baseShippingFee: 3000,
+        freeShippingThreshold: 30000,
+        originZipCode: '04035',
+        originRoadAddress: '서울 마포구 와우산로 00',
+        originDetailAddress: '물류 1센터',
+        returnSameAsOrigin: true,
+        returnZipCode: null,
+        returnRoadAddress: null,
+        returnDetailAddress: null,
+        jejuExtraFee: 3000,
+        remoteAreaExtraFee: 5000,
+        returnFee: 4000,
+        exchangeFee: 8000,
+        avgDispatchDays: 1,
+        shippingPolicyText: null,
+      },
+    }),
+  )
+}
+
 async function stubAll(page: Page) {
   await stubSession(page)
   await stubCategories(page)
   await stubUpload(page)
+  await stubShippingPolicy(page)
   const products = stubSellerProducts(page)
   await products.ready
   return products
@@ -442,6 +483,10 @@ async function openNewProductForm(page: Page) {
   await page.goto('/products')
   await page.getByRole('button', { name: '상품 등록' }).click()
   await expect(page.getByRole('heading', { name: '상품 등록' })).toBeVisible()
+  // 배송 정책 칸은 셀러 단위 정책을 읽어 요약만 보여 준다(상품 본문에 싣지 않는다).
+  await expect(
+    page.getByText('CJ대한통운 / 기본 배송비 3,000원 / 30,000원 이상 무료배송'),
+  ).toBeVisible()
 }
 
 test('[AC-SPRD-E2E-001] 상품 등록 → 목록 맨 앞 판매중 → 재고 0으로 자동 품절 → 판매 중지', async ({ page }) => {

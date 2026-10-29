@@ -44,7 +44,7 @@ function ProductReviewGate() {
     return (
       <UnavailableScreen
         title="상품 검수 관리"
-        description="셀러 등록 상품 · 신고 상품 · 블라인드 상품을 검수합니다."
+        description="셀러 등록 상품 / 신고 상품 / 블라인드 상품을 검수해요."
         message="상품 검수 관리는 준비 중이에요"
       />
     )
@@ -228,7 +228,7 @@ function ProductReviewPage() {
 
   return (
     <div className="p-6">
-      <PageIntro title="상품 검수 관리" description="셀러 등록 상품 · 신고 상품 · 블라인드 상품을 검수합니다." />
+      <PageIntro title="상품 검수 관리" description="셀러 등록 상품 / 신고 상품 / 블라인드 상품을 검수해요." />
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={saleStatusFilterOptions} value={saleStatusFilter} onChange={setSaleStatusFilter} />
@@ -243,7 +243,7 @@ function ProductReviewPage() {
         rowKey={row => row.id}
         onRowClick={openDrawer}
         loading={isLoading}
-        emptyLabel="조건에 맞는 상품이 없습니다."
+        emptyLabel="조건에 맞는 상품이 없어요."
       />
 
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="상품 검수 상세" width="lg">
