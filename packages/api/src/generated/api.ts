@@ -688,29 +688,6 @@ export interface OrderGroupDetailEnvelope {
 }
 
 /**
- * 셀러의 클레임 판단(be SellerApprovalStatus). 요청 직후에는 REQUESTED
- */
-export type SellerApprovalStatus = (typeof SellerApprovalStatus)[keyof typeof SellerApprovalStatus]
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const SellerApprovalStatus = {
-  REQUESTED: 'REQUESTED',
-  APPROVED: 'APPROVED',
-  REJECTED: 'REJECTED',
-} as const
-
-/**
- * 반품 발송비 부담 주체(귀책이 아니라 비용 부담 기준). 셀러 승인 때 정해지고 취소 유형에는 없다. 기한 초과 자동승인은 부담 주체를 정하지 않아 null로 남는다
- */
-export type ReturnCostBearer = (typeof ReturnCostBearer)[keyof typeof ReturnCostBearer]
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const ReturnCostBearer = {
-  BUYER: 'BUYER',
-  SELLER: 'SELLER',
-} as const
-
-/**
  * 클레임 요청 사유 고정 어휘(be ClaimReasonCode). **유형별로 고를 수 있는 코드가 다르고 그 집합은 GET /claims/reasons가 내려준다** — 화면이 이 enum으로 선택지를 조립하지 말 것(문구도 서버가 준다). 이 enum은 응답 파싱과 요청 본문 타입에만 쓴다
  */
 export type ClaimReasonCode = (typeof ClaimReasonCode)[keyof typeof ClaimReasonCode]
@@ -2515,7 +2492,7 @@ export const SellerApprovalStatus = {
 } as const
 
 /**
- * 반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가 승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다
+ * 반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가 승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다. 취소 유형에는 이 필드가 없고, 기한 초과 자동승인은 부담 주체를 정하지 않아 null로 남는다
  */
 export type ReturnCostBearer = (typeof ReturnCostBearer)[keyof typeof ReturnCostBearer]
 

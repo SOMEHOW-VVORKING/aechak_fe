@@ -3565,16 +3565,6 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/OrderGroupDetailResponse"
-    SellerApprovalStatus:
-      type: string
-      description: "셀러의 클레임 판단(be SellerApprovalStatus). 요청 직후에는 REQUESTED"
-      enum: [REQUESTED, APPROVED, REJECTED]
-    ReturnCostBearer:
-      type: string
-      description: >-
-        반품 발송비 부담 주체(귀책이 아니라 비용 부담 기준). 셀러 승인 때 정해지고 취소 유형에는
-        없다. 기한 초과 자동승인은 부담 주체를 정하지 않아 null로 남는다
-      enum: [BUYER, SELLER]
     ClaimReasonCode:
       type: string
       description: >-
@@ -6004,7 +5994,8 @@ components:
       type: string
       description: >-
         반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가
-        승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다
+        승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다. 취소 유형에는 이 필드가 없고,
+        기한 초과 자동승인은 부담 주체를 정하지 않아 null로 남는다
       enum: [BUYER, SELLER]
     ShipmentType:
       type: string
