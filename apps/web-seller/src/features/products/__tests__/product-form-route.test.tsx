@@ -7,11 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CATEGORIES_URL,
   SELLER_PRODUCTS_URL,
+  SELLER_SHIPPING_POLICY_URL,
   currentSellerProducts,
   lastSellerProductRegisterBody,
   lastSellerProductUpdateBody,
   makeSellerProductWire,
+  makeShippingPolicyWire,
   seedSellerProducts,
+  seedShippingPolicy,
   server,
 } from '@/testing/msw/server'
 import { MOCK_CATEGORY_TREE, leafIdOf, mockFetchProductDrafts, resetProductsMock } from '../products.mock'
@@ -395,13 +398,29 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     expect(screen.queryByRole('status', { name: '등록 양식을 불러오는 중' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SPRD-038] 배송 정책 칸은 목업 요약 대신 준비 중 안내만 보여준다(seller 모듈에 정책 API 없음)', async () => {
+  it('[AC-SPRD-038] 배송 정책 칸은 서버 정책 요약과 수정 링크를 보여준다(목업 수치 아님)', async () => {
+    seedShippingPolicy(
+      makeShippingPolicyWire({ defaultCourierCode: 'CJ', baseShippingFee: 3000, freeShippingThreshold: 30000 }),
+    )
     renderAt('/products/new')
 
-    expect(await screen.findByText('배송 정책 설정은 준비 중이에요')).toBeInTheDocument()
-    // 목업 수치(기본 배송비 3,000원)와 목업 화면으로 가는 링크는 실 등록 폼에 싣지 않는다.
-    expect(screen.queryByText(/기본 배송비/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '배송 정책 수정' })).not.toBeInTheDocument()
+    // 택배사 라벨도 서버 마스터(courierName)에서 온다 — FE가 코드를 라벨로 지어내지 않는다.
+    expect(await screen.findByText('CJ대한통운 / 기본 배송비 3,000원 / 30,000원 이상 무료배송')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '배송 정책 수정' })).toBeInTheDocument()
+    expect(screen.queryByText('배송 정책 설정은 준비 중이에요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-039] 배송 정책 조회가 실패해도 등록 폼은 열리고 실패를 드러낸다', async () => {
+    // 상품 등록은 정책 조회에 매여 있지 않다 — 빈 자리로 떨구지 말고 못 읽었다고 말한다.
+    server.use(
+      http.get(SELLER_SHIPPING_POLICY_URL, () =>
+        HttpResponse.json({ errorCode: 50000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/products/new')
+
+    expect(await screen.findByText('배송 정책을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.getByLabelText('상품명')).toBeInTheDocument()
   })
 })
 

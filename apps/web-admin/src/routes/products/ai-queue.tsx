@@ -46,7 +46,7 @@ function AiReviewQueueGate() {
     return (
       <UnavailableScreen
         title="AI 검수 큐"
-        description="AI가 자동 숨김 처리한 상품 · 콘텐츠를 운영자가 다시 확인합니다."
+        description="AI가 자동 숨김 처리한 상품 / 콘텐츠를 운영자가 다시 확인해요."
         message="AI 검수 큐는 준비 중이에요"
       />
     )
@@ -246,7 +246,7 @@ function AiReviewQueuePage() {
 
   return (
     <div className="p-6">
-      <PageIntro title="AI 검수 큐" description="AI가 자동 숨김 처리한 상품 · 콘텐츠를 운영자가 다시 확인합니다." />
+      <PageIntro title="AI 검수 큐" description="AI가 자동 숨김 처리한 상품 / 콘텐츠를 운영자가 다시 확인해요." />
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={targetTypeFilterOptions} value={targetTypeFilter} onChange={setTargetTypeFilter} />
@@ -270,7 +270,7 @@ function AiReviewQueuePage() {
         rowKey={row => row.id}
         onRowClick={openDrawer}
         loading={isLoading}
-        emptyLabel="조건에 맞는 검수 대상이 없습니다."
+        emptyLabel="조건에 맞는 검수 대상이 없어요."
       />
 
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="AI 검수 상세" width="lg">
