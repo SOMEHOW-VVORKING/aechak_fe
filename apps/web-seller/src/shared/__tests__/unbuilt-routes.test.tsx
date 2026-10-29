@@ -22,13 +22,27 @@ function renderAt(path: string) {
 }
 
 /**
+ * 라우트 가드가 진입 자격을 판정하려고 부르는 경로. 화면의 동작이 아니라 진입 조건이라
+ * 아래 집계에서 뺀다.
+ *
+ * `__root`의 beforeLoad가 비면제 경로마다 셀러 자격을 확인하고(SCRUM-324), 접근 토큰이
+ * 없으면 그 앞에 세션 복원을 한 번 시도한다. 그 둘은 이 다섯 화면이 무엇을 그리든 똑같이
+ * 일어난다. 빼더라도 이 스펙의 힘은 줄지 않는다 — 다섯 화면은 신청·인증 API와 아무 관계가
+ * 없어서, 화면이 그 경로를 부르는 일 자체가 없기 때문이다.
+ */
+const GUARD_PATHS = ['/seller-applications', '/auth/web/refresh']
+
+/**
  * 화면이 네트워크로 나간 요청을 모은다. `test-setup`의 `onUnhandledRequest:'error'`만으로는
  * 부족하다 — MSW가 던지는 것은 요청을 보낸 쪽의 Promise라 화면이 그 실패를 삼키면 테스트가
  * 초록으로 지나간다. 그래서 요청 자체를 세어 0건을 단언한다.
  */
 function trackRequests() {
   const urls: string[] = []
-  server.events.on('request:start', ({ request }) => urls.push(request.url))
+  server.events.on('request:start', ({ request }) => {
+    if (GUARD_PATHS.some(path => new URL(request.url).pathname.endsWith(path))) return
+    urls.push(request.url)
+  })
   return urls
 }
 
