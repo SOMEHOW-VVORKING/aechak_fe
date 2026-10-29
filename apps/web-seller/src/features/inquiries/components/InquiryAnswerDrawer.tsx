@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Button, Drawer, StatusPill, Textarea } from '@aechak/design-system/web'
-import { SampleDataNotice } from '@/shared/components/SampleDataNotice'
+import { Alert, Button, Drawer, StatusPill, Textarea } from '@aechak/design-system/web'
 import {
   INQUIRY_CATEGORY_LABEL,
   INQUIRY_STATUS_LABEL,
   INQUIRY_STATUS_VARIANT,
-  type SampleInquiry,
-} from '../inquiries.mock'
+  formatInquiryDateTime,
+  type SellerInquirySummary,
+} from '../inquiries.contract'
 
 interface InquiryAnswerDrawerProps {
-  inquiry: SampleInquiry | null
+  inquiry: SellerInquirySummary | null
   onClose: () => void
-  /** 예시 화면에서는 저장하지 않고 토스트만 띄운다(호출부가 문구를 소유한다). */
-  onSend: () => void
+  onSend: (content: string) => void
+  sending: boolean
+  /** 답변 전송이 실패했을 때 Drawer 안에 띄울 문구 — 닫지 않고 그 자리에서 알린다. */
+  errorMessage?: string | null
+  /**
+   * 목록 재조회가 실패해 이 문의가 **마지막으로 본 값**일 때 true. 행은 지우지 않고(정보다)
+   * 답변 전송만 잠근다 — 규약 7, `ReviewReplyList`의 `locked`와 같은 쓰임.
+   */
+  locked?: boolean
 }
+
+const ANSWER_MAX_LENGTH = 2000
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -26,31 +35,33 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // 행 클릭 → 상세 Drawer(web-admin 심사 화면·셀러 클레임 화면과 같은 패턴).
 //
-// **띠를 Drawer 안에도 둔다**: DS Drawer는 `fixed inset-0` + `aria-modal` + 바디 스크롤 잠금이라
-// 열려 있는 동안 화면 맨 위의 띠가 보이지도, 닿지도 않는다. 답변을 적어 보내는 자리가 이 안이므로
-// 여기서 속으면 띠를 둔 의미가 없다(교차검토 지적).
-export function InquiryAnswerDrawer({ inquiry, onClose, onSend }: InquiryAnswerDrawerProps) {
+// **답변은 문의당 한 번뿐이다** — 서버가 두 번째 답변을 409로 거절하므로(구매자가 이미 읽은 답변이
+// 조용히 바뀌지 않게 한 결정) 답변이 달린 문의에는 입력칸을 두지 않고 보낸 답변을 그대로 보여준다.
+// 고칠 수 없는 자리에 "답변 수정" 버튼을 두면 누를 때마다 409를 받는 죽은 버튼이 된다.
+export function InquiryAnswerDrawer({
+  inquiry,
+  onClose,
+  onSend,
+  sending,
+  errorMessage,
+  locked = false,
+}: InquiryAnswerDrawerProps) {
   const [draft, setDraft] = useState('')
 
-  // 다른 문의를 열면 앞 문의에 쓰던 초안이 남지 않게 비운다(답변 완료 건은 보낸 내용을 채운다).
+  // 다른 문의를 열면 앞 문의에 쓰던 초안이 남지 않게 비운다. **문의 객체가 아니라 id로 거른다** —
+  // 열어 둔 행은 목록 재조회(창 복귀 등)마다 새 객체로 올 수 있고, 답변 기한이 지나는 순간
+  // 같은 문의의 `overdue`가 false→true로 바뀐다. 객체를 의존으로 두면 그때 쓰던 답변이 사라진다.
   useEffect(() => {
-    setDraft(inquiry?.answer?.content ?? '')
-  }, [inquiry])
+    setDraft('')
+  }, [inquiry?.inquiryId])
 
   if (inquiry == null) return null
+
+  const answered = inquiry.answer != null
 
   return (
     <Drawer open onClose={onClose} title="문의 상세" width="lg">
       <div className="flex flex-col gap-4">
-        <SampleDataNotice
-          className="mb-0"
-          replaceWhen={
-            <>
-              seller 호스트에 답변 전송 경로가 생기면 이 답변이 구매자에게 실제로 가요.
-            </>
-          }
-        />
-
         <div>
           <div className="flex items-center gap-2">
             <StatusPill variant={INQUIRY_STATUS_VARIANT[inquiry.status]}>
@@ -62,12 +73,12 @@ export function InquiryAnswerDrawer({ inquiry, onClose, onSend }: InquiryAnswerD
         </div>
 
         <div className="rounded-card border border-border-subtle bg-surface-sunken p-3.5">
-          <Row label="문의번호" value={inquiry.inquiryPublicId} />
+          <Row label="문의번호" value={inquiry.inquiryId} />
           <Row label="유형" value={INQUIRY_CATEGORY_LABEL[inquiry.category]} />
           <Row label="상품" value={inquiry.productName} />
-          <Row label="주문번호" value={inquiry.orderPublicId ?? '주문과 연결되지 않은 문의예요'} />
           <Row label="작성자" value={inquiry.authorMasked} />
-          <Row label="작성일" value={inquiry.askedAt} />
+          <Row label="작성일" value={formatInquiryDateTime(inquiry.askedAt)} />
+          <Row label="답변 기한" value={formatInquiryDateTime(inquiry.answerDueAt)} />
         </div>
 
         <div>
@@ -77,28 +88,53 @@ export function InquiryAnswerDrawer({ inquiry, onClose, onSend }: InquiryAnswerD
           </p>
         </div>
 
-        {inquiry.answer != null && (
-          <p className="text-caption text-text-tertiary">
-            {inquiry.answer.answeredAt}에 답변을 보냈어요. 내용을 고쳐 다시 보낼 수 있어요.
-          </p>
+        {inquiry.answer != null ? (
+          <div>
+            <p className="mb-1.5 text-label font-medium text-text-secondary">보낸 답변</p>
+            <p className="whitespace-pre-wrap rounded-card border border-border-subtle p-3.5 text-body-sm text-text-primary">
+              {inquiry.answer.content}
+            </p>
+            <p className="mt-1.5 text-caption text-text-tertiary">
+              {formatInquiryDateTime(inquiry.answer.answeredAt)}에 보냈어요. 답변은 한 번만 보낼 수
+              있어서 고칠 수 없어요.
+            </p>
+          </div>
+        ) : (
+          <Textarea
+            label="답변"
+            value={draft}
+            maxLength={ANSWER_MAX_LENGTH}
+            rows={6}
+            placeholder="구매자에게 보낼 답변을 적어 주세요."
+            onChange={setDraft}
+          />
         )}
 
-        <Textarea
-          label="답변"
-          value={draft}
-          maxLength={1000}
-          rows={6}
-          placeholder="구매자에게 보낼 답변을 적어 주세요."
-          onChange={setDraft}
-        />
+        {errorMessage != null && <Alert variant="error">{errorMessage}</Alert>}
+
+        {/* 잠금 사유는 **Drawer 안에서** 말해야 한다 — 목록 쪽 Alert은 Drawer에 덮여 보이지 않고,
+            답변을 적어 보내는 자리는 여기다. 버튼만 비활성이면 왜 눌리지 않는지 알 수 없다. */}
+        {locked && !answered && (
+          <Alert variant="warning">
+            목록을 다시 불러오지 못해 이 문의는 마지막으로 본 내용이에요. 다시 시도해 최신 상태를
+            확인한 뒤 답변을 보내 주세요.
+          </Alert>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="md" onClick={onClose}>
             닫기
           </Button>
-          <Button variant="primary" size="md" disabled={draft.trim() === ''} onClick={onSend}>
-            {inquiry.answer == null ? '답변 보내기' : '답변 수정'}
-          </Button>
+          {!answered && (
+            <Button
+              variant="primary"
+              size="md"
+              disabled={draft.trim() === '' || sending || locked}
+              onClick={() => onSend(draft.trim())}
+            >
+              답변 보내기
+            </Button>
+          )}
         </div>
       </div>
     </Drawer>
