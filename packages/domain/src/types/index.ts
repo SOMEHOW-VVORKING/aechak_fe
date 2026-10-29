@@ -190,21 +190,44 @@ export interface BuyerOrderShipment {
   lastTrackingStatus?: string
 }
 
-// 진행 중 클레임 유형·상태(서버 ClaimType/ClaimStatus 대응). 구매자 상세는 읽기만 한다 —
-// 요청·철회는 사유 코드 어휘가 미확정이라(SCRUM-273) 화면에 없다.
+// 클레임(취소·반품·교환) 유형. 서버 ClaimType 대응이고 유형마다 받는 주문 상태가 다르다 —
+// 취소는 발송 전(PAID·PREPARING·DISPATCH_PENDING), 반품·교환은 배송완료(DELIVERED)만.
 export type BuyerClaimType = 'cancel' | 'return' | 'exchange'
 
-// 서버 ClaimStatus 7종 중 품목을 붙잡고 있는 5종만 상세에 실린다(거부·철회는 activeClaim이 null).
+// 서버 ClaimStatus 7종 전부. 주문 상세의 activeClaim에는 품목을 붙잡고 있는 5종만 실리고
+// (거부·철회는 품목을 풀어주므로 activeClaim이 null) 클레임 내역(GET .../claims)에는 7종이 다 온다.
 export type BuyerClaimStatus =
   | 'requested' // CLAIM_REQUESTED — 셀러 판단 대기
   | 'collecting' // COLLECTING — 회수 진행
   | 'approved' // APPROVED
   | 'admin-overridden' // ADMIN_OVERRIDDEN — 운영자 직권 처리
   | 'refund-failed' // REFUND_FAILED — 승인됐으나 환불 집행 실패
+  | 'rejected' // REJECTED — 셀러 거부(품목이 풀린다)
+  | 'withdrawn' // WITHDRAWN — 구매자 철회(품목이 풀린다)
 
 export type BuyerClaimRefundStatus = 'none' | 'requested' | 'done' | 'failed'
 
-// 진행 중인 취소·반품·교환 1건(읽기 전용).
+/** 셀러의 판단 단계(서버 SellerApprovalStatus). 요청 직후에는 `requested`. */
+export type BuyerClaimSellerApproval = 'requested' | 'approved' | 'rejected'
+
+/** 반품 발송비 부담 주체(서버 ReturnCostBearer). 셀러 승인 때 정해지고 취소 유형에는 없다. */
+export type BuyerClaimCostBearer = 'buyer' | 'seller'
+
+/** 클레임이 대상으로 잡은 주문품목 한 줄. 수량은 품목 전량이다(서버가 부분 수량을 받지 않는다). */
+export interface BuyerClaimLine {
+  orderItemId: number
+  /** 서버가 상품명 조회에 실패하면 빈 문자열을 주므로 optional — 화면이 주문 품목 이름으로 메운다. */
+  productName?: string
+  quantity: number
+  /** 이 품목 몫 환불액(배송비 안분 제외). */
+  refundAmount: number
+}
+
+/**
+ * 취소·반품·교환 1건. 주문 상세의 `activeClaim`(진행 중 1건)과 클레임 내역의 한 줄이 **같은 타입**이다 —
+ * activeClaim은 앞의 네 필드만 채워 오고 내역은 전부 채워 온다(필드 수가 다를 뿐 같은 개념이라
+ * 병렬 타입을 만들지 않는다).
+ */
 export interface BuyerOrderClaim {
   claimPublicId: string
   claimType: BuyerClaimType
@@ -212,6 +235,38 @@ export interface BuyerOrderClaim {
   /** 서버 상태 원문. 표시는 `status`, 미지의 값 추적이 필요하면 이 값을 본다. */
   rawStatus: string
   refundStatus?: BuyerClaimRefundStatus
+  sellerApproval?: BuyerClaimSellerApproval
+  returnCostBearer?: BuyerClaimCostBearer
+  /** 품목 환불액 합 + 안분된 배송비 환불액(서버 계산). 화면이 다시 더하지 않는다. */
+  refundAmount?: number
+  /** 셀러 거부 사유 — 구매자에게 그대로 보여 주는 문구다. */
+  rejectionReason?: string
+  /** 아래 세 시각은 서버가 오프셋 없는 KST로 주고 어댑터가 오프셋을 붙여 넘긴다. */
+  requestedAt?: string
+  approvedAt?: string
+  resolvedAt?: string
+  items?: BuyerClaimLine[]
+}
+
+/**
+ * 클레임 사유 선택지 한 개. **코드·문구·상세필수 모두 서버(GET /claims/reasons)가 소유한다** —
+ * 화면이 코드로 문구를 만들거나 유형별 목록을 복제하면 어휘가 바뀔 때 조용히 어긋난다.
+ */
+export interface BuyerClaimReasonOption {
+  code: string
+  label: string
+  detailRequired: boolean
+}
+
+/** 유형별 사유 선택지. 배열 순서가 화면 선택지 순서다. */
+export type BuyerClaimReasonCatalog = Record<BuyerClaimType, BuyerClaimReasonOption[]>
+
+/** 클레임 요청 입력. `items`를 비우면 서버가 주문 전체를 전량 대상으로 본다. */
+export interface BuyerClaimRequest {
+  claimType: BuyerClaimType
+  reasonCode: string
+  reasonDetail?: string
+  items?: { orderItemId: number; quantity: number }[]
 }
 
 // 셀러 주문 상세(GET /orders/{orderId}). `sellerShippingFee`만 이 셀러 몫이고 `groupPayment`는
@@ -237,6 +292,16 @@ export interface BuyerOrderDetail {
   activeClaim?: BuyerOrderClaim
   /** 자동 구매확정 기한(ISO 8601). 배송완료 시점에 부여되므로 그 전 상태에서는 없다. */
   purchaseConfirmDueAt?: string
+}
+
+/**
+ * 주문그룹(결제 한 번) 조회 결과(GET /order-groups/{orderGroupId}).
+ * 금액·배송지는 주문 상세가 이미 같은 값을 들고 있어 담지 않는다 — 이 타입이 더해 주는 것은
+ * **같은 결제의 형제 셀러 주문 목록**이다. 결제대기 주문은 어댑터가 걸러낸다(표시 상태가 없다).
+ */
+export interface BuyerOrderGroupDetail {
+  orderGroupId: string
+  sellerOrders: BuyerSellerOrder[]
 }
 
 // ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──
