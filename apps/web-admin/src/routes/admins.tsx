@@ -61,6 +61,10 @@ function AdminRosterPage() {
   const showPager = totalPages > 1 || page > 0
 
   const parsedUserId = parseUserId(userIdInput)
+  // 명부 조회가 **권한 때문에** 막힌 상태(401/20004·403/20005·403/20011)라면 승격 요청도 같은
+  // 토큰으로 나가 반드시 거절된다 — 누를 수 있게 둬서 실패를 보여 줄 이유가 없다(자기 자신 강등
+  // 버튼과 같은 판단). 5xx·네트워크 실패는 재시도로 풀릴 수 있으므로 막지 않는다.
+  const blockedByPermission = isError && needsRelogin(error)
 
   function submitPromote() {
     if (parsedUserId == null) return
@@ -173,7 +177,7 @@ function AdminRosterPage() {
           </div>
           <Button
             leftIcon={<UserPlus className="size-4" />}
-            disabled={parsedUserId == null || isMutating}
+            disabled={parsedUserId == null || isMutating || blockedByPermission}
             loading={promote.isPending}
             onClick={submitPromote}
           >

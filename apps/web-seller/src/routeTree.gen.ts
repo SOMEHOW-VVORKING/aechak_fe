@@ -13,10 +13,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as StoreSettingsIndexRouteImport } from './routes/store-settings/index'
 import { Route as ShippingPolicyIndexRouteImport } from './routes/shipping-policy/index'
 import { Route as SettlementsIndexRouteImport } from './routes/settlements/index'
+import { Route as ReviewsIndexRouteImport } from './routes/reviews/index'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
+import { Route as NoticesIndexRouteImport } from './routes/notices/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
+import { Route as InquiriesIndexRouteImport } from './routes/inquiries/index'
+import { Route as CouponsIndexRouteImport } from './routes/coupons/index'
 import { Route as ClaimsIndexRouteImport } from './routes/claims/index'
+import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId/edit'
@@ -41,6 +46,11 @@ const SettlementsIndexRoute = SettlementsIndexRouteImport.update({
   path: '/settlements/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReviewsIndexRoute = ReviewsIndexRouteImport.update({
+  id: '/reviews/',
+  path: '/reviews/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
   id: '/products/',
   path: '/products/',
@@ -51,14 +61,34 @@ const OrdersIndexRoute = OrdersIndexRouteImport.update({
   path: '/orders/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NoticesIndexRoute = NoticesIndexRouteImport.update({
+  id: '/notices/',
+  path: '/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginIndexRoute = LoginIndexRouteImport.update({
   id: '/login/',
   path: '/login/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
+  id: '/inquiries/',
+  path: '/inquiries/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CouponsIndexRoute = CouponsIndexRouteImport.update({
+  id: '/coupons/',
+  path: '/coupons/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
   id: '/claims/',
   path: '/claims/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/account/',
+  path: '/account/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsNewRoute = ProductsNewRouteImport.update({
@@ -81,10 +111,15 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
+  '/account/': typeof AccountIndexRoute
   '/claims/': typeof ClaimsIndexRoute
+  '/coupons/': typeof CouponsIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/orders/': typeof OrdersIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/reviews/': typeof ReviewsIndexRoute
   '/settlements/': typeof SettlementsIndexRoute
   '/shipping-policy/': typeof ShippingPolicyIndexRoute
   '/store-settings/': typeof StoreSettingsIndexRoute
@@ -94,10 +129,15 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
+  '/account': typeof AccountIndexRoute
   '/claims': typeof ClaimsIndexRoute
+  '/coupons': typeof CouponsIndexRoute
+  '/inquiries': typeof InquiriesIndexRoute
   '/login': typeof LoginIndexRoute
+  '/notices': typeof NoticesIndexRoute
   '/orders': typeof OrdersIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/reviews': typeof ReviewsIndexRoute
   '/settlements': typeof SettlementsIndexRoute
   '/shipping-policy': typeof ShippingPolicyIndexRoute
   '/store-settings': typeof StoreSettingsIndexRoute
@@ -108,10 +148,15 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
+  '/account/': typeof AccountIndexRoute
   '/claims/': typeof ClaimsIndexRoute
+  '/coupons/': typeof CouponsIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/orders/': typeof OrdersIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/reviews/': typeof ReviewsIndexRoute
   '/settlements/': typeof SettlementsIndexRoute
   '/shipping-policy/': typeof ShippingPolicyIndexRoute
   '/store-settings/': typeof StoreSettingsIndexRoute
@@ -123,10 +168,15 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
+    | '/account/'
     | '/claims/'
+    | '/coupons/'
+    | '/inquiries/'
     | '/login/'
+    | '/notices/'
     | '/orders/'
     | '/products/'
+    | '/reviews/'
     | '/settlements/'
     | '/shipping-policy/'
     | '/store-settings/'
@@ -136,10 +186,15 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
+    | '/account'
     | '/claims'
+    | '/coupons'
+    | '/inquiries'
     | '/login'
+    | '/notices'
     | '/orders'
     | '/products'
+    | '/reviews'
     | '/settlements'
     | '/shipping-policy'
     | '/store-settings'
@@ -149,10 +204,15 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
+    | '/account/'
     | '/claims/'
+    | '/coupons/'
+    | '/inquiries/'
     | '/login/'
+    | '/notices/'
     | '/orders/'
     | '/products/'
+    | '/reviews/'
     | '/settlements/'
     | '/shipping-policy/'
     | '/store-settings/'
@@ -163,10 +223,15 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   ProductsNewRoute: typeof ProductsNewRoute
+  AccountIndexRoute: typeof AccountIndexRoute
   ClaimsIndexRoute: typeof ClaimsIndexRoute
+  CouponsIndexRoute: typeof CouponsIndexRoute
+  InquiriesIndexRoute: typeof InquiriesIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
+  NoticesIndexRoute: typeof NoticesIndexRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
+  ReviewsIndexRoute: typeof ReviewsIndexRoute
   SettlementsIndexRoute: typeof SettlementsIndexRoute
   ShippingPolicyIndexRoute: typeof ShippingPolicyIndexRoute
   StoreSettingsIndexRoute: typeof StoreSettingsIndexRoute
@@ -203,6 +268,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettlementsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reviews/': {
+      id: '/reviews/'
+      path: '/reviews'
+      fullPath: '/reviews/'
+      preLoaderRoute: typeof ReviewsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/': {
       id: '/products/'
       path: '/products'
@@ -217,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notices/': {
+      id: '/notices/'
+      path: '/notices'
+      fullPath: '/notices/'
+      preLoaderRoute: typeof NoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/': {
       id: '/login/'
       path: '/login'
@@ -224,11 +303,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inquiries/': {
+      id: '/inquiries/'
+      path: '/inquiries'
+      fullPath: '/inquiries/'
+      preLoaderRoute: typeof InquiriesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/coupons/': {
+      id: '/coupons/'
+      path: '/coupons'
+      fullPath: '/coupons/'
+      preLoaderRoute: typeof CouponsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/claims/': {
       id: '/claims/'
       path: '/claims'
       fullPath: '/claims/'
       preLoaderRoute: typeof ClaimsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account/': {
+      id: '/account/'
+      path: '/account'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AccountIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products/new': {
@@ -259,10 +359,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   ProductsNewRoute: ProductsNewRoute,
+  AccountIndexRoute: AccountIndexRoute,
   ClaimsIndexRoute: ClaimsIndexRoute,
+  CouponsIndexRoute: CouponsIndexRoute,
+  InquiriesIndexRoute: InquiriesIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
+  NoticesIndexRoute: NoticesIndexRoute,
   OrdersIndexRoute: OrdersIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
+  ReviewsIndexRoute: ReviewsIndexRoute,
   SettlementsIndexRoute: SettlementsIndexRoute,
   ShippingPolicyIndexRoute: ShippingPolicyIndexRoute,
   StoreSettingsIndexRoute: StoreSettingsIndexRoute,

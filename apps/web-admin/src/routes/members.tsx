@@ -43,7 +43,7 @@ function MembersGate() {
     return (
       <UnavailableScreen
         title="일반 회원 관리"
-        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다."
+        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
         message="일반 회원 관리는 준비 중이에요"
       />
     )
@@ -208,7 +208,7 @@ function MembersPage() {
     <div className="p-6">
       <PageIntro
         title="일반 회원 관리"
-        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인합니다."
+        description="구매자 회원의 이용 상태와 제재 정보를 운영 목적 범위에서 확인해요."
       />
 
       <FilterBar className="mb-3.5">
@@ -222,7 +222,7 @@ function MembersPage() {
         rowKey={row => row.id}
         onRowClick={openDrawer}
         loading={isLoading}
-        emptyLabel="조건에 맞는 회원이 없습니다."
+        emptyLabel="조건에 맞는 회원이 없어요."
       />
 
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="회원 상세" width="lg">
@@ -257,7 +257,7 @@ function MembersPage() {
             </DrawerSummaryCard>
 
             <DetailField label={`신고 누적 이력 · ${selected.reportHistory.length}건`}>
-              <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없습니다." />
+              <HistoryList items={selected.reportHistory} emptyLabel="신고 이력이 없어요." />
             </DetailField>
 
             <DetailField label="계정 상태">
