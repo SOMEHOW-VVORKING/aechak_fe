@@ -73,25 +73,56 @@ async function stubSellerApplication(page: Page) {
   })
 }
 
-test('[AC-SELLER-E2E-001] 카카오 로그인 복귀 → 대시보드 → 입점 신청 폼 임시저장', async ({ page }) => {
-  await stubSession(page)
-  await stubSellerApplication(page)
-  // 로그인 진입은 페이지 이동(302) — 서버 인가 화면 대신 바로 복귀 주소로 되돌린다.
+/** 승인된 셀러 — 가드를 통과해 운영 화면까지 들어가는 쪽을 재현한다. */
+async function stubApprovedApplication(page: Page) {
+  await page.route(`${SELLER_ORIGIN}/api/v1/seller-applications`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        applicationId: 1,
+        status: 'APPROVED',
+        businessType: 'PERSONAL_GENERAL',
+        businessName: null,
+        businessRegNo: null,
+        corpRegNo: null,
+        representativeName: '정지은',
+        telesalesNumber: null,
+        bankCode: '004',
+        accountNumberMasked: '********6789',
+        accountHolder: '정지은',
+        appliedAt: '2026-08-13T09:00:00',
+        submittedAt: '2026-08-13T10:00:00',
+        decidedAt: '2026-08-14T10:00:00',
+        rejectionReason: null,
+        documents: [],
+      },
+    }),
+  )
+}
+
+/** 로그인 진입은 페이지 이동(302) — 서버 인가 화면 대신 바로 복귀 주소로 되돌린다. */
+async function stubKakaoRedirect(page: Page) {
   await page.route(`${API_ORIGIN}/api/v1/auth/login/kakao/redirect*`, route =>
     route.fulfill({
       status: 302,
       headers: { Location: `${ORIGIN}/login/complete?status=ACTIVE&isNew=false` },
     }),
   )
+}
+
+test('[AC-SELLER-E2E-001] 신청 이력이 없는 계정은 로그인 복귀 뒤 입점 신청 폼에서 임시저장한다', async ({
+  page,
+}) => {
+  await stubSession(page)
+  await stubSellerApplication(page)
+  await stubKakaoRedirect(page)
 
   await page.goto('/login')
   await page.getByRole('button', { name: '카카오로 로그인' }).click()
 
-  // /login/complete가 refresh로 access를 수령하고 대시보드로 보낸다.
-  await expect(page).toHaveURL(`${ORIGIN}/`)
-
-  // SPA 내비게이션으로 스토어 설정 진입 — 신청 이력 없음(404/10100) = 신규 신청 폼.
-  await page.getByRole('button', { name: '스토어 설정' }).click()
+  // /login/complete는 대시보드(`/`)로 보내지만 __root 가드가 신청 이력 없음(404/10100)을 보고
+  // 입점 신청으로 돌린다. 대시보드를 거치지 않는 것이 이 가드의 요점이라 여기서 `/`를 기대하면
+  // 안 된다 — 미승인 계정이 운영 화면을 한 번이라도 보면 가드가 뚫린 것이다.
+  await expect(page).toHaveURL(`${ORIGIN}/store-settings`)
   await expect(page.getByText('작성 전')).toBeVisible()
   await expect(page.getByRole('button', { name: '제출하기' })).toBeDisabled()
 
@@ -100,6 +131,28 @@ test('[AC-SELLER-E2E-001] 카카오 로그인 복귀 → 대시보드 → 입점
   await page.getByRole('button', { name: '임시저장' }).click()
   await expect(page.getByText('저장했어요.')).toBeVisible()
   await expect(page.getByText('작성 중', { exact: true })).toBeVisible()
+})
+
+test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드에 들어가고 nav로 스토어 설정에 간다', async ({
+  page,
+}) => {
+  await stubSession(page)
+  await stubApprovedApplication(page)
+  await stubKakaoRedirect(page)
+
+  await page.goto('/login')
+  await page.getByRole('button', { name: '카카오로 로그인' }).click()
+
+  // 화면 표식을 먼저 보고 주소를 그 뒤에 단언한다 — 주소만 보면 가드가 끝나기 전에 스쳐 간 `/`로
+  // 통과할 수 있다(단위 스펙이 settled 뒤 한 번만 보는 것과 같은 이유). 표식이 뜬 뒤에도 `/`에
+  // 남아 있어야 비로소 "승인된 셀러를 들여보냈다"가 된다.
+  await expect(page.getByText('대시보드는 준비 중이에요')).toBeVisible()
+  await expect(page).toHaveURL(`${ORIGIN}/`)
+
+  // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 승인 안내를 보여준다.
+  await page.getByRole('button', { name: '스토어 설정' }).click()
+  await expect(page).toHaveURL(`${ORIGIN}/store-settings`)
+  await expect(page.getByText('입점 신청이 승인됐어요')).toBeVisible()
 })
 
 test('[AC-SELLER-E2E-002] 세션 없이 스토어 설정 진입(401 → refresh 실패)이면 로그인으로 튕긴다', async ({
