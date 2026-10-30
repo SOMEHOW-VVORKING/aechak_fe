@@ -686,6 +686,21 @@ describe('/claims', () => {
     open = await drawer()
     expect(open.queryByPlaceholderText('양쪽에 전달할 판정 사유를 입력하세요.')).toBeNull()
 
+    // 기타로 되돌아오면 입력란이 **비어 있어야** 한다 — 사유를 바꿀 때 상세를 비우는 쪽을
+    // 이 단언이 고정한다(보내는 자리의 가드는 이 경로로는 도달할 수 없는 뒷받침이다).
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '기타' }),
+    )
+    open = await drawer()
+    expect(open.getByPlaceholderText('양쪽에 전달할 판정 사유를 입력하세요.')).toHaveValue('')
+
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    open = await drawer()
+
     await user.click(open.getByRole('button', { name: '제출' }))
     const dialog = await screen.findByRole('dialog', { name: '셀러 귀책으로 종결할까요?' })
     await user.click(within(dialog).getByRole('button', { name: '셀러 귀책 종결' }))
