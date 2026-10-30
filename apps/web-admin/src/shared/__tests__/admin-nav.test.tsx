@@ -9,6 +9,9 @@ import {
   ADMIN_APPLICATIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
+  seedAdminClaims,
+  seedAdminInquiries,
+  seedAdminReviews,
   server,
 } from '@/testing/msw/server'
 
@@ -36,9 +39,18 @@ const normalizePath = (pathname: string) =>
  *
  * 2026-10-26 admin-api-dev 실측: `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications`
  * 계열 넷. 그 뒤 `/admin/members` 계열 넷(목록·상세·제재·해제)이 더해져 일반 회원 관리도
- * 실연동이 됐다. 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
+ * 실연동이 됐고, 2026-10-30 실측에서 `/admin/inquiries` 넷·`/admin/claims` 넷·`/admin/reviews`
+ * 다섯이 확인돼 서비스 문의·클레임·리뷰도 실연동이 됐다(SCRUM-331).
+ * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
-const LIVE_LABELS = ['셀러 입점 심사', '관리자 관리', '일반 회원 관리'] as const
+const LIVE_LABELS = [
+  '셀러 입점 심사',
+  '관리자 관리',
+  '일반 회원 관리',
+  '서비스 문의 관리',
+  '취소/반품/교환',
+  '리뷰 관리',
+] as const
 
 /**
  * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
@@ -50,10 +62,7 @@ const PENDING_LABELS = [
   '상품 검수 관리',
   'AI 검수 큐',
   '신고 제재 관리',
-  '서비스 문의 관리',
   '주문 배송 모니터링',
-  '취소/반품/교환',
-  '리뷰 관리',
   '채팅 CS 모니터링',
   '알림/공지 관리',
   '어드민 액션 로그',
@@ -98,6 +107,10 @@ describe('어드민 nav', () => {
   beforeEach(() => {
     // 심사 대기 0건 → 입점 심사 항목에 숫자 배지가 붙지 않는 상태가 기본값이다.
     seedAdminApplications()
+    // 실연동 화면도 nav 테스트에서 열린다 — 빈 목록으로 시드해 테스트 사이 상태를 끊는다.
+    seedAdminInquiries()
+    seedAdminClaims()
+    seedAdminReviews()
   })
 
   it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
@@ -204,7 +217,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 13항목의 목적지에는 띠가 **있어야** 하고, 실연동 2항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 항목의 목적지에는 띠가 **있어야** 하고, 실연동 항목에는 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).

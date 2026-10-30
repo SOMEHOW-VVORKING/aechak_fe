@@ -1195,3 +1195,64 @@ SCRUM-302가 nav 15항목을 되살렸지만 **꼬리표가 붙은 13항목은 �
   어긋나면 다음 사람이 이미 실연동된 화면에 예시 데이터 띠를 다시 붙인다(교차검토 지적).
 - `members.mock.ts`는 지웠고 `members.map.ts` + `members.queries.ts`가 실 API 응답을 받는다.
   `MemberAccount` 류 타입은 `@aechak/domain`에 있던 것을 와이어 계약 모양으로 맞췄다.
+
+## 어드민 문의·클레임·리뷰 실연동 (2026-10-30, SCRUM-331)
+
+위 두 절의 숫자("13화면"·"12화면", "실연동 2화면"·"3화면")는 그 날짜 기준이다. 이 티켓이
+`/admin/inquiries` 넷 · `/admin/claims` 넷 · `/admin/reviews` 다섯을 붙여 재고가 세 칸 움직였다.
+
+- **예시 데이터 화면 12 → 9.** `/inquiries`·`/claims`·`/reviews`가 빠졌다. nav의 `tag`와 화면
+  상단 `MockDataNotice`를 코드에서 함께 뗐다.
+- **띠를 붙이지 않는 실연동 화면 3 → 6.** `admin-nav.test.tsx`의 `LIVE_LABELS`도 여섯이고
+  `admin-mock-screens.test.tsx`의 `SCREENS`는 9행이다(AGENTS.md 36행·규약 10 끝 문단과 함께
+  **네 자리가 같은 숫자를 말해야 한다**).
+
+### 실측 — api-docs가 정본이고 springdoc 출력은 한 자리에서 거짓말한다
+
+계약은 `GET https://admin-api-dev.aechak.co.kr/v3/api-docs`(dev 실측, 2026-10-30)와 BE
+`origin/develop`의 컨트롤러·애그리거트를 맞춰 읽어 적었다. 두 군데가 어긋난다.
+
+- `GET /admin/reviews`의 파라미터가 api-docs에는 `request`라는 **객체 하나**로 나온다 —
+  `@ModelAttribute`를 springdoc이 그렇게 뽑은 것이고 실제 와이어는 `productId`·`rating`·
+  `status`·`reported`·`keyword`·`cursor`·`size` **평탄 쿼리**다. 스펙에는 평탄하게 적었다.
+- 블라인드·해제·삭제의 성공 응답이 api-docs에는 `200`으로 나오지만 컨트롤러는
+  `ResponseEntity.noContent()`라 **204 본문 없음**이다. 스펙은 204로 적었다.
+- 인증 없이 찔러 보는 방식으로는 경로 존재를 가릴 수 없다 — admin 모듈은 라우팅 전에
+  시큐리티가 걸려 **없는 경로도 401(20004)** 로 돌아온다(`/admin/nope`로 확인).
+
+### 되돌릴 수 없는 처리와 확인 Modal — 드로어까지 함께 잠가야 한다
+
+확인 `Modal`의 `loading`은 **확인 버튼만** 잠근다. ESC·스크림·취소는 `onClose` 하나로 오고,
+그보다 먼저 **`Drawer`의 ESC·스크림이 자기 `onClose`를 쏜다**. 라우트의 `closeDrawer`가
+`selectedId`와 `confirmOpen`을 같이 비우므로, 요청이 떠 있는 동안 ESC를 누르면 드로어가 닫히고
+그 과정에서 확인 Modal까지 사라진다 — 운영자는 삭제·개입이 들어갔는지 알 수 없다.
+그래서 세 라우트 모두 닫기 제스처를 **가드 하나**로 모았다.
+
+```ts
+function resetSelection() { setSelectedId(null); setConfirmOpen(false) }   // 성공·실패 뒤의 닫기
+function closeDrawer() { if (write.isPending) return; resetSelection() }   // Drawer onClose
+function closeConfirm() { if (write.isPending) return; setConfirmOpen(false) } // Modal onClose
+```
+
+성공 콜백에서 `closeDrawer()`를 부르면 그 시점의 `isPending`을 믿을 수 없어 드로어가 열린 채
+남는다 — 성공·실패 경로는 가드를 거치지 않는 `resetSelection()`을 쓴다. 이 계약은 세 라우트의
+`[AC-ADM-*-01x] 요청이 떠 있는 동안 …` 테스트가 ESC·취소·스크림 셋을 각각 눌러 고정한다.
+**같은 결함이 `/members`에도 남아 있다**(SCRUM-313 범위라 이 티켓에서 건드리지 않았다).
+
+### 목록이 실패한 동안 처리 버튼을 잠근다(규약 6-7)
+
+세 화면 모두 `keepPreviousData`를 쓰므로 재조회가 403으로 실패해도 react-query가 직전 행을 들고
+있다. 행은 지우지 않고(마지막으로 본 내용은 정보다) `list.isError`를 `canSubmit`에 넣어 **처리만**
+막는다. 같은 이유로 `hasNext`는 `isPlaceholderData`일 때 내린다 — 이전 조건의 `hasNext`로 더
+보기를 열어 두면 새 조건의 첫 페이지가 오기 전에 옛 커서를 요구해 페이지를 건너뛴다(리뷰는
+커서에 필터 지문이 실려 있어 그 요청이 400/90002로 끊긴다).
+
+### 서버에 없는 필드는 지웠다
+
+- 문의: `channel`(앱/웹/이메일)과 `title`이 서버에 없다. 제목 자리는 서버가 주는
+  `contentPreview`(내용 앞 100자)가 쓰고, 내부 메모 입력은 저장할 칼럼이 없어 뺐다.
+- 리뷰: `writerNotice`(작성자 안내 문구)가 없다. 처리 사유 메모 `reasonText` 하나뿐이고
+  **해제는 본문을 받지 않아** 해제 결정에서는 사유 입력을 그리지 않는다. 운영자 선택지에서
+  `PROFANITY`는 뺐다(작성 시점 자동 판정만 쓰는 값이다).
+- 클레임: 배송비 부담 주체가 `BUYER`·`SELLER` 둘뿐이다(예시 시절의 `platform`은 없다). 취소
+  유형이거나 클레임 불가 판정이면 서버가 명시값도 비우므로 그 조합에서는 입력 자체를 그리지 않는다.
