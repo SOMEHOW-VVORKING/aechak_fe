@@ -29,8 +29,17 @@ describe('maskContactNumber', () => {
     expect(maskContactNumber('0212345678')).toBe('021-***-5678')
   })
 
-  it('가릴 만큼 길지 않으면 원문을 돌려준다 — 잘못 들어간 값을 알아볼 수 있어야 한다', () => {
+  it('가릴 자리가 없으면 원문을 돌려준다 — 조립하면 가린 것도 없이 번호만 망가진다', () => {
     expect(maskContactNumber('123456')).toBe('123456')
+    // 앞 3 + 뒤 4가 이미 전부인 경계. 그대로 조립하면 '123--4567'이 된다.
+    expect(maskContactNumber('1234567')).toBe('1234567')
+    expect(maskContactNumber('123-4567')).toBe('123-4567')
+    // 한 자리만 가릴 수 있는 자리부터 가린다.
+    expect(maskContactNumber('12345678')).toBe('123-*-5678')
+  })
+
+  it('숫자가 없는 값은 별표로 덮지 않는다 — 잘못 들어간 값으로 보여야 한다', () => {
+    expect(maskContactNumber('연락처 없음')).toBe('연락처 없음')
   })
 
   it('값이 없으면 null이다', () => {

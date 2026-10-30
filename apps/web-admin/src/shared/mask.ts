@@ -28,14 +28,16 @@ export function maskPersonName(value: string | null | undefined): string | null 
 /**
  * 연락처 가운데 자리를 가린다 — 앞 3자리와 뒤 4자리만 남긴다.
  *
- * 숫자만 세어 가리므로 하이픈 유무·국가번호 표기에 상관없이 동작한다. 가릴 만큼 길지 않으면
- * (7자리 미만) 원문을 그대로 돌려준다 — 번호로 보기 어려운 값을 별표로 덮으면 운영자가
- * "잘못 들어간 값"임을 알아볼 수 없다.
+ * 숫자만 세어 가리므로 하이픈 유무·국가번호 표기에 상관없이 동작한다. **가릴 자리가 없으면
+ * (숫자 7자리 이하) 원문을 그대로 돌려준다** — 앞 3 + 뒤 4가 이미 전부라 가려질 숫자가 하나도
+ * 없는데, 그래도 조립하면 `1234567`이 `123--4567`이 되어 가린 것도 없이 번호만 망가진다.
+ * 번호로 보기 어려운 값을 별표로 덮지 않는 이유도 같다 — 운영자가 "잘못 들어간 값"임을
+ * 알아볼 수 있어야 한다.
  */
 export function maskContactNumber(value: string | null | undefined): string | null {
   const raw = value?.trim() ?? ''
   if (raw === '') return null
   const digits = raw.replace(/\D/g, '')
-  if (digits.length <= 6) return raw
+  if (digits.length <= 7) return raw
   return `${digits.slice(0, 3)}-${'*'.repeat(digits.length - 7)}-${digits.slice(-4)}`
 }
