@@ -33,6 +33,7 @@ import {
   type ReviewDecision,
   type ReviewStatusValue,
 } from '@/features/reviews'
+import { usePendingWriteExitGuard } from '@/shared/hooks/usePendingWriteExitGuard'
 import { ActorTag } from '@/shared/components/ActorTag'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
 import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
@@ -260,6 +261,10 @@ function ReviewsPage() {
     if (write.isPending) return
     setConfirmOpen(false)
   }
+
+  // 닫기 가드는 `onClose`만 막는다 — 라우트 이탈·새로고침은 그 가드를 지나가지 않고, 나가면
+  // 삭제는 서버에 들어가는데 결과를 알릴 화면이 사라진다. 그 마지막 구멍을 여기서 막는다.
+  usePendingWriteExitGuard(write.isPending)
 
   function submit() {
     // 같은 버튼을 두 번 눌러도 요청은 한 번만 나간다.

@@ -28,7 +28,7 @@ function renderAt(path: string) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return { queryClient }
+  return { queryClient, router }
 }
 
 const 거부된반품 = makeAdminClaimWire({ claimPublicId: 'CLM-2041' })
@@ -492,6 +492,52 @@ describe('/claims', () => {
     expect(await screen.findByText(/요청을 처리하지 못했어요/)).toBeInTheDocument()
     // 실패한 요청은 분쟁을 종결시키지 않는다.
     expect(currentAdminClaim('CLM-2041')?.status).toBe('REJECTED')
+  })
+
+  it('[AC-ADM-CLM-027] 요청이 떠 있는 동안에는 다른 화면으로 나갈 수 없다', async () => {
+    // 닫기 가드는 Drawer·Modal의 onClose만 막는다 — 라우트 이탈로 화면이 언마운트되면
+    // react-query가 호출별 onSuccess/onError를 실행하지 않아(MutationObserver가 hasListeners로
+    // 가둔다) 개입은 서버에 들어갔는데 운영자는 결과를 못 본 채 다른 화면에 있게 된다.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.post(ADMIN_CLAIM_INTERVENE_URL, async () => {
+        await gate
+        return HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 })
+      }),
+    )
+    const user = userEvent.setup()
+    const { router } = renderAt('/claims')
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+    const open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    await user.click((await drawer()).getByRole('button', { name: '제출' }))
+    const dialog = await screen.findByRole('dialog', { name: '셀러 귀책으로 종결할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '셀러 귀책 종결' }))
+    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
+
+    // 막힌 이동의 약속은 끝내 resolve되지 않으므로(router commitLocation) await하지 않는다.
+    await act(async () => {
+      void router.navigate({ to: '/audit-log' })
+      await Promise.resolve()
+    })
+    expect(router.state.location.pathname).toBe('/claims')
+    expect(screen.getByRole('dialog', { name: '셀러 귀책으로 종결할까요?' })).toBeInTheDocument()
+
+    release()
+    expect(await screen.findByText(/요청을 처리하지 못했어요/)).toBeInTheDocument()
+
+    // 처리가 끝나면 가드가 풀린다 — 운영자를 화면에 묶어 두지 않는다.
+    await act(async () => {
+      void router.navigate({ to: '/audit-log' })
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/audit-log'))
   })
 
   it('[AC-ADM-CLM-017] 확인 버튼을 두 번 눌러도 개입 요청은 한 번만 나간다', async () => {

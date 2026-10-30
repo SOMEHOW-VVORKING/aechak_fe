@@ -1239,6 +1239,31 @@ function closeConfirm() { if (write.isPending) return; setConfirmOpen(false) } /
 `[AC-ADM-*-01x] 요청이 떠 있는 동안 …` 테스트가 ESC·취소·스크림 셋을 각각 눌러 고정한다.
 **같은 결함이 `/members`에도 남아 있다**(SCRUM-313 범위라 이 티켓에서 건드리지 않았다).
 
+그런데 이 가드는 `onClose`만 막는다 — **라우트 이탈은 그 가드를 지나가지 않는다**(codex 교차검토
+지적). 요청이 떠 있는 동안 브라우저 뒤로 가기나 nav 이동으로 화면이 언마운트되면, react-query는
+`mutate(vars, { onSuccess, onError })`로 받은 **호출별 콜백을 실행하지 않는다** —
+`query-core`의 `MutationObserver.#notify`가 `this.#mutateOptions && this.hasListeners()`로 가둬
+놓았고, 관찰자가 사라지면 `hasListeners()`가 false다. 요청 자체는 `MutationCache`에 남아 끝까지
+가므로 **서버에서는 삭제·개입·답변이 그대로 들어가고 토스트만 사라진다**. `useMutation` 쪽
+`onSettled`(무효화)는 mutation이 options를 들고 있어 그대로 돌지만, 그건 목록을 맞춰 둘 뿐
+"방금 그 처리가 어떻게 됐는지"를 말해 주지 않는다.
+
+그래서 닫기 가드 옆에 이탈 가드를 하나 더 둔다 —
+`apps/web-admin/src/shared/hooks/usePendingWriteExitGuard.ts`.
+
+```ts
+usePendingWriteExitGuard(write.isPending) // 세 라우트가 닫기 가드 바로 아래에서 부른다
+```
+
+`@tanstack/react-router`의 `useBlocker`로 **PUSH·REPLACE**(라우터 이동)와 **BACK·FORWARD**
+(브라우저 히스토리)를 막고, `enableBeforeUnload`로 새로고침·탭 닫기에 경고를 띄운다. 가드 함수는
+ref를 읽는 **고정 참조**여야 한다 — `useBlocker`의 effect 의존성에 함수가 들어 있어 렌더마다 새
+함수를 넘기면 블로커를 매 렌더 등록·해제한다. 테스트는 메모리 히스토리라 `back()`이 블로커를
+거치지 않으므로(`@tanstack/history`의 `createMemoryHistory`는 블로커를 push/replace에서만 본다)
+**`router.navigate`로 막힌 것**을 단언한다 — 그리고 막힌 이동의 `commitLocation` 약속은 끝내
+resolve되지 않으므로 `await`하지 말고 `void`로 띄워야 한다(걸면 테스트가 영구히 멈춘다).
+이탈 가드도 `/members`·`/sellers/applications`·`/admins`에는 없다(같은 이유로 손대지 않았다).
+
 ### 목록이 실패한 동안 처리 버튼을 잠근다(규약 6-7)
 
 세 화면 모두 `keepPreviousData`를 쓰므로 재조회가 403으로 실패해도 react-query가 직전 행을 들고
