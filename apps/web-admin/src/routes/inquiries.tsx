@@ -223,12 +223,14 @@ function InquiriesPage() {
   const now = Date.now()
   const allowed = inquiry ? allowedDecisions(inquiry.status) : []
   const needsAnswer = decision === 'answer'
-  // 목록 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7) — 권한이 끊긴 403이면 상세도 낡은
-  // 캐시일 수 있고, 그 값으로 만든 확인 Modal은 서버에 없는 상태를 보고 전이를 지시한다.
+  // 목록·상세 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7). **상세도 함께 봐야 한다** —
+  // react-query는 재조회가 실패해도 캐시된 상세를 그대로 돌려주므로, 상세만 403이 된 화면은
+  // 오류 안내와 살아 있는 제출 버튼을 함께 띄우고 그 낡은 값으로 전이를 지시하게 된다.
   const canSubmit =
     inquiry != null &&
     !write.isPending &&
     !list.isError &&
+    !detail.isError &&
     allowed.includes(decision) &&
     (!needsAnswer || answer.trim() !== '')
   const delayedCount = list.rows.filter(row => isDelayed(row, now)).length

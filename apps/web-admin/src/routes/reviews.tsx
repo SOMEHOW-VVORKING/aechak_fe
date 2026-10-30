@@ -227,12 +227,14 @@ function ReviewsPage() {
 
   const allowed = review ? allowedDecisions(review.status) : []
   const needsReason = decision !== 'unblind'
-  // 목록 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7) — 낡은 행으로 되돌릴 수 없는 삭제를
-  // 지시하게 되고, 권한이 끊긴 403이면 그 요청도 전부 실패한다.
+  // 목록·상세 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7). **상세도 함께 봐야 한다** —
+  // react-query는 재조회가 실패해도 캐시된 상세를 돌려주므로, 상세만 403이 된 화면에서 낡은
+  // 값으로 되돌릴 수 없는 삭제를 지시하게 된다.
   const canSubmit =
     review != null &&
     !write.isPending &&
     !list.isError &&
+    !detail.isError &&
     allowed.includes(decision) &&
     (!needsReason || isSelectableBlindReason(reasonCode))
 

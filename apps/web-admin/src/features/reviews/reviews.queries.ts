@@ -73,9 +73,11 @@ export interface ReviewListResult {
  * 커서 페이징 목록. 커서에 **필터 지문**이 실려 있어 조건이 바뀐 채 옛 커서를 보내면 서버가
  * 400(90002)으로 끊는다 — 필터를 쿼리 키에 넣어 조건이 바뀌는 순간 커서 사슬을 새로 시작한다.
  *
- * `keepPreviousData`를 쓰므로 `isPlaceholderData`일 때 `hasNext`를 내린다 — 이전 조건의
- * `hasNext`로 더 보기를 열어 두면 새 조건의 첫 페이지가 오기 전에 옛 커서를 요구해 페이지를
- * 건너뛴다. 실패는 행을 지우지 않고 `isError`로 알려 화면이 처리 버튼을 잠그게 한다(AGENTS 6-7).
+ * 더 보기는 `query.hasNextPage`로만 열고 **응답 본문의 `hasNext`로 열지 않는다**. placeholder
+ * 구간에는 `data`가 이전 조건의 페이지라서, 본문 값을 읽으면 버튼이 열려 있고 그 버튼이 옛 커서를
+ * 요구해 400으로 끊긴다(운영자에게는 목록이 깨진 것으로 보인다). `isPlaceholderData`를 함께 보는
+ * 것은 react-query의 파생 성질에 기대지 않겠다는 뜻이고, 계약은 테스트가 고정한다.
+ * 실패는 행을 지우지 않고 `isError`로 알려 화면이 처리 버튼을 잠그게 한다(AGENTS 6-7).
  */
 export function useAdminReviews(params: ReviewListParams): ReviewListResult {
   const query = useInfiniteQuery<AdminReviewListData>({

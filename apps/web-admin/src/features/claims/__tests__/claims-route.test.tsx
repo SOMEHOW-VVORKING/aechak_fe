@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import {
   ADMIN_CLAIMS_URL,
+  ADMIN_CLAIM_DETAIL_URL,
   ADMIN_CLAIM_INTERVENE_URL,
   ADMIN_CLAIM_REASONS_URL,
   currentAdminClaim,
@@ -546,5 +547,119 @@ describe('/claims', () => {
     // 주문번호는 완전일치라 셀러명 검색어를 그대로 넘기면 0건이 된다 — 축을 바꾸면 비운다.
     expect(requested.at(-1)).toBe('-|-')
     expect(requested).toContain('ORD-2038|-')
+  })
+  it('[AC-ADM-CLM-020] 상세 재조회가 403으로 실패하면 낡은 상세로 종결할 수 없다', async () => {
+    const interveneRequests = countRequests('POST', '/admin/claims/CLM-2041/intervention')
+    const user = userEvent.setup()
+    const { queryClient } = renderAt('/claims')
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+    let open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    expect((await drawer()).getByRole('button', { name: '제출' })).toBeEnabled()
+
+    // 목록은 멀쩡한데 상세만 권한이 끊긴다 — react-query는 캐시된 상세를 그대로 들고 있다.
+    server.use(
+      http.get(ADMIN_CLAIM_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '접근 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['admin-claims', 'detail'] })
+    })
+
+    open = await drawer()
+    expect(open.getByText(/어드민 권한이 없어 클레임 상세를 볼 수 없어요/)).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+    expect(interveneRequests).toEqual([])
+  })
+
+  it('[AC-ADM-CLM-021] 사유 카탈로그 재조회가 실패하면 고른 사유가 남아 있어도 제출이 막힌다', async () => {
+    const interveneRequests = countRequests('POST', '/admin/claims/CLM-2041/intervention')
+    const user = userEvent.setup()
+    const { queryClient } = renderAt('/claims')
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+    let open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    expect((await drawer()).getByRole('button', { name: '제출' })).toBeEnabled()
+
+    // 카탈로그만 끊긴다 — 캐시된 선택지가 남아 있어 사유는 그대로 골라져 있다.
+    server.use(
+      http.get(ADMIN_CLAIM_REASONS_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '접근 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['admin-claims', 'intervention-reasons'] })
+    })
+
+    open = await drawer()
+    expect(open.getByText(/개입 사유를 불러올 수 없어요/)).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+    expect(interveneRequests).toEqual([])
+  })
+
+  it('[AC-ADM-CLM-022] 개입 뒤 무효화는 사유 카탈로그를 다시 받지 않는다', async () => {
+    const catalogRequests = countRequests('GET', '/admin/claims/intervention-reasons')
+    const user = userEvent.setup()
+    renderAt('/claims')
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+    const open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    await user.click((await drawer()).getByRole('button', { name: '제출' }))
+    const dialog = await screen.findByRole('dialog', { name: '셀러 귀책으로 종결할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '셀러 귀책 종결' }))
+    await screen.findByText(/셀러 귀책 종결 처리했어요/)
+
+    // 고정 어휘라 다시 받을 이유가 없고, 그 요청이 실패하면 다음 개입이 막힌다.
+    expect(catalogRequests).toHaveLength(1)
+  })
+
+  it('[AC-ADM-CLM-023] 필터를 바꾼 뒤 새 첫 페이지가 오기 전에는 더 보기가 열려 있지 않다', async () => {
+    seedAdminClaims(
+      Array.from({ length: 21 }, (_, index) =>
+        makeAdminClaimWire({
+          claimPublicId: `CLM-3${String(index).padStart(3, '0')}`,
+          orderPublicId: `ORD-3${String(index).padStart(3, '0')}`,
+          requestedAt: `2026-10-01T09:${String(index).padStart(2, '0')}:00`,
+        }),
+      ),
+    )
+    // 새 조건의 첫 페이지 응답을 테스트가 붙잡는다 — 그 사이가 placeholder 구간이다.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const user = userEvent.setup()
+    renderAt('/claims')
+    await screen.findByRole('button', { name: 'CLM-3000' })
+    expect(screen.getByRole('button', { name: '더 보기' })).toBeInTheDocument()
+
+    server.use(
+      http.get(ADMIN_CLAIMS_URL, async () => {
+        await gate
+        return HttpResponse.json({
+          data: { items: [], totalCount: 0, nextCursor: null, hasNext: false },
+        })
+      }),
+    )
+    await user.selectOptions(
+      screen.getAllByRole('combobox')[2]!,
+      screen.getByRole('option', { name: '교환' }),
+    )
+
+    expect(screen.getByRole('button', { name: 'CLM-3000' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+
+    release()
+    expect(await screen.findByText('조건에 맞는 클레임 0건')).toBeInTheDocument()
   })
 })

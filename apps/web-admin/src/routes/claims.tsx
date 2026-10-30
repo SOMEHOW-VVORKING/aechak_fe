@@ -283,13 +283,16 @@ function ClaimsPage() {
     decisionEntry != null &&
     canChooseCostBearer(claim.claimType, decisionEntry.claimAccepted)
 
-  // 목록 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7) — 낡은 행으로 되돌릴 수 없는 종결을
-  // 지시하게 되고, 권한이 끊긴 403이면 그 요청도 전부 실패한다.
+  // 목록·상세·카탈로그 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7). **상세와 카탈로그도
+  // 함께 봐야 한다** — react-query는 재조회가 실패해도 캐시된 값을 돌려주므로, 둘 중 하나만
+  // 403이 된 화면에서 낡은 판정 근거로 되돌릴 수 없는 종결을 지시하게 된다.
   const canSubmit =
     claim != null &&
     claim.interventionAllowed &&
     !intervene.isPending &&
     !list.isError &&
+    !detail.isError &&
+    !catalog.isError &&
     selectedReason != null &&
     (!needsDetail || reasonDetail.trim() !== '')
 

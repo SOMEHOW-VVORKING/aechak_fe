@@ -31,8 +31,20 @@ import {
 // react-query 훅은 쓰지 않고 fetcher만 소비한다(AGENTS 6-2). fetcher는 `{ data }` 한 겹
 // (ApiResponse)을 돌려주므로 여기서 벗긴다. 호스트는 공유 클라이언트가 `/admin` 접두로 가른다.
 
-/** 목록·상세·카탈로그가 이 접두를 공유한다 — 개입 한 번의 무효화가 셋을 함께 갱신한다. */
+/** 목록·상세·카탈로그가 공유하는 접두. */
 export const ADMIN_CLAIMS_QUERY_KEY = ['admin-claims'] as const
+
+/**
+ * 개입 한 번이 무효화하는 범위 — 목록과 상세뿐이다.
+ *
+ * 접두 전체를 무효화하면 사유 카탈로그까지 다시 받는다. 고정 어휘라 바뀔 일이 없는데도
+ * 처리마다 요청이 하나 더 나가고, **그 요청이 실패하면 선택지가 사라져 다음 개입이 막힌다**
+ * (제출 가드가 카탈로그 실패를 보기 때문이다). 그래서 쓰기는 두 축만 건드린다.
+ */
+const INVALIDATED_ON_WRITE = [
+  [...ADMIN_CLAIMS_QUERY_KEY, 'list'],
+  [...ADMIN_CLAIMS_QUERY_KEY, 'detail'],
+] as const
 
 export interface AdminClaimListResult {
   rows: AdminClaimSummary[]
@@ -49,9 +61,11 @@ export interface AdminClaimListResult {
  * 커서 페이징 목록. 필터를 쿼리 키에 넣어 조건이 바뀌는 순간 커서 사슬이 새로 시작되게 한다
  * (커서에 정렬축이 실려 있어 조건과 함께 재사용하면 서버가 커서를 믿고 정렬을 덮는다).
  *
- * `keepPreviousData`를 쓰므로 `isPlaceholderData`일 때 `hasNext`를 내린다 — 이전 조건의
- * `hasNext`로 더 보기를 열어 두면 새 조건의 첫 페이지가 오기 전에 옛 커서를 요구해 페이지를
- * 건너뛴다. 실패는 행을 지우지 않고 `isError`로 알려 화면이 처리 버튼을 잠그게 한다(AGENTS 6-7).
+ * 더 보기는 `query.hasNextPage`로만 열고 **응답 본문의 `hasNext`로 열지 않는다**. placeholder
+ * 구간에는 `data`가 이전 조건의 페이지라서, 본문 값을 읽으면 버튼이 열려 있고 그 버튼이 이전
+ * 사슬의 커서를 요구해 새 조건의 첫 페이지를 건너뛴다. `isPlaceholderData`를 함께 보는 것은
+ * react-query의 파생 성질에 기대지 않겠다는 뜻이고, 계약은 테스트가 고정한다.
+ * 실패는 행을 지우지 않고 `isError`로 알려 화면이 처리 버튼을 잠그게 한다(AGENTS 6-7).
  */
 export function useAdminClaims(input: AdminClaimSearchInput): AdminClaimListResult {
   // 정규화한 값으로 키를 만든다 — `{ orderPublicId: '' }`와 `{}`가 같은 요청이므로 캐시도 같아야 한다.
@@ -165,6 +179,10 @@ export function useInterveneClaim() {
         ...(input.returnCostBearer == null ? {} : { returnCostBearer: input.returnCostBearer }),
         ...(input.internalMemo.trim() === '' ? {} : { internalMemo: input.internalMemo.trim() }),
       }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ADMIN_CLAIMS_QUERY_KEY }),
+    onSettled: async () => {
+      await Promise.all(
+        INVALIDATED_ON_WRITE.map(queryKey => queryClient.invalidateQueries({ queryKey })),
+      )
+    },
   })
 }

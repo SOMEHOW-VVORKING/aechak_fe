@@ -462,4 +462,70 @@ describe('/reviews', () => {
     await screen.findByText('조건에 맞는 리뷰 1건')
     expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
   })
+  it('[AC-ADM-RVW-018] 상세 재조회가 403으로 실패하면 낡은 상세로 삭제할 수 없다', async () => {
+    const deleteRequests = countRequests('DELETE', '/admin/reviews/51204')
+    const user = userEvent.setup()
+    const { queryClient } = renderAt('/reviews')
+    await user.click(await screen.findByRole('button', { name: /사료 바꾸고 애가 아팠어요/ }))
+    let open = await drawer()
+    await chooseByCaption('되돌릴 수 없음')
+    await user.selectOptions(
+      (await drawer()).getAllByRole('combobox')[0]!,
+      (await drawer()).getByRole('option', { name: '광고/스팸' }),
+    )
+    expect((await drawer()).getByRole('button', { name: '제출' })).toBeEnabled()
+
+    // 목록은 멀쩡한데 상세만 권한이 끊긴다 — react-query는 캐시된 상세를 그대로 들고 있다.
+    server.use(
+      http.get(ADMIN_REVIEW_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '접근 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['admin-reviews', 'detail'] })
+    })
+
+    open = await drawer()
+    expect(open.getByText(/어드민 권한이 없어 리뷰 상세를 볼 수 없어요/)).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+    expect(deleteRequests).toEqual([])
+  })
+
+  it('[AC-ADM-RVW-019] 필터를 바꾼 뒤 새 첫 페이지가 오기 전에는 더 보기가 열려 있지 않다', async () => {
+    seedAdminReviews(
+      Array.from({ length: 21 }, (_, index) =>
+        makeAdminReviewWire({ reviewId: 60000 + index, content: `리뷰 본문 ${index}` }),
+      ),
+    )
+    // 새 조건의 첫 페이지 응답을 테스트가 붙잡는다 — 그 사이가 placeholder 구간이다.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const user = userEvent.setup()
+    renderAt('/reviews')
+    await screen.findByRole('button', { name: '리뷰 본문 20' })
+    expect(screen.getByRole('button', { name: '더 보기' })).toBeInTheDocument()
+
+    server.use(
+      http.get(ADMIN_REVIEWS_URL, async () => {
+        await gate
+        return HttpResponse.json({
+          data: { items: [], totalCount: 0, nextCursor: null, hasNext: false },
+        })
+      }),
+    )
+    await user.selectOptions(
+      screen.getAllByRole('combobox')[1]!,
+      screen.getByRole('option', { name: '3점' }),
+    )
+
+    // 이전 조건의 행이 그대로 보이는 placeholder 구간인데도 더 보기는 닫혀 있어야 한다 —
+    // 열어 두면 그 버튼이 옛 커서를 요구하고, 리뷰 커서는 필터 지문이 달라 400(90002)으로 끊긴다.
+    expect(screen.getByRole('button', { name: '리뷰 본문 20' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+
+    release()
+    expect(await screen.findByText('조건에 맞는 리뷰 0건')).toBeInTheDocument()
+  })
 })

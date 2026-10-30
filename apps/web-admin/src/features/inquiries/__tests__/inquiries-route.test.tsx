@@ -8,6 +8,7 @@ import { routeTree } from '../../../routeTree.gen'
 import {
   ADMIN_INQUIRIES_URL,
   ADMIN_INQUIRY_ANSWER_URL,
+  ADMIN_INQUIRY_DETAIL_URL,
   currentAdminInquiry,
   makeAdminInquiryWire,
   seedAdminInquiries,
@@ -408,5 +409,72 @@ describe('/inquiries', () => {
 
     expect(await screen.findByRole('button', { name: '문의 본문 20' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+  })
+  it('[AC-ADM-INQ-016] 상세 재조회가 403으로 실패하면 낡은 상세로 제출할 수 없다', async () => {
+    const answerRequests = countRequests('POST', '/admin/inquiries/8812/answer')
+    const user = userEvent.setup()
+    const { queryClient } = renderAt('/inquiries')
+    await user.click(await screen.findByRole('button', { name: /카드 승인 문자는 받았는데/ }))
+    let open = await drawer()
+    await user.type(open.getByPlaceholderText('문의자에게 전달할 답변을 입력하세요.'), '확인했어요')
+    expect((await drawer()).getByRole('button', { name: '제출' })).toBeEnabled()
+
+    // 목록은 멀쩡한데 상세만 권한이 끊긴다 — react-query는 캐시된 상세를 그대로 들고 있다.
+    server.use(
+      http.get(ADMIN_INQUIRY_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '접근 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['admin-inquiries', 'detail'] })
+    })
+
+    open = await drawer()
+    expect(open.getByText(/어드민 권한이 없어 문의 상세를 볼 수 없어요/)).toBeInTheDocument()
+    // 오류 안내와 살아 있는 제출 버튼이 함께 있으면 낡은 값으로 전이를 지시하게 된다.
+    expect(open.getByRole('button', { name: '제출' })).toBeDisabled()
+    expect(answerRequests).toEqual([])
+  })
+
+  it('[AC-ADM-INQ-017] 필터를 바꾼 뒤 새 첫 페이지가 오기 전에는 더 보기가 열려 있지 않다', async () => {
+    seedAdminInquiries(
+      Array.from({ length: 21 }, (_, index) =>
+        makeAdminInquiryWire({
+          inquiryId: 9000 + index,
+          content: `문의 본문 ${index}`,
+          receivedAt: `2026-10-01T09:${String(index).padStart(2, '0')}:00`,
+        }),
+      ),
+    )
+    // 새 조건의 첫 페이지 응답을 테스트가 붙잡는다 — 그 사이가 placeholder 구간이다.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const user = userEvent.setup()
+    renderAt('/inquiries')
+    await screen.findByRole('button', { name: '문의 본문 0' })
+    expect(screen.getByRole('button', { name: '더 보기' })).toBeInTheDocument()
+
+    server.use(
+      http.get(ADMIN_INQUIRIES_URL, async () => {
+        await gate
+        return HttpResponse.json({
+          data: { items: [], totalCount: 0, nextCursor: null, hasNext: false },
+        })
+      }),
+    )
+    await user.selectOptions(
+      screen.getAllByRole('combobox')[0]!,
+      screen.getByRole('option', { name: '보류' }),
+    )
+
+    // 이전 조건의 행이 그대로 보이는 placeholder 구간이다 — 그런데도 더 보기는 닫혀 있어야 한다.
+    // 열어 두면 그 버튼이 이전 사슬의 커서를 요구해 새 조건의 첫 페이지를 건너뛴다.
+    expect(screen.getByRole('button', { name: '문의 본문 0' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+
+    release()
+    expect(await screen.findByText('조건에 맞는 문의 0건')).toBeInTheDocument()
   })
 })
