@@ -13,13 +13,28 @@ export const adminBase = `${ADMIN_ORIGIN}${API_PATH_PREFIX}`
 /** BE ApiResponse의 에러 봉투 모양. 화면의 에러 매핑이 errorCode로 갈라지므로 둘 다 싣는다. */
 export const errorBody = (errorCode: number, message: string) => ({ errorCode, message })
 
-/** 커서 base64url 인코딩 — 서버와 같은 모양으로 만들어 FE가 값을 들여다보지 않는지도 고정한다. */
-export const encodeCursorPayload = (payload: string): string =>
-  btoa(payload).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+/**
+ * 커서 base64url 인코딩 — 서버와 같은 모양으로 만들어 FE가 값을 들여다보지 않는지도 고정한다.
+ *
+ * **UTF-8 바이트를 거쳐 인코딩한다.** `btoa`는 latin1 밖의 코드포인트에 `InvalidCharacterError`를
+ * 던지므로 payload에 한글이 한 글자라도 섞이면 핸들러가 500으로 죽는다 — 서버는
+ * `Base64.getUrlEncoder().encodeToString(payload.getBytes(UTF_8))`이라 멀쩡한 자리에서
+ * 테스트만 깨지는, 가장 알아보기 어려운 모양이 된다. 아스키 payload의 결과는 전과 같다.
+ */
+export const encodeCursorPayload = (payload: string): string => {
+  const bytes = new TextEncoder().encode(payload)
+  let latin1 = ''
+  for (const byte of bytes) latin1 += String.fromCharCode(byte)
+  return btoa(latin1).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
 
+/** 깨진 커서는 `null`이다 — 핸들러가 그 자리에서 400(90002)으로 끊는다. */
 export function decodeCursorPayload(raw: string): string | null {
   try {
-    return atob(raw.replace(/-/g, '+').replace(/_/g, '/'))
+    const latin1 = atob(raw.replace(/-/g, '+').replace(/_/g, '/'))
+    const bytes = Uint8Array.from(latin1, char => char.charCodeAt(0))
+    // fatal — UTF-8이 아닌 바이트열을 U+FFFD로 덮어 되살리면 깨진 커서가 조용히 통과한다.
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     return null
   }

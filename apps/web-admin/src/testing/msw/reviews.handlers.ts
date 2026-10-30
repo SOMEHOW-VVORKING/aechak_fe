@@ -177,15 +177,34 @@ const FINGERPRINT_SEPARATOR = '\u001f'
 /**
  * 커서에 **필터 지문**을 싣는다 — 조건이 바뀐 채 옛 커서를 보내면 400(90002)이다.
  * 지문을 싣지 않으면 "별점 1점"에서 받은 커서를 "전체"에 끼워 넣어 앞쪽 페이지가 조용히 건너뛰어진다.
+ *
+ * **지문은 요약값이고 필터 원문이 아니다.** 서버가 그렇게 한다 — `AdminReviewCursorCodec`는
+ * 정규화 문자열을 SHA-256으로 접어 앞 16자만 싣고 "커서에 필터 원문(검색어)이 실리지 않는다"고
+ * 못박는다. 원문을 싣던 이전 모양은 두 가지를 틀리게 했다. ① 검색어가 그대로 커서에 들어가
+ * 서버가 숨기는 값을 테스트 더블이 노출했다. ② 한글 검색어가 들어가면 base64 인코딩이
+ * 터져(`btoa`는 latin1만 받는다) **검색 + 두 쪽 이상**이라는 조합을 아예 테스트할 수 없었다.
+ * 암호 강도는 필요 없으므로(지문이 맞는지만 본다) 동기로 접을 수 있는 FNV-1a를 쓴다.
  */
 const fingerprintOf = (params: URLSearchParams): string =>
-  [
-    params.get('productId') ?? '',
-    params.get('rating') ?? '',
-    params.get('status') ?? '',
-    params.get('reported') === 'true' ? 'true' : 'false',
-    params.get('keyword')?.trim() ?? '',
-  ].join(FINGERPRINT_SEPARATOR)
+  foldToHex(
+    [
+      params.get('productId') ?? '',
+      params.get('rating') ?? '',
+      params.get('status') ?? '',
+      params.get('reported') === 'true' ? 'true' : 'false',
+      params.get('keyword')?.trim() ?? '',
+    ].join(FINGERPRINT_SEPARATOR),
+  )
+
+/** UTF-8 바이트 위의 FNV-1a 32비트 — 아스키 16진수 8자로 접는다. */
+function foldToHex(canonical: string): string {
+  let hash = 0x811c9dc5
+  for (const byte of new TextEncoder().encode(canonical)) {
+    hash ^= byte
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
 
 const CURSOR_TAG = 'arv'
 

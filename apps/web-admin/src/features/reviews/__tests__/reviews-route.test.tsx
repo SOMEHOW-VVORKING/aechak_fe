@@ -528,4 +528,35 @@ describe('/reviews', () => {
     release()
     expect(await screen.findByText('조건에 맞는 리뷰 0건')).toBeInTheDocument()
   })
+
+  it('[AC-ADM-RVW-020] 한글 검색어로 두 쪽 이상을 받아도 커서가 깨지지 않고 검색어가 실리지 않는다', async () => {
+    seedAdminReviews(
+      Array.from({ length: 21 }, (_, index) =>
+        makeAdminReviewWire({ reviewId: 70000 + index, content: `사료 후기 ${index}` }),
+      ),
+    )
+    const cursors: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      const url = new URL(request.url)
+      if (!url.pathname.endsWith('/admin/reviews')) return
+      const cursor = url.searchParams.get('cursor')
+      if (cursor != null) cursors.push(cursor)
+    })
+    const user = userEvent.setup()
+    renderAt('/reviews')
+    await screen.findByText('조건에 맞는 리뷰 21건')
+    await user.type(screen.getByPlaceholderText('리뷰 내용 / 상품 검색'), '사료')
+
+    // 첫 쪽이 오는 것만으로는 부족하다 — 다음 커서를 **만드는** 자리에서 터졌다.
+    expect(await screen.findByRole('button', { name: '사료 후기 20' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '더 보기' }))
+    expect(await screen.findByRole('button', { name: '사료 후기 0' })).toBeInTheDocument()
+
+    // 커서는 지문만 싣는다 — 서버(AdminReviewCursorCodec)가 검색어 원문을 싣지 않는다.
+    // UTF-8로 되돌려 본다 — atob 결과를 그대로 보면 한글이 바이트로 흩어져 어떤 문자열도 걸리지 않는다.
+    expect(cursors).toHaveLength(1)
+    const latin1 = atob(cursors[0]!.replace(/-/g, '+').replace(/_/g, '/'))
+    const payload = new TextDecoder().decode(Uint8Array.from(latin1, c => c.charCodeAt(0)))
+    expect(payload).not.toContain('사료')
+  })
 })

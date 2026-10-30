@@ -1275,3 +1275,13 @@ BE는 수령인명·연락처를 **복호 평문**으로 내리고 마스킹을 
 **지우지 않고 가운데만 가리는 이유**는 운영자가 분쟁 상대를 분간해야 하기 때문이다 — 반품 송장의
 끝자리와 맞춰 보는 것이 판정 근거이고, 평문 전체가 필요한 일은 어드민 콘솔에 없다. 셀러 콘솔은
 판단이 다르다(송장을 붙여야 하므로 목록만 가리고 상세는 평문 — `orders.contract.ts` 주석).
+
+### MSW 커서는 서버처럼 지문을 접어 싣는다 — 원문을 실으면 한글에서 터진다
+
+`AdminReviewCursorCodec`는 필터를 SHA-256으로 접어 앞 16자만 싣고 "커서에 필터 원문(검색어)이
+실리지 않는다"고 못박는다. 리뷰 핸들러가 원문을 그대로 이어 붙이고 있었고, 그래서 **한글 검색어 +
+두 쪽 이상**이라는 조합에서 `btoa`가 `InvalidCharacterError`로 죽어(latin1 밖) 그 조합을 아예
+테스트할 수 없었다(codex 교차검토 지적). 지문은 FNV-1a로 접어 아스키 16진수로 싣고,
+공용 `encodeCursorPayload`/`decodeCursorPayload`는 **UTF-8 바이트를 거치게** 고쳤다
+(`decodeCursorPayload`는 `TextDecoder(..., { fatal: true })` — U+FFFD로 되살리면 깨진 커서가
+조용히 통과한다). 계약은 `src/testing/msw/__tests__/base.test.ts`가 고정한다.
