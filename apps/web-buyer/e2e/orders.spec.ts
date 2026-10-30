@@ -211,6 +211,12 @@ async function stubOrders(page: Page, groups: OrderGroupItemResponse[], pageSize
     if (route.request().method() === 'GET') calls.push(url.searchParams.get('status') ?? 'all')
     return fulfill(route, 200, listBody(url, groups, pageSize))
   })
+  // 주문 상세가 함께 부르는 보조 경로 — 비워 둬야 스텁 밖으로 새어 나가지 않는다.
+  // 글롭의 `*`는 `/`를 넘지 않으므로 목록(`/order-groups?*`)·결제(`/payment/*`)와 겹치지 않는다.
+  await page.route(`${API}/orders/*/claims`, route => fulfill(route, 200, { data: { items: [] } }))
+  await page.route(`${API}/order-groups/*`, route =>
+    fulfill(route, 404, { errorCode: 50109, message: '주문 정보를 찾을 수 없습니다.' }),
+  )
   return calls
 }
 
@@ -470,16 +476,17 @@ test('[AC-ORDER-E2E-007] 구매확정 거절은 이미 확정(50008)과 확정 �
   await shot(page, `${SHOTS}/orders-10-confirm-rejected.png`)
 })
 
-test('[AC-ORDER-E2E-004] 없는 주문(404/50000)은 "찾을 수 없어요", 취소 URL은 상세로 되돌린다', async ({
+test('[AC-ORDER-E2E-004] 없는 주문(404/50000)은 "찾을 수 없어요", 예전 취소 URL은 클레임 요청으로 넘어간다', async ({
   page,
 }) => {
   await stubOrders(page, [MIXED])
   await page.route(`${API}/orders/*`, route =>
     fulfill(route, 404, { errorCode: 50000, message: '주문을 찾을 수 없습니다.' }),
   )
+  // 예전 취소 URL은 취소 유형 클레임 요청으로 넘어가고, 주문이 없으면 그 화면이 404를 알린다.
   await page.goto('/orders/01K7E2E0UNKNOWN0000000001/cancel')
 
-  await expect(page).toHaveURL(`${ORIGIN}/orders/01K7E2E0UNKNOWN0000000001`)
+  await expect(page).toHaveURL(`${ORIGIN}/orders/01K7E2E0UNKNOWN0000000001/claim?type=cancel`)
   await expect(page.getByText('주문을 찾을 수 없어요')).toBeVisible()
   await expect(page.getByText('취소 사유')).toHaveCount(0)
   await shot(page, `${SHOTS}/orders-04-detail-not-found.png`)

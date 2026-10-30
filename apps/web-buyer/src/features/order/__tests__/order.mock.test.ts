@@ -3,12 +3,15 @@ import type {
   BuyerClaimRefundStatus,
   BuyerClaimStatus,
   BuyerClaimType,
+  BuyerOrderClaim,
   BuyerOrderDetail,
   BuyerOrderItem,
   BuyerOrderStatus,
   BuyerSellerOrder,
 } from '@aechak/domain'
 import {
+  CLAIM_ACTION_LABEL,
+  CLAIM_COST_BEARER_LABEL,
   CLAIM_REFUND_STATUS_LABEL,
   CLAIM_STATUS_LABEL,
   CLAIM_STATUS_VARIANT,
@@ -16,9 +19,10 @@ import {
   ORDER_SEGMENTS,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_VARIANT,
+  claimTargetSummary,
+  claimTimelineAt,
   confirmDueRemaining,
   formatOrderedAt,
-  isCancelable,
   isConfirmable,
   isReviewable,
   sellerOrderTitle,
@@ -99,17 +103,6 @@ describe('order.mock 상태 표시', () => {
   })
 })
 
-describe('order.mock 취소 가능 판정', () => {
-  it('[AC-ORDER-004] 배송 시작 전(결제완료/상품준비중)만 취소 가능', () => {
-    expect(isCancelable('paid')).toBe(true)
-    expect(isCancelable('preparing')).toBe(true)
-    expect(isCancelable('shipping')).toBe(false)
-    expect(isCancelable('delivered')).toBe(false)
-    expect(isCancelable('confirmed')).toBe(false)
-    expect(isCancelable('cancelled')).toBe(false)
-  })
-})
-
 describe('order.mock 구매확정·리뷰 판정', () => {
   it('[AC-ORDER-009] 배송완료 + 진행 중 클레임 없음만 구매확정 가능(be OrderConfirmService 판정)', () => {
     expect(isConfirmable(orderDetail())).toBe(true)
@@ -146,17 +139,21 @@ describe('order.mock 구매확정·리뷰 판정', () => {
   })
 })
 
-describe('order.mock 진행 중 클레임 라벨', () => {
-  it('[AC-ORDER-011] 클레임 유형 3종·표시 상태 5종 모두 라벨과 pill 색이 있다', () => {
+describe('order.mock 클레임 라벨', () => {
+  it('[AC-ORDER-011] 클레임 유형 3종·표시 상태 7종 모두 라벨과 pill 색이 있다', () => {
     for (const type of ['cancel', 'return', 'exchange'] as BuyerClaimType[]) {
       expect(CLAIM_TYPE_LABEL[type]).toBeTruthy()
+      expect(CLAIM_ACTION_LABEL[type]).toBeTruthy()
     }
+    // 내역에는 거부·철회까지 실려 오므로 7종 전부에 라벨이 있어야 한다(상세 activeClaim은 5종).
     const statuses: BuyerClaimStatus[] = [
       'requested',
       'collecting',
       'approved',
       'admin-overridden',
       'refund-failed',
+      'rejected',
+      'withdrawn',
     ]
     for (const status of statuses) {
       expect(CLAIM_STATUS_LABEL[status]).toBeTruthy()
@@ -167,6 +164,84 @@ describe('order.mock 진행 중 클레임 라벨', () => {
   it('[AC-ORDER-012] 환불 없음(none)은 보조 라벨을 두지 않는다', () => {
     expect(CLAIM_REFUND_STATUS_LABEL['none' as BuyerClaimRefundStatus]).toBeUndefined()
     expect(CLAIM_REFUND_STATUS_LABEL.done).toBe('환불 완료')
+  })
+
+  it('[AC-ORDER-014] 반품비 부담 주체는 두 값 모두 문구가 있다(미정은 값 자체가 없다)', () => {
+    expect(CLAIM_COST_BEARER_LABEL.buyer).toBeTruthy()
+    expect(CLAIM_COST_BEARER_LABEL.seller).toBeTruthy()
+  })
+})
+
+describe('order.mock 클레임 내역 요약', () => {
+  const claim = (overrides: Partial<BuyerOrderClaim> = {}): BuyerOrderClaim => ({
+    claimPublicId: 'c-1',
+    claimType: 'return',
+    status: 'requested',
+    rawStatus: 'CLAIM_REQUESTED',
+    ...overrides,
+  })
+
+  it('[AC-ORDER-015] 대상 품목은 "상품명 (N개)" + 외 N개로 접는다', () => {
+    const order = orderDetail({
+      items: [orderItem({ orderItemId: 11 }), orderItem({ orderItemId: 12, name: '하네스' })],
+    })
+    expect(
+      claimTargetSummary(
+        claim({ items: [{ orderItemId: 11, productName: '리드줄', quantity: 2, refundAmount: 0 }] }),
+        order,
+      ),
+    ).toBe('리드줄 (2개)')
+    expect(
+      claimTargetSummary(
+        claim({
+          items: [
+            { orderItemId: 11, productName: '리드줄', quantity: 1, refundAmount: 0 },
+            { orderItemId: 12, productName: '하네스', quantity: 1, refundAmount: 0 },
+          ],
+        }),
+        order,
+      ),
+    ).toBe('리드줄 (1개) 외 1개')
+  })
+
+  it('[AC-ORDER-016] 서버가 상품명을 비워 보내면 주문 품목에서 메운다', () => {
+    // BE ClaimListResult는 상품명 조회가 비면 빈 문자열을 주고 어댑터가 undefined로 접어 넘긴다.
+    expect(
+      claimTargetSummary(claim({ items: [{ orderItemId: 11, quantity: 1, refundAmount: 0 }] }), orderDetail()),
+    ).toBe('리드줄 (1개)')
+  })
+
+  it('[AC-ORDER-017] 대상 품목이 비면 주문 전체로 적는다(지어낸 이름을 쓰지 않는다)', () => {
+    expect(claimTargetSummary(claim({ items: [] }), orderDetail())).toBe('주문 전체')
+  })
+
+  it('[AC-ORDER-017b] 대상 품목을 모르면 주문 전체로 위장하지 않는다', () => {
+    // 주문 상세의 activeClaim 응답에는 품목이 아예 없다(be OrderActiveClaimResponse) — 내역이
+    // 도착하기 전 폴백으로 그릴 때 "주문 전체"라고 적으면 일부만 신청한 건을 전체로 위장한다.
+    expect(claimTargetSummary(claim(), orderDetail())).toBe(
+      '신청 상품은 내역을 불러온 뒤 확인할 수 있어요',
+    )
+  })
+
+  it('[AC-ORDER-018] 최신 시각은 종결 > 승인 > 요청 순으로 고른다', () => {
+    expect(
+      claimTimelineAt(
+        claim({
+          requestedAt: '2026-10-20T10:00:00+09:00',
+          approvedAt: '2026-10-21T10:00:00+09:00',
+          resolvedAt: '2026-10-22T10:00:00+09:00',
+        }),
+      ),
+    ).toBe('2026-10-22T10:00:00+09:00')
+    expect(
+      claimTimelineAt(
+        claim({ requestedAt: '2026-10-20T10:00:00+09:00', approvedAt: '2026-10-21T10:00:00+09:00' }),
+      ),
+    ).toBe('2026-10-21T10:00:00+09:00')
+    expect(claimTimelineAt(claim({ requestedAt: '2026-10-20T10:00:00+09:00' }))).toBe(
+      '2026-10-20T10:00:00+09:00',
+    )
+    expect(claimTimelineAt(claim())).toBeUndefined()
   })
 })
 

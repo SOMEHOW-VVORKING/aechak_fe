@@ -421,12 +421,20 @@ describe('/orders/$orderId 주문 상세', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 
-  it('[AC-ORDER-ROUTE-010] 취소 화면 URL로 직접 들어가면 상세로 되돌린다(취소 API 없음)', async () => {
+  it('[AC-ORDER-ROUTE-010] 예전 취소 화면 URL은 취소 유형 클레임 요청으로 넘긴다', async () => {
+    // 취소는 클레임 한 경로(POST /orders/{id}/claims)로 합쳐졌다 — 옛 링크를 끊지 않고 새 화면으로 보낸다.
     seedOrderGroups([PAID_ONLY])
     const router = renderAt('/orders/o-paid/cancel')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orders/o-paid/claim'))
+    expect(router.state.location.search).toEqual({ type: 'cancel' })
+    expect(await screen.findByText('취소 사유')).toBeInTheDocument()
+  })
+
+  it('[AC-ORDER-ROUTE-023] 유형 없는 클레임 URL은 상세로 되돌린다(빈 폼을 띄우지 않는다)', async () => {
+    seedOrderGroups([PAID_ONLY])
+    const router = renderAt('/orders/o-paid/claim')
     await waitFor(() => expect(router.state.location.pathname).toBe('/orders/o-paid'))
     expect(await screen.findByText('o-paid')).toBeInTheDocument()
-    expect(screen.queryByText('취소 사유')).not.toBeInTheDocument()
   })
 
   it('[AC-ORDER-ROUTE-014] 배송완료 상세는 송장·배송완료 시각과 자동확정 기한을 보여준다', async () => {
@@ -534,16 +542,18 @@ describe('/orders/$orderId 구매확정', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 
-  it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 읽기 전용으로 보여주고 구매확정 버튼을 두지 않는다', async () => {
+  it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 구매확정도 새 요청도 막고 사유를 적는다', async () => {
     seedOrderGroups([CLAIM_IN_PROGRESS])
     renderAt('/orders/o-claim')
 
-    expect(await screen.findByText('반품 진행 중')).toBeInTheDocument()
+    expect(await screen.findByText('반품 요청')).toBeInTheDocument()
     expect(screen.getByText('회수 진행 중')).toBeInTheDocument()
     expect(screen.getByText('환불 요청됨')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '구매확정' })).not.toBeInTheDocument()
-    // 요청·철회 진입점은 사유 코드 어휘 미확정(SCRUM-273)이라 두지 않는다.
-    expect(screen.queryByRole('button', { name: '반품 요청' })).not.toBeInTheDocument()
+    // 진행 중에는 유형과 무관하게 새 요청을 받지 않는다(서버 409 50403).
+    expect(screen.queryByRole('button', { name: '반품 신청' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '교환 신청' })).not.toBeInTheDocument()
+    // 회수가 시작된 뒤에는 철회할 수 없다(서버 409 50402) — 버튼을 두지 않는다.
     expect(screen.queryByRole('button', { name: '요청 철회' })).not.toBeInTheDocument()
   })
 })

@@ -35,6 +35,11 @@ const MY_REVIEWS_KEY = ['reviews', 'mine'] as const
 // 수정/삭제 노출을 구분한다. 작성자 닉네임 비교 같은 추측 판별은 쓰지 않는다.
 export interface ProductReviewItem extends Review {
   isMine: boolean
+  /**
+   * 셀러가 이 리뷰에 남긴 답글(SCRUM-315). 리뷰당 하나이고 없으면 null이다.
+   * 목업 카탈로그 리뷰에는 답글 개념이 없어 늘 null이다 — 서버 리뷰에만 값이 실린다.
+   */
+  sellerReply: { content: string; repliedAt: string } | null
 }
 
 /**
@@ -91,6 +96,11 @@ function toReviewItem(productId: string, r: ReviewItemResponse): ProductReviewIt
     verifiedPurchase: false,
     createdAt: r.createdAt.slice(0, 10).replace(/-/g, '.'), // ISO 'YYYY-MM-DD...' -> 'YYYY.MM.DD'
     isMine: r.isMine,
+    // 답글 등록 시각도 카드 표기와 같은 'YYYY.MM.DD'로 맞춘다.
+    sellerReply: r.sellerReply && {
+      content: r.sellerReply.content,
+      repliedAt: r.sellerReply.repliedAt.slice(0, 10).replace(/-/g, '.'),
+    },
   }
 }
 
@@ -120,7 +130,8 @@ function mockPage(productId: string, sort: ReviewSort, photoOnly: boolean): Revi
   const mock = getProductReviewData(productId)
   if (!mock) return NOT_FOUND_PAGE
   const base = photoOnly ? filterPhotoReviews(mock.reviews) : mock.reviews
-  const items: ProductReviewItem[] = sortReviews(base, sort).map(r => ({ ...r, isMine: false }))
+  // 목업 리뷰에는 셀러 답글 개념이 없다 — 지어내지 않고 null로 둔다.
+  const items: ProductReviewItem[] = sortReviews(base, sort).map(r => ({ ...r, isMine: false, sellerReply: null }))
   return {
     summary: { average: mock.average, total: mock.total, distribution: mock.distribution },
     items,
@@ -214,7 +225,7 @@ export function useProductReviews(
     // 아직 서버에 없는 목업 작성분만 올린다.
     let mine: ProductReviewItem[] = userReviews
       .filter(r => r.productId === productId && serverReviewId(r.id) == null)
-      .map(r => ({ ...r, isMine: true }))
+      .map(r => ({ ...r, isMine: true, sellerReply: null }))
     if (photoOnly) mine = filterPhotoReviews(mine)
     return {
       average: summary.average,

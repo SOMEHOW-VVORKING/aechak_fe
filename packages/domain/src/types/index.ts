@@ -93,32 +93,15 @@ export interface DeliveryAddress {
 // 구매자 결제 수단(b1-st-4 목업의 3종). 실제 PG 연동은 범위 밖 — 순수 목업 분기용.
 export type PaymentMethod = 'kakaopay' | 'tosspay' | 'card'
 
-export type OrderStatus = 'new_order' | 'preparing' | 'shipping' | 'delivered'
-
-export interface Order {
-  id: OrderId
-  buyerId: UserId
-  sellerId: SellerId
-  productId: ProductId
-  productName: string
-  quantity: number
-  buyerName: string
-  recipientName: string
-  totalPrice: number
-  status: OrderStatus
-  courier?: string
-  trackingNumber?: string
-  purchaseConfirmDeadline?: string
-  createdAt: string
-}
-
 // ── 구매자 주문 여정(web-buyer, b4-st-1 목록 / b1-st-6 상세) ──
-// 셀러용 `Order`/`OrderStatus`는 "셀러 한 명의 단일 상품 주문 행"이고 상태머신도 셀러 관점
-// (new_order/preparing/shipping/delivered)이다. 구매자 주문은 결제 한 번(주문그룹) 아래 셀러별 주문이
-// 여럿 달리고 구매확정·취소완료까지 포함하는 다른 상태머신이라, 기존 `OrderStatus` 유니온을 확장하면
-// web-seller의 `Record<OrderStatus, ...>`(주문 상태 라벨/색 맵)가 키 누락으로 typecheck가 깨진다.
-// 따라서 구매자 전용 타입을 additive로 둔다 — 임의 병렬 타입이 아니라 셀러 주문과 별개인
-// 구매자 주문 집계 도메인이다(셀러가 web-buyer 주문 상태를 다뤄야 하면 이 타입을 재사용/확장할 것).
+// 여기에 셀러용 `Order`/`OrderStatus`(new_order/preparing/shipping/delivered)가 함께 있었다.
+// 셀러 주문 API가 서버에 올라와 web-seller가 와이어 타입(@aechak/api의 `OrderStatus` 8종)을 바로 쓰게
+// 되면서 참조가 0건이 돼 지웠다(SCRUM-291). 그 타입에는 서버에 없는 필드(`purchaseConfirmDeadline:
+// 'D-5'`)가 있어 남겨 두면 새 코드가 지어낸 필드를 다시 요구한다. 셀러 주문 상태가 다시 도메인 타입을
+// 필요로 하면 서버 enum을 정본으로 새로 세울 것.
+//
+// 구매자 주문은 결제 한 번(주문그룹) 아래 셀러별 주문이 여럿 달리는 집계 도메인이라 셀러 주문과
+// 상태머신 자체가 다르다 — 그래서 아래 타입들은 임의 병렬 타입이 아니다(AGENTS 1-7).
 //
 // 서버 enum(PAID/DISPATCH_PENDING/…)은 어댑터(shared/order)가 아래 표시 상태로 접고, 원문은
 // `rawStatus`에 보존한다. 서버 응답에 없는 값(결제수단 등)은 가짜 기본값으로 채우지 않고
@@ -207,21 +190,44 @@ export interface BuyerOrderShipment {
   lastTrackingStatus?: string
 }
 
-// 진행 중 클레임 유형·상태(서버 ClaimType/ClaimStatus 대응). 구매자 상세는 읽기만 한다 —
-// 요청·철회는 사유 코드 어휘가 미확정이라(SCRUM-273) 화면에 없다.
+// 클레임(취소·반품·교환) 유형. 서버 ClaimType 대응이고 유형마다 받는 주문 상태가 다르다 —
+// 취소는 발송 전(PAID·PREPARING·DISPATCH_PENDING), 반품·교환은 배송완료(DELIVERED)만.
 export type BuyerClaimType = 'cancel' | 'return' | 'exchange'
 
-// 서버 ClaimStatus 7종 중 품목을 붙잡고 있는 5종만 상세에 실린다(거부·철회는 activeClaim이 null).
+// 서버 ClaimStatus 7종 전부. 주문 상세의 activeClaim에는 품목을 붙잡고 있는 5종만 실리고
+// (거부·철회는 품목을 풀어주므로 activeClaim이 null) 클레임 내역(GET .../claims)에는 7종이 다 온다.
 export type BuyerClaimStatus =
   | 'requested' // CLAIM_REQUESTED — 셀러 판단 대기
   | 'collecting' // COLLECTING — 회수 진행
   | 'approved' // APPROVED
   | 'admin-overridden' // ADMIN_OVERRIDDEN — 운영자 직권 처리
   | 'refund-failed' // REFUND_FAILED — 승인됐으나 환불 집행 실패
+  | 'rejected' // REJECTED — 셀러 거부(품목이 풀린다)
+  | 'withdrawn' // WITHDRAWN — 구매자 철회(품목이 풀린다)
 
 export type BuyerClaimRefundStatus = 'none' | 'requested' | 'done' | 'failed'
 
-// 진행 중인 취소·반품·교환 1건(읽기 전용).
+/** 셀러의 판단 단계(서버 SellerApprovalStatus). 요청 직후에는 `requested`. */
+export type BuyerClaimSellerApproval = 'requested' | 'approved' | 'rejected'
+
+/** 반품 발송비 부담 주체(서버 ReturnCostBearer). 셀러 승인 때 정해지고 취소 유형에는 없다. */
+export type BuyerClaimCostBearer = 'buyer' | 'seller'
+
+/** 클레임이 대상으로 잡은 주문품목 한 줄. 수량은 품목 전량이다(서버가 부분 수량을 받지 않는다). */
+export interface BuyerClaimLine {
+  orderItemId: number
+  /** 서버가 상품명 조회에 실패하면 빈 문자열을 주므로 optional — 화면이 주문 품목 이름으로 메운다. */
+  productName?: string
+  quantity: number
+  /** 이 품목 몫 환불액(배송비 안분 제외). */
+  refundAmount: number
+}
+
+/**
+ * 취소·반품·교환 1건. 주문 상세의 `activeClaim`(진행 중 1건)과 클레임 내역의 한 줄이 **같은 타입**이다 —
+ * activeClaim은 앞의 네 필드만 채워 오고 내역은 전부 채워 온다(필드 수가 다를 뿐 같은 개념이라
+ * 병렬 타입을 만들지 않는다).
+ */
 export interface BuyerOrderClaim {
   claimPublicId: string
   claimType: BuyerClaimType
@@ -229,6 +235,38 @@ export interface BuyerOrderClaim {
   /** 서버 상태 원문. 표시는 `status`, 미지의 값 추적이 필요하면 이 값을 본다. */
   rawStatus: string
   refundStatus?: BuyerClaimRefundStatus
+  sellerApproval?: BuyerClaimSellerApproval
+  returnCostBearer?: BuyerClaimCostBearer
+  /** 품목 환불액 합 + 안분된 배송비 환불액(서버 계산). 화면이 다시 더하지 않는다. */
+  refundAmount?: number
+  /** 셀러 거부 사유 — 구매자에게 그대로 보여 주는 문구다. */
+  rejectionReason?: string
+  /** 아래 세 시각은 서버가 오프셋 없는 KST로 주고 어댑터가 오프셋을 붙여 넘긴다. */
+  requestedAt?: string
+  approvedAt?: string
+  resolvedAt?: string
+  items?: BuyerClaimLine[]
+}
+
+/**
+ * 클레임 사유 선택지 한 개. **코드·문구·상세필수 모두 서버(GET /claims/reasons)가 소유한다** —
+ * 화면이 코드로 문구를 만들거나 유형별 목록을 복제하면 어휘가 바뀔 때 조용히 어긋난다.
+ */
+export interface BuyerClaimReasonOption {
+  code: string
+  label: string
+  detailRequired: boolean
+}
+
+/** 유형별 사유 선택지. 배열 순서가 화면 선택지 순서다. */
+export type BuyerClaimReasonCatalog = Record<BuyerClaimType, BuyerClaimReasonOption[]>
+
+/** 클레임 요청 입력. `items`를 비우면 서버가 주문 전체를 전량 대상으로 본다. */
+export interface BuyerClaimRequest {
+  claimType: BuyerClaimType
+  reasonCode: string
+  reasonDetail?: string
+  items?: { orderItemId: number; quantity: number }[]
 }
 
 // 셀러 주문 상세(GET /orders/{orderId}). `sellerShippingFee`만 이 셀러 몫이고 `groupPayment`는
@@ -254,6 +292,16 @@ export interface BuyerOrderDetail {
   activeClaim?: BuyerOrderClaim
   /** 자동 구매확정 기한(ISO 8601). 배송완료 시점에 부여되므로 그 전 상태에서는 없다. */
   purchaseConfirmDueAt?: string
+}
+
+/**
+ * 주문그룹(결제 한 번) 조회 결과(GET /order-groups/{orderGroupId}).
+ * 금액·배송지는 주문 상세가 이미 같은 값을 들고 있어 담지 않는다 — 이 타입이 더해 주는 것은
+ * **같은 결제의 형제 셀러 주문 목록**이다. 결제대기 주문은 어댑터가 걸러낸다(표시 상태가 없다).
+ */
+export interface BuyerOrderGroupDetail {
+  orderGroupId: string
+  sellerOrders: BuyerSellerOrder[]
 }
 
 // ── 구매자 리뷰(web-buyer Phase 3, b4-st-2/b4-st-3/b4-st-6) ──
@@ -336,21 +384,6 @@ export interface Claim {
   status: ClaimStatus
   memo?: string
   createdAt: string
-}
-
-export interface ShippingPolicy {
-  sellerId: SellerId
-  defaultCourier: string
-  baseFee: number
-  freeShippingThreshold: number
-  originAddress: string
-  returnAddress: string
-  sameAsOrigin: boolean
-  jejuExtraFee: number
-  remoteAreaExtraFee: number
-  returnFee: number
-  exchangeFee: number
-  avgDispatchDays: number
 }
 
 export interface PaginatedResponse<T> {
@@ -447,22 +480,35 @@ export interface SellerAccount {
   internalMemo?: string
 }
 
-export type MemberAccountStatus = 'normal' | 'restricted' | 'suspended' | 'banned' | 'withdrawing'
+// BE UserStatus(PENDING_ONBOARDING/ACTIVE/RESTRICTED/SUSPENDED/BANNED/WITHDRAWN)를 화면 어휘로
+// 옮긴 값. 제재는 계정 생애주기와 한 축이라 상태 하나가 "제재 여부"까지 말한다.
+// withdrawing(탈퇴)과 banned(영구 정지)는 둘 다 접근이 끊기지만 서로 다른 값이다 — 탈퇴는 본인
+// 의사이고 정지는 운영 조치라, 한 값으로 묶으면 사후에 가릴 수 없다(서버도 같은 이유로 분리했다).
+export type MemberAccountStatus =
+  | 'pending'
+  | 'normal'
+  | 'restricted'
+  | 'suspended'
+  | 'banned'
+  | 'withdrawing'
 
+// 목업 시절의 orderCount·hasActiveOrder·emailMasked·phoneMasked·joinChannel·reportHistory는
+// admin 모듈 응답에 없어서 제거했다(AGENTS 규약 10 — 서버에 없는 필드를 화면이 요구하면 안 된다).
 export interface MemberAccount {
-  id: string
-  nickname: string
-  orderCount: number
-  reportCount: number
+  userId: number
+  /** 외부 노출용 26자 식별자 */
+  publicId: string
+  /** 온보딩 전이거나 탈퇴로 프로필이 지워진 계정이면 null */
+  nickname: string | null
+  /** 지금 실제로 적용되는 상태 — 기간이 지난 임시 정지는 normal로 내려온다 */
   accountStatus: MemberAccountStatus
-  hasActiveOrder: boolean
-  emailMasked: string
-  phoneMasked: string
-  joinChannel: string
-  reportHistory: HistoryEntry[]
-  sanctionReason?: string
-  sanctionPeriod?: string
-  internalMemo?: string
+  /** 저장값 — 만료된 임시 정지에서 accountStatus와 갈린다 */
+  storedAccountStatus: MemberAccountStatus
+  /** 임시 정지의 만료 시각. 다른 상태면 null */
+  sanctionUntil: string | null
+  warningCount: number
+  reportCount: number
+  joinedAt: string
 }
 
 export type ProductReviewSaleStatus = 'on-sale' | 'suspended' | 'pending-review' | 'rejected'
@@ -486,27 +532,6 @@ export interface ProductReviewItem {
   processReason?: string
   sellerNotice?: string
   internalMemo?: string
-}
-
-export type SettlementStatus = 'pending' | 'scheduled' | 'completed' | 'held'
-
-export interface Settlement {
-  orderId: OrderId
-  // 월 선택기 필터링용 소속 월('YYYY-MM') — 구매확정 전(정산 대기/보류)이라 confirmedAt이
-  // 없는 건도 필터가 걸려야 하므로 confirmedAt과 별개로 항상 채워지는 필수 필드다.
-  settlementMonth: string
-  confirmedAt?: string
-  expectedPayoutDate?: string
-  productAmount: number
-  feeAmount?: number
-  finalAmount?: number
-  status: SettlementStatus
-  // 건별 정산 상세 Drawer(표 행 클릭 시)용 세부 분해 — 정산 대기/보류 건은 아직 확정 전이라 비워둔다.
-  shippingFee?: number
-  couponBurden?: number
-  platformFeeAmount?: number
-  pgFeeAmount?: number
-  refundDeduction?: number
 }
 
 export type AiReviewTargetType = 'product-image' | 'product-description' | 'review' | 'sns-post'

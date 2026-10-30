@@ -4,6 +4,7 @@ import {
   customInstance,
   errorResponse,
   getOrderDetail,
+  getOrderGroup,
   getOrderGroups,
   type ClaimStatus,
   type ClaimType,
@@ -13,7 +14,9 @@ import {
   type OrderActiveClaimResponse,
   type OrderDeliveryAddressResponse,
   type OrderDetailResponse,
+  type OrderGroupDetailResponse,
   type OrderGroupItemResponse,
+  type OrderGroupSellerOrderResponse,
   type OrderItemStatus,
   type OrderLineItemResponse,
   type OrderListStatusFilter,
@@ -30,6 +33,7 @@ import type {
   BuyerOrderClaim,
   BuyerOrderDeliveryAddress,
   BuyerOrderDetail,
+  BuyerOrderGroupDetail,
   BuyerOrderItem,
   BuyerOrderItemStatus,
   BuyerOrderShipment,
@@ -83,25 +87,45 @@ export function toBuyerOrderStatus(status: OrderStatus): BuyerOrderStatus | null
 
 // 서버 ClaimType/ClaimStatus/RefundStatus → 표시 값. Record로 전수를 받아 서버가 값을 늘리면
 // 스키마 갱신 시점에 typecheck가 깨지게 둔다(상태 허용값이 문서에 없어 추측 목록을 만들면 안 된다 — SCRUM-274).
-const CLAIM_TYPE_MAP: Record<ClaimType, BuyerClaimType> = {
+export const CLAIM_TYPE_MAP: Record<ClaimType, BuyerClaimType> = {
   CANCEL: 'cancel',
   RETURN: 'return',
   EXCHANGE: 'exchange',
 }
 
-// 거부(REJECTED)·철회(WITHDRAWN)는 품목을 풀어주므로 서버가 activeClaim으로 싣지 않는다 — null로 접어
-// 화면이 "진행 중"으로 오인하지 않게 한다.
-const CLAIM_STATUS_MAP: Record<ClaimStatus, BuyerClaimStatus | null> = {
+/** 도메인 유형 → 서버 enum. 클레임 요청 본문과 사유 선택지 매칭이 쓴다. */
+export const SERVER_CLAIM_TYPE: Record<BuyerClaimType, ClaimType> = {
+  cancel: 'CANCEL',
+  return: 'RETURN',
+  exchange: 'EXCHANGE',
+}
+
+export const CLAIM_STATUS_MAP: Record<ClaimStatus, BuyerClaimStatus> = {
   CLAIM_REQUESTED: 'requested',
   COLLECTING: 'collecting',
   APPROVED: 'approved',
   ADMIN_OVERRIDDEN: 'admin-overridden',
   REFUND_FAILED: 'refund-failed',
-  REJECTED: null,
-  WITHDRAWN: null,
+  REJECTED: 'rejected',
+  WITHDRAWN: 'withdrawn',
 }
 
-const REFUND_STATUS_MAP: Record<RefundStatus, BuyerClaimRefundStatus> = {
+/**
+ * 품목을 풀어주는 종결 상태(be ClaimStatus.RELEASED). 서버는 이 둘을 주문 상세 activeClaim으로
+ * 싣지 않으므로 어댑터가 null로 접어 화면이 "진행 중"으로 오인하지 않게 한다.
+ * 클레임 내역(GET .../claims)에는 그대로 실려 오고 그쪽은 접지 않는다.
+ */
+const RELEASED_CLAIM_STATUSES: ReadonlySet<BuyerClaimStatus> = new Set<BuyerClaimStatus>([
+  'rejected',
+  'withdrawn',
+])
+
+/** 이 클레임이 아직 주문품목을 붙잡고 있는지 — 붙잡고 있으면 같은 품목에 새 요청을 못 넣는다. */
+export function holdsOrderItem(status: BuyerClaimStatus): boolean {
+  return !RELEASED_CLAIM_STATUSES.has(status)
+}
+
+export const REFUND_STATUS_MAP: Record<RefundStatus, BuyerClaimRefundStatus> = {
   NONE: 'none',
   REQUESTED: 'requested',
   DONE: 'done',
@@ -148,7 +172,7 @@ function toBuyerShipment(shipment: OrderShipmentResponse): BuyerOrderShipment {
 /** 진행 중으로 볼 수 없는 상태(거부·철회)면 null — 화면은 클레임이 없는 것으로 다룬다. */
 function toBuyerClaim(claim: OrderActiveClaimResponse): BuyerOrderClaim | null {
   const status = CLAIM_STATUS_MAP[claim.status]
-  if (status == null) return null
+  if (status == null || !holdsOrderItem(status)) return null
   return {
     claimPublicId: claim.claimPublicId,
     claimType: CLAIM_TYPE_MAP[claim.claimType] ?? 'cancel',
@@ -299,6 +323,67 @@ export function useOrderDetail(orderId: string) {
     error: query.error,
     refetch: () => void query.refetch(),
   }
+}
+
+// ---- 주문그룹 조회(GET /order-groups/{orderGroupId}) ---------------------------
+// 주문 상세가 셀러 주문 하나만 보여 주므로 같은 결제의 형제 주문을 이 경로로 읽는다.
+// 금액·배송지는 주문 상세에 같은 값이 이미 있어 담지 않는다(중복 표시 금지).
+
+/** 주문그룹 응답의 셀러 주문 → 도메인. 대표 품목과 라인 수는 전체 품목에서 뽑는다. */
+function toBuyerGroupSellerOrder(so: OrderGroupSellerOrderResponse): BuyerSellerOrder | null {
+  const status = toBuyerOrderStatus(so.status)
+  if (status == null) return null
+  const first = so.items[0]
+  return {
+    orderId: so.orderId,
+    storeName: so.sellerName ?? undefined,
+    status,
+    rawStatus: so.status,
+    itemCount: so.items.length,
+    representativeItem: first ? toBuyerOrderItem(first) : undefined,
+  }
+}
+
+/** 주문그룹 상세 응답 → 도메인. 결제대기 주문은 표시 상태가 없어 걸러낸다. */
+export function toBuyerOrderGroupDetail(
+  detail: OrderGroupDetailResponse,
+): BuyerOrderGroupDetail {
+  return {
+    orderGroupId: detail.orderGroupId,
+    sellerOrders: detail.orders
+      .map(toBuyerGroupSellerOrder)
+      .filter((so): so is BuyerSellerOrder => so != null),
+  }
+}
+
+/**
+ * 주문그룹 조회. 없음·남의 것은 404 50109 하나로 통일되므로 재시도하지 않는다.
+ * 호출부가 `enabled`로 끌 수 있게 열어 둔다(주문그룹 번호를 모르는 화면이 있다).
+ */
+export function useOrderGroup(orderGroupId: string | undefined) {
+  const query = useQuery({
+    queryKey: [...ORDER_GROUPS_QUERY_KEY, 'group', orderGroupId],
+    queryFn: ({ signal }) => getOrderGroup(orderGroupId as string, signal),
+    select: res => toBuyerOrderGroupDetail(res.data),
+    enabled: orderGroupId != null && orderGroupId !== '',
+    retry: (failureCount, error) => !isOrderGroupNotFound(error) && failureCount < 1,
+  })
+  return {
+    group: query.data,
+    isPending: query.isPending,
+    isError: query.isError,
+    error: query.error,
+  }
+}
+
+const ORDER_GROUP_NOT_FOUND = 50109
+
+export function isOrderGroupNotFound(error: unknown): boolean {
+  const res = errorResponse(error)
+  return (
+    res?.status === 404 &&
+    (res.data?.errorCode == null || res.data.errorCode === ORDER_GROUP_NOT_FOUND)
+  )
 }
 
 // ---- 구매확정(POST /orders/{orderPublicId}/confirm) ----------------------------

@@ -28,29 +28,15 @@ import { SellerTypePill, sellerTypeLabel } from '@/shared/components/SellerTypeP
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
-import { UnavailableScreen } from '@/shared/components/UnavailableScreen'
+import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
 import { useDetailList } from '@/shared/hooks/useDetailList'
 
+// admin 모듈에 셀러 계정 조회·제재 API가 없어(입점 심사와 별개) 목록·판매정지·메모가 전부 예시
+// 데이터다. 진입을 막는 대신 상단 띠로 예시임을 밝히고 쓰기를 막는다(SCRUM-308) —
+// `GET/PATCH /admin/sellers`가 생기면 sellers.queries.ts만 갈아끼우고 띠를 뗀다.
 export const Route = createFileRoute('/sellers/')({
-  component: SellersGate,
+  component: SellersPage,
 })
-
-// 운영 진입 차단 스위치. admin 모듈에 셀러 계정 조회·제재 API가 없어(입점 심사와 별개) 목록·판매정지·
-// 메모가 전부 목업이다 — 주소로 들어와도 열지 않는다. 아래 SellersPage는 서버가 생기면 queries 층만 바꿔 살릴 배선.
-const SERVER_SELLER_ACCOUNTS_AVAILABLE = false
-
-function SellersGate() {
-  if (!SERVER_SELLER_ACCOUNTS_AVAILABLE) {
-    return (
-      <UnavailableScreen
-        title="셀러 관리"
-        description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다."
-        message="셀러 관리는 준비 중이에요"
-      />
-    )
-  }
-  return <SellersPage />
-}
 
 const operatingStatusMeta: Record<SellerOperatingStatus, StatusMeta> = {
   active: { label: '영업중', variant: 'success', icon: CheckCircle },
@@ -177,14 +163,15 @@ function SellersPage() {
     setInternalMemo(row.internalMemo ?? '')
   }
 
+  // 아래 둘 다 서버로 나가는 요청이 없다 — 바꾼 값을 화면에만 겹쳐 보여준다(useDetailList의 edits).
   function handleSaveMemo(target: SellerAccount) {
     patchRow(target.id, { internalMemo })
-    setToast('메모를 저장했어요.')
+    setToast(MOCK_WRITE_TOAST)
   }
 
   function handleConfirmSuspend(target: SellerAccount) {
     patchRow(target.id, { operatingStatus: 'suspended', suspensionReason, suspensionPeriod, internalMemo })
-    setToast(`'${target.shopName}'을 판매정지했어요.`)
+    setToast(MOCK_WRITE_TOAST)
     closeDrawer()
   }
 
@@ -196,7 +183,11 @@ function SellersPage() {
 
   return (
     <div className="p-6">
-      <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리합니다." />
+      <PageIntro title="셀러 관리" description="승인된 셀러의 운영 상태를 확인하고 필요 시 제재를 처리해요." />
+
+      <MockDataNotice>
+        입점 심사는 실연동이에요. 승인된 셀러의 계정 조회/제재 경로가 admin 모듈에 아직 없어요.
+      </MockDataNotice>
 
       <FilterBar className="mb-3.5">
         <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
@@ -210,13 +201,13 @@ function SellersPage() {
         rowKey={row => row.id}
         onRowClick={openDrawer}
         loading={isLoading}
-        emptyLabel="조건에 맞는 셀러가 없습니다."
+        emptyLabel="조건에 맞는 셀러가 없어요."
       />
 
       <Drawer open={selected !== undefined} onClose={closeDrawer} title="셀러 상세" width="lg">
         {selected && (
           <DetailDrawerBody
-            subtitle={`${selected.shopName} · ${sellerTypeLabel(selected.sellerType)}`}
+            subtitle={`${selected.shopName} / ${sellerTypeLabel(selected.sellerType)}`}
             actions={
               <>
                 <Button
@@ -256,7 +247,7 @@ function SellersPage() {
             </DrawerSummaryCard>
 
             <DetailField label="제재 이력">
-              <HistoryList items={selected.sanctionHistory} emptyLabel="제재 이력이 없습니다." />
+              <HistoryList items={selected.sanctionHistory} emptyLabel="제재 이력이 없어요." />
             </DetailField>
 
             <DetailField label="판매정지 사유">
@@ -313,7 +304,7 @@ function SellersPage() {
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="success" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
     </div>
   )
 }
