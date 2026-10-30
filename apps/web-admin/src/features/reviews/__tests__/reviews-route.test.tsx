@@ -408,7 +408,7 @@ describe('/reviews', () => {
     await user.click(within(dialog).getByRole('button', { name: '삭제' }))
     await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
 
-    // 막힌 이동의 약속은 끝내 resolve되지 않으므로(router commitLocation) await하지 않는다.
+    // 막힌 이동의 약속은 다음 성공한 이동까지 매달려 있으므로(router commitLocation) await하지 않는다.
     await act(async () => {
       void router.navigate({ to: '/audit-log' })
       await Promise.resolve()
@@ -425,6 +425,43 @@ describe('/reviews', () => {
       await Promise.resolve()
     })
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/audit-log'))
+  })
+
+  it('[AC-ADM-RVW-022] 요청이 떠 있어도 세션 만료의 로그인 이동은 막지 않는다', async () => {
+    // 401 뒤 refresh까지 실패하면 공유 클라이언트가 요청을 reject하기 전에 전역 콜백을 부르고
+    // 그 콜백이 /login으로 보낸다. 그 이동까지 막으면 처리가 끝난 뒤 아무도 다시 보내 주지 않고,
+    // 막힌 이동의 약속이 매달려 그 핸들러의 redirecting 플래그가 켜진 채 남아 다음 만료도 무시된다.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.delete(ADMIN_REVIEW_DETAIL_URL, async () => {
+        await gate
+        return HttpResponse.json({ errorCode: 20004, message: '인증이 필요해요' }, { status: 401 })
+      }),
+    )
+    const user = userEvent.setup()
+    const { router } = renderAt('/reviews')
+    await user.click(await screen.findByRole('button', { name: /사료 바꾸고 애가 아팠어요/ }))
+    await chooseByCaption('되돌릴 수 없음')
+    const open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '광고/스팸' }),
+    )
+    await user.click((await drawer()).getByRole('button', { name: '제출' }))
+    const dialog = await screen.findByRole('dialog', { name: '리뷰를 삭제할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '삭제' }))
+    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
+
+    await act(async () => {
+      void router.navigate({ to: '/login' })
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+
+    release()
   })
 
   it('[AC-ADM-RVW-015] 삭제 확인을 두 번 눌러도 요청은 한 번만 나간다', async () => {

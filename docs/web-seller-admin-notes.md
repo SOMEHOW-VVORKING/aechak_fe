@@ -1255,13 +1255,29 @@ function closeConfirm() { if (write.isPending) return; setConfirmOpen(false) } /
 usePendingWriteExitGuard(write.isPending) // 세 라우트가 닫기 가드 바로 아래에서 부른다
 ```
 
-`@tanstack/react-router`의 `useBlocker`로 **PUSH·REPLACE**(라우터 이동)와 **BACK·FORWARD**
-(브라우저 히스토리)를 막고, `enableBeforeUnload`로 새로고침·탭 닫기에 경고를 띄운다. 가드 함수는
-ref를 읽는 **고정 참조**여야 한다 — `useBlocker`의 effect 의존성에 함수가 들어 있어 렌더마다 새
-함수를 넘기면 블로커를 매 렌더 등록·해제한다. 테스트는 메모리 히스토리라 `back()`이 블로커를
-거치지 않으므로(`@tanstack/history`의 `createMemoryHistory`는 블로커를 push/replace에서만 본다)
-**`router.navigate`로 막힌 것**을 단언한다 — 그리고 막힌 이동의 `commitLocation` 약속은 끝내
-resolve되지 않으므로 `await`하지 말고 `void`로 띄워야 한다(걸면 테스트가 영구히 멈춘다).
+`@tanstack/react-router`의 `useBlocker`로 **PUSH·REPLACE**(라우터 이동)와 브라우저 **뒤로 가기**를
+막고, `enableBeforeUnload`로 새로고침·탭 닫기에 **경고**를 띄운다(차단이 아니다 — 운영자가 경고에서
+나가기를 고르면 화면은 사라진다). 가드 함수는 ref를 읽는 **고정 참조**여야 한다 — `useBlocker`의
+effect 의존성에 함수가 들어 있어 렌더마다 새 함수를 넘기면 블로커를 매 렌더 등록·해제한다.
+
+**세션 만료의 `/login` 이동은 통과시킨다.** 401 뒤 refresh까지 실패하면 공유 클라이언트가 요청을
+reject하기 **전에** 전역 콜백을 부르고, `features/auth`의 `setupAuthExpiredRedirect`가
+`router.navigate({ to: '/login' })`을 쏜다. 그 이동을 막으면 ① 처리가 끝난 뒤 아무도 다시 보내
+주지 않고, ② 막힌 이동의 약속이 매달려 있어 그 핸들러의 `redirecting` 플래그가 `.finally()`에서
+풀리지 못하고 켜진 채 남아 **다음 만료까지 통째로 무시된다**. 인증이 끊긴 관리 화면에 남는 것이
+결과를 못 보는 것보다 나쁘다(codex 교차검토 5라운드 지적, `AC-ADM-RVW-022`가 고정).
+
+알고 두는 구멍 둘. ① 브라우저 **앞으로 가기**는 `@tanstack/history`가 막은 POP을 방향과 무관하게
+`win.history.go(1)`로 되돌려(설치된 1.162.0 소스) 화면·라우터 상태는 남지만 주소창이 어긋날 수
+있고 `ignoreNextPop`이 남아 다음 POP 하나를 먹는다 — 라이브러리 결함이고, 그래도 막는 쪽이
+언마운트보다 낫다. ② `isPending`은 `onSettled`의 무효화 **재조회까지** 포함한다(mutation은 그
+약속이 끝나야 success를 dispatch한다) — 쓰기 응답이 온 뒤에도 재조회가 늦으면 가드가 그만큼 늦게
+풀린다. 그 구간에도 새로고침은 경고일 뿐이라 빠져나갈 길은 남아 있다.
+
+테스트는 메모리 히스토리라 `back()`이 블로커를 거치지 않으므로(`createMemoryHistory`는 블로커를
+push/replace에서만 본다) **`router.navigate`로 막힌 것**을 단언한다 — 그리고 막힌 이동의
+`commitLocation` 약속은 **다음 성공한 이동이 올 때까지 매달려 있으므로**(router-core가 새 약속에
+이전 약속의 resolve를 걸어 둔다) `await`하지 말고 `void`로 띄워야 한다(걸면 그 자리에서 멈춘다).
 이탈 가드도 `/members`·`/sellers/applications`·`/admins`에는 없다(같은 이유로 손대지 않았다).
 
 ### 목록이 실패한 동안 처리 버튼을 잠근다(규약 6-7)

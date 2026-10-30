@@ -521,7 +521,7 @@ describe('/claims', () => {
     await user.click(within(dialog).getByRole('button', { name: '셀러 귀책 종결' }))
     await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
 
-    // 막힌 이동의 약속은 끝내 resolve되지 않으므로(router commitLocation) await하지 않는다.
+    // 막힌 이동의 약속은 다음 성공한 이동까지 매달려 있으므로(router commitLocation) await하지 않는다.
     await act(async () => {
       void router.navigate({ to: '/audit-log' })
       await Promise.resolve()
