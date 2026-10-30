@@ -327,7 +327,10 @@ function ClaimsPage() {
         claimPublicId: claim.claimPublicId,
         faultDecision: decision,
         reason: selectedReason.code as AdminClaimInterventionReason,
-        reasonDetail,
+        // 화면이 숨긴 값은 요청에도 없어야 한다 — 상세가 필요 없는 사유로 바꾸면 입력란이
+        // 사라지는데, 거기 남아 있던 문장을 그대로 보내면 운영자가 보지 못한 설명이 개입
+        // 기록에 박힌다(계약상 일반 사유에도 상세를 실을 수 있어 서버가 막아 주지 않는다).
+        reasonDetail: needsDetail ? reasonDetail : '',
         returnCostBearer: showCostBearer && isCostBearer(costBearer) ? costBearer : null,
         internalMemo,
       },
@@ -434,7 +437,11 @@ function ClaimsPage() {
             }}
             reasonOptions={reasonOptions}
             reason={reason}
-            onReasonChange={setReason}
+            onReasonChange={value => {
+              setReason(value)
+              // 사유가 바뀌면 상세도 비운다 — 보이는 상태와 보낼 값이 갈리지 않게.
+              setReasonDetail('')
+            }}
             needsDetail={needsDetail}
             reasonDetail={reasonDetail}
             onReasonDetailChange={setReasonDetail}

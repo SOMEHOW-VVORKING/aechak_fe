@@ -662,4 +662,36 @@ describe('/claims', () => {
     release()
     expect(await screen.findByText('조건에 맞는 클레임 0건')).toBeInTheDocument()
   })
+  it('[AC-ADM-CLM-024] 상세가 필요 없는 사유로 바꾸면 적어 둔 상세가 요청에 실리지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/claims')
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+
+    let open = await drawer()
+    await user.selectOptions(
+      open.getAllByRole('combobox')[0]!,
+      open.getByRole('option', { name: '기타' }),
+    )
+    open = await drawer()
+    await user.type(
+      open.getByPlaceholderText('양쪽에 전달할 판정 사유를 입력하세요.'),
+      '기타 사유로 적어 둔 문장',
+    )
+
+    // 같은 판정 안에서 상세가 필요 없는 사유로 바꾼다 — 입력란이 사라진다.
+    await user.selectOptions(
+      (await drawer()).getAllByRole('combobox')[0]!,
+      (await drawer()).getByRole('option', { name: '셀러가 기한 내 응답하지 않았어요' }),
+    )
+    open = await drawer()
+    expect(open.queryByPlaceholderText('양쪽에 전달할 판정 사유를 입력하세요.')).toBeNull()
+
+    await user.click(open.getByRole('button', { name: '제출' }))
+    const dialog = await screen.findByRole('dialog', { name: '셀러 귀책으로 종결할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '셀러 귀책 종결' }))
+
+    await screen.findByText(/셀러 귀책 종결 처리했어요/)
+    // 운영자가 보지 못한 문장이 개입 기록에 박히면 안 된다.
+    expect(currentAdminClaim('CLM-2041')?.intervention?.reasonDetail).toBeNull()
+  })
 })
