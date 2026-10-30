@@ -51,6 +51,7 @@ import {
   type ClaimType,
   type ReturnCostBearer,
 } from '@/features/claims'
+import { maskContactNumber, maskPersonName } from '@/shared/mask'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
 import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
 import { DetailField } from '@/shared/components/DetailField'
@@ -645,11 +646,17 @@ function ClaimDetailBody({
         </ul>
       </DetailField>
 
+      {/*
+        수령인명·연락처는 서버가 **복호 평문**으로 내리고 마스킹을 화면 책임으로 둔다
+        (be AdminClaimDetailResponse.OrderResponse: "마스킹은 화면이 한다"). 귀책을 판정하는 데
+        필요한 것은 반품 송장과 맞춰 볼 수 있는 분간이고 평문 전체가 아니다 — 심사 화면의
+        대표자명과 같은 규칙으로 가린다(@/shared/mask).
+      */}
       <DetailField label="배송 정보" visibility="internal-only">
         <SummaryGrid
           items={[
-            { label: '수령인', value: order.recipientName },
-            { label: '연락처', value: order.contactNumber },
+            { label: '수령인', value: maskPersonName(order.recipientName) ?? '-' },
+            { label: '연락처', value: maskContactNumber(order.contactNumber) ?? '-' },
             {
               label: '주소',
               value: `(${order.zipCode}) ${order.baseAddress} ${order.detailAddress ?? ''}`.trim(),

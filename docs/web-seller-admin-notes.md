@@ -1256,3 +1256,22 @@ function closeConfirm() { if (write.isPending) return; setConfirmOpen(false) } /
   `PROFANITY`는 뺐다(작성 시점 자동 판정만 쓰는 값이다).
 - 클레임: 배송비 부담 주체가 `BUYER`·`SELLER` 둘뿐이다(예시 시절의 `platform`은 없다). 취소
   유형이거나 클레임 불가 판정이면 서버가 명시값도 비우므로 그 조합에서는 입력 자체를 그리지 않는다.
+
+### 실명·연락처는 서버가 가려 주지 않는다 — 화면이 가리지 않으면 아무도 가리지 않는다
+
+BE는 수령인명·연락처를 **복호 평문**으로 내리고 마스킹을 화면 책임으로 둔다
+(`AdminClaimDetailResponse.OrderResponse`: "수령인명·연락처는 복호 평문이다 — 마스킹은 화면이
+한다", `SellerOrderSummaryResponse`·심사 응답도 같은 말). 클레임 상세의 배송 정보가 그 평문을
+그대로 뿌리고 있었고, 테스트가 평문 표시를 단언해 그 상태를 고정하고 있었다(codex 교차검토 지적).
+
+규칙은 `apps/web-admin/src/shared/mask.ts` 한 자리에 있다 — 심사 화면의 대표자명과 클레임의
+수령인·연락처가 같은 함수를 쓴다(feature → feature import 금지라 shared로 승격했고
+`seller-applications.map.ts`는 이름만 다시 내보낸다).
+
+- `maskPersonName` — 앞뒤 한 자만 남긴다(`김보리` → `김*리`). 빈 값은 `null`.
+- `maskContactNumber` — 앞 3·뒤 4만 남긴다(`010-1234-5678` → `010-****-5678`). 7자리 미만은
+  원문 그대로다(번호로 보기 어려운 값을 별표로 덮으면 잘못 들어간 값을 알아볼 수 없다).
+
+**지우지 않고 가운데만 가리는 이유**는 운영자가 분쟁 상대를 분간해야 하기 때문이다 — 반품 송장의
+끝자리와 맞춰 보는 것이 판정 근거이고, 평문 전체가 필요한 일은 어드민 콘솔에 없다. 셀러 콘솔은
+판단이 다르다(송장을 붙여야 하므로 목록만 가리고 상세는 평문 — `orders.contract.ts` 주석).

@@ -187,9 +187,21 @@ describe('/claims', () => {
     expect(open.getByText('셀러 처리')).toBeInTheDocument()
     expect(open.getByText(/거부 사유: 출고 전 검수 사진에는 파손이 없었어요./)).toBeInTheDocument()
     expect(open.getByText(/셀러 메모: 택배사 과실로 보여요./)).toBeInTheDocument()
-    // 수령인·연락처는 마스킹 없는 평문이고 화면이 비공개로 표시한다.
-    expect(open.getByText('김보리')).toBeInTheDocument()
     expect(open.getByText('대상 품목 / 1건')).toBeInTheDocument()
+  })
+
+  it('[AC-ADM-CLM-025] 수령인·연락처는 평문으로 내려와도 화면이 가려서 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/claims')
+
+    await user.click(await screen.findByRole('button', { name: 'CLM-2041' }))
+
+    // 서버는 복호 평문('김보리'·'010-1234-5678')을 내린다 — 가리는 것은 화면 책임이다.
+    const open = await drawer()
+    expect(open.getByText('김*리')).toBeInTheDocument()
+    expect(open.getByText('010-****-5678')).toBeInTheDocument()
+    expect(open.queryByText('김보리')).toBeNull()
+    expect(open.queryByText('010-1234-5678')).toBeNull()
   })
 
   it('[AC-ADM-CLM-006] 개입 사유 선택지는 판정별로 서버 카탈로그에서 온다', async () => {
