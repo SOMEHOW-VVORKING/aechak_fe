@@ -28,6 +28,8 @@ describe('장바구니 담기 확인 바텀시트', () => {
     seedCart()
     resetCartSelection()
     resetAuth()
+    // 상세 라우트가 beforeLoad에서 세션을 복원하므로 회원 전제에는 토큰이 있어야 한다(SCRUM-340).
+    setAccessToken('test-access-token')
   })
 
   it('[AC-CART-SHEET-001] 담기(POST) 성공 시 확인 시트가 열리고 함께 보면 좋은 상품 섹션이 보인다', async () => {

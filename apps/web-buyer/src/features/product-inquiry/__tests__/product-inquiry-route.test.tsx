@@ -129,6 +129,20 @@ describe('상품 상세의 상품 문의 영역', () => {
     expect(screen.queryByText('아직 등록된 문의가 없어요')).not.toBeInTheDocument()
   })
 
+  it('[AC-PINQ-008] 토큰 없이 들어온 비회원은 상세를 잃지 않고 로그인 안내를 받는다', async () => {
+    // auth.store의 loggedIn 기본값이 true인 세션 mock이라, 새로고침·공유 링크로 들어온 진짜
+    // 비회원도 로그인한 것처럼 읽힌다. 라우트가 세션을 먼저 복원하지 않으면 회원 전용 문의
+    // 조회가 나가고 401 → refresh 실패 → 전역 리다이렉트로 보고 있던 상세를 잃는다.
+    // (signIn을 부르지 않아 Authorization 헤더가 없고 기본 refresh 핸들러는 401이다)
+    seedProductInquiries([myRow])
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    // 상세 본문은 그대로 남는다.
+    expect(await screen.findByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    expect(await screen.findByText('상품 문의는 로그인하면 볼 수 있어요')).toBeInTheDocument()
+    expect(productInquiryCallCounts().list).toBe(0)
+  })
+
   it('[AC-PINQ-007] 상품이 노출되지 않으면(404) 문의 0건으로 위장하지 않는다', async () => {
     signIn()
     seedProductInquiries([myRow])
