@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Flag, Heart, Share2, Truck } from 'lucide-react'
 import {
@@ -71,7 +71,18 @@ function buildOptionChoices(
 
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
 // 실 API(GET /products/{id}, /options)로 구동하되, mock id는 상세 쿼리가 목업으로 폴백한다.
-export function ProductDetailScreen({ productId }: { productId: string }) {
+export function ProductDetailScreen({
+  productId,
+  inquirySlot,
+}: {
+  productId: string
+  /**
+   * 상품 문의 영역(SCRUM-340). 다른 feature(features/product-inquiry)가 소유하고 라우트가
+   * 조립해 내려 준다 — feature 간 직접 import가 금지라 여기서 부를 수 없다. 자리만 비워 두고
+   * 구분선도 슬롯이 직접 그린다(목업 상품처럼 영역을 접는 경우 선만 남지 않게).
+   */
+  inquirySlot?: ReactNode
+}) {
   const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useProductDetail(productId)
 
@@ -300,6 +311,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 </Card>
               )}
             </div>
+
+            {inquirySlot}
 
             <Divider />
 
