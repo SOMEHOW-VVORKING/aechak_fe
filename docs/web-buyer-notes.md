@@ -1719,3 +1719,41 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   취소 품목 제외·상품 이동·확정 후 재조회 실패), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
   확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007/008]`, 캡처
   `test-results/pr-c/orders-07~11`).
+
+### 구매자 상품 문의 신설 — 네 경로 실연동 (SCRUM-340, 2026-10-31)
+
+10/29 에 셀러 '고객 문의'(SCRUM-316)가 실연동됐는데 **문의를 만들 클라이언트가 없어 그 목록이
+영구히 비어 있었다.** 구매자 절반이 없던 것이고, 이 배치가 그걸 채운다. 붙인 경로는 넷
+(`POST`·`GET /products/{id}/inquiries`, `DELETE /product-inquiries/{id}`,
+`GET /users/me/product-inquiries`)이고 전부 `api` 모듈이다.
+
+- **고객센터 1:1 문의(`features/inquiry`, `POST /inquiries`)와 도메인이 다르다.** 저쪽은 구매자가
+  운영자에게 묻고, 이쪽은 구매자가 셀러에게 묻는다. 에러코드 구간도 1200xx / 1201xx 로 갈려 있다.
+  새 feature 는 `features/product-inquiry`이고 두 폴더를 합치지 말 것.
+- **목록도 JWT 필수다**(비로그인 401 errorCode 20004). 비밀글을 가릴지가 조회자에 달려 있어 서버가
+  permitAll 로 열지 않았다 — 리뷰 목록과 같은 이유다. 그래서 상세의 문의 영역은 `useIsLoggedIn()`을
+  `enabled`로 넘겨 **비회원에게는 호출 자체를 하지 않고** 로그인 안내 카드만 그린다(401 이 나가면
+  전역 인터셉터가 상세를 로그인으로 밀어낸다). 비회원 화면에 건수를 적지 않는 이유도 같다 —
+  "목록을 못 봤다"를 0 건으로 적으면 "질문이 없는 상품"이 된다.
+- **남의 비밀글은 행이 남고 내용만 가려진다.** 서버가 `readable=false`와 함께 `title`·`content`를
+  `"비밀글입니다."`로, `answer`를 null 로 바꿔 내린다(`ProductInquiryItemResult.from`). 화면은
+  **그 자리표시 값을 본문으로 그리지 않고** `readable`을 보고 잠긴 행을 그린다 — 그대로 그리면
+  사용자가 "작성자가 저 문장을 썼다"고 읽는다. 행을 지우지도 않는다(서버 `totalCount`가 가려진
+  글까지 세므로 머리말 숫자와 카드 수가 어긋난다). 내 문의 목록은 본인 것이라 마스킹이 없다.
+- **철회는 되돌릴 수 없고, 공용 `Modal`은 `loading`과 무관하게 ESC·스크림에서 `onClose`를 부른다.**
+  DS 는 4개 앱 공용이라 고치지 않고 **호출부에서** `onClose`를 `isPending` 가드로 감싼다
+  (`MyProductInquiriesScreen`). 안 막으면 비가역 요청이 떠 있는데 화면은 아무 일도 없던 것처럼
+  보인다. 철회 중에는 다른 행의 철회 버튼도 함께 잠근다.
+- **답변 기한(`answerDueAt`)과 기한 지남(`overdue`)은 서버 판정값**이라 화면이 날짜를 다시 빼지
+  않는다 — 셀러 화면의 지표와 어긋난다.
+- **feature 간 import 가 금지라 상세 화면이 문의 영역을 직접 부를 수 없다.** `ProductDetailScreen`에
+  `inquirySlot?: ReactNode`를 두고 `routes/products/$productId/index.tsx`가 조립해 내려 준다.
+  구분선도 슬롯이 직접 그린다 — 목업 카탈로그 상품(`p-*`)에서는 영역 전체를 접으므로(서버에 없는
+  상품이라 등록할 곳도, 받을 목록도 없다) 선만 남으면 안 된다.
+- 회귀: `features/product-inquiry/__tests__/product-inquiry-route.test.tsx`
+  (`[AC-PINQ-001~007]` 목록·빈 상태·마스킹·내 비밀글·비회원 무호출·게이트·상품 404,
+  `[AC-PINQ-010~012]` 등록·비밀글 플래그·유형 필수, `[AC-PINQ-020~026]` 내 목록·철회 확인·취소·
+  요청 중 ESC/스크림 잠금·답변 뒤 철회 불가·거절 안내). MSW 는 `testing/msw/product-inquiry.ts`가
+  상태형으로 들고 **마스킹 규칙까지 서버와 같게 흉내 낸다** — 여기서 가리지 않으면 화면이 마스킹을
+  존중하는지 확인할 수 없다. E2E `e2e/product-detail.spec.ts`가 빈 상태를 함께 잡는다(스텁을 빼면
+  로컬 8080 에 BE 가 떠 있을 때 401 → refresh 실패로 상세 단언이 깨진다 — 리뷰 미리보기와 같은 함정).
