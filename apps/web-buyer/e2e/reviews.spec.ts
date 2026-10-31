@@ -355,6 +355,30 @@ test('[AC-REVIEW-E2E-010] 작성 대기에서 쓴 리뷰는 POST /reviews로 저
       },
     })
   })
+  // 내 리뷰 카드의 작성자 닉네임은 GET /users/me에서 읽는다.
+  await page.route('http://localhost:8080/api/v1/users/me', (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({
+          status: 200,
+          headers: CORS,
+          json: {
+            data: {
+              status: 'ACTIVE',
+              nickname: '연어러버',
+              profileImageUrl: null,
+              profileImageKey: null,
+              bio: null,
+              email: null,
+              phoneNumber: null,
+              isPhoneVerified: true,
+            },
+          },
+        }),
+  )
   await page.goto('/reviews/mine')
   await page.getByRole('button', { name: '리뷰 쓰기' }).click()
   await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
@@ -372,6 +396,7 @@ test('[AC-REVIEW-E2E-010] 작성 대기에서 쓴 리뷰는 POST /reviews로 저
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
   expect(posted).toMatchObject({ orderItemId: 77 })
+  await expect(page.getByText('리뷰가 등록됐어요. 적립금 300원 지급 예정')).toBeVisible()
   await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
 })
 
