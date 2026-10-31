@@ -20,6 +20,7 @@ import {
 } from '@aechak/api'
 import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
 import { snsHandlers } from './sns'
+import { productInquiryHandlers } from './product-inquiry'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
 // envelope 해석)까지 검증하려고 모듈 모킹 대신 네트워크 레벨에서 가로챈다.
@@ -2086,6 +2087,7 @@ export const handlers = [
   ...onboardingHandlers,
   ...likedProductHandlers,
   ...snsHandlers,
+  ...productInquiryHandlers,
   // 탈퇴 — 기본은 BE 현행(WithdrawalFacade가 항상 withdrawable=true)과 같다. 제한/에러는 테스트가 server.use로 덮는다.
   http.get(WITHDRAWAL_CHECK_URL, () => HttpResponse.json({ data: { withdrawable: true } })),
   http.delete(USER_ME_URL, () => new HttpResponse(null, { status: 204 })),
@@ -2339,3 +2341,4 @@ export const handlers = [
 export const server = setupServer(...handlers)
 
 export * from './sns'
+export * from './product-inquiry'

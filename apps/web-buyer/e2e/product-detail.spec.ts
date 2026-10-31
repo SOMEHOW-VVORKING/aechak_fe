@@ -61,13 +61,22 @@ const EMPTY_REVIEWS = {
   data: { summary: null, reviews: [], totalCount: 0, nextCursor: null, hasNext: false },
 }
 
+// 상품 문의 영역(SCRUM-340)도 상세와 함께 조회된다 — 리뷰 미리보기와 같은 이유로 스텁한다.
+const EMPTY_INQUIRIES = {
+  data: { inquiries: [], totalCount: 0, page: 0, size: 5, totalPages: 0, hasNext: false },
+}
+
 test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 총액에 반영된다', async ({ page }) => {
   await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
+  await page.route(`**/api/v1/products/${REAL_ID}/inquiries*`, route => fulfillJson(route, 200, EMPTY_INQUIRIES))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 
   await page.goto(`/products/${REAL_ID}`)
   await expect(page.getByRole('heading', { name: '리얼 프리미엄 자동 급식기' })).toBeVisible()
+
+  // 문의 0건은 빈 상태로 알린다("문의 없음"과 "못 불러옴"을 가른다).
+  await expect(page.getByText('아직 등록된 문의가 없어요')).toBeVisible()
 
   // 옵션 시트 → 프리미엄형(+5,000원) 선택 시 기본가 64,000 + 5,000 = 69,000원
   await page.getByRole('button', { name: '장바구니', exact: true }).click()
@@ -77,6 +86,7 @@ test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 �
 
 test('[AC-PRODUCT-E2E-003] 옵션 시트 수량 조절이 총액/재고 경계에 반영되고 옵션 변경 시 리셋된다', async ({ page }) => {
   await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
+  await page.route(`**/api/v1/products/${REAL_ID}/inquiries*`, route => fulfillJson(route, 200, EMPTY_INQUIRIES))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 
