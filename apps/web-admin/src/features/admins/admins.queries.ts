@@ -87,11 +87,28 @@ export function formatJoinedAt(joinedAt: string): string {
 }
 
 /**
- * 승격 직후 그 사람의 토큰에는 권한이 반영되지 않는다 — role은 로그인 시점 JWT 스냅샷이다.
- * BE 계약의 일부이므로 화면에서 지우지 말 것(P0-4 apiContract).
+ * access 토큰 수명 — 권한 변경이 반영되기까지의 최대 대기 시간이다.
+ * BE `auth.token.access-ttl`이 boot/api·boot/admin·boot/seller 모두 `30m`이다.
  */
-export const RELOGIN_REQUIRED_NOTICE =
-  '승격한 계정은 구매자 앱(api)에서 다시 로그인해야 관리자 권한이 반영돼요. 강등은 반대로, 이미 발급된 토큰이 만료될 때까지 관리자로 통과해요.'
+export const ACCESS_TOKEN_TTL_MINUTES = 30
+
+/**
+ * 권한 변경이 언제 반영되는지 — 화면에 고정으로 두는 안내다(지우지 말 것).
+ *
+ * 역할은 상태와 달리 매 요청 DB를 보지 않는다. 게이트는 access 토큰에 박힌 role을 읽고,
+ * 그 role은 토큰을 발급·갱신하는 순간의 DB 값이다(BE `TokenService.currentRole`이
+ * `UserRoleReader.roleOf`로 DB를 다시 읽는다 — 회전과 유예 재발급 모두 access를 현재 역할로 굽는다).
+ *
+ * 그래서 승격도 강등도 **재로그인이 아니라 다음 토큰 갱신에서** 반영된다. 대기 시간은 지금 쥔
+ * access 토큰의 남은 수명뿐이라 최대 {@link ACCESS_TOKEN_TTL_MINUTES}분이고, 그 계정이 다시
+ * 로그인하면 그 자리에서 새 역할로 발급된다.
+ *
+ * 특히 강등을 "토큰 만료까지 관리자로 통과한다"고 읽으면 안 된다 — refresh 수명(7일)이 아니라
+ * 30분 안에 끊긴다. 정지·탈퇴는 이것과 또 달라서 상태 필터(`UserStatusFilter`)가 매 요청
+ * DB를 보므로 즉시 막힌다.
+ */
+export const ROLE_PROPAGATION_NOTICE =
+  `권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요. 승격도 강등도 다시 로그인할 필요는 없고, 이미 발급된 토큰이 남아 최대 ${ACCESS_TOKEN_TTL_MINUTES}분 걸려요. 그 계정이 다시 로그인하면 바로 반영돼요.`
 
 // axios 타입을 안 끌어오려고 duck-typing(web-seller·seller-applications 관례). 본문은 `{ errorCode, message }`.
 const errorCodeOf = (error: unknown): number | undefined =>
