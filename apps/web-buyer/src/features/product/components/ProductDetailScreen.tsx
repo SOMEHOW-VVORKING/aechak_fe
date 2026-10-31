@@ -333,7 +333,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             {/* 상품 신고 진입점 */}
             <button
               type="button"
-              onClick={() => navigate({ to: '/products/$productId/report', params: { productId } })}
+              onClick={() =>
+                requireAuth('report', () => navigate({ to: '/products/$productId/report', params: { productId } }))
+              }
               className="mt-1 flex items-center gap-1.5 self-start text-caption text-text-tertiary"
             >
               <Flag className="size-3.5" />
