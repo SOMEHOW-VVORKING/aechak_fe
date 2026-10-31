@@ -3259,9 +3259,12 @@ paths:
         모니터링 카드 넷. **목록과 경로가 나뉘어 있고 받는 파라미터도 다르다** — 상태·지연·키워드를
         받지 않는다. 카드가 그 축으로 모수를 쪼개 보여주므로 상태로 좁히면 카드 넷 중 셋이 0으로
         눌린다. 화면은 셀러·기간만 공유하고 상태·지연·키워드는 목록에만 건다.
-        **금액 카드의 뜻은 서버가 정한다** — `totalPaymentAmount`는 상품금액 + 셀러배송비 -
-        안분 쿠폰할인의 합이고 취소 주문이 빠져(건수 카드 셋과 모수가 다르다) 클라이언트가
-        목록 행을 더해 재현할 수 없다. 카드 라벨은 이 필드 이름에 맞추고 FE에서 금액을 계산하지 말 것.
+        **금액 카드의 뜻은 서버가 정한다** — `totalOrderAmount`는 상품금액 + 셀러배송비 -
+        안분 쿠폰할인인 **주문 금액**이고 실제 수납액이 아니다. 적립금은 주문그룹 단위로 쓰여
+        셀러별 주문에 안분할 근거가 없어 빠지지 않으므로 적립금을 쓴 주문에서 PG 청구액보다 크다 —
+        카드를 "결제액"으로 적으면 운영자가 거짓을 읽는다. 취소 주문과 취소·반품으로 종결된 품목이
+        빠져(건수 카드 셋과 모수가 다르다) 클라이언트가 목록 행을 더해 재현할 수 없다.
+        카드 라벨은 이 필드 이름에 맞추고 FE에서 금액을 계산하지 말 것.
         시작일이 종료일보다 늦으면 400 errorCode 90001.
       operationId: "getAdminOrderMetrics"
       security:
@@ -7860,7 +7863,10 @@ components:
         payableAmount:
           type: integer
           format: int64
-          description: "상품금액 + 셀러배송비 - 안분 쿠폰할인. 서버가 계산한다"
+          description: >-
+            주문 금액(상품금액 + 셀러배송비 - 안분 쿠폰할인). 서버가 계산한다. 지표 카드의
+            `totalOrderAmount`와 같은 규칙이다 — 취소·반품으로 종결된 품목이 빠지고 취소된 주문은
+            0이다. 적립금은 빠지지 않아 **실제 수납액이 아니다**
         purchaseConfirmDueAt:
           type: string
           nullable: true
@@ -7907,12 +7913,12 @@ components:
           $ref: "#/components/schemas/AdminOrderListData"
     AdminOrderMetricsData:
       type: object
-      required: [awaitingDispatchCount, shippingCount, delayedCount, totalPaymentAmount]
+      required: [awaitingDispatchCount, shippingCount, delayedCount, totalOrderAmount]
       description: >-
         카드 넷. `awaitingDispatchCount`는 결제완료·상품준비·발송대기를 합친 "아직 송장이 붙지
         않은 전부"다(셀러가 발주 확인조차 하지 않은 건이 가장 위험한 쪽이라 빼면 카드가 거짓이 된다).
         `delayedCount`는 목록 행의 지연 신호와 같은 기준으로 센다.
-        `totalPaymentAmount`만 모수가 다르다 — 취소 주문이 빠진다
+        `totalOrderAmount`만 모수가 다르다 — 취소 주문과 종결된 품목이 빠진다
       properties:
         awaitingDispatchCount:
           type: integer
@@ -7923,10 +7929,12 @@ components:
         delayedCount:
           type: integer
           format: int64
-        totalPaymentAmount:
+        totalOrderAmount:
           type: integer
           format: int64
-          description: "조회 범위(셀러·기간)의 결제액 합. 취소 주문 제외 — 뜻은 서버가 정한다"
+          description: >-
+            주문 금액 합(상품금액 + 셀러배송비 - 안분 쿠폰할인). **실제 수납액이 아니다** —
+            적립금이 빠지지 않는다. 취소 주문과 취소·반품으로 종결된 품목 제외. 뜻은 서버가 정한다
     AdminOrderMetricsResponse:
       type: object
       required: [data]

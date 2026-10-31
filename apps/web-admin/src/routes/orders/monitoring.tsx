@@ -125,7 +125,7 @@ function makeOrderColumns(
     },
     {
       key: 'payableAmount',
-      label: '결제 금액',
+      label: '주문 금액',
       align: 'right',
       render: row => <span className="tabular-nums">{won(row.payableAmount)}</span>,
     },
@@ -271,8 +271,12 @@ function OrdersMonitoringPage() {
 
       {/*
         카드 라벨은 서버 응답 필드 이름에 맞춘다. 금액은 서버가 계산한 값을 그대로 쓴다 —
-        `totalPaymentAmount`는 취소 주문이 빠져 목록 행을 더해 재현할 수 없고, 뜻이 바뀌면
-        서버가 바꾼다. 조회가 실패하면 숫자를 비운다(옛 숫자는 서버에 없는 건수가 된다).
+        `totalOrderAmount`는 취소 주문과 종결된 품목이 빠져 목록 행을 더해 재현할 수 없고,
+        뜻이 바뀌면 서버가 바꾼다. 조회가 실패하면 숫자를 비운다(옛 숫자는 서버에 없는 건수가 된다).
+
+        **"결제액"이라고 적지 않는다.** 적립금은 주문그룹 단위로 쓰여 셀러별 주문에 안분할 근거가
+        없어 서버가 빼지 않는다 — 적립금을 쓴 주문에서 PG 청구액보다 크다. 카드가 결제액을 주장하면
+        운영자가 정산 숫자와 맞춰 보다가 어긋난다.
 
         **카드 넷은 아래 필터와 무관하다.** 지표 경로가 상태·지연·키워드를 받지 않고, 이 화면은
         서버가 받는 셀러·기간도 보내지 않으므로 모수가 늘 플랫폼 전체다. 금액 카드를 "조회 범위"로
@@ -297,9 +301,9 @@ function OrdersMonitoringPage() {
           variant={metrics.metrics && metrics.metrics.delayedCount > 0 ? 'urgent' : 'default'}
         />
         <MetricCard
-          label="전체 결제액"
-          value={metrics.metrics ? won(metrics.metrics.totalPaymentAmount) : '-'}
-          footer="취소 주문 제외"
+          label="전체 주문 금액"
+          value={metrics.metrics ? won(metrics.metrics.totalOrderAmount) : '-'}
+          footer="취소 주문 제외 · 수납액 아님"
           variant="quiet"
         />
       </div>
@@ -417,7 +421,7 @@ function OrdersMonitoringPage() {
                 items={[
                   { label: '구매자', value: order.buyerNickname },
                   { label: '셀러', value: order.sellerName },
-                  { label: '결제 금액', value: won(order.payableAmount) },
+                  { label: '주문 금액', value: won(order.payableAmount) },
                   { label: '주문 시각', value: order.orderedAtLabel },
                   { label: '주문 묶음', value: detail.detail.orderGroupId },
                 ]}

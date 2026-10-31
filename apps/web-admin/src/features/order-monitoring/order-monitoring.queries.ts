@@ -127,7 +127,7 @@ export interface OrderMetricsResult {
  * 그래서 목록 필터를 여기 넘기지 않고 파라미터 없이 부른다. 서버가 받는 셀러·기간 축은 이 화면이
  * 아직 필터로 두지 않았다.
  *
- * **금액은 서버 응답을 그대로 쓴다.** `totalPaymentAmount`는 취소 주문이 빠져 목록 행의
+ * **금액은 서버 응답을 그대로 쓴다.** `totalOrderAmount`는 취소 주문이 빠져 목록 행의
  * `payableAmount`를 더해 재현할 수 없고, 뜻이 바뀌면 서버가 바꾼다.
  */
 export function useAdminOrderMonitorMetrics(): OrderMetricsResult {

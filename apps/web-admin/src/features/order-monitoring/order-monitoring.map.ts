@@ -124,7 +124,10 @@ export interface AdminOrderMonitorRow {
   buyerNickname: string
   /** '대표 품목명 외 N건'. 목록 응답에 품목 전문이 없어 서버가 준 두 필드로 조립한다. */
   itemSummary: string
-  /** 서버가 계산한 결제 금액. 화면이 금액을 더하거나 빼지 않는다. */
+  /**
+   * 서버가 계산한 주문 금액. 화면이 금액을 더하거나 빼지 않는다.
+   * 적립금이 빠지지 않아 실제 수납액이 아니다 — 라벨을 "결제 금액"으로 적지 않는다.
+   */
   payableAmount: number
   delayed: boolean
   /** 지연이 아니면 null. 판정은 서버가 한다. */
