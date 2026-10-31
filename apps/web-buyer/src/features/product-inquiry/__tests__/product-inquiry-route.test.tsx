@@ -341,15 +341,22 @@ describe('/mypage/product-inquiries', () => {
     expect(screen.queryByRole('button', { name: '철회하기' })).not.toBeInTheDocument()
   })
 
-  it('[AC-PINQ-026] 철회가 서버에 거절되면 사유를 안내한다', async () => {
+  it('[AC-PINQ-026] 철회가 서버에 거절되면 사유를 안내하고 화면을 서버 상태로 맞춘다', async () => {
     // 목록을 받은 뒤 다른 경로로 답변이 달린 상태(답변 뒤 철회는 409 120111).
     seedProductInquiries([myRow])
     const user = userEvent.setup()
     renderAt('/mypage/product-inquiries')
     await screen.findByText('배터리로도 쓸 수 있나요?')
+    expect(screen.getByText('답변 대기')).toBeInTheDocument()
 
-    // 서버 쪽에서만 상태가 ANSWERED로 바뀐 상황을 만든다(화면은 아직 RECEIVED를 들고 있다).
-    seedProductInquiries([{ ...myRow, status: 'ANSWERED' }])
+    // 서버 쪽에서만 답변이 달린 상황을 만든다(화면은 아직 RECEIVED를 들고 있다).
+    seedProductInquiries([
+      {
+        ...myRow,
+        status: 'ANSWERED',
+        answer: { content: '네 배터리로도 돼요.', answeredAt: '2026-10-31T10:00:00' },
+      },
+    ])
 
     await user.click(screen.getByRole('button', { name: '철회하기' }))
     const dialog = await screen.findByRole('dialog')
@@ -357,5 +364,13 @@ describe('/mypage/product-inquiries', () => {
 
     expect(await screen.findByText('답변이 달린 문의는 철회할 수 없어요.')).toBeInTheDocument()
     expect(currentProductInquiries()[0]!.status).toBe('ANSWERED')
+
+    // 거절은 "화면이 든 행이 낡았다"는 뜻이다 — 사유만 띄우고 '답변 대기'와 철회 버튼을 그대로
+    // 두면 토스트가 사라진 뒤 서버와 반대되는 상태를 읽는다. 실패에도 목록을 다시 받는다.
+    expect(await screen.findByText('답변 완료')).toBeInTheDocument()
+    expect(screen.getByText('네 배터리로도 돼요.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '철회하기' })).not.toBeInTheDocument(),
+    )
   })
 })

@@ -193,6 +193,11 @@ export interface WithdrawProductInquiryInput {
  * 문의 철회(DELETE /product-inquiries/{inquiryId}). **되돌릴 수 없다** — 호출부가 확인 한 단계를
  * 거친 뒤에만 부른다. 404(이미 지워짐)도 성공으로 접지 않는다: 철회는 상태가 갈리는 조치라
  * (답변 달림 409, 이미 철회 409) 사용자가 사유를 읽어야 한다.
+ *
+ * **성공만이 아니라 실패에도 목록을 다시 받는다.** 철회가 거절되는 사유는 전부 "화면이 들고 있는
+ * 행이 낡았다"는 뜻이다 — 답변이 달렸고(409 120111), 이미 철회됐고(409 120110), 사라졌고(404),
+ * 내 것이 아니다(403). 성공에만 무효화하면 사유 토스트가 사라진 뒤 화면에는 '답변 대기'와
+ * 철회하기 버튼이 그대로 남아, 서버가 방금 알려준 것과 반대되는 상태를 읽게 된다.
  */
 export function useWithdrawProductInquiry() {
   const queryClient = useQueryClient()
@@ -200,7 +205,7 @@ export function useWithdrawProductInquiry() {
     mutationFn: async ({ inquiryId }) => {
       await withdrawProductInquiry(inquiryId)
     },
-    onSuccess: (_, { productId }) => invalidateInquiries(queryClient, productId),
+    onSettled: (_data, _error, { productId }) => invalidateInquiries(queryClient, productId),
   })
 }
 

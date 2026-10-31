@@ -1744,8 +1744,22 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   DS 는 4개 앱 공용이라 고치지 않고 **호출부에서** `onClose`를 `isPending` 가드로 감싼다
   (`MyProductInquiriesScreen`). 안 막으면 비가역 요청이 떠 있는데 화면은 아무 일도 없던 것처럼
   보인다. 철회 중에는 다른 행의 철회 버튼도 함께 잠근다.
+- **철회가 거절되면 성공과 똑같이 목록을 다시 받는다**(`onSettled`, codex 교차검증에서 잡혔다).
+  철회가 거절되는 사유는 전부 "화면이 들고 있는 행이 낡았다"는 뜻이다 — 답변이 달렸고(409
+  120111), 이미 철회됐고(409 120110), 사라졌고(404), 내 것이 아니다(403). 성공에만 무효화하면
+  사유 토스트가 3초 뒤 사라진 자리에 **'답변 대기' pill 과 철회하기 버튼이 그대로 남아** 서버가
+  방금 알려준 것과 반대되는 상태를 읽고, 다시 눌러도 같은 409 를 받는다. 회귀는 `[AC-PINQ-026]`이
+  토스트만이 아니라 **'답변 완료'로 바뀌고 철회 버튼이 사라지는 것까지** 단언해서 잡는다.
 - **답변 기한(`answerDueAt`)과 기한 지남(`overdue`)은 서버 판정값**이라 화면이 날짜를 다시 빼지
   않는다 — 셀러 화면의 지표와 어긋난다.
+- **로그인 가드를 라우트에 다는 기준은 "permitAll 화면인가"다.** 완전 회원 전용 화면
+  (`/mypage/product-inquiries`·`/orders`·`/reviews/mine`·`/wishlist`·`/mypage/sns-relations`)은
+  가드를 달지 않고 401 → refresh 실패 → 전역 로그인 이동에 맡긴다 — 비회원을 로그인으로 보내는
+  것이 **옳은 도착지**이고 잃을 화면이 없다. 가드(`useIsLoggedIn` + `beforeLoad`)가 필요한 쪽은
+  **permitAll 인데 회원 전용 조회를 섞는** 화면이다(상품 상세·SNS 프로필·검색·카탈로그) — 거기서는
+  401 이 볼 권리가 있던 화면을 빼앗는다. 두 부류를 섞어 가드를 일괄로 달면 비회원에게 영구
+  스켈레톤을 그리게 된다(`enabled:false`인 쿼리는 `isPending`이 계속 true 라 `isLoading`에
+  `enabled`를 곱해야 한다 — `useProductInquiries`가 그렇게 한다).
 - **feature 간 import 가 금지라 상세 화면이 문의 영역을 직접 부를 수 없다.** `ProductDetailScreen`에
   `inquirySlot?: ReactNode`를 두고 `routes/products/$productId/index.tsx`가 조립해 내려 준다.
   구분선도 슬롯이 직접 그린다 — 목업 카탈로그 상품(`p-*`)에서는 영역 전체를 접으므로(서버에 없는
