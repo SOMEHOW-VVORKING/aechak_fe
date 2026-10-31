@@ -495,6 +495,18 @@ function stubProductDrafts(page: Page, seed: { draftId: string; productName: str
           },
         })
       }
+      if (request.method() === 'POST') {
+        // 생성 — 201에 draftId·savedAt. 화면이 이 id를 URL에 심어야 다음 저장이 PUT이 된다.
+        const body = request.postDataJSON() as { productName?: string; regularPrice?: number }
+        const created = {
+          draftId: `01JE2ECREATED${String(drafts.length + 1).padStart(13, '0')}`,
+          productName: body.productName ?? null,
+          savedAt: '2026-10-20T16:20:00',
+          ...(body.regularPrice != null ? { regularPrice: body.regularPrice } : {}),
+        }
+        drafts.unshift(created)
+        return fulfillJson(r, 201, { data: { draftId: created.draftId, savedAt: created.savedAt } })
+      }
       return fulfillJson(r, 404, { errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' })
     }
     const index = drafts.findIndex(d => d.draftId === draftId)
@@ -502,6 +514,19 @@ function stubProductDrafts(page: Page, seed: { draftId: string; productName: str
     if (request.method() === 'DELETE') {
       drafts.splice(index, 1)
       return r.fulfill({ status: 204, headers: CORS, body: '' })
+    }
+    if (request.method() === 'PUT') {
+      // 덮어쓰기 — 통째로 바꾸고 저장순 맨 앞으로 올린다(BE findAllLive).
+      const body = request.postDataJSON() as { productName?: string; regularPrice?: number }
+      const saved = {
+        draftId,
+        productName: body.productName ?? null,
+        savedAt: '2026-10-20T16:30:00',
+        ...(body.regularPrice != null ? { regularPrice: body.regularPrice } : {}),
+      }
+      drafts.splice(index, 1)
+      drafts.unshift(saved)
+      return fulfillJson(r, 200, { data: { draftId, savedAt: saved.savedAt } })
     }
     const draft = drafts[index]!
     return fulfillJson(r, 200, {
@@ -670,14 +695,39 @@ test('[AC-SPRD-E2E-003] BE 미지원 기능(상품 삭제)은 진입점이 없�
 })
 
 test('[AC-SPRD-E2E-007] 임시저장 → 목록에서 불러오기 → 이어서 쓰기가 한 줄로 돈다', async ({ page }) => {
+  await stubAll(page, { drafts: [] })
+
+  // 1) 등록 폼에서 필수값 없이 저장한다 — 데모의 첫 토막이다.
+  await page.goto('/products/new')
+  await page.getByLabel('상품명').fill('쓰다 만 자동 급식기')
+  await page.getByRole('button', { name: '임시저장' }).click()
+
+  await expect(page.getByText('16:20에 임시저장했어요.')).toBeVisible()
+  // 돌려받은 draftId가 URL에 심겨야 두 번째 저장이 PUT이 되고 초안이 둘로 늘지 않는다.
+  await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2ECREATED0000000000001$/)
+
+  // 2) 목록으로 돌아오면 머리말에 초안 수가 생긴다.
+  await page.goto('/products')
+  await page.getByRole('button', { name: '임시저장 1' }).click()
+  const drawer = page.getByRole('dialog', { name: '임시저장한 상품' })
+  await expect(drawer.getByText('쓰다 만 자동 급식기')).toBeVisible()
+  // 방금 저장한 시각이 그 자리에 보여야 "임시저장했어요"가 참이다.
+  await expect(drawer.getByText('2026.10.20 16:20 저장')).toBeVisible()
+
+  // 3) 이어쓰기 — 저장해 둔 값으로 폼이 열린다.
+  await drawer.getByRole('button', { name: '이어쓰기' }).click()
+  await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2ECREATED0000000000001$/)
+  await expect(page.getByLabel('상품명')).toHaveValue('쓰다 만 자동 급식기')
+  await shot(page, 'draft-resume')
+})
+
+test('[AC-SPRD-E2E-009] 이어쓰기는 초안의 카테고리와 가격까지 되살린다', async ({ page }) => {
   await stubAll(page)
   await page.goto('/products')
 
   await page.getByRole('button', { name: '임시저장 1' }).click()
   const drawer = page.getByRole('dialog', { name: '임시저장한 상품' })
-  await expect(drawer.getByText('쓰다 만 자동 급식기')).toBeVisible()
   await expect(drawer.getByText('2026.10.20 14:05 저장')).toBeVisible()
-
   await drawer.getByRole('button', { name: '이어쓰기' }).click()
   await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2EDRAFT00000000000001$/)
 
@@ -686,7 +736,6 @@ test('[AC-SPRD-E2E-007] 임시저장 → 목록에서 불러오기 → 이어서
   await expect(page.getByLabel('소분류')).toHaveValue('20901')
   // 프리필은 서버 값을 그대로 넣는다 — 천 단위 구분은 타이핑 때만 붙는다.
   await expect(page.getByLabel('정가')).toHaveValue('25000')
-  await shot(page, 'draft-resume')
 })
 
 test('[AC-SPRD-E2E-008] 임시저장 삭제는 확인을 거친다', async ({ page }) => {
