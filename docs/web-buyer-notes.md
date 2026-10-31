@@ -1750,8 +1750,19 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   `inquirySlot?: ReactNode`를 두고 `routes/products/$productId/index.tsx`가 조립해 내려 준다.
   구분선도 슬롯이 직접 그린다 — 목업 카탈로그 상품(`p-*`)에서는 영역 전체를 접으므로(서버에 없는
   상품이라 등록할 곳도, 받을 목록도 없다) 선만 남으면 안 된다.
+- **`useIsLoggedIn()`은 "토큰이 있다"가 아니다 — 이게 dev 배포에서 터졌다.** `auth.store`의
+  `loggedIn` 기본값이 `true`인 세션 mock 이라, 새로고침이나 공유 링크로 들어온 **진짜 비회원도
+  로그인한 것으로 읽힌다.** 그 상태로 회원 전용 조회를 보내면 401 → refresh 실패 → 전역
+  리다이렉트로 **보고 있던 상세를 통째로 잃는다.** permitAll 화면에서 회원 전용 조회를 섞는
+  자리는 라우트 `beforeLoad`에 `restoreSessionOrGuest()`를 달아 **비회원인지 먼저 확정**해야
+  한다(`routes/products/$productId/index.tsx`, SNS 프로필 라우트가 같은 수단을 쓴다). MSW 테스트는
+  `setAccessToken`으로 토큰을 세워 두면 초록이라 **이 결함을 잡지 못한다** — 실제로 17건이 전부
+  초록인 채로 dev 에서 터졌다. 회귀는 `[AC-PINQ-008]`(토큰 없이 진입)이 잡는다.
+  같은 이유로 **회원 전제 테스트는 `loggedIn`만 true로 두지 말고 토큰까지 세운다** — 토큰 없는
+  로그인 상태는 실제 앱의 회원에게 존재하지 않고, 그 상태로 통과하던 상세 테스트 14건이 세션
+  복원을 켜자 한꺼번에 빨개졌다.
 - 회귀: `features/product-inquiry/__tests__/product-inquiry-route.test.tsx`
-  (`[AC-PINQ-001~007]` 목록·빈 상태·마스킹·내 비밀글·비회원 무호출·게이트·상품 404,
+  (`[AC-PINQ-001~008]` 목록·빈 상태·마스킹·내 비밀글·비회원 무호출·게이트·상품 404·토큰 없는 진입,
   `[AC-PINQ-010~012]` 등록·비밀글 플래그·유형 필수, `[AC-PINQ-020~026]` 내 목록·철회 확인·취소·
   요청 중 ESC/스크림 잠금·답변 뒤 철회 불가·거절 안내). MSW 는 `testing/msw/product-inquiry.ts`가
   상태형으로 들고 **마스킹 규칙까지 서버와 같게 흉내 낸다** — 여기서 가리지 않으면 화면이 마스킹을
