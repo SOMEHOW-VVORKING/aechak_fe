@@ -242,17 +242,19 @@ test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에�
   await page.getByLabel('승격할 사용자 ID').fill('45')
   await page.getByRole('button', { name: '관리자로 승격' }).click()
   await expect(
-    page.getByText('관리자로 승격했어요. 그 계정이 토큰을 갱신하면 권한이 반영돼요(최대 30분).'),
+    page.getByText('관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.'),
   ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '승격대상' })).toBeVisible()
 
   await page.getByRole('button', { name: '김운영 관리자 권한 해제' }).click()
   const modal = page.getByRole('dialog')
-  await expect(modal).toContainText('관리자 접근은 최대 30분 뒤에 끊겨요.')
+  await expect(modal).toContainText('access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.')
   await shot(page, '03-demote-confirm')
   await modal.getByRole('button', { name: '권한 해제' }).click()
   await expect(
-    page.getByText('관리자 권한을 해제했어요. 이미 발급된 토큰이 남아 최대 30분 뒤 관리자 접근이 끊겨요.'),
+    page.getByText(
+      '관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.',
+    ),
   ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '김운영' })).toHaveCount(0)
 

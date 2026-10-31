@@ -17737,7 +17737,7 @@ export function useGetAdminRosterSuspense<
 }
 
 /**
- * 성공은 204 No Content(본문 없음)다. **승격은 그 계정의 다음 토큰 갱신에서 반영된다** — TokenService가 access를 구울 때마다 역할을 DB에서 다시 읽으므로(SCRUM-329) 재로그인은 필요 없고, 지금 쥔 access의 남은 수명(access-ttl 30분)만 기다리면 된다. 화면에 그 반영 시점을 고정 문구로 둬야 한다(계약의 일부). 400 errorCode 90001 — userId 누락(@Valid). 404 errorCode 30000 USER_NOT_FOUND. 409 errorCode 30012 USER_ALREADY_ADMIN. 409 errorCode 30017 USER_NOT_PROMOTABLE — ACTIVE가 아닌 계정(정지·온보딩 미완). 계약 초안의 30015가 아니고, P0-4 보고 시점의 500도 아니다(현재 develop에서 409/30017로 고정됐다). 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 승격. 강등 직후에도 옛 ADMIN access가 남은 수명 동안 게이트를 통과하므로 자기 자격을 되돌리는 경로를 막는다.
+ * 성공은 204 No Content(본문 없음)다. **승격은 그 계정이 access를 다시 받을 때 반영된다** — TokenService가 access를 구울 때마다 역할을 DB에서 다시 읽으므로(SCRUM-329) 재로그인은 필요 없다. 이미 발급된 access(수명 30분)는 만료 전까지 옛 역할로 통과하고, 갱신은 시각이 아니라 401로 촉발되므로 반영 시점에 상한을 약속할 수 없다. 화면에 그 반영 시점을 고정 문구로 둬야 한다(계약의 일부). 400 errorCode 90001 — userId 누락(@Valid). 404 errorCode 30000 USER_NOT_FOUND. 409 errorCode 30012 USER_ALREADY_ADMIN. 409 errorCode 30017 USER_NOT_PROMOTABLE — ACTIVE가 아닌 계정(정지·온보딩 미완). 계약 초안의 30015가 아니고, P0-4 보고 시점의 500도 아니다(현재 develop에서 409/30017로 고정됐다). 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 승격. 강등 직후에도 옛 ADMIN access가 남은 수명 동안 게이트를 통과하므로 자기 자격을 되돌리는 경로를 막는다.
  * @summary 어드민 관리자 승격
  */
 export const promoteAdmin = (promoteAdminRequest: PromoteAdminRequest, signal?: AbortSignal) => {
@@ -17811,7 +17811,7 @@ export const usePromoteAdmin = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 성공은 204 No Content(본문 없음)이고 **멱등이다** — 이미 일반 회원이면 no-op도 204다. 404 errorCode 30000 USER_NOT_FOUND. 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 강등. 409 errorCode 30013 LAST_ADMIN_CANNOT_BE_DEMOTED — 관리자가 0명이 되는 강등. 0명이 되면 어드민 전 EP가 20011로 막히고 복구 경로가 DB 직접 조작이나 기동 부트스트랩뿐이라 서버가 막는다. 강등은 **다음 토큰 갱신에서 끊긴다** — 갱신이 역할을 DB에서 다시 읽으므로(SCRUM-329) refresh 수명(7일)이 아니라 지금 쥔 access의 남은 수명(access-ttl 30분)까지만 ADMIN으로 통과한다. 즉시 차단으로도, 재로그인 전까지 유지로도 설명하면 안 된다.
+ * 성공은 204 No Content(본문 없음)이고 **멱등이다** — 이미 일반 회원이면 no-op도 204다. 404 errorCode 30000 USER_NOT_FOUND. 403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 강등. 409 errorCode 30013 LAST_ADMIN_CANNOT_BE_DEMOTED — 관리자가 0명이 되는 강등. 0명이 되면 어드민 전 EP가 20011로 막히고 복구 경로가 DB 직접 조작이나 기동 부트스트랩뿐이라 서버가 막는다. 강등은 즉시가 아니다 — 이미 발급된 access(수명 30분)가 만료될 때까지 ADMIN으로 통과하고, 그 뒤의 갱신은 역할을 DB에서 다시 읽어(SCRUM-329) 일반 회원으로 내려온다. 토큰을 앞당겨 폐기하는 배선은 없다. refresh 수명(7일)까지 통과한다고도, 재로그인 전까지 유지된다고도 설명하면 안 된다.
  * @summary 어드민 관리자 강등
  */
 export const demoteAdmin = (userId: number) => {

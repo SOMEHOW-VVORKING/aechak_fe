@@ -87,8 +87,12 @@ export function formatJoinedAt(joinedAt: string): string {
 }
 
 /**
- * access 토큰 수명 — 권한 변경이 반영되기까지의 최대 대기 시간이다.
- * BE `auth.token.access-ttl`이 boot/api·boot/admin·boot/seller 모두 `30m`이다.
+ * access 토큰 수명 — BE `auth.token.access-ttl`이 boot/api·boot/admin·boot/seller 모두 `30m`이다.
+ *
+ * 이 수는 "권한 변경이 반영되기까지의 보장 시간"이 **아니다.** 수명은 옛 권한이 통과하는
+ * 창의 길이일 뿐이다. 두 가지가 그 창을 늘린다 — 갱신이 시각이 아니라 401 응답으로 촉발되므로
+ * (`@aechak/api` client의 401 인터셉터) 요청을 안 하는 계정은 더 늦게 반영되고,
+ * BE가 `JwtValidators.createDefault()`를 써서 만료 검증에 60초 오차를 허용한다.
  */
 export const ACCESS_TOKEN_TTL_MINUTES = 30
 
@@ -98,17 +102,18 @@ export const ACCESS_TOKEN_TTL_MINUTES = 30
  * 역할은 상태와 달리 매 요청 DB를 보지 않는다. 게이트는 access 토큰에 박힌 role을 읽고,
  * 그 role은 토큰을 발급·갱신하는 순간의 DB 값이다(BE `TokenService.currentRole`이
  * `UserRoleReader.roleOf`로 DB를 다시 읽는다 — 회전과 유예 재발급 모두 access를 현재 역할로 굽는다).
+ * 그래서 승격도 강등도 **재로그인이 아니라 다음 토큰 갱신에서** 반영되고, 그 계정이 다시
+ * 로그인하면 그 자리에서 새 역할로 발급된다(BE `SocialLoginService`가 DB의 `user.role`을 넘긴다).
  *
- * 그래서 승격도 강등도 **재로그인이 아니라 다음 토큰 갱신에서** 반영된다. 대기 시간은 지금 쥔
- * access 토큰의 남은 수명뿐이라 최대 {@link ACCESS_TOKEN_TTL_MINUTES}분이고, 그 계정이 다시
- * 로그인하면 그 자리에서 새 역할로 발급된다.
+ * 문구가 수명({@link ACCESS_TOKEN_TTL_MINUTES}분)을 말하고 "몇 분 뒤 끊긴다"를 말하지 않는 이유:
+ * 이미 발급된 토큰을 앞당겨 폐기하는 배선이 없고 갱신은 401로 촉발되므로, 보장되는 것은
+ * "그 토큰이 만료되기 전까지는 옛 권한으로 통과한다"까지다.
  *
- * 특히 강등을 "토큰 만료까지 관리자로 통과한다"고 읽으면 안 된다 — refresh 수명(7일)이 아니라
- * 30분 안에 끊긴다. 정지·탈퇴는 이것과 또 달라서 상태 필터(`UserStatusFilter`)가 매 요청
- * DB를 보므로 즉시 막힌다.
+ * 강등을 "refresh 만료(7일)까지 관리자로 통과한다"고 읽으면 안 된다 — 거기까지 가지 않는다.
+ * 정지·탈퇴는 또 달라서 상태 필터(`UserStatusFilter`)가 매 요청 DB를 보므로 즉시 막힌다.
  */
 export const ROLE_PROPAGATION_NOTICE =
-  `권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요. 승격도 강등도 다시 로그인할 필요는 없고, 이미 발급된 토큰이 남아 최대 ${ACCESS_TOKEN_TTL_MINUTES}분 걸려요. 그 계정이 다시 로그인하면 바로 반영돼요.`
+  `권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요. 다시 로그인할 필요는 없지만, 이미 발급된 access 토큰(수명 ${ACCESS_TOKEN_TTL_MINUTES}분)이 만료되기 전까지는 옛 권한으로 통과해요. 바로 반영하려면 그 계정이 다시 로그인하면 돼요.`
 
 // axios 타입을 안 끌어오려고 duck-typing(web-seller·seller-applications 관례). 본문은 `{ errorCode, message }`.
 const errorCodeOf = (error: unknown): number | undefined =>

@@ -75,7 +75,7 @@ function AdminRosterPage() {
         setUserIdInput('')
         // 지금 쥔 access 토큰에는 아직 옛 역할이 박혀 있다 — 토스트에서도 반영 시점을 다시 말한다.
         setToast({
-          message: `관리자로 승격했어요. 그 계정이 토큰을 갱신하면 권한이 반영돼요(최대 ${ACCESS_TOKEN_TTL_MINUTES}분).`,
+          message: '관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.',
           variant: 'success',
         })
       },
@@ -91,7 +91,7 @@ function AdminRosterPage() {
         setDemoteTarget(null)
         // 해제는 즉시가 아니다 — 운영자가 실제 차단 시점을 설명할 수 있게 창을 숫자로 말한다.
         setToast({
-          message: `관리자 권한을 해제했어요. 이미 발급된 토큰이 남아 최대 ${ACCESS_TOKEN_TTL_MINUTES}분 뒤 관리자 접근이 끊겨요.`,
+          message: `관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 ${ACCESS_TOKEN_TTL_MINUTES}분)이 만료되면 관리자 접근이 끊겨요.`,
           variant: 'success',
         })
       },
@@ -269,7 +269,7 @@ function AdminRosterPage() {
           open
           onClose={() => setDemoteTarget(null)}
           title="관리자 권한을 해제할까요?"
-          description={`${adminDisplayName(demoteTarget)} 계정이 일반 회원으로 돌아가요. 이미 발급된 토큰이 남아 관리자 접근은 최대 ${ACCESS_TOKEN_TTL_MINUTES}분 뒤에 끊겨요.`}
+          description={`${adminDisplayName(demoteTarget)} 계정이 일반 회원으로 돌아가요. 이미 발급된 access 토큰(수명 ${ACCESS_TOKEN_TTL_MINUTES}분)이 만료되면 관리자 접근이 끊겨요.`}
           confirmLabel="권한 해제"
           confirmVariant="danger"
           loading={demote.isPending}
