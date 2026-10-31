@@ -93,6 +93,10 @@ export function formatJoinedAt(joinedAt: string): string {
  * 창의 길이일 뿐이다. 두 가지가 그 창을 늘린다 — 갱신이 시각이 아니라 401 응답으로 촉발되므로
  * (`@aechak/api` client의 401 인터셉터) 요청을 안 하는 계정은 더 늦게 반영되고,
  * BE가 `JwtValidators.createDefault()`를 써서 만료 검증에 60초 오차를 허용한다.
+ *
+ * 서버 응답의 `expiresIn`(로그인·refresh)으로 갈아끼우지 말 것 — 그 값은 **지금 로그인한 운영자**가
+ * 방금 받은 토큰의 수명이고, 이 문구가 말하는 것은 **승격·강등 대상 계정**이 쥔 다른 토큰의 수명이다.
+ * 두 모듈의 `access-ttl`이 갈라지면 운영자 토큰 수명을 상대 계정의 것으로 잘못 말하게 된다.
  */
 export const ACCESS_TOKEN_TTL_MINUTES = 30
 

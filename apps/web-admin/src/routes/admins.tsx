@@ -35,6 +35,11 @@ const STATUS_VARIANT: Record<keyof typeof USER_STATUS_LABEL, StatusPillVariant> 
   WITHDRAWN: 'muted',
 }
 
+// 이 화면의 토스트는 "언제 반영되는지"를 한 문장 더 말하므로 DS 기본 3초로는 다 읽히지 않는다
+// (해제 토스트가 50자를 넘는다). 운영자가 읽지 못하는 안내는 안 쓴 것과 같아 여기만 늘린다 —
+// DS 기본값은 4개 앱 공용이라 건드리지 않는다.
+const ROLE_CHANGE_TOAST_MS = 7000
+
 function AdminRosterPage() {
   const navigate = useNavigate()
   const [page, setPage] = useState(0)
@@ -278,7 +283,13 @@ function AdminRosterPage() {
       )}
 
       {toast && (
-        <Toast open onClose={() => setToast(null)} message={toast.message} variant={toast.variant} />
+        <Toast
+          open
+          onClose={() => setToast(null)}
+          message={toast.message}
+          variant={toast.variant}
+          duration={ROLE_CHANGE_TOAST_MS}
+        />
       )}
     </div>
   )
