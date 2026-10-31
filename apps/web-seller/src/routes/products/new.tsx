@@ -8,19 +8,20 @@ import {
   emptyProductForm,
   productErrorMessage,
   productImageUrl,
+  toDraftRequest,
   toFormValues,
   toRegisterRequest,
   useProductCategories,
   useProductDraft,
   useRegisterProduct,
+  useSaveProductDraft,
 } from '@/features/products'
 import { ShippingPolicySummary } from '@/features/shipping-policy'
 
 /**
- * 임시저장 진입점(임시저장 버튼·목록의 초안 Drawer)은 BE에 임시저장 개념이 없어서(`ProductDraft`
- * grep 0건) 숨겼다 — `onSaveDraft`를 넘기지 않으면 에디터가 버튼을 그리지 않는다. 이어쓰기 배선은
- * 남겨 두어(`?draftId=`) 목업 구현과 프리필 테스트가 그대로 돌아간다. BE에 임시저장이 생기면
- * `useSaveProductDraft`를 실 fetcher로 바꾸고 버튼만 다시 연결하면 된다.
+ * 임시저장은 실서버(`/sellers/me/product-drafts`)로 나간다 — 첫 저장은 POST, 그 뒤는 PUT이다.
+ * 첫 저장이 돌려준 draftId를 URL(`?draftId=`)에 심어 두는 이유는 두 가지다: 저장을 두 번 눌러도
+ * 초안이 둘로 늘지 않고(10건 상한이 422/40401이다), 저장한 뒤 새로고침해도 쓰던 내용으로 돌아온다.
  */
 export interface ProductNewSearch {
   draftId?: string
@@ -32,6 +33,9 @@ export const Route = createFileRoute('/products/new')({
   component: ProductNewRoute,
 })
 
+// 저장 시각은 BE LocalDateTime(오프셋 없는 KST)이라 Date로 바꾸지 않고 시:분만 잘라 쓴다.
+const savedAtLabel = (localDateTime: string) => localDateTime.slice(11, 16)
+
 function ProductNewRoute() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -41,6 +45,7 @@ function ProductNewRoute() {
   const categories = categoriesQuery.data
   const draft = useProductDraft(initialDraftId)
   const register = useRegisterProduct()
+  const saveDraft = useSaveProductDraft()
   const toast = useToast()
 
   const showError = (error: unknown) => toast.show(productErrorMessage(error), 'error')
@@ -89,8 +94,7 @@ function ProductNewRoute() {
 
   return (
     <>
-      {/* 임시저장 버튼(onSaveDraft·draftSaving)은 위 주석대로 넘기지 않는다 — BE에 임시저장이 없다.
-          배송 정책 칸도 목업 요약 대신 준비 중 안내만 싣는다(seller 모듈에 정책 API 없음). */}
+      {/* 배송 정책 칸은 목업 요약 대신 준비 중 안내만 싣는다(seller 모듈에 정책 API 없음). */}
       <ProductEditor
         mode="create"
         initial={
@@ -99,6 +103,23 @@ function ProductNewRoute() {
         categories={categories}
         shippingSummary={<ShippingPolicySummary />}
         submitting={register.isPending}
+        draftSaving={saveDraft.isPending}
+        onSaveDraft={values =>
+          saveDraft.mutate(
+            { body: toDraftRequest(values), draftId: search.draftId },
+            {
+              onSuccess: saved => {
+                // 다음 저장이 PUT이 되도록 id를 URL에 심는다. replace라 뒤로 가기에 단계가 쌓이지 않는다.
+                if (saved.draftId !== search.draftId) {
+                  void navigate({ search: { draftId: saved.draftId }, replace: true })
+                }
+                toast.show(`${savedAtLabel(saved.savedAt)}에 임시저장했어요.`)
+              },
+              // 저장 실패를 침묵하면 셀러가 저장됐다고 믿고 떠나 작업을 잃는다.
+              onError: showError,
+            },
+          )
+        }
         onSubmit={values =>
           register.mutate(
             { body: toRegisterRequest(values), draftId: search.draftId },

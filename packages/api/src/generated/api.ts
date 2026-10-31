@@ -2045,6 +2045,154 @@ export interface SellerProductDetailResponse {
   data: SellerProductDetailData
 }
 
+/**
+ * 초안의 옵션 그룹. 등록 요청(SellerProductOptionGroupInput)과 달리 이름이 비어 있어도 되고 값이 0개여도 된다 — 폼을 채우는 중의 모양을 그대로 담는다
+ */
+export interface SellerProductDraftOptionGroupInput {
+  /**
+   * @maxLength 100
+   * @nullable
+   */
+  name?: string | null
+  /** @maxItems 50 */
+  values: string[]
+}
+
+/**
+ * 초안의 옵션 조합. 추가금·재고는 비운 칸이면 null이다
+ */
+export interface SellerProductDraftOptionCombinationInput {
+  /** @maxItems 5 */
+  optionValues: string[]
+  /** @nullable */
+  additionalPrice?: number | null
+  /** @nullable */
+  stockQuantity?: number | null
+}
+
+/**
+ * 전 필드 선택. 서버는 보낸 것을 그대로 보관하고 등록 시점 검증을 하지 않는다 — 길이·개수 상한만 보고 위반은 400 errorCode 90001이다
+ */
+export interface SellerProductDraftSaveRequest {
+  /**
+   * 소분류(depth 3) id. 초안 단계에서는 깊이를 검사하지 않는다
+   * @nullable
+   */
+  categoryId?: number | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  productName?: string | null
+  /**
+   * TEXT 컬럼(utf8mb4 최악 4바이트/자)을 넘기지 않게 글자 수로 끊는다
+   * @maxLength 16000
+   * @nullable
+   */
+  description?: string | null
+  /** @nullable */
+  regularPrice?: number | null
+  /** @nullable */
+  discountPrice?: number | null
+  /**
+   * 오프셋 없는 LocalDateTime. 초안은 할인가 없이 기간만 있어도 받는다
+   * @nullable
+   */
+  discountStartAt?: string | null
+  /** @nullable */
+  discountEndAt?: string | null
+  /**
+   * @maxLength 1024
+   * @nullable
+   */
+  thumbnailImageKey?: string | null
+  /**
+   * 등록은 9장까지지만 초안은 20장까지 담는다
+   * @maxItems 20
+   * @nullable
+   */
+  additionalImageKeys?: string[] | null
+  /**
+   * @maxItems 20
+   * @nullable
+   */
+  detailImageKeys?: string[] | null
+  /**
+   * @maxItems 5
+   * @nullable
+   */
+  optionGroups?: SellerProductDraftOptionGroupInput[] | null
+  /**
+   * @maxItems 200
+   * @nullable
+   */
+  optionCombinations?: SellerProductDraftOptionCombinationInput[] | null
+}
+
+export interface SellerProductDraftListItem {
+  /** 초안 공개 식별자(ULID 26자) */
+  draftId: string
+  /**
+   * 아직 상품명을 안 적은 초안은 null
+   * @nullable
+   */
+  productName: string | null
+  /** 마지막 저장 시각(오프셋 없는 LocalDateTime) */
+  savedAt: string
+}
+
+export interface SellerProductDraftListData {
+  /** 최근 저장순 */
+  items: SellerProductDraftListItem[]
+  totalCount: number
+}
+
+export interface SellerProductDraftListResponse {
+  data: SellerProductDraftListData
+}
+
+/**
+ * 등록 폼 프리필 응답. 중첩 입력은 요청에서 nullable이었어도 응답은 항상 배열이다(빈 배열)
+ */
+export interface SellerProductDraftData {
+  draftId: string
+  savedAt: string
+  /** @nullable */
+  categoryId?: number | null
+  /** @nullable */
+  productName?: string | null
+  /** @nullable */
+  description?: string | null
+  /** @nullable */
+  regularPrice?: number | null
+  /** @nullable */
+  discountPrice?: number | null
+  /** @nullable */
+  discountStartAt?: string | null
+  /** @nullable */
+  discountEndAt?: string | null
+  /** @nullable */
+  thumbnailImageKey?: string | null
+  additionalImageKeys: string[]
+  detailImageKeys: string[]
+  optionGroups: SellerProductDraftOptionGroupInput[]
+  optionCombinations: SellerProductDraftOptionCombinationInput[]
+}
+
+export interface SellerProductDraftResponse {
+  data: SellerProductDraftData
+}
+
+export interface SellerProductDraftSaveData {
+  draftId: string
+  /** 서버가 찍은 저장 시각 — 화면의 '방금 저장' 표시 출처다 */
+  savedAt: string
+}
+
+export interface SellerProductDraftSaveResponse {
+  data: SellerProductDraftSaveData
+}
+
 export interface CourierSummary {
   /** courier_masters PK. 시드는 대문자(CJ·LOTTE·HANJIN·LOGEN·POST)이고 어댑터가 정확 일치로 찾는다 — 화면이 대소문자를 바꾸지 말고 이 값을 그대로 다시 보내야 한다 */
   courierCode: string
@@ -14737,6 +14885,666 @@ export const useChangeSellerProductOptionCombination = <TError = unknown, TConte
   TContext
 > => {
   const mutationOptions = getChangeSellerProductOptionCombinationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 최근 저장순이며 페이지네이션이 없다 — 셀러당 보관 상한이 10건이라 전건을 한 번에 준다. 마지막 저장으로부터 30일이 지난 초안은 목록에서 빠지고 다음 저장 때 지워진다. 응답의 `totalCount`는 `items.length`와 같다.
+ * @summary 셀러 상품 임시저장 목록
+ */
+export const getSellerProductDrafts = (signal?: AbortSignal) => {
+  return customInstance<SellerProductDraftListResponse>({
+    url: `/sellers/me/product-drafts`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerProductDraftsQueryKey = () => {
+  return [`/sellers/me/product-drafts`] as const
+}
+
+export const getGetSellerProductDraftsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductDraftsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductDrafts>>> = ({ signal }) =>
+    getSellerProductDrafts(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductDrafts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductDraftsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductDrafts>>
+>
+export type GetSellerProductDraftsQueryError = unknown
+
+export function useGetSellerProductDrafts<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductDrafts>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductDrafts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDrafts<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductDrafts>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductDrafts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDrafts<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 임시저장 목록
+ */
+
+export function useGetSellerProductDrafts<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductDraftsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerProductDraftsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductDraftsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductDrafts>>> = ({ signal }) =>
+    getSellerProductDrafts(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductDrafts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductDraftsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductDrafts>>
+>
+export type GetSellerProductDraftsSuspenseQueryError = unknown
+
+export function useGetSellerProductDraftsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraftsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraftsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 임시저장 목록
+ */
+
+export function useGetSellerProductDraftsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDrafts>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDrafts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductDraftsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 등록 폼을 채우는 중에도 저장되도록 전 필드가 선택이다 — 필수값·가격 범위·옵션 구성 검증은 정식 등록(POST /sellers/me/products)만 건다. 남는 검증은 길이·개수 상한뿐이고 위반은 400 errorCode 90001이다. 보관 상한 10건을 넘기면 422 errorCode 40401 — 덮어쓰기(PUT)는 상한을 보지 않는다. 이미지 키는 presigned로 받은 tmp 키를 그대로 보관한다. tmp/는 S3 수명주기로 하루 뒤 지워지므로 하루 지난 초안의 이미지 키는 정식 등록에서 404 errorCode 100001이 된다.
+ * @summary 셀러 상품 임시저장 생성
+ */
+export const createSellerProductDraft = (
+  sellerProductDraftSaveRequest: SellerProductDraftSaveRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerProductDraftSaveResponse>({
+    url: `/sellers/me/product-drafts`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductDraftSaveRequest,
+    signal,
+  })
+}
+
+export const getCreateSellerProductDraftMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSellerProductDraft>>,
+    TError,
+    { data: SellerProductDraftSaveRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSellerProductDraft>>,
+  TError,
+  { data: SellerProductDraftSaveRequest },
+  TContext
+> => {
+  const mutationKey = ['createSellerProductDraft']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSellerProductDraft>>,
+    { data: SellerProductDraftSaveRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return createSellerProductDraft(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateSellerProductDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSellerProductDraft>>
+>
+export type CreateSellerProductDraftMutationBody = SellerProductDraftSaveRequest
+export type CreateSellerProductDraftMutationError = unknown
+
+/**
+ * @summary 셀러 상품 임시저장 생성
+ */
+export const useCreateSellerProductDraft = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSellerProductDraft>>,
+      TError,
+      { data: SellerProductDraftSaveRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSellerProductDraft>>,
+  TError,
+  { data: SellerProductDraftSaveRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateSellerProductDraftMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 등록 폼 프리필용. 없는 초안·남의 초안·보관 기간이 지난 초안을 모두 404 errorCode 40400으로 묶는다. 요청의 중첩 입력(이미지 키 목록·옵션)은 서버가 해석하지 않고 보낸 모양 그대로 돌려주므로, 응답 필드를 그대로 다시 PUT해도 된다.
+ * @summary 셀러 상품 임시저장 단건 조회
+ */
+export const getSellerProductDraft = (draftId: string, signal?: AbortSignal) => {
+  return customInstance<SellerProductDraftResponse>({
+    url: `/sellers/me/product-drafts/${draftId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerProductDraftQueryKey = (draftId?: string) => {
+  return [`/sellers/me/product-drafts/${draftId}`] as const
+}
+
+export const getGetSellerProductDraftQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductDraftQueryKey(draftId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductDraft>>> = ({ signal }) =>
+    getSellerProductDraft(draftId, signal)
+
+  return { queryKey, queryFn, enabled: !!draftId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductDraft>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductDraftQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductDraft>>
+>
+export type GetSellerProductDraftQueryError = unknown
+
+export function useGetSellerProductDraft<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductDraft>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductDraft>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraft<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerProductDraft>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerProductDraft>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraft<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 임시저장 단건 조회
+ */
+
+export function useGetSellerProductDraft<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductDraftQueryOptions(draftId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerProductDraftSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerProductDraftQueryKey(draftId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerProductDraft>>> = ({ signal }) =>
+    getSellerProductDraft(draftId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerProductDraft>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerProductDraftSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerProductDraft>>
+>
+export type GetSellerProductDraftSuspenseQueryError = unknown
+
+export function useGetSellerProductDraftSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraftSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerProductDraftSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 상품 임시저장 단건 조회
+ */
+
+export function useGetSellerProductDraftSuspense<
+  TData = Awaited<ReturnType<typeof getSellerProductDraft>>,
+  TError = unknown,
+>(
+  draftId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerProductDraft>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerProductDraftSuspenseQueryOptions(draftId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 폼 내용을 통째로 덮어쓴다 — 보내지 않은 필드는 "유지"가 아니라 "비움"이다. 보관 상한을 보지 않으므로 상한에 걸린 셀러도 이어쓰기는 계속 저장된다. 대상이 없으면 404 errorCode 40400.
+ * @summary 셀러 상품 임시저장 덮어쓰기
+ */
+export const updateSellerProductDraft = (
+  draftId: string,
+  sellerProductDraftSaveRequest: SellerProductDraftSaveRequest,
+) => {
+  return customInstance<SellerProductDraftSaveResponse>({
+    url: `/sellers/me/product-drafts/${draftId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductDraftSaveRequest,
+  })
+}
+
+export const getUpdateSellerProductDraftMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerProductDraft>>,
+    TError,
+    { draftId: string; data: SellerProductDraftSaveRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerProductDraft>>,
+  TError,
+  { draftId: string; data: SellerProductDraftSaveRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerProductDraft']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerProductDraft>>,
+    { draftId: string; data: SellerProductDraftSaveRequest }
+  > = props => {
+    const { draftId, data } = props ?? {}
+
+    return updateSellerProductDraft(draftId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerProductDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerProductDraft>>
+>
+export type UpdateSellerProductDraftMutationBody = SellerProductDraftSaveRequest
+export type UpdateSellerProductDraftMutationError = unknown
+
+/**
+ * @summary 셀러 상품 임시저장 덮어쓰기
+ */
+export const useUpdateSellerProductDraft = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerProductDraft>>,
+      TError,
+      { draftId: string; data: SellerProductDraftSaveRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerProductDraft>>,
+  TError,
+  { draftId: string; data: SellerProductDraftSaveRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerProductDraftMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 되돌릴 수 없다. 대상이 없으면 404 errorCode 40400. 정식 등록이 끝난 뒤 이어쓰던 초안을 치우는 데도 쓴다(등록 요청에 초안 id를 실을 자리가 없어 두 단계다).
+ * @summary 셀러 상품 임시저장 삭제
+ */
+export const deleteSellerProductDraft = (draftId: string) => {
+  return customInstance<void>({ url: `/sellers/me/product-drafts/${draftId}`, method: 'DELETE' })
+}
+
+export const getDeleteSellerProductDraftMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSellerProductDraft>>,
+    TError,
+    { draftId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSellerProductDraft>>,
+  TError,
+  { draftId: string },
+  TContext
+> => {
+  const mutationKey = ['deleteSellerProductDraft']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSellerProductDraft>>,
+    { draftId: string }
+  > = props => {
+    const { draftId } = props ?? {}
+
+    return deleteSellerProductDraft(draftId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteSellerProductDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSellerProductDraft>>
+>
+
+export type DeleteSellerProductDraftMutationError = unknown
+
+/**
+ * @summary 셀러 상품 임시저장 삭제
+ */
+export const useDeleteSellerProductDraft = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSellerProductDraft>>,
+      TError,
+      { draftId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSellerProductDraft>>,
+  TError,
+  { draftId: string },
+  TContext
+> => {
+  const mutationOptions = getDeleteSellerProductDraftMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

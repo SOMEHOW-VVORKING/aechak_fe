@@ -2,12 +2,17 @@ import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } fr
 import {
   changeSellerProductOptionCombination,
   changeSellerProductSaleStatus,
+  createSellerProductDraft,
+  deleteSellerProductDraft,
   getCategories,
   getSellerProductDetail,
+  getSellerProductDraft,
+  getSellerProductDrafts,
   getSellerProductOptions,
   getSellerProducts,
   registerSellerProduct,
   updateSellerProduct,
+  updateSellerProductDraft,
   type SellerAssignableSaleStatus,
 } from '@aechak/api'
 import type {
@@ -18,17 +23,11 @@ import type {
   ProductUpdateRequest,
   SellerProductSearchParams,
 } from './products.contract'
-import {
-  mockDeleteProductDraft,
-  mockFetchProductDraft,
-  mockFetchProductDrafts,
-  mockSaveProductDraft,
-} from './products.mock'
-
 // 생성된 react-query 훅은 쓰지 않고 fetcher만 소비하고(breeds·store-settings 관례) 이 파일이 자체
 // useQuery/useMutation으로 감싼다. fetcher는 `{ data }` 한 겹(ApiResponse)을 돌려주므로 여기서 벗긴다.
 // 호스트는 공유 클라이언트가 경로 접두로 가른다 — `/sellers/**`는 seller 모듈(8081), `/categories`와
 // `/files/presigned-url`은 api 모듈(8080)이다.
+// 이 파일의 모든 훅은 실서버로 나간다 — 목업(products.mock.ts)은 테스트 전용이고 여기서 쓰지 않는다.
 
 // 목록/옵션/상세/임시저장이 전부 이 접두를 공유한다 — 변경 후 접두 무효화 한 번으로 목록, 열린 재고
 // Drawer, 임시저장 수까지 갱신된다(main.tsx staleTime 60초라 무효화가 필수).
@@ -172,35 +171,45 @@ export const useChangeOptionCombination = () => {
 }
 
 /**
- * 등록. 이어쓰던 임시저장(BE 없음 — 목업)은 등록이 끝난 뒤 지운다. 등록 요청에는 임시저장 id를 실을
- * 자리가 없어서 두 단계다.
+ * 등록. 이어쓰던 임시저장은 등록이 끝난 뒤 지운다 — 등록 요청에 초안 id를 실을 자리가 없어 두 단계다.
+ *
+ * 초안 삭제 실패는 등록 실패로 올리지 않는다. 상품은 이미 만들어졌으므로 여기서 reject하면 화면이
+ * "등록하지 못했어요"라는 거짓을 띄우고 셀러가 같은 상품을 한 번 더 등록한다. 남은 초안은 목록 무효화
+ * 뒤 Drawer에 그대로 보이고 셀러가 지울 수 있다.
  */
 export const useRegisterProduct = () =>
   useProductsMutation(async ({ body, draftId }: { body: ProductRegisterRequest; draftId?: string }) => {
     const response = await registerSellerProduct(body)
-    if (draftId) await mockDeleteProductDraft(draftId)
+    if (draftId) await deleteSellerProductDraft(draftId).catch(() => undefined)
     return response
   })
 
-// ─── BE 엔드포인트 없음(목업 전용) — products.mock.ts의 같은 구역과 짝 ─────────────
-// 아래 훅은 BE에 대응 API가 없어 목업으로만 동작한다. 임시저장은 운영 화면의 진입점을 막아 두었고
-// 개발 검증과 폼 구현 보존을 위해 배선만 남긴다.
+// ─── 임시저장 ─────────────────────────────────────────────────────────────────
+// 목록은 상한이 10건이라 페이지네이션이 없다. 저장은 draftId가 있으면 PUT(덮어쓰기), 없으면 POST다 —
+// 한 번 저장한 뒤에도 POST로 보내면 저장마다 초안이 쌓여 10건 상한(422/40401)에 걸리므로, 화면은 첫
+// 저장이 돌려준 draftId를 들고 있어야 한다.
 
 export const useProductDrafts = () =>
   useQuery({
     queryKey: [...PRODUCTS_QUERY_KEY, 'drafts'],
-    queryFn: () => mockFetchProductDrafts().then(r => r.data),
+    queryFn: ({ signal }) => getSellerProductDrafts(signal).then(r => r.data),
   })
 
 export const useProductDraft = (draftId: string | undefined) =>
   useQuery({
     queryKey: [...PRODUCTS_QUERY_KEY, 'drafts', draftId],
-    queryFn: draftId ? () => mockFetchProductDraft(draftId).then(r => r.data) : skipToken,
+    queryFn: draftId ? ({ signal }) => getSellerProductDraft(draftId, signal).then(r => r.data) : skipToken,
     // 등록이 끝나면 이 임시저장은 404가 정상이다 — 재시도로 등록 완료 이동을 늦추지 않는다.
     retry: false,
   })
 
 export const useSaveProductDraft = () =>
   useProductsMutation(({ body, draftId }: { body: ProductDraftRequest; draftId?: string }) =>
-    mockSaveProductDraft(body, draftId),
+    draftId ? updateSellerProductDraft(draftId, body) : createSellerProductDraft(body),
+  )
+
+/** 삭제는 되돌릴 수 없다 — 호출부가 확인 한 단계를 두고 부른다. 204라 본문이 없다. */
+export const useDeleteProductDraft = () =>
+  useProductsMutation(({ draftId }: { draftId: string }) =>
+    deleteSellerProductDraft(draftId).then(() => ({ data: null })),
   )

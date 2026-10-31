@@ -7,9 +7,13 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   CATEGORIES_URL,
   SELLER_PRODUCTS_URL,
+  SELLER_PRODUCT_DRAFTS_URL,
+  currentSellerProductDrafts,
   lastSellerProductsQuery,
   makeSellerOptionCombinationWire,
+  makeSellerProductDraftWire,
   makeSellerProductWire,
+  seedSellerProductDrafts,
   seedSellerProducts,
   server,
 } from '@/testing/msw/server'
@@ -18,12 +22,17 @@ import { routeTree } from '../../../routeTree.gen'
 // 실 API 연동 — MSW가 seller 호스트(8081) /sellers/me/products와 api 호스트(8080) /categories를
 // 가로챈다. 모듈 모킹이 아니라 네트워크 레벨이라 URL·호스트·envelope·에러 계약까지 함께 검증되고,
 // test-setup의 onUnhandledRequest:'error'가 핸들러 없는 요청을 곧바로 실패로 만든다.
+// 마지막 렌더가 쓴 QueryClient — 백그라운드 재조회 실패를 테스트가 직접 일으킬 창구다.
+// renderAt의 반환 모양은 바꾸지 않는다(기존 테스트가 router를 그대로 받는다).
+let lastQueryClient: QueryClient | null = null
+
 function renderAt(path: string) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  lastQueryClient = queryClient
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -31,6 +40,8 @@ function renderAt(path: string) {
   )
   return router
 }
+
+const renderedQueryClient = () => lastQueryClient!
 
 const rowOf = async (name: string) => (await screen.findByText(name)).closest('tr') as HTMLElement
 
@@ -99,6 +110,8 @@ function seedAll() {
 describe('/products 목록 (SCRUM-119)', () => {
   beforeEach(() => {
     seedAll()
+    // 머리말 임시저장 버튼이 이 목록을 읽는다 — 시드를 비워 다른 테스트의 초안이 새지 않게 한다.
+    seedSellerProductDrafts([])
   })
 
   it('[AC-SPRD-020] 판매/검수 pill, 진행 중 할인가, 소분류 이름을 보여주고 판매종료 행도 BE처럼 다시 판매할 수 있다', async () => {
@@ -412,12 +425,11 @@ describe('/products 목록 (SCRUM-119)', () => {
     ).toBeInTheDocument()
   })
 
-  it('[AC-SPRD-044] BE에 없는 기능(삭제·임시저장)의 진입점은 목록에 없다', async () => {
+  it('[AC-SPRD-070] BE에 없는 기능(상품 삭제)의 진입점은 목록에 없다', async () => {
     renderAt('/products')
     await rowOf(FEEDER.name)
 
     expect(screen.queryByRole('button', { name: '삭제' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /임시저장/ })).not.toBeInTheDocument()
     expect(screen.getByText(/옵션 구성과 상품 삭제는 아직 바꿀 수 없어요/)).toBeInTheDocument()
   })
 
@@ -588,5 +600,143 @@ describe('/products 조회 실패 (실 API 전환으로 생긴 경로)', () => {
 
     expect(await within(drawer).findByLabelText('기본 재고')).toBeInTheDocument()
     expect(within(drawer).queryByText('내 상품이 아니라 조회할 수 없어요.')).not.toBeInTheDocument()
+  })
+})
+
+// 임시저장 진입점 — 데모의 한 줄("임시저장 → 목록에서 불러오기 → 이어서 쓰기")에서 가운데 토막이다.
+describe('/products 임시저장 Drawer (SCRUM-343)', () => {
+  const DRAFT = makeSellerProductDraftWire({ productName: '쓰던 하네스', savedAt: '2026-10-20T14:05:00' })
+  const NAMELESS = makeSellerProductDraftWire({ productName: null, savedAt: '2026-10-19T09:00:00' })
+
+  const openDrawer = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: /임시저장 \d+/ }))
+    return screen.getByRole('dialog', { name: '임시저장한 상품' })
+  }
+
+  beforeEach(() => {
+    seedAll()
+    seedSellerProductDrafts([DRAFT, NAMELESS])
+  })
+
+  it('[AC-SPRD-071] 초안 수를 머리말에 보여주고 이어쓰기가 등록 폼으로 보낸다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/products')
+
+    const drawer = await openDrawer(user)
+    expect(within(drawer).getByText('쓰던 하네스')).toBeInTheDocument()
+    expect(within(drawer).getByText('2026.10.20 14:05 저장')).toBeInTheDocument()
+    // 상품명을 안 적은 초안도 빈 줄이 아니라 뜻이 통하는 자리를 차지한다.
+    expect(within(drawer).getByText('이름 없는 상품')).toBeInTheDocument()
+
+    await user.click(within(drawer).getAllByRole('button', { name: '이어쓰기' })[0]!)
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/products/new'))
+    expect(router.state.location.search).toEqual({ draftId: DRAFT.draftId })
+  })
+
+  it('[AC-SPRD-072] 초안이 없으면 버튼을 그리지 않는다', async () => {
+    seedSellerProductDrafts([])
+    renderAt('/products')
+
+    await screen.findByText(FEEDER.name)
+    expect(screen.queryByRole('button', { name: /임시저장/ })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-073] 삭제는 확인을 거치고, 취소하면 서버를 건드리지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products')
+    const drawer = await openDrawer(user)
+
+    await user.click(within(drawer).getByRole('button', { name: '쓰던 하네스 임시저장 삭제' }))
+    const confirm = screen.getByRole('dialog', { name: '임시저장을 삭제할까요?' })
+    expect(within(confirm).getByText(/되돌릴 수 없어요/)).toBeInTheDocument()
+
+    await user.click(within(confirm).getByRole('button', { name: '취소' }))
+    expect(currentSellerProductDrafts()).toHaveLength(2)
+
+    await user.click(within(drawer).getByRole('button', { name: '쓰던 하네스 임시저장 삭제' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '임시저장을 삭제할까요?' })).getByRole('button', { name: '삭제' }),
+    )
+
+    expect(await screen.findByText('임시저장을 삭제했어요.')).toBeInTheDocument()
+    expect(currentSellerProductDrafts().map(d => d.draftId)).toEqual([NAMELESS.draftId])
+    // 마지막 초안을 지워도 Drawer는 닫지 않는다 — 빈 상태를 보여 주고 셀러가 닫는다.
+    await user.click(within(drawer).getByRole('button', { name: '이름 없는 상품 임시저장 삭제' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '임시저장을 삭제할까요?' })).getByRole('button', { name: '삭제' }),
+    )
+    expect(await within(drawer).findByText('임시저장한 상품이 없어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-074] 삭제 실패를 성공으로 보이지 않게 한다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.delete(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, () =>
+        HttpResponse.json({ errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' }, { status: 404 }),
+      ),
+    )
+    renderAt('/products')
+    const drawer = await openDrawer(user)
+
+    await user.click(within(drawer).getByRole('button', { name: '쓰던 하네스 임시저장 삭제' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '임시저장을 삭제할까요?' })).getByRole('button', { name: '삭제' }),
+    )
+
+    expect(
+      await screen.findByText('임시저장한 상품을 찾을 수 없어요. 목록을 새로고침해 주세요.'),
+    ).toBeInTheDocument()
+    expect(currentSellerProductDrafts()).toHaveLength(2)
+  })
+
+  it('[AC-SPRD-076] 확인창에서 Escape를 눌러도 Drawer까지 닫지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products')
+    const drawer = await openDrawer(user)
+
+    await user.click(within(drawer).getByRole('button', { name: '쓰던 하네스 임시저장 삭제' }))
+    await user.keyboard('{Escape}')
+
+    // 확인창만 닫힌다 — 두 dialog가 각각 document에 Escape 핸들러를 걸어 한 번 누르면 둘이 함께 닫힌다.
+    expect(screen.queryByRole('dialog', { name: '임시저장을 삭제할까요?' })).not.toBeInTheDocument()
+    // jsdom은 transitionend를 쏘지 않아 닫힌 Drawer도 DOM에 남는다(AGENTS 7절) — 열림 여부는
+    // DS가 닫힘에만 붙이는 pointer-events-none으로만 관찰된다.
+    expect(screen.getByRole('dialog', { name: '임시저장한 상품' })).not.toHaveClass('pointer-events-none')
+    expect(within(drawer).getByText('쓰던 하네스')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-077] 재조회가 실패하면 낡은 행에서 삭제를 지시할 수 없고 이어쓰기는 남는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products')
+    const drawer = await openDrawer(user)
+
+    // 열어 둔 동안 재조회가 실패한다 — react-query가 직전 목록을 들고 있어 행은 그대로 남는다.
+    server.use(
+      http.get(SELLER_PRODUCT_DRAFTS_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    await act(() => renderedQueryClient().refetchQueries({ queryKey: ['products', 'drafts'] }))
+
+    expect(
+      await within(drawer).findByText('임시저장 목록을 다시 불러오지 못해 아래는 마지막으로 본 목록이에요.'),
+    ).toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: '쓰던 하네스 임시저장 삭제' })).toBeDisabled()
+    // 이어쓰기는 읽기로 가는 길이라 막지 않는다 — 막으면 확인할 방법이 없어진다.
+    expect(within(drawer).getAllByRole('button', { name: '이어쓰기' })[0]!).toBeEnabled()
+  })
+
+  it('[AC-SPRD-075] 목록 조회가 실패하면 수를 지어내지 않고 버튼을 숨긴다', async () => {
+    server.use(
+      http.get(SELLER_PRODUCT_DRAFTS_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/products')
+
+    await screen.findByText(FEEDER.name)
+    // "임시저장 0"은 거짓이다 — 못 읽었으면 입구를 만들지 않는다.
+    await waitFor(() => expect(screen.queryByRole('button', { name: /임시저장/ })).not.toBeInTheDocument())
   })
 })
