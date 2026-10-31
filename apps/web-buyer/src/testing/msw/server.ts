@@ -37,6 +37,7 @@ export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
 export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
 export const REVIEWS_URL = `${base}/reviews`
 export const REVIEW_DETAIL_URL = `${base}/reviews/:reviewId`
+export const REPORTS_URL = `${base}/reports`
 export const MY_REVIEWS_URL = `${base}/users/me/reviews`
 export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
 export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
