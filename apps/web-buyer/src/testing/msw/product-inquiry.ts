@@ -111,6 +111,17 @@ export function holdWithdraw(): () => void {
   }
 }
 
+/**
+ * 네 경로 **모두** 로그인을 요구한다(BE 컨트롤러의 AuthPrincipal이 non-null, dev에서 401
+ * errorCode 20004 실측). 목록에만 걸어 두면 "토큰 없이도 등록·철회가 된다"는 거짓 계약이 되고,
+ * 화면이 헤더를 못 싣는 회귀(호스트 오배치 등)를 테스트가 통과시킨다.
+ */
+function unauthorized(request: Request) {
+  return request.headers.get('Authorization')
+    ? null
+    : HttpResponse.json({ errorCode: 20004, message: '로그인이 필요합니다.' }, { status: 401 })
+}
+
 /** 상품 상세 목록이 보는 범위 — 철회한 문의는 빠진다(BE `LIVE_STATUSES`). */
 const isLive = (row: ProductInquiryRow) => row.status !== 'WITHDRAWN'
 
@@ -166,13 +177,12 @@ function page<T>(items: T[], url: URL) {
 }
 
 export const productInquiryHandlers = [
-  // 목록 — 비로그인(Authorization 없음)은 401이다. 화면이 비회원에게 부르면 전역 리다이렉트로
-  // 상세를 잃으므로, 계약을 그대로 두고 호출 수를 세어 "부르지 않았다"를 단언하게 한다.
+  // 목록 — 화면이 비회원에게 부르면 전역 리다이렉트로 상세를 잃으므로, 401 계약을 그대로 두고
+  // 호출 수를 세어 "부르지 않았다"를 단언하게 한다.
   http.get(PRODUCT_INQUIRIES_URL, ({ request, params }) => {
     counts.list += 1
-    if (!request.headers.get('Authorization')) {
-      return HttpResponse.json({ errorCode: 20004, message: '인증이 필요합니다.' }, { status: 401 })
-    }
+    const denied = unauthorized(request)
+    if (denied) return denied
     const productId = String(params['productId'])
     const live = rows.filter(row => row.productId === productId && isLive(row))
     return HttpResponse.json(page(live.map(toProductItem), new URL(request.url)))
@@ -180,6 +190,8 @@ export const productInquiryHandlers = [
 
   http.post(PRODUCT_INQUIRIES_URL, async ({ request, params }) => {
     counts.ask += 1
+    const denied = unauthorized(request)
+    if (denied) return denied
     const body = (await request.json()) as {
       category: ProductInquiryCategory
       title: string
@@ -212,8 +224,10 @@ export const productInquiryHandlers = [
     )
   }),
 
-  http.delete(PRODUCT_INQUIRY_URL, async ({ params }) => {
+  http.delete(PRODUCT_INQUIRY_URL, async ({ request, params }) => {
     counts.withdraw += 1
+    const denied = unauthorized(request)
+    if (denied) return denied
     // 요청이 떠 있는 동안의 화면을 보려는 테스트가 게이트를 걸어 둔다.
     if (heldWithdraw) await heldWithdraw
     const inquiryId = String(params['inquiryId'])
@@ -248,6 +262,8 @@ export const productInquiryHandlers = [
 
   http.get(MY_PRODUCT_INQUIRIES_URL, ({ request }) => {
     counts.mine += 1
+    const denied = unauthorized(request)
+    if (denied) return denied
     // 내 문의는 철회한 것까지 전부 내려온다(status 파라미터를 보내지 않을 때).
     const url = new URL(request.url)
     const status = url.searchParams.get('status')
