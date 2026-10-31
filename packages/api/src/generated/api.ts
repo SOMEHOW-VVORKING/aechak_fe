@@ -3492,6 +3492,239 @@ export interface AnswerInquiryResponse {
 }
 
 /**
+ * 지연 사유. 두 축은 겹칠 수 없다(상태 집합이 배타적이다). DISPATCH_OVERDUE는 발송 전 상태인데 발송 기한을 넘긴 건, DELIVERY_OVERDUE는 배송 중인데 배송 기한을 넘긴 건이다. null이면 정상 흐름이고 판정은 서버가 한다 — 화면이 날짜를 빼서 세면 카드 건수와 행 신호가 어긋난다
+ */
+export type AdminOrderDelayReason =
+  (typeof AdminOrderDelayReason)[keyof typeof AdminOrderDelayReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminOrderDelayReason = {
+  DISPATCH_OVERDUE: 'DISPATCH_OVERDUE',
+  DELIVERY_OVERDUE: 'DELIVERY_OVERDUE',
+} as const
+
+/**
+ * 상태 전이를 일으킨 주체(be TriggeredBy)
+ */
+export type TriggeredBy = (typeof TriggeredBy)[keyof typeof TriggeredBy]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TriggeredBy = {
+  SYSTEM: 'SYSTEM',
+  BUYER: 'BUYER',
+  SELLER: 'SELLER',
+  ADMIN: 'ADMIN',
+} as const
+
+/**
+ * 구매확정 방식(be ConfirmType). AUTO는 자동확정 배치가 만든 값이다
+ */
+export type ConfirmType = (typeof ConfirmType)[keyof typeof ConfirmType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ConfirmType = {
+  MANUAL: 'MANUAL',
+  AUTO: 'AUTO',
+} as const
+
+/**
+ * 주문당 최신 배송 한 건. 교환 재발송이 붙으면 나중 행이 현재 배송이다
+ */
+export interface AdminOrderShipment {
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  /** @nullable */
+  dispatchedAt?: string | null
+  /** @nullable */
+  deliveredAt?: string | null
+  /** @nullable */
+  lastTrackingStatus?: string | null
+}
+
+/**
+ * 주문당 최신 진행 클레임 한 건. 품목을 풀어준 클레임(반려·철회)은 실리지 않는다
+ */
+export interface AdminOrderClaimRef {
+  /** 클레임 공개 식별자 */
+  claimId: string
+  claimType: ClaimType
+  status: ClaimStatus
+}
+
+/**
+ * @nullable
+ */
+export type AdminOrderSummaryDelayReason = AdminOrderDelayReason | null
+
+/**
+ * @nullable
+ */
+export type AdminOrderSummaryShipment = AdminOrderShipment | null
+
+/**
+ * @nullable
+ */
+export type AdminOrderSummaryActiveClaim = AdminOrderClaimRef | null
+
+/**
+ * 주문 한 건의 목록 행. 상세도 같은 모양을 품는다. **수령인명·연락처·주소는 담지 않는다** — 배송 진행 감시에 쓰이지 않는 개인정보라 서버가 아예 싣지 않는다(그래서 화면에 마스킹할 대상이 없다). `shipment`가 null이면 송장 미등록이고, 금액 넷은 모두 서버가 계산해 내려준다
+ */
+export interface AdminOrderSummary {
+  /** 주문 공개 식별자(ULID). 상세·독촉 경로가 지목하는 값 */
+  orderId: string
+  status: OrderStatus
+  /** 주문 시각(오프셋 없는 LocalDateTime) */
+  orderedAt: string
+  sellerId: number
+  /**
+   * 스토어명이 비어 있는 셀러면 null
+   * @nullable
+   */
+  sellerName: string | null
+  /** 구매자 닉네임. 실명·연락처는 응답에 없다 */
+  buyerNickname: string
+  /**
+   * 대표 품목명. itemCount와 함께 '상품명 외 N건'을 그리는 재료
+   * @nullable
+   */
+  representativeItemName: string | null
+  itemCount: number
+  totalProductAmount: number
+  sellerShippingFee: number
+  allocatedCouponDiscount: number
+  /** 상품금액 + 셀러배송비 - 안분 쿠폰할인. 서버가 계산한다 */
+  payableAmount: number
+  /**
+   * 자동 구매확정 기한. 배송완료 뒤에만 값이 있다
+   * @nullable
+   */
+  purchaseConfirmDueAt: string | null
+  /** delayReason != null과 같다 — 서버 판정이다 */
+  delayed: boolean
+  /** @nullable */
+  delayReason: AdminOrderSummaryDelayReason
+  /** @nullable */
+  shipment: AdminOrderSummaryShipment
+  /** @nullable */
+  activeClaim: AdminOrderSummaryActiveClaim
+}
+
+export interface AdminOrderListData {
+  items: AdminOrderSummary[]
+  /**
+   * **항상 null이다** — 전체 주문 건수를 매 페이지마다 세지 않는다
+   * @nullable
+   */
+  totalCount: number | null
+  /**
+   * 다음 페이지 앵커. hasNext가 false면 null
+   * @nullable
+   */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminOrderListResponse {
+  data: AdminOrderListData
+}
+
+/**
+ * 카드 넷. `awaitingDispatchCount`는 결제완료·상품준비·발송대기를 합친 "아직 송장이 붙지 않은 전부"다(셀러가 발주 확인조차 하지 않은 건이 가장 위험한 쪽이라 빼면 카드가 거짓이 된다). `delayedCount`는 목록 행의 지연 신호와 같은 기준으로 센다. `totalPaymentAmount`만 모수가 다르다 — 취소 주문이 빠진다
+ */
+export interface AdminOrderMetricsData {
+  awaitingDispatchCount: number
+  shippingCount: number
+  delayedCount: number
+  /** 조회 범위(셀러·기간)의 결제액 합. 취소 주문 제외 — 뜻은 서버가 정한다 */
+  totalPaymentAmount: number
+}
+
+export interface AdminOrderMetricsResponse {
+  data: AdminOrderMetricsData
+}
+
+export interface AdminOrderItem {
+  orderItemId: number
+  productId: string
+  productName: string
+  /** @nullable */
+  optionName: string | null
+  quantity: number
+  unitPrice: number
+  discountAllocatedAmount: number
+  itemStatus: OrderItemStatus
+}
+
+/**
+ * 최초 생성 행은 null일 수 있다
+ * @nullable
+ */
+export type AdminOrderStatusHistoryFromStatus = OrderStatus | null
+
+/**
+ * 상태 전이 한 행. 타임라인의 재료이고 occurredAt이 실제 전이 시각이다
+ */
+export interface AdminOrderStatusHistory {
+  /**
+   * 최초 생성 행은 null일 수 있다
+   * @nullable
+   */
+  fromStatus: AdminOrderStatusHistoryFromStatus
+  toStatus: OrderStatus
+  triggeredBy: TriggeredBy
+  occurredAt: string
+}
+
+/**
+ * 발송 독촉 기록 한 건. **알림 발송 여부를 담지 않는다** — 이 경로는 기록만 남긴다
+ */
+export interface AdminOrderDispatchNudge {
+  nudgeId: number
+  adminUserId: number
+  /**
+   * 공백만 보낸 메모는 서버가 null로 접는다
+   * @nullable
+   */
+  memo: string | null
+  nudgedAt: string
+}
+
+export interface AdminOrderDispatchNudgeResponse {
+  data: AdminOrderDispatchNudge
+}
+
+/**
+ * @nullable
+ */
+export type AdminOrderDetailDataConfirmType = ConfirmType | null
+
+export interface AdminOrderDetailData {
+  order: AdminOrderSummary
+  orderGroupId: string
+  /** @nullable */
+  purchaseConfirmedAt: string | null
+  /** @nullable */
+  confirmType: AdminOrderDetailDataConfirmType
+  items: AdminOrderItem[]
+  /** 오래된 순. 화면이 단계 이름과 표시 규칙을 정한다 */
+  statusHistory: AdminOrderStatusHistory[]
+  nudges: AdminOrderDispatchNudge[]
+}
+
+export interface AdminOrderDetailResponse {
+  data: AdminOrderDetailData
+}
+
+/**
+ * 독촉 메모는 선택이다 — 사유 없이 누른 독촉도 '운영자가 봤다'는 기록으로 쓸모가 있다
+ */
+export interface NudgeOrderDispatchRequest {
+  /** @maxLength 300 */
+  memo?: string
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -3966,6 +4199,59 @@ export type GetAdminSellerApplicationsParams = {
    * @maximum 100
    */
   size?: number
+}
+
+export type GetAdminOrdersParams = {
+  /**
+   * 주문 상태 하나. PENDING_PAYMENT는 보내면 400/90001
+   */
+  status?: OrderStatus
+  /**
+   * 셀러 id(양수). 빈 값은 키째 빼서 보낼 것
+   * @minimum 1
+   */
+  sellerId?: number
+  /**
+   * 주문번호 / 셀러명 / 구매자 닉네임 검색. 빈 값은 키째 빼서 보낼 것
+   * @maxLength 100
+   */
+  keyword?: string
+  /**
+   * 주문일 하한(포함), YYYY-MM-DD
+   */
+  orderedFrom?: string
+  /**
+   * 주문일 상한(포함), YYYY-MM-DD
+   */
+  orderedTo?: string
+  /**
+   * 지연 신호가 붙은 행만. 생략은 false
+   */
+  delayedOnly?: boolean
+  /**
+   * 직전 응답의 nextCursor. 필터를 바꿨으면 재사용하지 말 것
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminOrderMetricsParams = {
+  /**
+   * @minimum 1
+   */
+  sellerId?: number
+  /**
+   * 주문일 하한(포함), YYYY-MM-DD
+   */
+  orderedFrom?: string
+  /**
+   * 주문일 상한(포함), YYYY-MM-DD
+   */
+  orderedTo?: string
 }
 
 /**
@@ -19100,6 +19386,730 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
   TContext
 > => {
   const mutationOptions = getRejectAdminSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 플랫폼 전체 주문. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다 (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 주문 역순 (orderedAt DESC, orderId DESC) 고정이고 **커서 페이징**이다. **결제대기(PENDING_PAYMENT) 주문은 대상이 아니다** — 결제 전에도 테이블에 남는 행이라 모니터링에 섞으면 안 된다. `status=PENDING_PAYMENT`를 지정하면 400 errorCode 90001 ("status: 결제대기 주문은 조회 대상이 아닙니다.")이다. `orderedFrom`·`orderedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날 0시 미만으로 환산한다). 시작일이 종료일보다 늦으면 400 errorCode 90001. `keyword`는 100자까지고, `sellerId`는 양수여야 한다(아니면 400 errorCode 90001). `delayedOnly=true`면 지연 신호가 붙은 행만 남는다 — **지연 판정 기준은 서버가 쥔다** (발송 기한 `order.dispatch.sla-days`, 배송 정체 `order.delivery.sla-days`). 커서에는 필터가 실리지 않아 필터를 바꿔도 거부되지 않지만, 커서가 가리키는 앵커가 새 필터 집합과 무관해 결과가 섞인다 — **필터를 바꾸면 커서를 버리고 처음부터 받을 것.** 망가진 커서는 400 errorCode 90002.
+ * @summary 어드민 주문 목록
+ */
+export const getAdminOrders = (params?: GetAdminOrdersParams, signal?: AbortSignal) => {
+  return customInstance<AdminOrderListResponse>({
+    url: `/admin/orders`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminOrdersQueryKey = (params?: GetAdminOrdersParams) => {
+  return [`/admin/orders`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminOrdersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrdersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrders>>> = ({ signal }) =>
+    getAdminOrders(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminOrders>>>
+export type GetAdminOrdersQueryError = unknown
+
+export function useGetAdminOrders<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminOrdersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrders>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrders>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrders<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrders>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrders>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrders<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 목록
+ */
+
+export function useGetAdminOrders<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrdersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminOrdersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrdersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrders>>> = ({ signal }) =>
+    getAdminOrders(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrdersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOrders>>
+>
+export type GetAdminOrdersSuspenseQueryError = unknown
+
+export function useGetAdminOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminOrdersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 목록
+ */
+
+export function useGetAdminOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrders>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrdersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 모니터링 카드 넷. **목록과 경로가 나뉘어 있고 받는 파라미터도 다르다** — 상태·지연·키워드를 받지 않는다. 카드가 그 축으로 모수를 쪼개 보여주므로 상태로 좁히면 카드 넷 중 셋이 0으로 눌린다. 화면은 셀러·기간만 공유하고 상태·지연·키워드는 목록에만 건다. **금액 카드의 뜻은 서버가 정한다** — `totalPaymentAmount`는 상품금액 + 셀러배송비 - 안분 쿠폰할인의 합이고 취소 주문이 빠져(건수 카드 셋과 모수가 다르다) 클라이언트가 목록 행을 더해 재현할 수 없다. 카드 라벨은 이 필드 이름에 맞추고 FE에서 금액을 계산하지 말 것. 시작일이 종료일보다 늦으면 400 errorCode 90001.
+ * @summary 어드민 주문 모니터링 지표
+ */
+export const getAdminOrderMetrics = (params?: GetAdminOrderMetricsParams, signal?: AbortSignal) => {
+  return customInstance<AdminOrderMetricsResponse>({
+    url: `/admin/orders/metrics`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminOrderMetricsQueryKey = (params?: GetAdminOrderMetricsParams) => {
+  return [`/admin/orders/metrics`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminOrderMetricsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrderMetricsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrderMetrics>>> = ({ signal }) =>
+    getAdminOrderMetrics(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrderMetricsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOrderMetrics>>
+>
+export type GetAdminOrderMetricsQueryError = unknown
+
+export function useGetAdminOrderMetrics<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminOrderMetricsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrderMetrics>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderMetrics<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrderMetrics>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderMetrics<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 모니터링 지표
+ */
+
+export function useGetAdminOrderMetrics<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrderMetricsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminOrderMetricsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrderMetricsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrderMetrics>>> = ({ signal }) =>
+    getAdminOrderMetrics(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrderMetricsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOrderMetrics>>
+>
+export type GetAdminOrderMetricsSuspenseQueryError = unknown
+
+export function useGetAdminOrderMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminOrderMetricsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 모니터링 지표
+ */
+
+export function useGetAdminOrderMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminOrderMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrderMetricsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행과 같은 주문 단위 응답에 품목 전문·상태 전이 이력·독촉 이력을 덧붙인다. `orderId`는 주문 공개 식별자(ULID)다 — 숫자 id가 아니다. 배송 진행 타임라인의 재료는 `statusHistory`이고 **단계 이름과 표시 규칙은 화면이 정한다.** 전이 행은 전이가 일어난 트랜잭션에서 동기 insert되므로 `occurredAt`이 실제 전이 시각이다. 없는 주문은 404 errorCode 50000.
+ * @summary 어드민 주문 상세
+ */
+export const getAdminOrderDetail = (orderId: string, signal?: AbortSignal) => {
+  return customInstance<AdminOrderDetailResponse>({
+    url: `/admin/orders/${orderId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminOrderDetailQueryKey = (orderId?: string) => {
+  return [`/admin/orders/${orderId}`] as const
+}
+
+export const getGetAdminOrderDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrderDetailQueryKey(orderId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrderDetail>>> = ({ signal }) =>
+    getAdminOrderDetail(orderId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrderDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOrderDetail>>
+>
+export type GetAdminOrderDetailQueryError = unknown
+
+export function useGetAdminOrderDetail<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderDetail<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderDetail<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 상세
+ */
+
+export function useGetAdminOrderDetail<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrderDetailQueryOptions(orderId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminOrderDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOrderDetailQueryKey(orderId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOrderDetail>>> = ({ signal }) =>
+    getAdminOrderDetail(orderId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminOrderDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOrderDetail>>
+>
+export type GetAdminOrderDetailSuspenseQueryError = unknown
+
+export function useGetAdminOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 주문 상세
+ */
+
+export function useGetAdminOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminOrderDetail>>,
+  TError = unknown,
+>(
+  orderId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOrderDetailSuspenseQueryOptions(orderId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **알림을 보내지 않는다.** 어드민 실행 모듈이 발송 어댑터를 조립하지 않아 이 경로는 기록만 남긴다(append-only). 응답에 발송 여부 필드가 없는 것도 그 이유다 — 보내지도 않은 것을 보냈다고 말하는 필드를 두지 않는다. 화면 문구도 "알림이 나간다"가 아니라 "기록을 남긴다"로 써야 한다(운영자가 셀러에게 연락이 갔다고 믿고 후속 조치를 멈춘다). 성공은 201 Created다. 409 errorCode 50500 — 발송 전 상태(결제완료·상품준비·발송대기)가 아닌 주문. 409 errorCode 50501 — 쿨다운(`order.dispatch.nudge-cooldown-hours`, 기본 6시간) 안의 재독촉. 400 errorCode 50502 / 90001 — 독촉 메모 300자 초과. 404 errorCode 50000 — 없는 주문.
+ * @summary 어드민 셀러 발송 독촉 기록
+ */
+export const nudgeAdminOrderDispatch = (
+  orderId: string,
+  nudgeOrderDispatchRequest: NudgeOrderDispatchRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminOrderDispatchNudgeResponse>({
+    url: `/admin/orders/${orderId}/dispatch-nudges`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: nudgeOrderDispatchRequest,
+    signal,
+  })
+}
+
+export const getNudgeAdminOrderDispatchMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>,
+    TError,
+    { orderId: string; data: NudgeOrderDispatchRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>,
+  TError,
+  { orderId: string; data: NudgeOrderDispatchRequest },
+  TContext
+> => {
+  const mutationKey = ['nudgeAdminOrderDispatch']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>,
+    { orderId: string; data: NudgeOrderDispatchRequest }
+  > = props => {
+    const { orderId, data } = props ?? {}
+
+    return nudgeAdminOrderDispatch(orderId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type NudgeAdminOrderDispatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>
+>
+export type NudgeAdminOrderDispatchMutationBody = NudgeOrderDispatchRequest
+export type NudgeAdminOrderDispatchMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 발송 독촉 기록
+ */
+export const useNudgeAdminOrderDispatch = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>,
+      TError,
+      { orderId: string; data: NudgeOrderDispatchRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof nudgeAdminOrderDispatch>>,
+  TError,
+  { orderId: string; data: NudgeOrderDispatchRequest },
+  TContext
+> => {
+  const mutationOptions = getNudgeAdminOrderDispatchMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
