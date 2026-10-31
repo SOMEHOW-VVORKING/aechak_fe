@@ -753,8 +753,6 @@ export interface AdminOrderWire {
   sellerId: number
   sellerName: string | null
   buyerNickname: string
-  representativeItemName: string | null
-  itemCount: number
   totalProductAmount: number
   sellerShippingFee: number
   allocatedCouponDiscount: number
@@ -805,8 +803,6 @@ export function makeAdminOrderWire(overrides: Partial<AdminOrderWire> = {}): Adm
     sellerId: 7,
     sellerName: '멍멍마켓',
     buyerNickname: '코코맘',
-    representativeItemName: '프리미엄 관절 영양제 180정',
-    itemCount: 2,
     totalProductAmount: 70_000,
     sellerShippingFee: 3_000,
     allocatedCouponDiscount: 0,
@@ -827,6 +823,16 @@ export function makeAdminOrderWire(overrides: Partial<AdminOrderWire> = {}): Adm
         discountAllocatedAmount: 0,
         itemStatus: 'ORDERED',
       },
+      {
+        orderItemId: 2,
+        productId: '01HZXK0000000000000000P02',
+        productName: '치석 제거 덴탈껌 30개',
+        optionName: null,
+        quantity: 1,
+        unitPrice: 12_000,
+        discountAllocatedAmount: 0,
+        itemStatus: 'ORDERED',
+      },
     ],
     statusHistory: [
       { fromStatus: null, toStatus: 'PAID', triggeredBy: 'BUYER', occurredAt: '2026-10-26T21:31:00' },
@@ -842,12 +848,16 @@ const cloneOrder = (row: AdminOrderWire): AdminOrderWire => ({
   activeClaim: row.activeClaim ? { ...row.activeClaim } : null,
   items: row.items.map(item => ({ ...item })),
   statusHistory: row.statusHistory.map(entry => ({ ...entry })),
-  nudges: row.nudges.map(entry => ({ ...entry })),
+  // 독촉 이력은 **서버가 돌려주는 순서로 쥔다** — id 내림차순
+  // (`findAllByOrderIdOrderByIdDesc`). 시드가 어떤 순서로 주든 여기서 서버 순서로 눕히므로,
+  // 핸들러가 "배열의 끝이 최신"에 기대면 그 자리에서 틀린 행을 고른다.
+  nudges: [...row.nudges].sort((a, b) => b.nudgeId - a.nudgeId).map(entry => ({ ...entry })),
 })
 
 export function seedAdminOrders(rows: AdminOrderWire[] = []): void {
   orders = rows.map(cloneOrder)
-  nudgeIdSeq = 0
+  // 시드된 이력과 번호가 겹치면 "가장 큰 id가 최신"이 깨져 쿨다운 판정이 꼬인다.
+  nudgeIdSeq = Math.max(0, ...orders.flatMap(row => row.nudges.map(entry => entry.nudgeId)))
 }
 
 /** 핸들러가 반영한 현재 주문 — 테스트가 독촉 기록을 읽는다. */
@@ -864,8 +874,14 @@ function orderSummaryOf(row: AdminOrderWire) {
     sellerId: row.sellerId,
     sellerName: row.sellerName,
     buyerNickname: row.buyerNickname,
-    representativeItemName: row.representativeItemName,
-    itemCount: row.itemCount,
+    // 서버가 품목에서 **파생시키는** 두 값이다(`AdminOrderSummaryResult.of`:
+    // `lines.firstOrNull()?.productName`, `lines.size`). 스텁이 따로 받게 두면 "대표 품목명은
+    // 급식기인데 품목 전문에는 영양제만 있는" 응답을 테스트가 만들 수 있고, 서버는 그런 응답을
+    // 보내지 못한다 — 목록 행과 상세가 어긋나는 FE 결함이 통과한다(교차검토로 드러난 자리).
+    representativeItemName: row.items[0]?.productName ?? null,
+    itemCount: row.items.length,
+    // 금액은 파생시키지 않고 그대로 싣는다 — FE 가 금액을 계산하지 않는다는 단언(AC-006)이
+    // 스텁의 산수와 겹치면 둘 다 틀렸을 때 서로를 가린다.
     totalProductAmount: row.totalProductAmount,
     sellerShippingFee: row.sellerShippingFee,
     allocatedCouponDiscount: row.allocatedCouponDiscount,
@@ -896,6 +912,23 @@ function decodeOrderCursor(raw: string): number | null {
 
 const hoursBetween = (from: string, to: string) =>
   (new Date(to).getTime() - new Date(from).getTime()) / 3_600_000
+
+/**
+ * BE `AdminOrderMonitoringQueryAdapter.keywordMatches` 와 같은 집합 — 주문번호·셀러 상호·
+ * 상품명·옵션명이고 **구매자는 없다.** 닉네임이 user BC 테이블에 있어 그 쿼리가 조인하지 못한다.
+ *
+ * 스텁이 닉네임까지 찾아주면 "구매자로 검색된다"고 믿는 FE 가 테스트를 통과하고 실서버에서만
+ * 0건이 된다 — 스텁이 FE 결함을 가리는 자리라 BE 와 똑같이 못 찾아야 한다(교차검토 지적).
+ */
+function matchesKeyword(row: AdminOrderWire, keyword: string): boolean {
+  const needle = keyword.toLowerCase()
+  const has = (value: string | null) => (value ?? '').toLowerCase().includes(needle)
+  return (
+    has(row.orderId) ||
+    has(row.sellerName) ||
+    row.items.some(item => has(item.productName) || has(item.optionName))
+  )
+}
 
 const orderHandlers = [
   http.get(ADMIN_ORDERS_URL, ({ request }) => {
@@ -937,14 +970,7 @@ const orderHandlers = [
       .filter(row => (status == null ? true : row.status === status))
       .filter(row => (sellerId == null ? true : row.sellerId === Number(sellerId)))
       .filter(row => (delayedOnly ? row.delayReason != null : true))
-      .filter(row => {
-        if (keyword == null) return true
-        return (
-          row.orderId.includes(keyword) ||
-          (row.sellerName ?? '').includes(keyword) ||
-          row.buyerNickname.includes(keyword)
-        )
-      })
+      .filter(row => (keyword == null ? true : matchesKeyword(row, keyword)))
 
     // 정렬은 서버가 소유한다 — orderedAt DESC, orderId DESC.
     const sorted = [...matched].sort((a, b) =>
@@ -996,6 +1022,7 @@ const orderHandlers = [
         confirmType: row.status === 'PURCHASE_CONFIRMED' ? 'MANUAL' : null,
         items: row.items,
         statusHistory: row.statusHistory,
+        // 쥔 순서가 이미 서버 순서(id 내림차순)다.
         nudges: row.nudges,
       },
     })
@@ -1022,7 +1049,11 @@ const orderHandlers = [
         { status: 409 },
       )
     }
-    const latest = row.nudges[row.nudges.length - 1]
+    // BE `findLatestByOrderId` 는 id 최대 행이다 — 배열 순서에 기대지 않고 같은 뜻으로 고른다.
+    const latest = row.nudges.reduce<AdminOrderNudgeWire | null>(
+      (newest, entry) => (newest == null || entry.nudgeId > newest.nudgeId ? entry : newest),
+      null,
+    )
     if (latest && hoursBetween(latest.nudgedAt, NUDGE_NOW) < 6) {
       return HttpResponse.json(
         errorBody(50501, '직전 발송 독촉 이후 충분한 시간이 지나지 않았습니다.'),
@@ -1038,7 +1069,8 @@ const orderHandlers = [
       memo: normalized,
       nudgedAt: NUDGE_NOW,
     }
-    row.nudges.push(created)
+    // id 내림차순을 유지한다 — 새 기록이 가장 큰 id다.
+    row.nudges.unshift(created)
     return HttpResponse.json({ data: created }, { status: 201 })
   }),
 ]

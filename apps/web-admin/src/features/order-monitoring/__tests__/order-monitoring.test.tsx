@@ -90,8 +90,19 @@ function seedThreeOrders() {
       orderedAt: '2026-10-24T18:47:00',
       sellerName: '냥이상점',
       buyerNickname: '초코집사',
-      representativeItemName: '고양이 자동 급식기 5L',
-      itemCount: 1,
+      // 대표 품목명·품목 수는 서버가 품목에서 파생시킨다 — 스텁도 그래서 품목만 준다.
+      items: [
+        {
+          orderItemId: 11,
+          productId: '01HZXK0000000000000000P11',
+          productName: '고양이 자동 급식기 5L',
+          optionName: '화이트',
+          quantity: 1,
+          unitPrice: 61_000,
+          discountAllocatedAmount: 0,
+          itemStatus: 'ORDERED',
+        },
+      ],
       payableAmount: 64_000,
       delayReason: 'DELIVERY_OVERDUE',
       shipment: {
@@ -135,8 +146,18 @@ function seedThreeOrders() {
       orderedAt: '2026-10-22T13:28:00',
       sellerName: '보리펫샵',
       buyerNickname: '보리네집',
-      representativeItemName: '원목 캣타워 대형',
-      itemCount: 1,
+      items: [
+        {
+          orderItemId: 21,
+          productId: '01HZXK0000000000000000P21',
+          productName: '원목 캣타워 대형',
+          optionName: null,
+          quantity: 1,
+          unitPrice: 136_000,
+          discountAllocatedAmount: 0,
+          itemStatus: 'CANCELLED',
+        },
+      ],
       payableAmount: 139_000,
       statusHistory: [
         {
@@ -542,14 +563,147 @@ describe('어드민 주문 배송 모니터링 실연동', () => {
     ])
   })
 
+  /**
+   * 서버 `keywordMatches`는 주문번호·셀러 상호·상품명·옵션명만 본다 — **구매자는 찾지 못한다.**
+   * 닉네임이 user BC 테이블에 있어 그 쿼리가 조인하지 못하고, 주문에 남은 수령인명은 암호문이다.
+   *
+   * 화면 안내가 "구매자 검색"이라고 적고 있었고 MSW 스텁도 닉네임을 찾아줘서, 실서버에서만
+   * 0건이 되는 거짓을 테스트가 가려 주고 있었다(교차검토 지적). 두 방향을 함께 고정한다 —
+   * 안내 문구에 구매자가 없어야 하고, 스텁도 BE 처럼 닉네임으로는 못 찾아야 한다.
+   */
+  it('[AC-ADMIN-ORDER-020] 검색은 상품명으로 되고 구매자로는 되지 않으며 안내도 그렇게 적는다', async () => {
+    const requests = recordRequests()
+    renderMonitoring()
+    await waitFor(() => expect(bodyRowCount()).toBe(3))
+
+    const search = screen.getByRole('searchbox')
+    // 서버가 100자까지 받고 넘으면 400(90001)이라 목록이 에러로 바뀐다 — 입력에서 끊는다.
+    expect(search).toHaveAttribute('maxlength', '100')
+    expect(search).toHaveAttribute('placeholder', '주문번호 / 셀러 / 상품 검색')
+    // "구매자 검색"으로 되돌아가면 여기서 깨진다.
+    expect((search as HTMLInputElement).placeholder).not.toContain('구매자')
+
+    const user = userEvent.setup()
+    await user.type(search, '자동 급식기')
+    await waitFor(() => expect(bodyRowCount()).toBe(1))
+    expect(screen.getByRole('button', { name: SHIPPING_ORDER })).toBeInTheDocument()
+    expect(requests.some(entry => entry.includes('keyword='))).toBe(true)
+
+    // 구매자 닉네임은 서버가 못 찾는다 — 스텁이 찾아주면 FE 가 거짓을 안내해도 통과한다.
+    await user.clear(search)
+    await user.type(search, '초코집사')
+    expect(await screen.findByText(/조건에 맞는 주문이 없어요/)).toBeInTheDocument()
+  })
+
+  /**
+   * 지표 경로는 상태·지연·키워드를 받지 않고, 이 화면은 서버가 받는 셀러·기간도 보내지 않는다 —
+   * 카드 넷의 모수는 늘 플랫폼 전체다. 금액 카드가 "조회 범위 결제액"이라고 적고 있어서 운영자가
+   * 상태를 좁힌 뒤 그 목록의 합계로 읽을 수 있었다(교차검토 지적).
+   */
+  it('[AC-ADMIN-ORDER-021] 카드 넷이 플랫폼 전체 기준임을 밝히고 필터에 흔들리지 않는다', async () => {
+    renderMonitoring()
+    expect(await screen.findByText('137,000원')).toBeInTheDocument()
+
+    expect(
+      screen.getByText(/카드 넷은 플랫폼 전체 기준이에요/),
+    ).toBeInTheDocument()
+    // "조회 범위"는 FE 가 범위를 보내지 않으므로 거짓이다.
+    expect(screen.queryByText('조회 범위 결제액')).toBeNull()
+    expect(metricCard('전체 결제액')).toHaveTextContent('취소 주문 제외')
+
+    await chooseOption(selectWithOption('주문 상태 전체'), '배송 중')
+    await waitFor(() => expect(bodyRowCount()).toBe(1))
+
+    // 표는 한 건으로 좁혀졌는데 카드는 그대로다 — 그 사실을 위 안내가 말해 준다.
+    expect(metricCard('발송 대기')).toHaveTextContent('1건')
+    expect(screen.getByText('137,000원')).toBeInTheDocument()
+  })
+
+  /**
+   * 쿨다운의 "직전 독촉"은 **이력 중 가장 최신 한 건**이다(BE `findLatestByOrderId`). 이력이 한
+   * 건뿐인 시드로는 "배열의 마지막"을 고르는 구현도 통과해, 서버가 주는 순서가 바뀌면 조용히
+   * 깨진다 — 오래된 건과 최신 건을 섞어 넣어 최신 쪽이 판정에 쓰이는 것을 고정한다.
+   *
+   * 화면 쪽 약속도 같이 본다: 이력의 맨 윗줄은 최신이다.
+   */
+  it('[AC-ADMIN-ORDER-022] 이력이 여러 건이면 가장 최신 독촉으로 쿨다운을 가른다', async () => {
+    const user = userEvent.setup()
+    seedAdminOrders([
+      makeAdminOrderWire({
+        orderId: PAID_ORDER,
+        status: 'PAID',
+        nudges: [
+          // 쿨다운(6시간) 밖 — 이것만 보면 독촉이 통과해 버린다.
+          { nudgeId: 1, adminUserId: 1, memo: '첫 독촉', nudgedAt: '2026-10-29T09:00:00' },
+          // 쿨다운 안 — 서버가 보는 "직전 독촉"은 이쪽이다.
+          { nudgeId: 2, adminUserId: 1, memo: '두 번째 독촉', nudgedAt: '2026-10-30T11:00:00' },
+        ],
+      }),
+    ])
+    renderMonitoring()
+    const drawer = await openDetail(PAID_ORDER)
+
+    // 이력은 최신이 위다 — 서버가 주는 순서에 기대지 않는다.
+    const history = within(drawer).getByText(/독촉 기록 \/ 2건/)
+    expect(history).toBeInTheDocument()
+    const memos = within(drawer).getAllByText(/독촉$/)
+    expect(memos[0]).toHaveTextContent('두 번째 독촉')
+
+    await user.click(within(drawer).getByRole('button', { name: '셀러 발송 독촉' }))
+    const dialog = await screen.findByRole('dialog', { name: '셀러 발송 독촉을 기록할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '독촉 기록' }))
+
+    expect(await screen.findByText(/직전 독촉에서 아직 시간이 덜 지났어요/)).toBeInTheDocument()
+  })
+
+  /**
+   * `keepPreviousData`는 필터를 바꾸는 동안 표를 비우지 않는 대신 **옛 조건의 행을 그대로 둔다.**
+   * 말하지 않으면 운영자가 "배송 중"을 골라 놓고 결제완료 행을 배송 중 주문으로 읽는다
+   * (교차검토 지적). 느린 응답을 만들어 그 구간을 실제로 붙잡고 확인한다.
+   */
+  it('[AC-ADMIN-ORDER-023] 새 조건을 기다리는 동안 표가 옛 결과임을 밝힌다', async () => {
+    let release: () => void = () => {}
+    const inFlight = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(ADMIN_ORDERS_URL, async ({ request }) => {
+        // 첫 조회는 그대로 통과시키고, 상태를 좁힌 두 번째 조회만 붙잡는다.
+        if (new URL(request.url).searchParams.get('status') !== 'SHIPPING') return undefined
+        await inFlight
+        return undefined
+      }),
+    )
+    renderMonitoring()
+    await waitFor(() => expect(bodyRowCount()).toBe(3))
+    await chooseOption(selectWithOption('주문 상태 전체'), '배송 중')
+
+    // 아직 옛 조건의 세 행이 보이는 구간 — 그 사실이 화면에 적혀 있어야 한다.
+    expect(
+      await screen.findByText(/표는 아직 이전 조건의 결과예요/),
+    ).toBeInTheDocument()
+    expect(bodyRowCount()).toBe(3)
+
+    release()
+    await waitFor(() => expect(bodyRowCount()).toBe(1))
+    // 새 결과가 도착하면 안내는 사라진다 — 남으면 거꾸로 속인다.
+    expect(screen.queryByText(/표는 아직 이전 조건의 결과예요/)).toBeNull()
+  })
+
   it('[AC-ADMIN-ORDER-017] 상세는 품목 전문과 독촉 기록을 서버에서 받아 보여 준다', async () => {
     renderMonitoring()
     const drawer = await openDetail(PAID_ORDER)
 
-    expect(within(drawer).getByText(/주문 품목 \/ 1건/)).toBeInTheDocument()
+    expect(within(drawer).getByText(/주문 품목 \/ 2건/)).toBeInTheDocument()
     expect(
       within(drawer).getByText(/프리미엄 관절 영양제 180정 \/ 2개입 \(2개\)/),
     ).toBeInTheDocument()
+    expect(within(drawer).getByText(/치석 제거 덴탈껌 30개 \(1개\)/)).toBeInTheDocument()
+    // 목록 행의 "대표 품목명 외 N건"과 상세 전문이 같은 품목을 가리켜야 한다 — 서버는 둘을
+    // 같은 품목 목록에서 파생시키므로 어긋난 조합 자체를 보낼 수 없다.
+    expect(screen.getByRole('button', { name: PAID_ORDER }).closest('tr')).toHaveTextContent(
+      '프리미엄 관절 영양제 180정 외 1건',
+    )
     expect(within(drawer).getByText('독촉 기록이 없어요.')).toBeInTheDocument()
     // 주문 묶음 id는 상세에만 있다.
     expect(within(drawer).getByText('01HZXK0000000000000000G01')).toBeInTheDocument()

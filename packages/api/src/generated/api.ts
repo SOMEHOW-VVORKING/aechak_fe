@@ -4212,7 +4212,7 @@ export type GetAdminOrdersParams = {
    */
   sellerId?: number
   /**
-   * 주문번호 / 셀러명 / 구매자 닉네임 검색. 빈 값은 키째 빼서 보낼 것
+   * 주문번호 / 셀러 상호 / 상품명 / 옵션명 부분 일치(대소문자 무시). 빈 값은 키째 빼서 보낼 것. **구매자는 검색 대상이 아니다** — 닉네임이 user BC 테이블에 있어 이 쿼리가 조인하지 못하고 주문에 남은 수령인명은 암호문이라 LIKE가 불가능하다. 화면 안내 문구에 구매자를 적으면 운영자가 닉네임을 넣고 0건을 "주문이 없다"로 읽는다
    * @maxLength 100
    */
   keyword?: string
@@ -19391,7 +19391,7 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
 }
 
 /**
- * 플랫폼 전체 주문. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다 (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 주문 역순 (orderedAt DESC, orderId DESC) 고정이고 **커서 페이징**이다. **결제대기(PENDING_PAYMENT) 주문은 대상이 아니다** — 결제 전에도 테이블에 남는 행이라 모니터링에 섞으면 안 된다. `status=PENDING_PAYMENT`를 지정하면 400 errorCode 90001 ("status: 결제대기 주문은 조회 대상이 아닙니다.")이다. `orderedFrom`·`orderedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날 0시 미만으로 환산한다). 시작일이 종료일보다 늦으면 400 errorCode 90001. `keyword`는 100자까지고, `sellerId`는 양수여야 한다(아니면 400 errorCode 90001). `delayedOnly=true`면 지연 신호가 붙은 행만 남는다 — **지연 판정 기준은 서버가 쥔다** (발송 기한 `order.dispatch.sla-days`, 배송 정체 `order.delivery.sla-days`). 커서에는 필터가 실리지 않아 필터를 바꿔도 거부되지 않지만, 커서가 가리키는 앵커가 새 필터 집합과 무관해 결과가 섞인다 — **필터를 바꾸면 커서를 버리고 처음부터 받을 것.** 망가진 커서는 400 errorCode 90002.
+ * 플랫폼 전체 주문. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다 (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 주문 역순 (orderedAt DESC, orderId DESC) 고정이고 **커서 페이징**이다. **결제대기(PENDING_PAYMENT) 주문은 대상이 아니다** — 결제 전에도 테이블에 남는 행이라 모니터링에 섞으면 안 된다. `status=PENDING_PAYMENT`를 지정하면 400 errorCode 90001 ("status: 결제대기 주문은 조회 대상이 아닙니다.")이다. `orderedFrom`·`orderedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날 0시 미만으로 환산한다). 시작일이 종료일보다 늦으면 400 errorCode 90001. `keyword`는 100자까지고(초과는 400 errorCode 90001), `sellerId`는 양수여야 한다. **`keyword`는 구매자를 찾지 못한다** — 주문번호·셀러 상호·상품명·옵션명만 본다. `delayedOnly=true`면 지연 신호가 붙은 행만 남는다 — **지연 판정 기준은 서버가 쥔다** (발송 기한 `order.dispatch.sla-days`, 배송 정체 `order.delivery.sla-days`). 커서에는 필터가 실리지 않아 필터를 바꿔도 거부되지 않지만, 커서가 가리키는 앵커가 새 필터 집합과 무관해 결과가 섞인다 — **필터를 바꾸면 커서를 버리고 처음부터 받을 것.** 망가진 커서는 400 errorCode 90002.
  * @summary 어드민 주문 목록
  */
 export const getAdminOrders = (params?: GetAdminOrdersParams, signal?: AbortSignal) => {

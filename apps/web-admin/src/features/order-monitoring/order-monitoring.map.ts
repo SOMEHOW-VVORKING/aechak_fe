@@ -269,7 +269,8 @@ export function toDetailView(wire: AdminOrderDetailData): AdminOrderDetailView {
     orderGroupId: wire.orderGroupId,
     items: wire.items.map(toItemView),
     stages: toStages(order.status, wire.statusHistory),
-    // 최신 기록이 위로 — 서버는 주문 id 오름차순으로 준다.
+    // 최신 기록이 위로. 서버도 내림차순으로 주지만(`findAllByOrderIdOrderByIdDesc`) 순서를
+    // 서버에 맡기지 않는다 — 이력의 "맨 윗줄이 최신"은 화면이 지키는 약속이다.
     nudges: [...wire.nudges].sort((a, b) => b.nudgeId - a.nudgeId).map(toNudgeView),
   }
 }

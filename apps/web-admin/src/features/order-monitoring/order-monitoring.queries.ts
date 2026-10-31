@@ -38,7 +38,14 @@ export interface OrderListParams {
   status: AdminOrderStatusFilterValue
   /** 지연 신호가 붙은 행만. 판정은 서버가 한다. */
   delayedOnly: boolean
-  /** 주문번호 / 셀러명 / 구매자 닉네임. 빈 문자열이면 파라미터를 보내지 않는다. */
+  /**
+   * 주문번호 / 셀러 상호 / 상품명 / 옵션명. 빈 문자열이면 파라미터를 보내지 않는다.
+   *
+   * **구매자는 검색 대상이 아니다**(`AdminOrderMonitoringQueryAdapter.keywordMatches`) — 닉네임은
+   * user BC 테이블에 있어 이 포트가 조인하지 못하고, 주문에 남은 수령인명은 암호문이라 LIKE가
+   * 불가능하다. 검색창 안내 문구가 구매자를 적으면 운영자가 닉네임을 넣고 0건을 "주문이 없다"로
+   * 읽는다(교차검토 지적).
+   */
   keyword: string
   size?: number
 }
@@ -60,6 +67,12 @@ export interface OrderListResult {
   hasNext: boolean
   isLoading: boolean
   isFetchingNextPage: boolean
+  /**
+   * 표에 보이는 행이 **아직 이전 조건의 결과**다. `keepPreviousData`가 표를 비우지 않는 대가로
+   * 생기는 구간이고, 말하지 않으면 운영자가 "배송 중"을 골라 놓고 결제완료 행을 배송 중으로 읽는다
+   * (교차검토 지적).
+   */
+  isStaleRows: boolean
   isError: boolean
   error: unknown
   fetchNextPage: () => void
@@ -91,6 +104,7 @@ export function useAdminOrderMonitorList(params: OrderListParams): OrderListResu
     hasNext: query.hasNextPage,
     isLoading: query.isLoading,
     isFetchingNextPage: query.isFetchingNextPage,
+    isStaleRows: query.isPlaceholderData,
     isError: query.isError,
     error: query.error,
     fetchNextPage: () => {

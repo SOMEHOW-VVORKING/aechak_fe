@@ -273,6 +273,11 @@ function OrdersMonitoringPage() {
         카드 라벨은 서버 응답 필드 이름에 맞춘다. 금액은 서버가 계산한 값을 그대로 쓴다 —
         `totalPaymentAmount`는 취소 주문이 빠져 목록 행을 더해 재현할 수 없고, 뜻이 바뀌면
         서버가 바꾼다. 조회가 실패하면 숫자를 비운다(옛 숫자는 서버에 없는 건수가 된다).
+
+        **카드 넷은 아래 필터와 무관하다.** 지표 경로가 상태·지연·키워드를 받지 않고, 이 화면은
+        서버가 받는 셀러·기간도 보내지 않으므로 모수가 늘 플랫폼 전체다. 금액 카드를 "조회 범위"로
+        적어 두면 운영자가 상태를 좁힌 뒤 그 목록의 합계로 읽는다 — 라벨을 전체로 적고 카드 줄과
+        필터 줄 사이에 모수를 한 줄로 밝힌다(교차검토 지적).
       */}
       <div className="mb-3.5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MetricCard
@@ -292,11 +297,16 @@ function OrdersMonitoringPage() {
           variant={metrics.metrics && metrics.metrics.delayedCount > 0 ? 'urgent' : 'default'}
         />
         <MetricCard
-          label="조회 범위 결제액"
+          label="전체 결제액"
           value={metrics.metrics ? won(metrics.metrics.totalPaymentAmount) : '-'}
+          footer="취소 주문 제외"
           variant="quiet"
         />
       </div>
+
+      <p className="mb-3.5 text-caption text-text-tertiary">
+        카드 넷은 플랫폼 전체 기준이에요. 아래 필터와 검색은 표에만 걸려요.
+      </p>
 
       <FilterBar className="mb-3.5">
         <FilterSelect
@@ -313,9 +323,17 @@ function OrdersMonitoringPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="주문번호 / 셀러 / 구매자 검색"
+          placeholder="주문번호 / 셀러 / 상품 검색"
+          // 서버는 100자까지 받고 넘으면 400(90001)이라 목록이 에러로 바뀐다 — 붙여넣기를 여기서 끊는다.
+          maxLength={100}
           className="w-72"
         />
+        {/* 새 조건의 결과가 오기 전까지 표는 이전 조건의 행이다 — 그 사이를 말없이 두지 않는다. */}
+        {list.isStaleRows && (
+          <span className="text-body-sm text-text-tertiary">
+            조건을 적용하는 중이에요. 표는 아직 이전 조건의 결과예요.
+          </span>
+        )}
       </FilterBar>
 
       <DataTable
