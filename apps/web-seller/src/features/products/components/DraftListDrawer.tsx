@@ -7,6 +7,8 @@ interface DraftListDrawerProps {
   drafts: ProductDraftSummary[]
   /** 목록 조회가 실패했을 때 띄울 문구. 성공이면 null. */
   loadError?: string | null
+  /** 조회 실패를 되돌릴 유일한 길 — 실패했는데 다시 읽을 버튼이 없으면 셀러는 초안을 포기한다. */
+  onRetry?: () => void
   /** 삭제 중이거나 목록이 낡아 삭제를 맡길 수 없는 동안 켠다. 이어쓰기는 잠그지 않는다. */
   deleteDisabled?: boolean
   onClose: () => void
@@ -31,15 +33,21 @@ export function DraftListDrawer({
   loadError = null,
   deleteDisabled = false,
   onClose,
+  onRetry,
   onSelect,
   onRequestDelete,
 }: DraftListDrawerProps) {
   return (
     <Drawer open={open} onClose={onClose} title="임시저장한 상품" width="lg">
       {loadError && (
-        <Alert variant="error" className="mb-3">
-          {loadError}
-        </Alert>
+        <div className="mb-3 flex flex-col gap-2">
+          <Alert variant="error">{loadError}</Alert>
+          {onRetry && (
+            <Button variant="secondary" size="sm" className="self-start" onClick={onRetry}>
+              다시 시도
+            </Button>
+          )}
+        </div>
       )}
       {drafts.length === 0 && !loadError ? (
         <EmptyState

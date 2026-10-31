@@ -516,6 +516,41 @@ describe('/products/new 임시저장 (SCRUM-343)', () => {
       await screen.findByText('임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.'),
     ).toBeInTheDocument()
   })
+
+  it('[AC-SPRD-078] 초안 조회가 404가 아닌 이유로 실패하면 "없다"고 말하지 않는다', async () => {
+    seedSellerProductDrafts([HARNESS_DRAFT])
+    const user = userEvent.setup()
+    let failing = true
+    server.use(
+      http.get(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, () =>
+        failing
+          ? HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 })
+          : HttpResponse.json({ data: HARNESS_DRAFT }),
+      ),
+    )
+    renderAt(`/products/new?draftId=${HARNESS_DRAFT.draftId}`)
+
+    // 초안은 서버에 그대로 있다 — "찾을 수 없어요 + 새로 등록하기"로 보내면 셀러가 쓰던 내용을 버린다.
+    expect(await screen.findByText('임시저장한 상품을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByText('임시저장한 상품을 찾을 수 없어요')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '새로 등록하기' })).not.toBeInTheDocument()
+
+    failing = false
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByLabelText('상품명')).toHaveValue('강아지 하네스 S')
+  })
+
+  it('[AC-SPRD-079] 없는 초안(40400)은 그대로 "찾을 수 없어요"로 보낸다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/new?draftId=01JGONEDRAFT0000000000001')
+
+    expect(await screen.findByText('임시저장한 상품을 찾을 수 없어요')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '새로 등록하기' }))
+
+    // 빈 폼으로 떨어지고 URL의 draftId도 지워져야 저장이 새 초안으로 나간다.
+    expect(await screen.findByLabelText('상품명')).toHaveValue('')
+  })
 })
 
 // 수정 폼은 실 API(GET /sellers/me/products/{productId} → PUT 같은 경로)로 돈다. 프리필에 필요한

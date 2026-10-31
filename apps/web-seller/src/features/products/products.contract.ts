@@ -505,7 +505,22 @@ const ERROR_MESSAGE: Record<number, string> = {
 }
 
 // axios 타입을 안 끌어오려고 duck-typing(store-settings 관례). 에러 본문은 `{ errorCode, message }`.
+const errorCodeOf = (error: unknown): number | undefined =>
+  (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+
 export function productErrorMessage(error: unknown): string {
-  const code = (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+  const code = errorCodeOf(error)
   return (code !== undefined && ERROR_MESSAGE[code]) || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
+}
+
+/** BE ProductErrorCode.PRODUCT_DRAFT_NOT_FOUND — 없는 초안·남의 초안·30일 지난 초안이 전부 이 코드다. */
+const PRODUCT_DRAFT_NOT_FOUND = 40400
+
+/**
+ * "그 초안이 없다"와 "초안을 못 읽었다"를 가른다. 둘을 한 문구로 묶으면 서버가 500을 돌려준 순간
+ * 화면이 "찾을 수 없어요"라는 거짓을 말하고, 셀러가 남아 있는 초안을 버리고 새로 쓴다.
+ * 코드가 40400일 때만 "없다"로 단정하고, 코드 없는 404·500·네트워크 실패는 "못 읽었다"로 남긴다.
+ */
+export function isProductDraftMissing(error: unknown): boolean {
+  return errorCodeOf(error) === PRODUCT_DRAFT_NOT_FOUND
 }

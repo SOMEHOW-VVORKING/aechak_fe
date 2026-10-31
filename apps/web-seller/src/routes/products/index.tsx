@@ -169,15 +169,18 @@ function ProductsRoute() {
   const [inventoryProductId, setInventoryProductId] = useState<string | null>(null)
   const [draftsOpen, setDraftsOpen] = useState(false)
   const [draftDeleteTarget, setDraftDeleteTarget] = useState<ProductDraftSummary | null>(null)
-  // 초안 수는 머리말 배지의 출처다. 처음 조회가 실패하면 수를 지어내지 않고 버튼을 숨긴다 —
-  // Drawer를 열 길이 없어지지만 "0개"라는 거짓을 보여 주는 것보다 낫다. Drawer를 연 뒤 재조회가
-  // 실패하면 행은 남으므로(react-query가 직전 데이터를 들고 있다) 그때는 Alert로 드러낸다.
+  // 초안 수는 머리말 배지의 출처다. 처음 조회가 실패하면 수를 지어내지 않는다 — "임시저장 0"은 거짓이다.
+  // 그렇다고 버튼까지 지우면 초안을 저장해 둔 셀러에게 "임시저장이 없다"와 똑같이 보이고 다시 읽을 길도
+  // 없어진다. 그래서 수 없이 실패를 밝히는 입구를 남기고 Drawer에 사유와 '다시 시도'를 둔다.
+  // Drawer를 연 뒤 재조회가 실패하면 행은 남으므로(react-query가 직전 데이터를 들고 있다) 그때는
+  // 낡은 목록임을 Alert로 드러낸다.
   const draftsQuery = useProductDrafts()
   const drafts = draftsQuery.data?.items ?? []
   const deleteDraft = useDeleteProductDraft()
+  const draftsLoadFailed = draftsQuery.isError && draftsQuery.data === undefined
+  const draftsStale = draftsQuery.isError && !draftsLoadFailed
   // 낡은 행으로 되돌릴 수 없는 삭제를 지시하지 못하게 잠근다(AGENTS 6절 7항). 이어쓰기는 읽기라 남긴다.
-  const draftsStale = draftsQuery.isError
-  const draftDeleteBlocked = draftsStale || deleteDraft.isPending
+  const draftDeleteBlocked = draftsQuery.isError || deleteDraft.isPending
   // 등록/수정 완료 알림은 state로 옮기고 URL에서 바로 지운다 — URL에 남기면 다른 토스트가 닫힌 뒤 다시 뜬다.
   const toast = useToast(saved ? { message: SAVED_MESSAGE[saved], variant: 'success' } : null)
   useEffect(() => {
@@ -365,15 +368,16 @@ function ProductsRoute() {
         actions={
           <>
             {/* 초안이 없으면 버튼을 그리지 않는다 — 열어도 빈 Drawer뿐인 자리를 남기지 않는다.
-                등록 화면의 '임시저장'이 이 버튼을 만드는 유일한 입구다. */}
-            {drafts.length > 0 && (
+                등록 화면의 '임시저장'이 이 버튼을 만드는 유일한 입구다. 조회가 실패했을 때만은
+                수 대신 실패를 적어 버튼을 남긴다 — 못 읽은 것과 없는 것이 같아 보이면 안 된다. */}
+            {(drafts.length > 0 || draftsLoadFailed) && (
               <Button
                 variant="secondary"
                 size="sm"
                 leftIcon={<FileText className="size-4" />}
                 onClick={() => setDraftsOpen(true)}
               >
-                임시저장 {drafts.length}
+                {draftsLoadFailed ? '임시저장 불러오기 실패' : `임시저장 ${drafts.length}`}
               </Button>
             )}
             <Button size="sm" leftIcon={<Plus className="size-4" />} onClick={() => navigate({ to: '/products/new' })}>
@@ -549,8 +553,13 @@ function ProductsRoute() {
         open={draftsOpen}
         drafts={drafts}
         loadError={
-          draftsStale ? '임시저장 목록을 다시 불러오지 못해 아래는 마지막으로 본 목록이에요.' : null
+          draftsLoadFailed
+            ? '임시저장 목록을 불러오지 못했어요. 저장해 둔 초안은 그대로 있어요.'
+            : draftsStale
+              ? '임시저장 목록을 다시 불러오지 못해 아래는 마지막으로 본 목록이에요.'
+              : null
         }
+        onRetry={() => void draftsQuery.refetch()}
         deleteDisabled={draftDeleteBlocked}
         // 확인창이 떠 있는 동안에는 Escape·스크림이 Drawer까지 닫지 않게 한다 — 두 dialog가 각각
         // document에 Escape 핸들러를 걸어 한 번 누르면 둘이 함께 닫힌다.

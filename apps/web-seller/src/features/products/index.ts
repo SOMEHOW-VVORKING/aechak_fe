@@ -26,6 +26,7 @@ export {
   KEYWORD_MAX,
   SALE_STATUS_LABEL,
   emptyProductForm,
+  isProductDraftMissing,
   productErrorMessage,
   toDraftRequest,
   toFormValues,

@@ -6,6 +6,7 @@ import {
   ProductEditor,
   ProductMissing,
   emptyProductForm,
+  isProductDraftMissing,
   productErrorMessage,
   productImageUrl,
   toDraftRequest,
@@ -51,8 +52,12 @@ function ProductNewRoute() {
   const showError = (error: unknown) => toast.show(productErrorMessage(error), 'error')
 
   // 승격 후 임시저장 재조회가 404여도 이미 받은 data가 남아 있으면 에디터를 유지한다.
+  //
+  // 실패 두 가지를 가른다. 40400("없다")만 "찾을 수 없어요 + 새로 등록하기"로 보내고, 500이나 네트워크
+  // 실패는 "불러오지 못했어요 + 다시 시도"로 남긴다 — 묶어 버리면 초안이 서버에 그대로 있는데도 화면이
+  // 없다고 말하고, 셀러가 '새로 등록하기'를 눌러 쓰던 내용을 버린다(카테고리 실패와 같은 모양이다).
   if (initialDraftId && !draft.data && draft.isError) {
-    return (
+    return isProductDraftMissing(draft.error) ? (
       <ProductMissing
         title="상품 등록"
         message="임시저장한 상품을 찾을 수 없어요"
@@ -63,6 +68,13 @@ function ProductNewRoute() {
             navigate({ search: {}, replace: true })
           },
         }}
+      />
+    ) : (
+      <ProductMissing
+        title="상품 등록"
+        message="임시저장한 상품을 불러오지 못했어요"
+        description="임시저장은 그대로 있어요. 잠시 후 다시 시도해 주세요."
+        action={{ label: '다시 시도', onClick: () => void draft.refetch() }}
       />
     )
   }

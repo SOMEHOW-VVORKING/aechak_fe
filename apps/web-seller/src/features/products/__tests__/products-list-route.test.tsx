@@ -727,16 +727,38 @@ describe('/products 임시저장 Drawer (SCRUM-343)', () => {
     expect(within(drawer).getAllByRole('button', { name: '이어쓰기' })[0]!).toBeEnabled()
   })
 
-  it('[AC-SPRD-075] 목록 조회가 실패하면 수를 지어내지 않고 버튼을 숨긴다', async () => {
+  it('[AC-SPRD-075] 목록 조회가 실패하면 수를 지어내지 않고 실패를 밝힌 뒤 다시 시도로 돌아온다', async () => {
+    const user = userEvent.setup()
+    let failing = true
     server.use(
       http.get(SELLER_PRODUCT_DRAFTS_URL, () =>
-        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+        failing
+          ? HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 })
+          : HttpResponse.json({
+              data: { items: [{ draftId: DRAFT.draftId, productName: DRAFT.productName, savedAt: DRAFT.savedAt }], totalCount: 1 },
+            }),
       ),
     )
     renderAt('/products')
 
     await screen.findByText(FEEDER.name)
-    // "임시저장 0"은 거짓이다 — 못 읽었으면 입구를 만들지 않는다.
-    await waitFor(() => expect(screen.queryByRole('button', { name: /임시저장/ })).not.toBeInTheDocument())
+    // "임시저장 0"은 거짓이다 — 못 읽었으면 수를 쓰지 않는다. 그렇다고 입구를 지우면 초안이 있는
+    // 셀러에게 "임시저장이 없다"와 똑같이 보인다.
+    const entry = await screen.findByRole('button', { name: '임시저장 불러오기 실패' })
+    expect(screen.queryByRole('button', { name: /임시저장 \d/ })).not.toBeInTheDocument()
+
+    await user.click(entry)
+    const drawer = screen.getByRole('dialog', { name: '임시저장한 상품' })
+    expect(
+      within(drawer).getByText('임시저장 목록을 불러오지 못했어요. 저장해 둔 초안은 그대로 있어요.'),
+    ).toBeInTheDocument()
+    // 못 읽었는데 "없어요"라고 말하지 않는다 — 빈 상태는 0건을 확인했을 때만 뜻이 맞다.
+    expect(within(drawer).queryByText('임시저장한 상품이 없어요')).not.toBeInTheDocument()
+
+    failing = false
+    await user.click(within(drawer).getByRole('button', { name: '다시 시도' }))
+
+    expect(await within(drawer).findByText('쓰던 하네스')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '임시저장 1' })).toBeInTheDocument()
   })
 })
