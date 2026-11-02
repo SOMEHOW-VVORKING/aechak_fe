@@ -6,8 +6,10 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
+import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
   PRODUCT_OPTIONS_URL,
+  PRODUCT_REVIEW_SUMMARY_URL,
   PRODUCT_REVIEWS_URL,
   REAL_PRODUCT_ID,
   REAL_PRODUCT_OPTIONS,
@@ -30,6 +32,32 @@ function renderAt(path: string) {
     </QueryClientProvider>,
   )
   return router
+}
+
+const PRODUCT_AI_SUMMARY: AiReviewSummaryResponse = {
+  analyzedReviewCount: 37,
+  pros: [
+    {
+      aspectCode: 'PALATABILITY',
+      headline: '잘 먹는다는 평이 많아요.',
+      mentionCount: 21,
+      quotes: ['처음 줬는데 그릇을 싹 비웠어요.'],
+    },
+  ],
+  cons: [
+    {
+      aspectCode: 'KIBBLE_SIZE',
+      headline: '알갱이가 조금 크다는 의견이 있어요.',
+      mentionCount: 6,
+      quotes: [],
+    },
+  ],
+  consAbsenceReason: null,
+  generatedAt: '2026-10-27T03:00:00',
+}
+
+function serveReviewSummary(data: ProductReviewSummaryResponse) {
+  server.use(http.get(PRODUCT_REVIEW_SUMMARY_URL, () => HttpResponse.json({ data })))
 }
 
 describe('/products/$productId', () => {
@@ -296,6 +324,140 @@ describe('/products/$productId', () => {
     expect(
       await screen.findByText('리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'),
     ).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-024] 상품 요약과 비슷한 아이 요약이 있으면 카드 두 개와 안내 문구를 보여준다', async () => {
+    serveReviewSummary({
+      productSummary: PRODUCT_AI_SUMMARY,
+      similarPetSummary: {
+        species: 'DOG',
+        weightBand: 'DOG_UNDER_5',
+        summary: {
+          ...PRODUCT_AI_SUMMARY,
+          analyzedReviewCount: 12,
+          pros: [
+            {
+              aspectCode: 'KIBBLE_SIZE',
+              headline: '작은 아이도 먹기 좋은 크기래요.',
+              mentionCount: 5,
+              quotes: [],
+            },
+          ],
+        },
+      },
+    })
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('AI 리뷰 요약')).toBeInTheDocument()
+    expect(screen.getByText('리뷰 37건을 분석했어요')).toBeInTheDocument()
+    expect(screen.getByText('잘 먹는다는 평이 많아요.')).toBeInTheDocument()
+    expect(screen.getByText('리뷰 21건')).toBeInTheDocument()
+    expect(screen.getByText('처음 줬는데 그릇을 싹 비웠어요.')).toBeInTheDocument()
+    expect(screen.getAllByText('알갱이가 조금 크다는 의견이 있어요.')).toHaveLength(2)
+
+    expect(screen.getByText('우리 아이와 비슷한 5kg 미만 강아지 보호자 리뷰')).toBeInTheDocument()
+    expect(screen.getByText('리뷰 12건을 분석했어요')).toBeInTheDocument()
+    expect(screen.getByText('작은 아이도 먹기 좋은 크기래요.')).toBeInTheDocument()
+    expect(
+      screen.getByText('구매자 리뷰를 AI가 요약한 내용이라 실제 리뷰와 다를 수 있어요.'),
+    ).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-030] 비슷한 아이 요약만 있어도 AI 요약임을 알리는 안내 문구와 함께 보여준다', async () => {
+    serveReviewSummary({
+      productSummary: null,
+      similarPetSummary: { species: 'CAT', weightBand: 'CAT_4_6', summary: PRODUCT_AI_SUMMARY },
+    })
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('우리 아이와 비슷한 4~6kg 고양이 보호자 리뷰')).toBeInTheDocument()
+    expect(screen.queryByText('AI 리뷰 요약')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('구매자 리뷰를 AI가 요약한 내용이라 실제 리뷰와 다를 수 있어요.'),
+    ).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-025] 아쉬운 점이 비면 사유 한 줄을 보여주고 비슷한 아이 카드는 그리지 않는다', async () => {
+    serveReviewSummary({
+      productSummary: {
+        ...PRODUCT_AI_SUMMARY,
+        cons: [],
+        consAbsenceReason: 'BELOW_MENTION_THRESHOLD',
+      },
+      similarPetSummary: null,
+    })
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('AI 리뷰 요약')).toBeInTheDocument()
+    expect(screen.getByText('아쉬운 점')).toBeInTheDocument()
+    expect(screen.getByText('여러 명이 공통으로 말한 아쉬운 점은 아직 없어요.')).toBeInTheDocument()
+    expect(screen.queryByText(/우리 아이와 비슷한/)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['NO_NEGATIVE_MENTIONS_FOUND', '분석한 리뷰에서 아쉬운 점 언급은 없었어요.'],
+    ['PARTIALLY_UNEXTRACTED', '일부 리뷰를 아직 분석하지 못해 아쉬운 점은 정리하지 않았어요.'],
+    ['NARRATION_MISSING', '여러 리뷰에서 나온 아쉬운 점이 있지만 아직 정리하지 못했어요.'],
+    ['SOME_FUTURE_REASON', '아쉬운 점은 아직 정리하지 못했어요.'],
+  ])(
+    '[AC-PRODUCT-028] 아쉬운 점이 비면 사유 %s마다 안내를 보여주고 칸을 숨기지 않는다',
+    async (reason, note) => {
+      // 칸을 숨기면 반복된 단점이 있는 상품(NARRATION_MISSING)도 단점이 없는 것처럼 보인다.
+      serveReviewSummary({
+        productSummary: { ...PRODUCT_AI_SUMMARY, cons: [], consAbsenceReason: reason },
+        similarPetSummary: null,
+      })
+      renderAt('/products/' + REAL_PRODUCT_ID)
+
+      expect(await screen.findByText(note)).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '아쉬운 점' })).toBeInTheDocument()
+    },
+  )
+
+  it('[AC-PRODUCT-029] 요약을 불러오지 못하면 요약이 없는 것과 구분되게 알린다', async () => {
+    server.use(http.get(PRODUCT_REVIEW_SUMMARY_URL, () => HttpResponse.json({}, { status: 500 })))
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('AI 리뷰 요약을 불러오지 못했어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-026] 두 요약이 모두 null이면 카드와 안내 문구를 그리지 않는다', async () => {
+    let summaryCalls = 0
+    server.use(
+      http.get(PRODUCT_REVIEW_SUMMARY_URL, () => {
+        summaryCalls += 1
+        return HttpResponse.json({ data: { productSummary: null, similarPetSummary: null } })
+      }),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    // 같은 조건으로 함께 나가는 리뷰 미리보기가 뜰 때면 요약 응답도 받은 뒤다.
+    expect(await screen.findByText('소음이 조금 있어요. 기능은 무난해요.')).toBeInTheDocument()
+    await waitFor(() => expect(summaryCalls).toBe(1))
+    expect(screen.queryByText('AI 리뷰 요약')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('구매자 리뷰를 AI가 요약한 내용이라 실제 리뷰와 다를 수 있어요.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-027] 비회원 상세는 리뷰 요약 API를 호출하지 않는다', async () => {
+    // 요약 API도 JWT 필수라, 호출하면 401에서 전역 리다이렉트로 상세를 잃는다.
+    let summaryCalls = 0
+    server.use(
+      http.get(PRODUCT_REVIEW_SUMMARY_URL, () => {
+        summaryCalls += 1
+        return HttpResponse.json(
+          { errorCode: 20004, message: '인증이 필요합니다.' },
+          { status: 401 },
+        )
+      }),
+    )
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
+    await waitFor(() => expect(summaryCalls).toBe(0))
+    expect(screen.queryByText('AI 리뷰 요약')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {

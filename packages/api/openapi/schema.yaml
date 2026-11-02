@@ -433,6 +433,30 @@ paths:
                 $ref: "#/components/schemas/ReviewListEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/review-summary:
+    get:
+      summary: "상품 리뷰 AI 요약 조회"
+      description: >-
+        상품 전체 리뷰 요약과, 조회자 대표 펫과 같은 종/체급 보호자들의 리뷰 요약을 함께 준다.
+        인증 필요(비로그인 401). productId는 상품 공개 ULID. 미존재/비노출 상품은 404.
+      operationId: "getProductReviewSummary"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductReviewSummaryEnvelope"
+        "404":
+          description: "존재하지 않는 상품"
   /reviews:
     post:
       summary: "리뷰 작성"
@@ -4764,6 +4788,84 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ReviewListData"
+    PetWeightBand:
+      type: string
+      enum: [DOG_UNDER_5, DOG_5_10, DOG_10_25, DOG_25_PLUS, CAT_UNDER_4, CAT_4_6, CAT_6_PLUS]
+    AiReviewSummaryPointResponse:
+      type: object
+      required: [aspectCode, headline, mentionCount, quotes]
+      properties:
+        aspectCode:
+          type: string
+        headline:
+          type: string
+          description: "AI가 쓴 한 문장"
+        mentionCount:
+          type: integer
+          description: "이 장단점을 말한 리뷰 수"
+        quotes:
+          type: array
+          items:
+            type: string
+          description: "리뷰에서 그대로 떼어 온 문장. 비어 있을 수 있다"
+    AiReviewSummaryResponse:
+      type: object
+      required: [analyzedReviewCount, pros, cons, consAbsenceReason, generatedAt]
+      properties:
+        analyzedReviewCount:
+          type: integer
+          description: "AI가 실제로 읽은 리뷰 수. mentionCount의 분모"
+        pros:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiReviewSummaryPointResponse"
+        cons:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiReviewSummaryPointResponse"
+        consAbsenceReason:
+          type: string
+          nullable: true
+          description: >-
+            cons가 비어 있는 사유. NO_NEGATIVE_MENTIONS_FOUND, BELOW_MENTION_THRESHOLD,
+            PARTIALLY_UNEXTRACTED, NARRATION_MISSING 중 하나이고 cons가 있으면 null.
+            BE가 enum이 아니라 문자열로 내보내 모르는 값이 올 수 있다.
+        generatedAt:
+          type: string
+          nullable: true
+          description: "ISO LocalDateTime(오프셋 없음)"
+    SimilarPetAiReviewSummaryResponse:
+      type: object
+      required: [species, weightBand, summary]
+      properties:
+        species:
+          $ref: "#/components/schemas/Species"
+        weightBand:
+          $ref: "#/components/schemas/PetWeightBand"
+        summary:
+          $ref: "#/components/schemas/AiReviewSummaryResponse"
+    ProductReviewSummaryResponse:
+      type: object
+      required: [productSummary, similarPetSummary]
+      properties:
+        productSummary:
+          allOf:
+            - $ref: "#/components/schemas/AiReviewSummaryResponse"
+          nullable: true
+          description: "상품 전체 리뷰 요약. 리뷰가 적거나 반복된 장단점이 없으면 null"
+        similarPetSummary:
+          allOf:
+            - $ref: "#/components/schemas/SimilarPetAiReviewSummaryResponse"
+          nullable: true
+          description: >-
+            조회자 대표 펫과 같은 종, 같은 체급 보호자들의 리뷰 요약. 펫이 없거나 체중을 모르거나
+            그 묶음 리뷰가 적으면 null
+    ProductReviewSummaryEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProductReviewSummaryResponse"
     CreateReviewRequest:
       type: object
       required: [orderItemId, rating, content]

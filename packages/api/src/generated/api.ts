@@ -1308,6 +1308,81 @@ export interface ReviewListEnvelope {
   data: ReviewListData
 }
 
+export type PetWeightBand = (typeof PetWeightBand)[keyof typeof PetWeightBand]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PetWeightBand = {
+  DOG_UNDER_5: 'DOG_UNDER_5',
+  DOG_5_10: 'DOG_5_10',
+  DOG_10_25: 'DOG_10_25',
+  DOG_25_PLUS: 'DOG_25_PLUS',
+  CAT_UNDER_4: 'CAT_UNDER_4',
+  CAT_4_6: 'CAT_4_6',
+  CAT_6_PLUS: 'CAT_6_PLUS',
+} as const
+
+export interface AiReviewSummaryPointResponse {
+  aspectCode: string
+  /** AI가 쓴 한 문장 */
+  headline: string
+  /** 이 장단점을 말한 리뷰 수 */
+  mentionCount: number
+  /** 리뷰에서 그대로 떼어 온 문장. 비어 있을 수 있다 */
+  quotes: string[]
+}
+
+export interface AiReviewSummaryResponse {
+  /** AI가 실제로 읽은 리뷰 수. mentionCount의 분모 */
+  analyzedReviewCount: number
+  pros: AiReviewSummaryPointResponse[]
+  cons: AiReviewSummaryPointResponse[]
+  /**
+   * cons가 비어 있는 사유. NO_NEGATIVE_MENTIONS_FOUND, BELOW_MENTION_THRESHOLD, PARTIALLY_UNEXTRACTED, NARRATION_MISSING 중 하나이고 cons가 있으면 null. BE가 enum이 아니라 문자열로 내보내 모르는 값이 올 수 있다.
+   * @nullable
+   */
+  consAbsenceReason: string | null
+  /**
+   * ISO LocalDateTime(오프셋 없음)
+   * @nullable
+   */
+  generatedAt: string | null
+}
+
+export interface SimilarPetAiReviewSummaryResponse {
+  species: Species
+  weightBand: PetWeightBand
+  summary: AiReviewSummaryResponse
+}
+
+/**
+ * 상품 전체 리뷰 요약. 리뷰가 적거나 반복된 장단점이 없으면 null
+ * @nullable
+ */
+export type ProductReviewSummaryResponseProductSummary = AiReviewSummaryResponse | null
+
+/**
+ * 조회자 대표 펫과 같은 종, 같은 체급 보호자들의 리뷰 요약. 펫이 없거나 체중을 모르거나 그 묶음 리뷰가 적으면 null
+ * @nullable
+ */
+export type ProductReviewSummaryResponseSimilarPetSummary = SimilarPetAiReviewSummaryResponse | null
+
+export interface ProductReviewSummaryResponse {
+  /**
+   * 상품 전체 리뷰 요약. 리뷰가 적거나 반복된 장단점이 없으면 null
+   * @nullable
+   */
+  productSummary: ProductReviewSummaryResponseProductSummary
+  /**
+   * 조회자 대표 펫과 같은 종, 같은 체급 보호자들의 리뷰 요약. 펫이 없거나 체중을 모르거나 그 묶음 리뷰가 적으면 null
+   * @nullable
+   */
+  similarPetSummary: ProductReviewSummaryResponseSimilarPetSummary
+}
+
+export interface ProductReviewSummaryEnvelope {
+  data: ProductReviewSummaryResponse
+}
+
 export interface CreateReviewRequest {
   /** 리뷰를 작성할 주문 품목 id */
   orderItemId: number
@@ -6520,6 +6595,227 @@ export function useGetProductReviewsSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetProductReviewsSuspenseQueryOptions(productId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 상품 전체 리뷰 요약과, 조회자 대표 펫과 같은 종/체급 보호자들의 리뷰 요약을 함께 준다. 인증 필요(비로그인 401). productId는 상품 공개 ULID. 미존재/비노출 상품은 404.
+ * @summary 상품 리뷰 AI 요약 조회
+ */
+export const getProductReviewSummary = (productId: string, signal?: AbortSignal) => {
+  return customInstance<ProductReviewSummaryEnvelope>({
+    url: `/products/${productId}/review-summary`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetProductReviewSummaryQueryKey = (productId?: string) => {
+  return [`/products/${productId}/review-summary`] as const
+}
+
+export const getGetProductReviewSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductReviewSummaryQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductReviewSummary>>> = ({
+    signal,
+  }) => getProductReviewSummary(productId, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductReviewSummary>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductReviewSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductReviewSummary>>
+>
+export type GetProductReviewSummaryQueryError = void
+
+export function useGetProductReviewSummary<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductReviewSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getProductReviewSummary>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewSummary<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductReviewSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getProductReviewSummary>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewSummary<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 리뷰 AI 요약 조회
+ */
+
+export function useGetProductReviewSummary<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductReviewSummaryQueryOptions(productId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductReviewSummarySuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductReviewSummaryQueryKey(productId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductReviewSummary>>> = ({
+    signal,
+  }) => getProductReviewSummary(productId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProductReviewSummary>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductReviewSummarySuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductReviewSummary>>
+>
+export type GetProductReviewSummarySuspenseQueryError = void
+
+export function useGetProductReviewSummarySuspense<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewSummarySuspense<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductReviewSummarySuspense<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 리뷰 AI 요약 조회
+ */
+
+export function useGetProductReviewSummarySuspense<
+  TData = Awaited<ReturnType<typeof getProductReviewSummary>>,
+  TError = void,
+>(
+  productId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductReviewSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductReviewSummarySuspenseQueryOptions(productId, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,

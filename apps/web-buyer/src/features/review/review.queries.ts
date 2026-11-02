@@ -260,6 +260,8 @@ export function useProductReviews(
 function invalidateReviewCaches(queryClient: QueryClient, productId: string): void {
   void queryClient.invalidateQueries({ queryKey: ['reviews', 'product', productId] })
   void queryClient.invalidateQueries({ queryKey: ['product', 'detail', productId] })
+  // 리뷰 AI 요약(product feature useProductReviewSummary)도 숨겨진 리뷰의 인용과 리뷰 수 기준이 바뀐다.
+  void queryClient.invalidateQueries({ queryKey: ['review-summary', productId] })
   // 내 리뷰 두 탭(작성 대기 개수, 작성 완료 목록)도 같은 리뷰를 담고 있다.
   void queryClient.invalidateQueries({ queryKey: MY_REVIEWS_KEY })
 }

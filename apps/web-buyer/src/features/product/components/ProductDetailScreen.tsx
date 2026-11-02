@@ -37,10 +37,12 @@ import {
   useProductDetail,
   useProductOptions,
   useProductReviewPreview,
+  useProductReviewSummary,
 } from '../product.queries'
 import type { ProductDetail } from '../product.mock'
 import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } from '../product.map'
 import { AddedToCartSheet } from './AddedToCartSheet'
+import { ReviewAiSummary } from './ReviewAiSummary'
 
 // 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
 // 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
@@ -94,10 +96,11 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const isLoggedIn = useIsLoggedIn()
   // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
   // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
-  const reviewPreview = useProductReviewPreview(productId, {
-    enabled:
-      isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
-  })
+  const canFetchServerReviews =
+    isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
+  const reviewPreview = useProductReviewPreview(productId, { enabled: canFetchServerReviews })
+  // AI 요약도 JWT 필수이고 목업 상품은 서버에 없어 미리보기와 같은 조건으로만 부른다.
+  const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchServerReviews })
   // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
   const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
@@ -255,6 +258,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               {data.reviewSummary.total > 0 ? (
                 <>
                   <ReviewSummaryCard summary={data.reviewSummary} />
+                  <ReviewAiSummary data={reviewAiSummary.data} isError={reviewAiSummary.isError} />
                   {/* 정렬 칩은 제거했다 — 상세에서는 최신 순 상위 3개만 미리 보여주고, 정렬·전체
                       목록은 위 "전체보기"(상품 리뷰 목록)에서만 제공한다. */}
                   {reviewPreview.isError ? (
