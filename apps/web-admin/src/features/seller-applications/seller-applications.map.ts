@@ -6,6 +6,7 @@ import {
   type AdminApplicationSummary,
 } from '@aechak/api'
 import type { SellerApplicationStatus } from '@aechak/domain'
+import { maskPersonName } from '@/shared/mask'
 
 // 어드민 심사 API(admin 모듈) 응답을 화면 모델로 옮기는 매퍼. 서버 enum·와이어 필드는 이 파일과
 // queries에만 가두고(AGENTS "서버 enum/필드는 feature 안에 가둔다"), 라우트는 여기서 나온
@@ -151,14 +152,11 @@ export function maskBusinessRegNo(value: string | null | undefined): string | nu
   return `${digits.slice(0, 3)}${'*'.repeat(Math.max(0, digits.length - 3))}`
 }
 
-/** 대표자 실명 마스킹 — 가운데를 가린다(2자는 끝 1자, 3자 이상은 가운데 전부). */
-export function maskPersonName(value: string | null | undefined): string | null {
-  const name = value?.trim() ?? ''
-  if (name === '') return null
-  if (name.length === 1) return '*'
-  if (name.length === 2) return `${name.slice(0, 1)}*`
-  return `${name.slice(0, 1)}${'*'.repeat(name.length - 2)}${name.slice(-1)}`
-}
+/**
+ * 대표자 실명 마스킹. 클레임 상세의 수령인명도 같은 책임이라 `@/shared/mask`로 승격했고
+ * (feature → feature import 금지) 여기서는 그 이름을 그대로 다시 내보낸다.
+ */
+export { maskPersonName }
 
 // ── 5. documentType → 아이콘·한국어 라벨 ───────────────────────────────────────
 // 라벨은 BE DocumentType의 label과 같은 문구다(응답에는 실리지 않아 화면이 들고 있어야 한다).

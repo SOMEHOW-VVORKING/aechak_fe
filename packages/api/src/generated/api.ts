@@ -3554,6 +3554,700 @@ export interface ReleaseSanctionRequest {
 }
 
 /**
+ * 서비스 문의 처리 상태(be InquiryStatus). RECEIVED는 접수 시점의 초기값이라 되돌아갈 자리가 아니고, DONE으로 가는 길은 답변 등록뿐이다
+ */
+export type AdminInquiryStatus = (typeof AdminInquiryStatus)[keyof typeof AdminInquiryStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminInquiryStatus = {
+  RECEIVED: 'RECEIVED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  DONE: 'DONE',
+  ON_HOLD: 'ON_HOLD',
+} as const
+
+/**
+ * 서비스 문의 유형(be InquiryType). 구매자가 접수할 때 고른 값이라 운영자가 바꾸지 않는다
+ */
+export type AdminInquiryType = (typeof AdminInquiryType)[keyof typeof AdminInquiryType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminInquiryType = {
+  ACCOUNT: 'ACCOUNT',
+  ORDER_PAYMENT: 'ORDER_PAYMENT',
+  DELIVERY_CLAIM: 'DELIVERY_CLAIM',
+  SELLER_PRODUCT: 'SELLER_PRODUCT',
+  SERVICE_ETC: 'SERVICE_ETC',
+} as const
+
+/**
+ * 문의 작성자 표기. 탈퇴 계정은 닉네임이 **익명 표기로 바뀐 상태로** 내려오고(null이 아니다) `withdrawn`으로 그 사실이 구분된다
+ */
+export interface AdminInquiryAuthor {
+  userId: number
+  nickname: string
+  withdrawn: boolean
+}
+
+/**
+ * 목록 한 줄. **문의에 제목 필드가 없어** 내용 앞 100자(`contentPreview`, 잘리면 끝에 줄임표)가 제목 자리를 쓴다 — 전문은 상세에서 읽는다. 목록에는 답변 본문·답변 수신 이메일이 실리지 않는다
+ */
+export interface AdminInquirySummary {
+  inquiryId: number
+  inquiryType: AdminInquiryType
+  status: AdminInquiryStatus
+  author: AdminInquiryAuthor
+  /** 내용 앞 100자. 줄바꿈은 공백으로 평탄화된다 */
+  contentPreview: string
+  /**
+   * 이 문의를 집은 운영자. 상태 전이·답변 등록이 채운다
+   * @nullable
+   */
+  assignedAdminId: number | null
+  /** @nullable */
+  answeredByAdminId: number | null
+  /** 접수 시각(오프셋 없는 LocalDateTime) */
+  receivedAt: string
+  /**
+   * 완료 전이 시각 = 답변 등록 시각
+   * @nullable
+   */
+  resolvedAt: string | null
+}
+
+export interface AdminInquiryListData {
+  items: AdminInquirySummary[]
+  /**
+   * 현재 필터 기준 전체 수. **커서를 보낸 요청은 null이다**
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminInquiryListResponse {
+  data: AdminInquiryListData
+}
+
+/**
+ * 같은 작성자가 이 문의보다 먼저 접수한 문의 한 줄
+ */
+export interface AdminPreviousInquiry {
+  inquiryId: number
+  inquiryType: AdminInquiryType
+  status: AdminInquiryStatus
+  receivedAt: string
+}
+
+export interface AdminInquiryDetailData {
+  inquiryId: number
+  inquiryType: AdminInquiryType
+  status: AdminInquiryStatus
+  /** 문의 전문(최대 2000자) */
+  content: string
+  /** 답변 수신 이메일. 운영자에게만 보인다 */
+  replyEmail: string
+  receivedAt: string
+  /**
+   * 등록된 답변 본문. 답변은 1회만 등록되므로 DONE 이후 바뀌지 않는다
+   * @nullable
+   */
+  answer: string | null
+  /** @nullable */
+  answeredByAdminId: number | null
+  /** @nullable */
+  assignedAdminId: number | null
+  /** @nullable */
+  resolvedAt: string | null
+  author: AdminInquiryAuthor
+  /** 최신순 최대 5건 */
+  previousInquiries: AdminPreviousInquiry[]
+}
+
+export interface AdminInquiryDetailResponse {
+  data: AdminInquiryDetailData
+}
+
+/**
+ * 어드민 서비스 문의 답변. 상품 문의 답변(`AnswerInquiryRequest`)과 다른 경로·다른 본문이다 (그쪽은 `content`를 받는다)
+ */
+export interface AnswerAdminInquiryRequest {
+  /**
+   * 공백만이면 400 errorCode 120006, 1000자 초과면 400 errorCode 120007
+   * @minLength 1
+   * @maxLength 1000
+   */
+  answer: string
+}
+
+export interface ChangeAdminInquiryStatusRequest {
+  /** IN_PROGRESS·ON_HOLD만 받는다. RECEIVED·DONE을 보내면 409 errorCode 120009 */
+  status: AdminInquiryStatus
+}
+
+/**
+ * 어드민 클레임 목록 정렬축(be AdminClaimSort). 기본은 요청 오래된 순
+ */
+export type AdminClaimSort = (typeof AdminClaimSort)[keyof typeof AdminClaimSort]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminClaimSort = {
+  OLDEST_FIRST: 'OLDEST_FIRST',
+  LATEST_FIRST: 'LATEST_FIRST',
+} as const
+
+/**
+ * 운영자 귀책 판정(be ClaimFaultDecision). CLAIM_DISMISSED는 어느 쪽 귀책도 아니고 요청이 성립하지 않는다는 판정이라 반품비 부담 주체가 없다. 판정별로 고를 수 있는 사유는 `GET /admin/claims/intervention-reasons`가 내려준다
+ */
+export type AdminClaimFaultDecision =
+  (typeof AdminClaimFaultDecision)[keyof typeof AdminClaimFaultDecision]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminClaimFaultDecision = {
+  SELLER_FAULT: 'SELLER_FAULT',
+  BUYER_FAULT: 'BUYER_FAULT',
+  CLAIM_DISMISSED: 'CLAIM_DISMISSED',
+} as const
+
+/**
+ * 개입 사유 고정 어휘(be ClaimInterventionReason). **화면이 이 enum으로 선택지를 조립하지 말 것** — 판정과의 짝과 문구는 카탈로그 경로가 준다. 이 enum은 응답 파싱과 요청 본문 타입에만 쓴다
+ */
+export type AdminClaimInterventionReason =
+  (typeof AdminClaimInterventionReason)[keyof typeof AdminClaimInterventionReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminClaimInterventionReason = {
+  SELLER_UNRESPONSIVE: 'SELLER_UNRESPONSIVE',
+  SELLER_DECISION_UNFAIR: 'SELLER_DECISION_UNFAIR',
+  EVIDENCE_SUPPORTS_BUYER: 'EVIDENCE_SUPPORTS_BUYER',
+  EVIDENCE_SUPPORTS_SELLER: 'EVIDENCE_SUPPORTS_SELLER',
+  BUYER_CHANGE_OF_MIND: 'BUYER_CHANGE_OF_MIND',
+  BUYER_ABUSE: 'BUYER_ABUSE',
+  POLICY_VIOLATION: 'POLICY_VIOLATION',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * @nullable
+ */
+export type AdminClaimSummaryReasonCode = ClaimReasonCode | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimSummaryRefundStatus = RefundStatus | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimSummarySellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimSummarySettlementStatus = ClaimSettlementStatus | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimSummaryReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 개입 기록이 있으면 그 판정. 개입 전이면 null
+ * @nullable
+ */
+export type AdminClaimSummaryFaultDecision = AdminClaimFaultDecision | null
+
+/**
+ * 어드민 클레임 목록 한 행. 네 축(클레임 상태·셀러 승인·환불·정산)을 그대로 내리고 한 값으로 접지 않는다 — 접으면 "셀러는 승인했는데 환불이 실패했다" 같은 상태를 화면이 말할 수 없다. `interventionAllowed`가 지금 개입할 수 있는 건인지를 가르므로 **처리 버튼은 이 값으로 잠근다**
+ */
+export interface AdminClaimSummary {
+  claimPublicId: string
+  orderPublicId: string
+  claimType: ClaimType
+  /** @nullable */
+  reasonCode: AdminClaimSummaryReasonCode
+  /**
+   * 구매자 요청 사유 문구. 서버가 소유한다
+   * @nullable
+   */
+  reasonLabel: string | null
+  /** @nullable */
+  reasonDetail: string | null
+  status: ClaimStatus
+  /** @nullable */
+  refundStatus: AdminClaimSummaryRefundStatus
+  /** @nullable */
+  sellerApprovalStatus: AdminClaimSummarySellerApprovalStatus
+  /** @nullable */
+  settlementStatus: AdminClaimSummarySettlementStatus
+  /** @nullable */
+  returnCostBearer: AdminClaimSummaryReturnCostBearer
+  refundAmount: number
+  /** @nullable */
+  returnShippingFee: number | null
+  /** 중복을 뺀 상품명. 한 클레임이 여러 품목을 들 수 있다 */
+  productNames: string[]
+  itemCount: number
+  sellerId: number
+  /** @nullable */
+  sellerName: string | null
+  /** @nullable */
+  buyerPublicId: string | null
+  /** @nullable */
+  buyerNickname: string | null
+  /**
+   * 개입 기록이 있으면 그 판정. 개입 전이면 null
+   * @nullable
+   */
+  faultDecision: AdminClaimSummaryFaultDecision
+  interventionAllowed: boolean
+  /** @nullable */
+  requestedAt: string | null
+  /** @nullable */
+  autoApproveDueAt: string | null
+  /** @nullable */
+  approvedAt: string | null
+  /** @nullable */
+  resolvedAt: string | null
+  /**
+   * 종결된 건은 종결까지 걸린 일수, 진행 중이면 지금까지 걸린 일수. 요청 시각이 없으면 null
+   * @nullable
+   */
+  disputeElapsedDays: number | null
+}
+
+export interface AdminClaimListData {
+  items: AdminClaimSummary[]
+  /**
+   * 현재 필터 기준 전체 수. 커서를 보낸 요청은 null이다
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminClaimListResponse {
+  data: AdminClaimListData
+}
+
+/**
+ * 수령인명·연락처는 복호 평문이다 — 표시용 마스킹은 화면이 한다
+ */
+export interface AdminClaimOrder {
+  orderPublicId: string
+  orderStatus: OrderStatus
+  orderedAt: string
+  sellerShippingFee: number
+  recipientName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailAddress: string | null
+  /** @nullable */
+  deliveryMemo: string | null
+}
+
+/**
+ * @nullable
+ */
+export type AdminClaimBuyerStatementReasonCode = ClaimReasonCode | null
+
+/**
+ * 구매자가 낸 주장. 사유 문구는 서버가 소유하므로 코드와 함께 내려온다
+ */
+export interface AdminClaimBuyerStatement {
+  /** @nullable */
+  reasonCode: AdminClaimBuyerStatementReasonCode
+  /** @nullable */
+  reasonLabel: string | null
+  /** @nullable */
+  reasonDetail: string | null
+  /** @nullable */
+  requestedAt: string | null
+}
+
+/**
+ * @nullable
+ */
+export type AdminClaimSellerHandlingSellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimSellerHandlingReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 셀러가 한 처리. `sellerMemo`는 구매자에게 나가지 않는 셀러 운영 메모지만 분쟁 판정에서는 셀러측 근거라 운영자에게는 보인다
+ */
+export interface AdminClaimSellerHandling {
+  /** @nullable */
+  sellerApprovalStatus: AdminClaimSellerHandlingSellerApprovalStatus
+  /** @nullable */
+  rejectionReason: string | null
+  /** @nullable */
+  sellerMemo: string | null
+  /** @nullable */
+  returnCostBearer: AdminClaimSellerHandlingReturnCostBearer
+  /** @nullable */
+  autoApproveDueAt: string | null
+  /** @nullable */
+  approvedAt: string | null
+  /** @nullable */
+  collectionStartedAt: string | null
+}
+
+export interface AdminClaimItem {
+  orderItemId: number
+  productName: string
+  optionName: string
+  quantity: number
+  unitPrice: number
+  refundAmount: number
+  itemStatus: OrderItemStatus
+}
+
+export interface AdminClaimHistoryEntry {
+  event: SellerClaimHistoryEvent
+  occurredAt: string
+}
+
+/**
+ * @nullable
+ */
+export type AdminClaimInterventionReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * @nullable
+ */
+export type AdminClaimInterventionPreviousSellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * 클레임에 남은 개입 기록. 한 클레임에 한 행뿐이고 그 행이 개입의 멱등 게이트다
+ */
+export interface AdminClaimIntervention {
+  adminId: number
+  faultDecision: AdminClaimFaultDecision
+  /** 판정이 클레임 성립으로 보는지. 판정에서 파생되는 값이라 요청에는 없다 */
+  claimAccepted: boolean
+  reason: AdminClaimInterventionReason
+  reasonLabel: string
+  /** @nullable */
+  reasonDetail: string | null
+  /** @nullable */
+  returnCostBearer: AdminClaimInterventionReturnCostBearer
+  previousStatus: ClaimStatus
+  /** @nullable */
+  previousSellerApprovalStatus: AdminClaimInterventionPreviousSellerApprovalStatus
+  /** @nullable */
+  previousResolvedAt: string | null
+  /**
+   * 운영 내부 메모 — 셀러·구매자에게 노출하지 않는다
+   * @nullable
+   */
+  internalMemo: string | null
+  intervenedAt: string
+}
+
+/**
+ * 개입 전이면 null
+ * @nullable
+ */
+export type AdminClaimDetailDataIntervention = AdminClaimIntervention | null
+
+export interface AdminClaimDetailData {
+  claim: AdminClaimSummary
+  order: AdminClaimOrder
+  buyerStatement: AdminClaimBuyerStatement
+  sellerHandling: AdminClaimSellerHandling
+  items: AdminClaimItem[]
+  /** 발생 시각 오름차순 */
+  history: AdminClaimHistoryEntry[]
+  /**
+   * 개입 전이면 null
+   * @nullable
+   */
+  intervention: AdminClaimDetailDataIntervention
+}
+
+export interface AdminClaimDetailResponse {
+  data: AdminClaimDetailData
+}
+
+export interface AdminClaimInterventionReasonOption {
+  code: AdminClaimInterventionReason
+  label: string
+  /** true면 reasonDetail이 비면 400 errorCode 50416 */
+  detailRequired: boolean
+}
+
+export interface AdminClaimFaultDecisionReasons {
+  faultDecision: AdminClaimFaultDecision
+  claimAccepted: boolean
+  /** 나열 순서가 화면 선택지 순서다 */
+  reasons: AdminClaimInterventionReasonOption[]
+}
+
+export interface AdminClaimInterventionReasonCatalogData {
+  faultDecisions: AdminClaimFaultDecisionReasons[]
+}
+
+export interface AdminClaimInterventionReasonCatalogResponse {
+  data: AdminClaimInterventionReasonCatalogData
+}
+
+export interface InterveneAdminClaimRequest {
+  faultDecision: AdminClaimFaultDecision
+  reason: AdminClaimInterventionReason
+  /**
+   * 카탈로그의 detailRequired가 true인 사유면 필수(없으면 400/50416)
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /** 반품비 부담 주체. 생략하면 판정의 기본값(SELLER_FAULT→SELLER, BUYER_FAULT→BUYER)이 쓰이고, 취소 유형이거나 CLAIM_DISMISSED면 명시해도 서버가 비운다 */
+  returnCostBearer?: ReturnCostBearer
+  /** @maxLength 300 */
+  internalMemo?: string
+}
+
+/**
+ * @nullable
+ */
+export type InterveneAdminClaimDataReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * @nullable
+ */
+export type InterveneAdminClaimDataRefundStatus = RefundStatus | null
+
+/**
+ * 개입 결과. `refundStatus`·`refundSettled`를 함께 내리는 이유는 개입이 환불을 집행하지 않기 때문이다 — 판정 버튼을 누른 운영자가 "환불까지 됐다"고 읽으면 안 된다
+ */
+export interface InterveneAdminClaimData {
+  claimPublicId: string
+  status: ClaimStatus
+  /** @nullable */
+  returnCostBearer: InterveneAdminClaimDataReturnCostBearer
+  /** @nullable */
+  refundStatus: InterveneAdminClaimDataRefundStatus
+  refundSettled: boolean
+  intervention: AdminClaimIntervention
+}
+
+export interface InterveneAdminClaimResponse {
+  data: InterveneAdminClaimData
+}
+
+/**
+ * 블라인드·삭제를 일으킨 주체(be ReviewBlindActor). AI는 작성 시점 금칙어 판정의 자동 처리다
+ */
+export type AdminReviewBlindActor =
+  (typeof AdminReviewBlindActor)[keyof typeof AdminReviewBlindActor]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewBlindActor = {
+  AI: 'AI',
+  ADMIN: 'ADMIN',
+} as const
+
+/**
+ * 블라인드·삭제 사유 코드(be ReviewBlindReason). PROFANITY만 자동 판정이 쓰고 나머지는 운영자가 고른다 — 운영자 선택지에 PROFANITY를 올리지 않는다
+ */
+export type AdminReviewBlindReason =
+  (typeof AdminReviewBlindReason)[keyof typeof AdminReviewBlindReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewBlindReason = {
+  PROFANITY: 'PROFANITY',
+  ABUSE: 'ABUSE',
+  EXTERNAL_TRADE: 'EXTERNAL_TRADE',
+  AD_SPAM: 'AD_SPAM',
+  PRIVACY: 'PRIVACY',
+  IRRELEVANT: 'IRRELEVANT',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 리뷰 신고 사유(be ReviewReportReason)
+ */
+export type AdminReviewReportReason =
+  (typeof AdminReviewReportReason)[keyof typeof AdminReviewReportReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewReportReason = {
+  FRAUD: 'FRAUD',
+  ABUSE: 'ABUSE',
+  SPAM: 'SPAM',
+  INAPPROPRIATE: 'INAPPROPRIATE',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 리뷰 신고 처리 상태(be ReviewReportStatus)
+ */
+export type AdminReviewReportStatus =
+  (typeof AdminReviewReportStatus)[keyof typeof AdminReviewReportStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminReviewReportStatus = {
+  PENDING: 'PENDING',
+  RESOLVED: 'RESOLVED',
+  REJECTED: 'REJECTED',
+} as const
+
+/**
+ * @nullable
+ */
+export type AdminReviewSummaryBlindActor = AdminReviewBlindActor | null
+
+/**
+ * @nullable
+ */
+export type AdminReviewSummaryBlindReasonCode = AdminReviewBlindReason | null
+
+/**
+ * 목록 한 줄. `content`는 **원문**이고 `visibleContent`는 구매자에게 실제로 보이는 문장이다 (MASKED면 대체 문구) — 운영자는 둘을 함께 봐야 판단할 수 있다
+ */
+export interface AdminReviewSummary {
+  reviewId: number
+  /** 상품 공개 식별자(ULID). 목록 필터 productId에 그대로 쓴다 */
+  productPublicId: string
+  productName: string
+  sellerName: string
+  authorUserId: number
+  /** 탈퇴 계정은 익명 표기로 바뀐 값이다(null이 아니다) */
+  authorNickname: string
+  authorWithdrawn: boolean
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  rating: number
+  content: string
+  visibleContent: string
+  photoCount: number
+  reportCount: number
+  reviewStatus: ReviewStatus
+  /** @nullable */
+  blindActor: AdminReviewSummaryBlindActor
+  /** @nullable */
+  blindReasonCode: AdminReviewSummaryBlindReasonCode
+  /** @nullable */
+  blindReasonText: string | null
+  /**
+   * 삭제는 이 값을 비운다 — 삭제 시각은 상세의 deletedAt이다
+   * @nullable
+   */
+  blindedAt: string | null
+  createdAt: string
+}
+
+export interface AdminReviewListData {
+  items: AdminReviewSummary[]
+  /**
+   * 현재 필터 기준 전체 수. 커서를 보낸 요청은 null이다
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminReviewListResponse {
+  data: AdminReviewListData
+}
+
+export interface AdminReviewImage {
+  imageUrl: string
+  sortOrder: number
+}
+
+export interface AdminReviewReport {
+  reportId: number
+  reporterId: number
+  reasonCode: AdminReviewReportReason
+  /** @nullable */
+  reasonText: string | null
+  status: AdminReviewReportStatus
+  reportedAt: string
+}
+
+/**
+ * @nullable
+ */
+export type AdminReviewDetailDataBlindActor = AdminReviewBlindActor | null
+
+/**
+ * @nullable
+ */
+export type AdminReviewDetailDataBlindReasonCode = AdminReviewBlindReason | null
+
+export interface AdminReviewDetailData {
+  reviewId: number
+  productPublicId: string
+  productName: string
+  sellerName: string
+  authorUserId: number
+  authorNickname: string
+  authorWithdrawn: boolean
+  rating: number
+  content: string
+  visibleContent: string
+  /** 주문 시점 옵션명 스냅샷 */
+  optionName: string
+  reviewStatus: ReviewStatus
+  /** @nullable */
+  blindActor: AdminReviewDetailDataBlindActor
+  /** @nullable */
+  blindReasonCode: AdminReviewDetailDataBlindReasonCode
+  /** @nullable */
+  blindReasonText: string | null
+  /** @nullable */
+  blindedAt: string | null
+  /** @nullable */
+  blindedByAdminId: number | null
+  /**
+   * 운영자 삭제만 채운다 — 작성자 본인 삭제는 null이다
+   * @nullable
+   */
+  deletedByAdminId: number | null
+  /** @nullable */
+  deletedAt: string | null
+  createdAt: string
+  images: AdminReviewImage[]
+  /** 최신순. 신고 접수 경로가 생기기 전까지 빈 목록이다 */
+  reports: AdminReviewReport[]
+}
+
+export interface AdminReviewDetailResponse {
+  data: AdminReviewDetailData
+}
+
+export interface BlindAdminReviewRequest {
+  reasonCode: AdminReviewBlindReason
+  /**
+   * 처리 사유 메모. 500자 초과면 400 errorCode 110022
+   * @maxLength 500
+   */
+  reasonText?: string
+}
+
+/**
+ * 삭제도 사유를 본문으로 받는다 — DELETE에 요청 본문이 있는 이유다
+ */
+export interface DeleteAdminReviewRequest {
+  reasonCode: AdminReviewBlindReason
+  /** @maxLength 500 */
+  reasonText?: string
+}
+
+/**
  * 목록 행. 사업자등록번호·전화번호는 목록 응답에 아예 없다(상세에만 사업자등록번호가 있다). 화면에 신청인 이름을 보일 때는 상호명이 없으면 대표자명으로 접는다 — 서버 승인 로직이 스토어명을 정할 때 쓰는 폴백과 같은 규칙이다
  */
 export interface AdminApplicationSummary {
@@ -4948,6 +5642,81 @@ export type GetAdminMembersParams = {
   joinedTo?: string
   /**
    * 직전 응답의 nextCursor. 상태 필터가 바뀌면 재사용 금지(400/90002)
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminInquiriesParams = {
+  status?: AdminInquiryStatus
+  inquiryType?: AdminInquiryType
+  /**
+   * 문의 내용·답변 수신 이메일 부분일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 직전 응답의 nextCursor
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminClaimsParams = {
+  claimType?: ClaimType[]
+  status?: ClaimStatus[]
+  /**
+   * 요청 시각 하한(포함), 오프셋 없는 ISO LocalDateTime
+   */
+  requestedFrom?: string
+  /**
+   * 요청 시각 상한(**제외**), 오프셋 없는 ISO LocalDateTime
+   */
+  requestedTo?: string
+  orderPublicId?: string
+  sellerKeyword?: string
+  buyerKeyword?: string
+  /**
+   * 개입 가능한 건으로 좁힌다. 생략하면 status가 빈 요청에서만 true로 접힌다
+   */
+  openOnly?: boolean
+  sort?: AdminClaimSort
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminReviewsParams = {
+  /**
+   * 상품 공개 식별자(ULID)
+   */
+  productId?: string
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  rating?: number
+  status?: ReviewStatus
+  /**
+   * true면 신고가 쌓인 행만. false·생략은 전체(미적용)
+   */
+  reported?: boolean
+  /**
+   * 리뷰 본문·상품명 부분일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 직전 응답의 nextCursor. 필터가 바뀌면 재사용 금지(400/90002)
    */
   cursor?: string
   /**
@@ -21597,6 +22366,1991 @@ export const useReleaseAdminMemberSanction = <TError = unknown, TContext = unkno
   TContext
 > => {
   const mutationOptions = getReleaseAdminMemberSanctionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 **접수 오래된 순**(created_at, id) 고정이고 커서 페이징이다 — 묵은 문의가 먼저 나오는 것이 운영 작업 목록이다. `status`·`inquiryType` 미지 값은 400 errorCode 90001이고, `size`는 서버가 1~100으로 절삭한다(400을 내지 않는다). 공백뿐인 `keyword`는 미적용으로 접힌다. `keyword`는 **문의 내용과 답변 수신 이메일**을 함께 훑는다 — 문의에 제목 필드가 없다. `totalCount`는 **첫 페이지에만** 실린다(커서를 보낸 요청은 null) — 뒤 페이지에서 매번 전체를 다시 세지 않기 때문이다. 커서가 깨졌으면 400 errorCode 90002.
+ * @summary 어드민 서비스 문의 목록
+ */
+export const getAdminInquiries = (params?: GetAdminInquiriesParams, signal?: AbortSignal) => {
+  return customInstance<AdminInquiryListResponse>({
+    url: `/admin/inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminInquiriesQueryKey = (params?: GetAdminInquiriesParams) => {
+  return [`/admin/inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInquiries>>> = ({ signal }) =>
+    getAdminInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInquiries>>
+>
+export type GetAdminInquiriesQueryError = unknown
+
+export function useGetAdminInquiries<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInquiriesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiries<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiries<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 서비스 문의 목록
+ */
+
+export function useGetAdminInquiries<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInquiriesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInquiries>>> = ({ signal }) =>
+    getAdminInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInquiries>>
+>
+export type GetAdminInquiriesSuspenseQueryError = unknown
+
+export function useGetAdminInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 서비스 문의 목록
+ */
+
+export function useGetAdminInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiries>>,
+  TError = unknown,
+>(
+  params?: GetAdminInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInquiriesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 전문·답변 수신 이메일·답변 기록과 **같은 작성자가 이 문의보다 먼저 접수한 문의**를 최신순 최대 5건 함께 준다(자기 행 제외가 아니라 접수 시점 이전 기준이다). 없는 문의는 404 errorCode 120005.
+ * @summary 어드민 서비스 문의 상세
+ */
+export const getAdminInquiryDetail = (inquiryId: number, signal?: AbortSignal) => {
+  return customInstance<AdminInquiryDetailResponse>({
+    url: `/admin/inquiries/${inquiryId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminInquiryDetailQueryKey = (inquiryId?: number) => {
+  return [`/admin/inquiries/${inquiryId}`] as const
+}
+
+export const getGetAdminInquiryDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInquiryDetailQueryKey(inquiryId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInquiryDetail>>> = ({ signal }) =>
+    getAdminInquiryDetail(inquiryId, signal)
+
+  return { queryKey, queryFn, enabled: !!inquiryId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInquiryDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInquiryDetail>>
+>
+export type GetAdminInquiryDetailQueryError = unknown
+
+export function useGetAdminInquiryDetail<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInquiryDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiryDetail<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInquiryDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiryDetail<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 서비스 문의 상세
+ */
+
+export function useGetAdminInquiryDetail<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInquiryDetailQueryOptions(inquiryId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInquiryDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInquiryDetailQueryKey(inquiryId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInquiryDetail>>> = ({ signal }) =>
+    getAdminInquiryDetail(inquiryId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInquiryDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInquiryDetail>>
+>
+export type GetAdminInquiryDetailSuspenseQueryError = unknown
+
+export function useGetAdminInquiryDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiryDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInquiryDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 서비스 문의 상세
+ */
+
+export function useGetAdminInquiryDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInquiryDetail>>,
+  TError = unknown,
+>(
+  inquiryId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInquiryDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInquiryDetailSuspenseQueryOptions(inquiryId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 답변 저장과 완료(DONE) 전이가 한 트랜잭션이고, **처리 직후 화면이 쓸 상세를 그대로 돌려준다** (204가 아니라 200 + data). 답변은 1회만 등록된다. 400 errorCode 90001 — answer 필드 누락. 400 errorCode 120006 — 공백만인 답변. 400 errorCode 120007 — 1000자 초과. 409 errorCode 120008 — 이미 답변이 등록된(DONE) 문의. 404 errorCode 120005 — 없는 문의.
+ * @summary 어드민 서비스 문의 답변 등록
+ */
+export const answerAdminInquiry = (
+  inquiryId: number,
+  answerAdminInquiryRequest: AnswerAdminInquiryRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminInquiryDetailResponse>({
+    url: `/admin/inquiries/${inquiryId}/answer`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: answerAdminInquiryRequest,
+    signal,
+  })
+}
+
+export const getAnswerAdminInquiryMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof answerAdminInquiry>>,
+    TError,
+    { inquiryId: number; data: AnswerAdminInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof answerAdminInquiry>>,
+  TError,
+  { inquiryId: number; data: AnswerAdminInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['answerAdminInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof answerAdminInquiry>>,
+    { inquiryId: number; data: AnswerAdminInquiryRequest }
+  > = props => {
+    const { inquiryId, data } = props ?? {}
+
+    return answerAdminInquiry(inquiryId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AnswerAdminInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof answerAdminInquiry>>
+>
+export type AnswerAdminInquiryMutationBody = AnswerAdminInquiryRequest
+export type AnswerAdminInquiryMutationError = unknown
+
+/**
+ * @summary 어드민 서비스 문의 답변 등록
+ */
+export const useAnswerAdminInquiry = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof answerAdminInquiry>>,
+      TError,
+      { inquiryId: number; data: AnswerAdminInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof answerAdminInquiry>>,
+  TError,
+  { inquiryId: number; data: AnswerAdminInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getAnswerAdminInquiryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 답변 없이 상태만 옮기고 담당 운영자를 남긴다. 옮길 수 있는 값은 **IN_PROGRESS·ON_HOLD 둘뿐**이고 완료(DONE)로 가는 길은 답변 등록뿐이다. 응답은 답변 등록과 같은 상세다. 409 errorCode 120009 — RECEIVED·DONE을 target으로 보냈거나, 이미 DONE인 문의거나, **지금과 같은 상태로의 전이**(담당자만 바꿔치기하는 경로를 열지 않는다). 400 errorCode 90001 — status 누락·미지 값. 404 errorCode 120005 — 없는 문의.
+ * @summary 어드민 서비스 문의 상태 전이
+ */
+export const changeAdminInquiryStatus = (
+  inquiryId: number,
+  changeAdminInquiryStatusRequest: ChangeAdminInquiryStatusRequest,
+) => {
+  return customInstance<AdminInquiryDetailResponse>({
+    url: `/admin/inquiries/${inquiryId}/status`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: changeAdminInquiryStatusRequest,
+  })
+}
+
+export const getChangeAdminInquiryStatusMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeAdminInquiryStatus>>,
+    TError,
+    { inquiryId: number; data: ChangeAdminInquiryStatusRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeAdminInquiryStatus>>,
+  TError,
+  { inquiryId: number; data: ChangeAdminInquiryStatusRequest },
+  TContext
+> => {
+  const mutationKey = ['changeAdminInquiryStatus']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeAdminInquiryStatus>>,
+    { inquiryId: number; data: ChangeAdminInquiryStatusRequest }
+  > = props => {
+    const { inquiryId, data } = props ?? {}
+
+    return changeAdminInquiryStatus(inquiryId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ChangeAdminInquiryStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeAdminInquiryStatus>>
+>
+export type ChangeAdminInquiryStatusMutationBody = ChangeAdminInquiryStatusRequest
+export type ChangeAdminInquiryStatusMutationError = unknown
+
+/**
+ * @summary 어드민 서비스 문의 상태 전이
+ */
+export const useChangeAdminInquiryStatus = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof changeAdminInquiryStatus>>,
+      TError,
+      { inquiryId: number; data: ChangeAdminInquiryStatusRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof changeAdminInquiryStatus>>,
+  TError,
+  { inquiryId: number; data: ChangeAdminInquiryStatusRequest },
+  TContext
+> => {
+  const mutationOptions = getChangeAdminInquiryStatusMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011). 셀러 범위로 좁히지 않는다 — 전 셀러의 클레임이 운영자의 작업 목록이다. 기본 정렬은 **요청 오래된 순**이고 커서 페이징이다. `claimType`·`status`는 배열이라 반복 파라미터(`?status=A&status=B`)로 나간다. **`openOnly`를 주지 않으면 `status`가 빈 요청에서만 개입 가능한 건으로 좁힌다** — 아무 축도 주지 않은 요청이 받아야 하는 것은 작업 목록이고, 상태를 명시한 요청은 종결된 이력을 보려는 것이다. 종결까지 조건 없이 보려면 `openOnly=false`를 명시한다. 기간은 `[requestedFrom, requestedTo)` 반열림이고 from >= to면 400 errorCode 90001이다. 커서를 주면 커서에 담긴 정렬축이 `sort`를 덮는다(어긋난 요청을 거절하지 않고 커서를 믿는다). `size`는 서버가 1~100으로 절삭한다. `totalCount`는 첫 페이지에만 실린다.
+ * @summary 어드민 클레임 목록
+ */
+export const getAdminClaims = (params?: GetAdminClaimsParams, signal?: AbortSignal) => {
+  return customInstance<AdminClaimListResponse>({
+    url: `/admin/claims`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminClaimsQueryKey = (params?: GetAdminClaimsParams) => {
+  return [`/admin/claims`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminClaimsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaims>>> = ({ signal }) =>
+    getAdminClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminClaims>>>
+export type GetAdminClaimsQueryError = unknown
+
+export function useGetAdminClaims<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminClaimsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaims<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaims<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 목록
+ */
+
+export function useGetAdminClaims<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminClaimsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaims>>> = ({ signal }) =>
+    getAdminClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminClaims>>
+>
+export type GetAdminClaimsSuspenseQueryError = unknown
+
+export function useGetAdminClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminClaimsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 목록
+ */
+
+export function useGetAdminClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaims>>,
+  TError = unknown,
+>(
+  params?: GetAdminClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 귀책 판정별로 고를 수 있는 개입 사유와 그 문구·상세 필수 여부. 고정 어휘라 DB를 보지 않는다. **화면이 사유 선택지를 enum으로 조립하지 말 것** — 판정과 사유의 짝은 서버가 정하고 (어긋난 조합은 400 errorCode 50415) 문구도 서버가 준다.
+ * @summary 어드민 클레임 개입 사유 카탈로그
+ */
+export const getAdminClaimInterventionReasons = (signal?: AbortSignal) => {
+  return customInstance<AdminClaimInterventionReasonCatalogResponse>({
+    url: `/admin/claims/intervention-reasons`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminClaimInterventionReasonsQueryKey = () => {
+  return [`/admin/claims/intervention-reasons`] as const
+}
+
+export const getGetAdminClaimInterventionReasonsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimInterventionReasonsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>> = ({
+    signal,
+  }) => getAdminClaimInterventionReasons(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimInterventionReasonsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>
+>
+export type GetAdminClaimInterventionReasonsQueryError = unknown
+
+export function useGetAdminClaimInterventionReasons<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimInterventionReasons<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimInterventionReasons<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 개입 사유 카탈로그
+ */
+
+export function useGetAdminClaimInterventionReasons<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimInterventionReasonsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminClaimInterventionReasonsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<
+      Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+      TError,
+      TData
+    >
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimInterventionReasonsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>> = ({
+    signal,
+  }) => getAdminClaimInterventionReasons(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimInterventionReasonsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>
+>
+export type GetAdminClaimInterventionReasonsSuspenseQueryError = unknown
+
+export function useGetAdminClaimInterventionReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimInterventionReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimInterventionReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 개입 사유 카탈로그
+ */
+
+export function useGetAdminClaimInterventionReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<
+        Awaited<ReturnType<typeof getAdminClaimInterventionReasons>>,
+        TError,
+        TData
+      >
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimInterventionReasonsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 구매자 주장(`buyerStatement`)과 셀러 처리(`sellerHandling`)를 따로 떼어 내린다 — 어느 한쪽만 보면 귀책을 판정할 수 없다. 수령인명·연락처는 **마스킹 없는 평문**이고 화면 표시용 마스킹은 클라이언트 책임이다(셀러·심사 API 선례와 같다). `history`는 이력 전용 테이블이 없어 클레임의 시각 칼럼에서 조립하며, 개입된 건은 셀러 종결 시각도 개입 기록에서 되살려 함께 싣는다. 없는 클레임은 404 errorCode 50400.
+ * @summary 어드민 클레임 상세
+ */
+export const getAdminClaimDetail = (claimPublicId: string, signal?: AbortSignal) => {
+  return customInstance<AdminClaimDetailResponse>({
+    url: `/admin/claims/${claimPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminClaimDetailQueryKey = (claimPublicId?: string) => {
+  return [`/admin/claims/${claimPublicId}`] as const
+}
+
+export const getGetAdminClaimDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimDetailQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaimDetail>>> = ({ signal }) =>
+    getAdminClaimDetail(claimPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!claimPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaimDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminClaimDetail>>
+>
+export type GetAdminClaimDetailQueryError = unknown
+
+export function useGetAdminClaimDetail<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaimDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaimDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimDetail<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminClaimDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminClaimDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimDetail<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 상세
+ */
+
+export function useGetAdminClaimDetail<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimDetailQueryOptions(claimPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminClaimDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminClaimDetailQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminClaimDetail>>> = ({ signal }) =>
+    getAdminClaimDetail(claimPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminClaimDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminClaimDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminClaimDetail>>
+>
+export type GetAdminClaimDetailSuspenseQueryError = unknown
+
+export function useGetAdminClaimDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminClaimDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 클레임 상세
+ */
+
+export function useGetAdminClaimDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminClaimDetail>>,
+  TError = unknown,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminClaimDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminClaimDetailSuspenseQueryOptions(claimPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러 처리를 덮고 분쟁을 종결한다(상태가 ADMIN_OVERRIDDEN이 된다). **환불 집행·결제 취소는 하지 않는다** — 정하는 것은 귀책과 반품비 부담 주체뿐이고, 응답의 `refundStatus`/`refundSettled`가 환불이 그대로임을 보여 준다. `returnCostBearer`는 취소(CANCEL) 유형이거나 클레임 불가 판정이면 **명시해도 서버가 비운다** (요청 성립과 반품비 부담이 한 기록에 섞이지 않게). 400 errorCode 50415 — 그 판정에서 고를 수 없는 사유(카탈로그가 짝을 준다). 400 errorCode 50416 — 상세 필수 사유(OTHER)인데 reasonDetail이 비었음. 400 errorCode 90001 — faultDecision·reason 누락, reasonDetail 500자/internalMemo 300자 초과. 409 errorCode 50414 — 개입할 수 없는 클레임(상태가 닫혔거나 환불이 이미 움직였거나 교환이 종결됐다). **두 번째 개입도 같은 50414다**(개입 기록 1행이 멱등 게이트다). 409 errorCode 50403 — 뒤집으면 같은 주문품목을 다른 클레임이 이미 붙잡게 되는 경우. 404 errorCode 50400 — 없는 클레임.
+ * @summary 어드민 클레임 개입(귀책 판정)
+ */
+export const interveneAdminClaim = (
+  claimPublicId: string,
+  interveneAdminClaimRequest: InterveneAdminClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<InterveneAdminClaimResponse>({
+    url: `/admin/claims/${claimPublicId}/intervention`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: interveneAdminClaimRequest,
+    signal,
+  })
+}
+
+export const getInterveneAdminClaimMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof interveneAdminClaim>>,
+    TError,
+    { claimPublicId: string; data: InterveneAdminClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof interveneAdminClaim>>,
+  TError,
+  { claimPublicId: string; data: InterveneAdminClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['interveneAdminClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof interveneAdminClaim>>,
+    { claimPublicId: string; data: InterveneAdminClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return interveneAdminClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type InterveneAdminClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof interveneAdminClaim>>
+>
+export type InterveneAdminClaimMutationBody = InterveneAdminClaimRequest
+export type InterveneAdminClaimMutationError = unknown
+
+/**
+ * @summary 어드민 클레임 개입(귀책 판정)
+ */
+export const useInterveneAdminClaim = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof interveneAdminClaim>>,
+      TError,
+      { claimPublicId: string; data: InterveneAdminClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof interveneAdminClaim>>,
+  TError,
+  { claimPublicId: string; data: InterveneAdminClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getInterveneAdminClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011). 구매자 조회와 달리 **노출 상태로 걸러내지 않는다** — 가려진 리뷰를 되돌릴 수 있어야 하는 쪽이라 블라인드·삭제된 리뷰도 목록에 나온다. 정렬은 reviewId 내림차순(최신순) 고정, 커서 페이징이다. `status`와 `reported`는 **직교한다** — 노출 중이면서 신고가 쌓인 리뷰가 운영자의 작업 목록이다. `keyword`는 리뷰 본문과 상품명 양쪽을 본다. `productId`는 상품 공개 식별자(ULID)다. `rating`이 1~5 밖이거나 `size`가 1~100 밖이면 **400 errorCode 90001**이다(절삭하지 않는다). 필터를 바꾼 채 옛 커서를 보내면 400 errorCode 90002 — 커서에 필터 지문이 실려 있어 조건이 달라지면 거절된다(앞쪽 페이지가 조용히 건너뛰어지지 않게). `totalCount`는 첫 페이지에만 실린다.
+ * @summary 어드민 리뷰 목록
+ */
+export const getAdminReviews = (params?: GetAdminReviewsParams, signal?: AbortSignal) => {
+  return customInstance<AdminReviewListResponse>({
+    url: `/admin/reviews`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminReviewsQueryKey = (params?: GetAdminReviewsParams) => {
+  return [`/admin/reviews`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReviews>>> = ({ signal }) =>
+    getAdminReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminReviews>>>
+export type GetAdminReviewsQueryError = unknown
+
+export function useGetAdminReviews<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminReviewsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviews<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviews<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 리뷰 목록
+ */
+
+export function useGetAdminReviews<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReviewsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminReviewsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReviews>>> = ({ signal }) =>
+    getAdminReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReviewsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReviews>>
+>
+export type GetAdminReviewsSuspenseQueryError = unknown
+
+export function useGetAdminReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminReviewsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 리뷰 목록
+ */
+
+export function useGetAdminReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviews>>,
+  TError = unknown,
+>(
+  params?: GetAdminReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReviewsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 원문(`content`)과 구매자에게 실제로 보이는 문장(`visibleContent`)을 함께 준다 — 운영자는 작성자가 무엇을 썼는지와 지금 무엇이 보이는지를 같이 봐야 판단할 수 있다. `reports`는 신고 접수 경로가 생기기 전까지 빈 목록이다. 없는 리뷰는 404 errorCode 110000.
+ * @summary 어드민 리뷰 상세
+ */
+export const getAdminReviewDetail = (reviewId: number, signal?: AbortSignal) => {
+  return customInstance<AdminReviewDetailResponse>({
+    url: `/admin/reviews/${reviewId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminReviewDetailQueryKey = (reviewId?: number) => {
+  return [`/admin/reviews/${reviewId}`] as const
+}
+
+export const getGetAdminReviewDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReviewDetailQueryKey(reviewId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReviewDetail>>> = ({ signal }) =>
+    getAdminReviewDetail(reviewId, signal)
+
+  return { queryKey, queryFn, enabled: !!reviewId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReviewDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReviewDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReviewDetail>>
+>
+export type GetAdminReviewDetailQueryError = unknown
+
+export function useGetAdminReviewDetail<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReviewDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReviewDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewDetail<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReviewDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReviewDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewDetail<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 리뷰 상세
+ */
+
+export function useGetAdminReviewDetail<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReviewDetailQueryOptions(reviewId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminReviewDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReviewDetailQueryKey(reviewId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReviewDetail>>> = ({ signal }) =>
+    getAdminReviewDetail(reviewId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReviewDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReviewDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReviewDetail>>
+>
+export type GetAdminReviewDetailSuspenseQueryError = unknown
+
+export function useGetAdminReviewDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReviewDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 리뷰 상세
+ */
+
+export function useGetAdminReviewDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReviewDetail>>,
+  TError = unknown,
+>(
+  reviewId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReviewDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReviewDetailSuspenseQueryOptions(reviewId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **되돌리는 경로가 없는 종결**이다. 블라인드된 리뷰도 바로 삭제할 수 있고, 행은 남으므로 같은 주문 품목에 리뷰를 다시 쓰는 길은 열리지 않는다. 성공은 204 No Content(본문 없음)다. 사유를 본문으로 받으므로 DELETE에 요청 본문이 있다 — 감사 기록이 비면 안 된다. 400 errorCode 110002 — 이미 삭제된 리뷰. 400 errorCode 110022 — reasonText 500자 초과. 400 errorCode 90001 — reasonCode 누락·미지 값. 404 errorCode 110000 — 없는 리뷰.
+ * @summary 어드민 리뷰 삭제
+ */
+export const deleteAdminReview = (
+  reviewId: number,
+  deleteAdminReviewRequest: DeleteAdminReviewRequest,
+) => {
+  return customInstance<void>({
+    url: `/admin/reviews/${reviewId}`,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    data: deleteAdminReviewRequest,
+  })
+}
+
+export const getDeleteAdminReviewMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAdminReview>>,
+    TError,
+    { reviewId: number; data: DeleteAdminReviewRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAdminReview>>,
+  TError,
+  { reviewId: number; data: DeleteAdminReviewRequest },
+  TContext
+> => {
+  const mutationKey = ['deleteAdminReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAdminReview>>,
+    { reviewId: number; data: DeleteAdminReviewRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return deleteAdminReview(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteAdminReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAdminReview>>
+>
+export type DeleteAdminReviewMutationBody = DeleteAdminReviewRequest
+export type DeleteAdminReviewMutationError = unknown
+
+/**
+ * @summary 어드민 리뷰 삭제
+ */
+export const useDeleteAdminReview = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteAdminReview>>,
+      TError,
+      { reviewId: number; data: DeleteAdminReviewRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAdminReview>>,
+  TError,
+  { reviewId: number; data: DeleteAdminReviewRequest },
+  TContext
+> => {
+  const mutationOptions = getDeleteAdminReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 리뷰를 BLOCKED로 가리고 해제로 되돌릴 수 있다. 마스킹된(MASKED) 리뷰도 블라인드 대상이다 — 대체 본문으로도 가려지지 않는 내용이 블라인드 사유다. 성공은 204 No Content다. 409 errorCode 110020 — 이미 블라인드된 리뷰. 400 errorCode 110002 — 삭제된 리뷰. 400 errorCode 110022 — reasonText 500자 초과. 400 errorCode 90001 — reasonCode 누락·미지 값. 404 errorCode 110000 — 없는 리뷰.
+ * @summary 어드민 리뷰 블라인드
+ */
+export const blindAdminReview = (
+  reviewId: number,
+  blindAdminReviewRequest: BlindAdminReviewRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/reviews/${reviewId}/blind`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: blindAdminReviewRequest,
+    signal,
+  })
+}
+
+export const getBlindAdminReviewMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof blindAdminReview>>,
+    TError,
+    { reviewId: number; data: BlindAdminReviewRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof blindAdminReview>>,
+  TError,
+  { reviewId: number; data: BlindAdminReviewRequest },
+  TContext
+> => {
+  const mutationKey = ['blindAdminReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof blindAdminReview>>,
+    { reviewId: number; data: BlindAdminReviewRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return blindAdminReview(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type BlindAdminReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof blindAdminReview>>
+>
+export type BlindAdminReviewMutationBody = BlindAdminReviewRequest
+export type BlindAdminReviewMutationError = unknown
+
+/**
+ * @summary 어드민 리뷰 블라인드
+ */
+export const useBlindAdminReview = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof blindAdminReview>>,
+      TError,
+      { reviewId: number; data: BlindAdminReviewRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof blindAdminReview>>,
+  TError,
+  { reviewId: number; data: BlindAdminReviewRequest },
+  TContext
+> => {
+  const mutationOptions = getBlindAdminReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 마스킹 대체 본문이 남아 있으면 MASKED로, 없으면 PUBLIC으로 되돌린다(블라인드 전 상태를 따로 저장하지 않는다). 요청 본문이 없고 성공은 204 No Content다. 409 errorCode 110021 — 블라인드되지 않은 리뷰(삭제된 리뷰도 여기에 든다). 404 errorCode 110000 — 없는 리뷰.
+ * @summary 어드민 리뷰 블라인드 해제
+ */
+export const unblindAdminReview = (reviewId: number, signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/admin/reviews/${reviewId}/unblind`, method: 'POST', signal })
+}
+
+export const getUnblindAdminReviewMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unblindAdminReview>>,
+    TError,
+    { reviewId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unblindAdminReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationKey = ['unblindAdminReview']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unblindAdminReview>>,
+    { reviewId: number }
+  > = props => {
+    const { reviewId } = props ?? {}
+
+    return unblindAdminReview(reviewId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnblindAdminReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unblindAdminReview>>
+>
+
+export type UnblindAdminReviewMutationError = unknown
+
+/**
+ * @summary 어드민 리뷰 블라인드 해제
+ */
+export const useUnblindAdminReview = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unblindAdminReview>>,
+      TError,
+      { reviewId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unblindAdminReview>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationOptions = getUnblindAdminReviewMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

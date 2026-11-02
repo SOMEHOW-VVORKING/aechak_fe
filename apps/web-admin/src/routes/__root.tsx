@@ -51,13 +51,14 @@ const PENDING_TAG = '준비 중'
 // 어드민 계정 권한·고급 통계·세금 신고 — 은 복원 대상이 아니고, 그중 어드민 계정 권한 관리는
 // `/admins`가 대신한다).
 //
-// 꼬리표 유무는 2026-10-26 dev 실측으로 갈랐다. admin-api-dev에 있는 경로는
-// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷, 뒤에 더해진
-// `/admin/members` 계열 넷(목록·상세·제재·해제), 그리고 `/admin/orders` 계열 넷(목록·지표·
-// 상세·발송 독촉, SCRUM-321)이다. seller·api
-// 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도 셀러·구매자
-// 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을 설정하지
-// 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
+// 꼬리표 유무는 dev 실측으로 갈랐다(2026-10-30, `GET /v3/api-docs`). admin-api-dev에 있는 경로는
+// `/admin/admins`(+`/{userId}`), `/admin/seller-applications` 계열 넷, `/admin/members` 계열
+// 넷(목록·상세·제재·해제), `/admin/orders` 계열 넷(목록·지표·상세·발송 독촉, SCRUM-339),
+// 그리고 이번에 더해진 `/admin/inquiries` 넷(목록·상세·답변·상태 전이), `/admin/claims`
+// 넷(목록·사유 카탈로그·상세·개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제)이다.
+// seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
+// 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
+// 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
 const navGroups: NavGroup[] = [
   {
     key: 'operations',
@@ -125,12 +126,12 @@ const navGroups: NavGroup[] = [
         icon: <Flag className={iconClass} />,
         tag: PENDING_TAG,
       },
-      // api 호스트의 `/inquiries`는 구매자가 자기 문의를 넣는 경로다 — 운영자 전체 조회가 아니다.
+      // `/admin/inquiries` 넷(목록·상세·답변·상태 전이)이 생겨 실연동됐다 — 꼬리표를 떼고 화면의
+      // 띠도 걷었다(SCRUM-314 / SCRUM-331). api 호스트의 `/inquiries`는 구매자 본인 접수 경로다.
       {
         key: '/inquiries',
         label: '서비스 문의 관리',
         icon: <LifeBuoy className={iconClass} />,
-        tag: PENDING_TAG,
       },
     ],
   },
@@ -138,9 +139,10 @@ const navGroups: NavGroup[] = [
     key: 'orders-claims',
     label: '주문 / 클레임',
     items: [
-      // 주문 배송 모니터링은 `/admin/orders` 계열 넷이 생겨 꼬리표 없이 실연동이다(SCRUM-339).
-      // 클레임·리뷰는 아직 seller 호스트(셀러 본인 스코프)와 api 호스트(구매자 본인 스코프)에만
-      // 있어 플랫폼 전체를 보는 운영자용 경로가 admin 모듈에 없다.
+      // 셋 다 admin 경로에 붙어 꼬리표가 없다 — 주문 배송 모니터링은 `/admin/orders` 계열
+      // 넷(SCRUM-339), 클레임과 리뷰는 `/admin/claims`·`/admin/reviews`(SCRUM-320·SCRUM-319 /
+      // SCRUM-331)다. seller·api 호스트의 닮은 경로는 셀러·구매자 본인 스코프라 운영자가
+      // 플랫폼 전체를 볼 수 없다.
       {
         key: '/orders/monitoring',
         label: '주문 배송 모니터링',
@@ -150,13 +152,11 @@ const navGroups: NavGroup[] = [
         key: '/claims',
         label: '취소/반품/교환',
         icon: <RotateCcw className={iconClass} />,
-        tag: PENDING_TAG,
       },
       {
         key: '/reviews',
         label: '리뷰 관리',
         icon: <Star className={iconClass} />,
-        tag: PENDING_TAG,
       },
       // 채팅 자체가 BE에 없다(SNS 쪽 `/sns/*`만 열려 있다).
       {

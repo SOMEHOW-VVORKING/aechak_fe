@@ -1195,3 +1195,138 @@ SCRUM-302가 nav 15항목을 되살렸지만 **꼬리표가 붙은 13항목은 �
   어긋나면 다음 사람이 이미 실연동된 화면에 예시 데이터 띠를 다시 붙인다(교차검토 지적).
 - `members.mock.ts`는 지웠고 `members.map.ts` + `members.queries.ts`가 실 API 응답을 받는다.
   `MemberAccount` 류 타입은 `@aechak/domain`에 있던 것을 와이어 계약 모양으로 맞췄다.
+
+## 어드민 문의·클레임·리뷰 실연동 (2026-10-30, SCRUM-331)
+
+위 두 절의 숫자("13화면"·"12화면", "실연동 2화면"·"3화면")는 그 날짜 기준이다. 이 티켓이
+`/admin/inquiries` 넷 · `/admin/claims` 넷 · `/admin/reviews` 다섯을 붙여 재고가 세 칸 움직였다.
+
+- **예시 데이터 화면 12 → 9.** `/inquiries`·`/claims`·`/reviews`가 빠졌다. nav의 `tag`와 화면
+  상단 `MockDataNotice`를 코드에서 함께 뗐다.
+- **띠를 붙이지 않는 실연동 화면 3 → 6.** `admin-nav.test.tsx`의 `LIVE_LABELS`도 여섯이고
+  `admin-mock-screens.test.tsx`의 `SCREENS`는 9행이다(AGENTS.md 36행·규약 10 끝 문단과 함께
+  **네 자리가 같은 숫자를 말해야 한다**).
+
+### 실측 — api-docs가 정본이고 springdoc 출력은 한 자리에서 거짓말한다
+
+계약은 `GET https://admin-api-dev.aechak.co.kr/v3/api-docs`(dev 실측, 2026-10-30)와 BE
+`origin/develop`의 컨트롤러·애그리거트를 맞춰 읽어 적었다. 두 군데가 어긋난다.
+
+- `GET /admin/reviews`의 파라미터가 api-docs에는 `request`라는 **객체 하나**로 나온다 —
+  `@ModelAttribute`를 springdoc이 그렇게 뽑은 것이고 실제 와이어는 `productId`·`rating`·
+  `status`·`reported`·`keyword`·`cursor`·`size` **평탄 쿼리**다. 스펙에는 평탄하게 적었다.
+- 블라인드·해제·삭제의 성공 응답이 api-docs에는 `200`으로 나오지만 컨트롤러는
+  `ResponseEntity.noContent()`라 **204 본문 없음**이다. 스펙은 204로 적었다.
+- 인증 없이 찔러 보는 방식으로는 경로 존재를 가릴 수 없다 — admin 모듈은 라우팅 전에
+  시큐리티가 걸려 **없는 경로도 401(20004)** 로 돌아온다(`/admin/nope`로 확인).
+
+### 되돌릴 수 없는 처리와 확인 Modal — 드로어까지 함께 잠가야 한다
+
+확인 `Modal`의 `loading`은 **확인 버튼만** 잠근다. ESC·스크림·취소는 `onClose` 하나로 오고,
+그보다 먼저 **`Drawer`의 ESC·스크림이 자기 `onClose`를 쏜다**. 라우트의 `closeDrawer`가
+`selectedId`와 `confirmOpen`을 같이 비우므로, 요청이 떠 있는 동안 ESC를 누르면 드로어가 닫히고
+그 과정에서 확인 Modal까지 사라진다 — 운영자는 삭제·개입이 들어갔는지 알 수 없다.
+그래서 세 라우트 모두 닫기 제스처를 **가드 하나**로 모았다.
+
+```ts
+function resetSelection() { setSelectedId(null); setConfirmOpen(false) }   // 성공·실패 뒤의 닫기
+function closeDrawer() { if (write.isPending) return; resetSelection() }   // Drawer onClose
+function closeConfirm() { if (write.isPending) return; setConfirmOpen(false) } // Modal onClose
+```
+
+성공 콜백에서 `closeDrawer()`를 부르면 그 시점의 `isPending`을 믿을 수 없어 드로어가 열린 채
+남는다 — 성공·실패 경로는 가드를 거치지 않는 `resetSelection()`을 쓴다. 이 계약은 세 라우트의
+`[AC-ADM-*-01x] 요청이 떠 있는 동안 …` 테스트가 ESC·취소·스크림 셋을 각각 눌러 고정한다.
+**같은 결함이 `/members`에도 남아 있다**(SCRUM-313 범위라 이 티켓에서 건드리지 않았다).
+
+그런데 이 가드는 `onClose`만 막는다 — **라우트 이탈은 그 가드를 지나가지 않는다**(codex 교차검토
+지적). 요청이 떠 있는 동안 브라우저 뒤로 가기나 nav 이동으로 화면이 언마운트되면, react-query는
+`mutate(vars, { onSuccess, onError })`로 받은 **호출별 콜백을 실행하지 않는다** —
+`query-core`의 `MutationObserver.#notify`가 `this.#mutateOptions && this.hasListeners()`로 가둬
+놓았고, 관찰자가 사라지면 `hasListeners()`가 false다. 요청 자체는 `MutationCache`에 남아 끝까지
+가므로 **서버에서는 삭제·개입·답변이 그대로 들어가고 토스트만 사라진다**. `useMutation` 쪽
+`onSettled`(무효화)는 mutation이 options를 들고 있어 그대로 돌지만, 그건 목록을 맞춰 둘 뿐
+"방금 그 처리가 어떻게 됐는지"를 말해 주지 않는다.
+
+그래서 닫기 가드 옆에 이탈 가드를 하나 더 둔다 —
+`apps/web-admin/src/shared/hooks/usePendingWriteExitGuard.ts`.
+
+```ts
+usePendingWriteExitGuard(write.isPending) // 세 라우트가 닫기 가드 바로 아래에서 부른다
+```
+
+`@tanstack/react-router`의 `useBlocker`로 **PUSH·REPLACE**(라우터 이동)와 브라우저 **뒤로 가기**를
+막고, `enableBeforeUnload`로 새로고침·탭 닫기에 **경고**를 띄운다(차단이 아니다 — 운영자가 경고에서
+나가기를 고르면 화면은 사라진다). 가드 함수는 ref를 읽는 **고정 참조**여야 한다 — `useBlocker`의
+effect 의존성에 함수가 들어 있어 렌더마다 새 함수를 넘기면 블로커를 매 렌더 등록·해제한다.
+
+**세션 만료의 `/login` 이동은 통과시킨다.** 401 뒤 refresh까지 실패하면 공유 클라이언트가 요청을
+reject하기 **전에** 전역 콜백을 부르고, `features/auth`의 `setupAuthExpiredRedirect`가
+`router.navigate({ to: '/login' })`을 쏜다. 그 이동을 막으면 ① 처리가 끝난 뒤 아무도 다시 보내
+주지 않고, ② 막힌 이동의 약속이 매달려 있어 그 핸들러의 `redirecting` 플래그가 `.finally()`에서
+풀리지 못하고 켜진 채 남아 **다음 만료까지 통째로 무시된다**. 인증이 끊긴 관리 화면에 남는 것이
+결과를 못 보는 것보다 나쁘다(codex 교차검토 5라운드 지적, `AC-ADM-RVW-022`가 고정). 그 테스트는
+`/login` 이동이 가드를 통과하는지까지만 본다 — 401 → refresh 실패 → 전역 콜백 → 플래그 해제의
+사슬 전체는 단위로 고정하지 않았다(전역 핸들러를 부팅에서 거는 구조라 라우트 테스트가 닿지 않는다).
+
+알고 두는 구멍 둘. ① 브라우저 **앞으로 가기와 여러 칸 뒤로 가기**는 `@tanstack/history`가 막은
+POP을 방향·거리와 무관하게 `win.history.go(1)`로 되돌려(설치된 1.162.0 소스) 화면·라우터 상태는
+남지만 주소창이 어긋날 수 있고 `ignoreNextPop`이 남아 다음 POP 하나를 먹는다 — 라이브러리
+결함이고, 그래도 막는 쪽이 언마운트보다 낫다(한 칸 뒤로 가기는 정확히 복원된다). ② `isPending`은 `onSettled`의 무효화 **재조회까지** 포함한다(mutation은 그
+약속이 끝나야 success를 dispatch한다) — 쓰기 응답이 온 뒤에도 재조회가 늦으면 가드가 그만큼 늦게
+풀린다. 그 구간에도 새로고침은 경고일 뿐이라 빠져나갈 길은 남아 있다.
+
+테스트는 메모리 히스토리라 `back()`이 블로커를 거치지 않으므로(`createMemoryHistory`는 블로커를
+push/replace에서만 본다) **`router.navigate`로 막힌 것**을 단언한다 — 그리고 막힌 이동의
+`commitLocation` 약속은 **다음 성공한 이동이 올 때까지 매달려 있으므로**(router-core가 새 약속에
+이전 약속의 resolve를 걸어 둔다) `await`하지 말고 `void`로 띄워야 한다(걸면 그 자리에서 멈춘다).
+이탈 가드도 `/members`·`/sellers/applications`·`/admins`에는 없다(같은 이유로 손대지 않았다).
+
+### 목록이 실패한 동안 처리 버튼을 잠근다(규약 6-7)
+
+세 화면 모두 `keepPreviousData`를 쓰므로 재조회가 403으로 실패해도 react-query가 직전 행을 들고
+있다. 행은 지우지 않고(마지막으로 본 내용은 정보다) `list.isError`를 `canSubmit`에 넣어 **처리만**
+막는다. 같은 이유로 `hasNext`는 `isPlaceholderData`일 때 내린다 — 이전 조건의 `hasNext`로 더
+보기를 열어 두면 새 조건의 첫 페이지가 오기 전에 옛 커서를 요구해 페이지를 건너뛴다(리뷰는
+커서에 필터 지문이 실려 있어 그 요청이 400/90002로 끊긴다).
+
+### 서버에 없는 필드는 지웠다
+
+- 문의: `channel`(앱/웹/이메일)과 `title`이 서버에 없다. 제목 자리는 서버가 주는
+  `contentPreview`(내용 앞 100자)가 쓰고, 내부 메모 입력은 저장할 칼럼이 없어 뺐다.
+- 리뷰: `writerNotice`(작성자 안내 문구)가 없다. 처리 사유 메모 `reasonText` 하나뿐이고
+  **해제는 본문을 받지 않아** 해제 결정에서는 사유 입력을 그리지 않는다. 운영자 선택지에서
+  `PROFANITY`는 뺐다(작성 시점 자동 판정만 쓰는 값이다).
+- 클레임: 배송비 부담 주체가 `BUYER`·`SELLER` 둘뿐이다(예시 시절의 `platform`은 없다). 취소
+  유형이거나 클레임 불가 판정이면 서버가 명시값도 비우므로 그 조합에서는 입력 자체를 그리지 않는다.
+
+### 실명·연락처는 서버가 가려 주지 않는다 — 화면이 가리지 않으면 아무도 가리지 않는다
+
+BE는 수령인명·연락처를 **복호 평문**으로 내리고 마스킹을 화면 책임으로 둔다
+(`AdminClaimDetailResponse.OrderResponse`: "수령인명·연락처는 복호 평문이다 — 마스킹은 화면이
+한다", `SellerOrderSummaryResponse`·심사 응답도 같은 말). 클레임 상세의 배송 정보가 그 평문을
+그대로 뿌리고 있었고, 테스트가 평문 표시를 단언해 그 상태를 고정하고 있었다(codex 교차검토 지적).
+
+규칙은 `apps/web-admin/src/shared/mask.ts` 한 자리에 있다 — 심사 화면의 대표자명과 클레임의
+수령인·연락처가 같은 함수를 쓴다(feature → feature import 금지라 shared로 승격했고
+`seller-applications.map.ts`는 이름만 다시 내보낸다).
+
+- `maskPersonName` — 앞뒤 한 자만 남긴다(`김보리` → `김*리`). 빈 값은 `null`.
+- `maskContactNumber` — 앞 3·뒤 4만 남긴다(`010-1234-5678` → `010-****-5678`). **숫자 7자리
+  이하는 원문 그대로다** — 앞 3 + 뒤 4가 이미 전부라 가려질 숫자가 없는데 그래도 조립하면
+  `1234567`이 `123--4567`이 되어 가린 것도 없이 번호만 망가진다(경계 off-by-one, codex 2R 지적).
+  숫자가 없는 값도 별표로 덮지 않는다 — 잘못 들어간 값임을 알아볼 수 있어야 한다.
+
+**지우지 않고 가운데만 가리는 이유**는 운영자가 분쟁 상대를 분간해야 하기 때문이다 — 반품 송장의
+끝자리와 맞춰 보는 것이 판정 근거이고, 평문 전체가 필요한 일은 어드민 콘솔에 없다. 셀러 콘솔은
+판단이 다르다(송장을 붙여야 하므로 목록만 가리고 상세는 평문 — `orders.contract.ts` 주석).
+
+### MSW 커서는 서버처럼 지문을 접어 싣는다 — 원문을 실으면 한글에서 터진다
+
+`AdminReviewCursorCodec`는 필터를 SHA-256으로 접어 앞 16자만 싣고 "커서에 필터 원문(검색어)이
+실리지 않는다"고 못박는다. 리뷰 핸들러가 원문을 그대로 이어 붙이고 있었고, 그래서 **한글 검색어 +
+두 쪽 이상**이라는 조합에서 `btoa`가 `InvalidCharacterError`로 죽어(latin1 밖) 그 조합을 아예
+테스트할 수 없었다(codex 교차검토 지적). 지문은 FNV-1a로 접어 아스키 16진수로 싣고,
+공용 `encodeCursorPayload`/`decodeCursorPayload`는 **UTF-8 바이트를 거치게** 고쳤다
+(`decodeCursorPayload`는 `TextDecoder(..., { fatal: true })` — U+FFFD로 되살리면 깨진 커서가
+조용히 통과한다). 계약은 `src/testing/msw/__tests__/base.test.ts`가 고정한다.

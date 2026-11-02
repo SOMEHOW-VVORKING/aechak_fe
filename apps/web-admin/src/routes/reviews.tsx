@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { AlertTriangle, Check, Eye, EyeOff, Image, Trash2 } from 'lucide-react'
+import { Check, Eye, EyeOff, Image as ImageIcon, ImageOff, Trash2, VenetianMask } from 'lucide-react'
 import {
+  Alert,
   Button,
   DataTable,
   Drawer,
@@ -15,8 +16,24 @@ import {
   Toast,
 } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
-import { useAdminReviews } from '@/features/reviews'
-import type { AdminReview, AdminReviewStatus } from '@/features/reviews'
+import {
+  BLIND_REASON_LABELS,
+  REVIEW_STATUS_LABELS,
+  SELECTABLE_BLIND_REASONS,
+  detailErrorMessage,
+  isSelectableBlindReason,
+  listErrorMessage,
+  toDateTimeLabel,
+  useAdminReviewDetail,
+  useAdminReviews,
+  useWriteReview,
+  writeErrorMessage,
+  type AdminReviewDetailView,
+  type AdminReviewRow,
+  type ReviewDecision,
+  type ReviewStatusValue,
+} from '@/features/reviews'
+import { usePendingWriteExitGuard } from '@/shared/hooks/usePendingWriteExitGuard'
 import { ActorTag } from '@/shared/components/ActorTag'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
 import { DetailDrawerBody } from '@/shared/components/DetailDrawerBody'
@@ -24,92 +41,96 @@ import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
 import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
-import { MockDataNotice, MOCK_WRITE_TOAST } from '@/shared/components/MockDataNotice'
+import { MediaPlaceholder } from '@/shared/components/MediaPlaceholder'
 import { PageIntro } from '@/shared/components/PageIntro'
 import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
-import { useDetailList } from '@/shared/hooks/useDetailList'
 
-// 운영자가 전체 리뷰를 조회하고 숨기는 admin 경로가 없다. 안내 화면으로 돌려보내는 대신 예시
-// 데이터로 모양을 보여주고 상단 띠로 밝힌다(SCRUM-308).
+// `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제)이 dev에 올라와 실연동이다
+// (SCRUM-319 / SCRUM-331). api 호스트의 `/reviews`는 구매자 본인 경로라 여기서 부르지 않는다.
 export const Route = createFileRoute('/reviews')({
   component: ReviewsPage,
 })
 
-const statusMeta: Record<AdminReviewStatus, StatusMeta> = {
-  visible: { label: '노출', variant: 'success', icon: Eye },
-  reported: { label: '신고 접수', variant: 'warning', icon: AlertTriangle },
-  blinded: { label: '블라인드', variant: 'muted', icon: EyeOff },
-  deleted: { label: '삭제', variant: 'danger', icon: Trash2 },
+const statusMeta: Record<ReviewStatusValue, StatusMeta> = {
+  public: { label: REVIEW_STATUS_LABELS.public, variant: 'success', icon: Eye },
+  masked: { label: REVIEW_STATUS_LABELS.masked, variant: 'warning', icon: VenetianMask },
+  blinded: { label: REVIEW_STATUS_LABELS.blinded, variant: 'muted', icon: EyeOff },
+  hidden: { label: REVIEW_STATUS_LABELS.hidden, variant: 'muted', icon: EyeOff },
+  deleted: { label: REVIEW_STATUS_LABELS.deleted, variant: 'danger', icon: Trash2 },
 }
 
-const statusFilterOptions = [
+const statusFilterOptions: { value: ReviewStatusValue | 'all'; label: string }[] = [
   { value: 'all', label: '노출 상태 전체' },
-  ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
+  ...(Object.keys(statusMeta) as ReviewStatusValue[]).map(value => ({
+    value,
+    label: statusMeta[value].label,
+  })),
 ]
 
+/** 서버는 **정확한 별점 하나**만 받는다 — 1~2점 같은 구간은 계약에 없어 옵션을 별점별로 둔다. */
 const ratingFilterOptions = [
   { value: 'all', label: '별점 전체' },
-  { value: 'low', label: '1~2점' },
-  { value: 'mid', label: '3점' },
-  { value: 'high', label: '4~5점' },
+  { value: '5', label: '5점' },
+  { value: '4', label: '4점' },
+  { value: '3', label: '3점' },
+  { value: '2', label: '2점' },
+  { value: '1', label: '1점' },
 ]
-
-type ReviewDecision = 'keep' | 'blind' | 'delete'
 
 /**
- * 사유는 **옵션 코드**로 들고 라벨은 `blindReasonText`로만 만든다(ai-review-queue와 같은 패턴).
- * 데이터에 라벨 문자열을 넣어 두면 `Select`의 `value`와 맞지 않아 상세에서 기존 사유가 선택되지
- * 않고(빈 칸으로 보인다), 표는 반대로 코드를 그대로 그려 `ad-spam`이 운영자에게 노출된다 —
- * 표와 상세가 같은 변환을 보도록 한 자리에 모은다.
+ * 신고 축은 상태와 직교한다 — 센티넬을 `'all'`로 두지 않는 이유는 어드민 목록 관례의 `'all'`이
+ * "미선택"을 뜻해 **값이 둘뿐인 축**에서는 옵션 하나가 영원히 안 눌리는 모양이 되기 때문이다.
  */
-const blindReasonOptions = [
-  { value: 'abuse', label: '욕설/비방' },
-  { value: 'external-trade', label: '외부 거래 유도' },
-  { value: 'ad-spam', label: '광고/스팸' },
-  { value: 'privacy', label: '개인정보 노출' },
-  { value: 'irrelevant', label: '상품과 무관' },
+const reportedFilterOptions = [
+  { value: 'any', label: '신고 전체' },
+  { value: 'reported', label: '신고 접수만' },
 ]
 
-const blindReasonText = (value: string | undefined) =>
-  blindReasonOptions.find(option => option.value === value)?.label ?? value
+const blindReasonOptions = SELECTABLE_BLIND_REASONS.map(value => ({
+  value,
+  label: BLIND_REASON_LABELS[value],
+}))
 
 const decisionModalMeta: Record<
   ReviewDecision,
-  {
-    title: string
-    description: string
-    confirmLabel: string
-    confirmVariant: 'primary' | 'danger'
-    nextStatus: AdminReviewStatus
-  }
+  { title: string; description: string; confirmLabel: string; confirmVariant: 'primary' | 'danger' }
 > = {
-  keep: {
-    title: '리뷰를 그대로 둘까요?',
-    description: '신고가 종결되고 리뷰는 계속 노출돼요. 신고자에게 결과가 통보돼요.',
-    confirmLabel: '노출 유지',
-    confirmVariant: 'primary',
-    nextStatus: 'visible',
-  },
   blind: {
     title: '리뷰를 블라인드할까요?',
-    description: '리뷰가 즉시 비노출되고 작성자에게 사유가 통보돼요. 되돌릴 수 있어요.',
+    description: '리뷰가 즉시 비노출되고 상품 평점에서 빠져요. 해제로 되돌릴 수 있어요.',
     confirmLabel: '블라인드',
     confirmVariant: 'primary',
-    nextStatus: 'blinded',
+  },
+  unblind: {
+    title: '블라인드를 해제할까요?',
+    description: '리뷰가 다시 노출되고 상품 평점에 반영돼요.',
+    confirmLabel: '블라인드 해제',
+    confirmVariant: 'primary',
   },
   delete: {
     title: '리뷰를 삭제할까요?',
-    description: '삭제된 리뷰는 복구할 수 없어요. 작성자에게 통보되고 액션 로그에 남아요.',
+    description: '삭제된 리뷰는 되돌릴 수 없어요. 처리 사유는 운영 기록으로 남아요.',
     confirmLabel: '삭제',
     confirmVariant: 'danger',
-    nextStatus: 'deleted',
   },
 }
 
-function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<AdminReview>[] {
+/**
+ * 서버가 받아 주는 결정만 남긴다 — 나머지는 누르는 즉시 409·400으로 돌아온다.
+ * 블라인드는 이미 가려진 리뷰에 다시 걸 수 없고(409/110020), 해제는 가려지지 않은 리뷰에
+ * 쓸 수 없다(409/110021). 삭제된 리뷰는 종결이라 아무 전이도 받지 않는다(400/110002).
+ */
+function allowedDecisions(status: ReviewStatusValue): ReviewDecision[] {
+  if (status === 'deleted') return []
+  return status === 'blinded' ? ['unblind', 'delete'] : ['blind', 'delete']
+}
+
+function makeReviewColumns(
+  onOpenDetail: (row: AdminReviewRow) => void,
+): Column<AdminReviewRow>[] {
   return [
     {
       key: 'content',
@@ -120,7 +141,8 @@ function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<Adm
             <span className="line-clamp-1">{row.content}</span>
           </RowLinkButton>
           <p className="mt-0.5 text-caption text-text-tertiary">
-            {row.writerMasked} / {row.productName}
+            {row.authorNickname}
+            {row.authorWithdrawn && ' / 탈퇴'} / {row.productName}
           </p>
         </div>
       ),
@@ -138,7 +160,7 @@ function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<Adm
       render: row =>
         row.photoCount > 0 ? (
           <span className="inline-flex items-center gap-1 tabular-nums">
-            <Image className="size-3.5 text-icon-muted" />
+            <ImageIcon className="size-3.5 text-icon-muted" />
             {row.photoCount}
           </span>
         ) : (
@@ -155,18 +177,17 @@ function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<Adm
       key: 'createdAt',
       label: '작성',
       align: 'right',
-      render: row => <span className="tabular-nums">{row.createdAt}</span>,
+      render: row => <span className="tabular-nums">{toDateTimeLabel(row.createdAt)}</span>,
     },
     {
       key: 'status',
       label: '노출 상태',
+      // pill 아래 보조 텍스트가 붙는 컬럼은 center 금지(pill과 좌측이 어긋난다).
       render: row => (
         <div className="min-w-0">
           <StatusMetaPill meta={statusMeta[row.status]} />
-          {row.blindReason && (
-            <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">
-              {blindReasonText(row.blindReason)}
-            </p>
+          {row.blindReasonLabel && (
+            <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">{row.blindReasonLabel}</p>
           )}
         </div>
       ),
@@ -175,81 +196,126 @@ function makeReviewColumns(onOpenDetail: (row: AdminReview) => void): Column<Adm
 }
 
 function ReviewsPage() {
-  const { data, isLoading } = useAdminReviews()
-  const {
-    items,
-    patchRow,
-    selected,
-    select,
-    closeDrawer,
-    confirmOpen,
-    setConfirmOpen,
-    toast,
-    setToast,
-  } = useDetailList(data)
-
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<ReviewStatusValue | 'all'>('all')
   const [ratingFilter, setRatingFilter] = useState('all')
+  const [reportedFilter, setReportedFilter] = useState('any')
   const [search, setSearch] = useState('')
+  const list = useAdminReviews({
+    status: statusFilter,
+    rating: ratingFilter === 'all' ? 'all' : Number(ratingFilter),
+    reportedOnly: reportedFilter === 'reported',
+    keyword: search,
+  })
 
-  const filtered = useMemo(
-    () =>
-      items.filter(row => {
-        if (statusFilter !== 'all' && row.status !== statusFilter) return false
-        if (ratingFilter === 'low' && row.rating > 2) return false
-        if (ratingFilter === 'mid' && row.rating !== 3) return false
-        if (ratingFilter === 'high' && row.rating < 4) return false
-        if (search && !row.content.includes(search) && !row.productName.includes(search))
-          return false
-        return true
-      }),
-    [items, statusFilter, ratingFilter, search],
-  )
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const detail = useAdminReviewDetail(selectedId)
+  const write = useWriteReview()
 
-  const [decision, setDecision] = useState<ReviewDecision>('keep')
-  const [blindReason, setBlindReason] = useState('')
-  const [writerNotice, setWriterNotice] = useState('')
-  const [internalMemo, setInternalMemo] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [decision, setDecision] = useState<ReviewDecision>('blind')
+  const [reasonCode, setReasonCode] = useState('')
+  const [reasonText, setReasonText] = useState('')
 
-  function openDrawer(row: AdminReview) {
-    select(row.id)
-    setDecision(row.status === 'deleted' ? 'delete' : row.status === 'blinded' ? 'blind' : 'keep')
-    setBlindReason(row.blindReason ?? '')
-    setWriterNotice(row.writerNotice ?? '')
-    setInternalMemo(row.internalMemo ?? '')
+  const review = detail.review
+  // 상세가 도착한 뒤 한 번만 시드한다 — 매 렌더 재시딩하면 운영자가 고른 값이 되돌아간다.
+  useEffect(() => {
+    if (!review) return
+    setDecision(review.status === 'blinded' ? 'unblind' : 'blind')
+    setReasonCode('')
+    setReasonText('')
+  }, [review?.reviewId])
+
+  const allowed = review ? allowedDecisions(review.status) : []
+  const needsReason = decision !== 'unblind'
+  // 목록·상세 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7). **상세도 함께 봐야 한다** —
+  // react-query는 재조회가 실패해도 캐시된 상세를 돌려주므로, 상세만 403이 된 화면에서 낡은
+  // 값으로 되돌릴 수 없는 삭제를 지시하게 된다.
+  const canSubmit =
+    review != null &&
+    !write.isPending &&
+    !list.isError &&
+    !detail.isError &&
+    allowed.includes(decision) &&
+    (!needsReason || isSelectableBlindReason(reasonCode))
+
+  function resetSelection() {
+    setSelectedId(null)
+    setConfirmOpen(false)
   }
 
-  // 서버로 나가는 요청이 없다 — 결정 결과를 화면에만 겹쳐 보여준다(useDetailList의 edits).
-  function applyDecision(target: AdminReview, nextStatus: AdminReviewStatus) {
-    patchRow(target.id, {
-      status: nextStatus,
-      blindActor: nextStatus === 'visible' ? undefined : 'admin',
-      blindReason,
-      writerNotice,
-      internalMemo,
-    })
-    setToast(MOCK_WRITE_TOAST)
-    closeDrawer()
+  /**
+   * 요청이 떠 있는 동안에는 **드로어도 확인 Modal도 닫지 않는다.**
+   *
+   * DS `Drawer`와 `Modal`은 ESC·스크림·취소를 모두 `onClose` 하나로 보낸다. 확인 버튼만
+   * `loading`으로 잠그면 ESC 한 번에 드로어가 닫히고 그 과정에서 확인 Modal까지 함께 사라져,
+   * 되돌릴 수 없는 처리가 날아가는 중에 화면이 비어 버린다 — 운영자는 그 처리가 들어갔는지 알 수
+   * 없다. 그래서 닫기 제스처 전부를 이 가드로 모은다(성공·실패 뒤의 닫기는 아래 reset이 한다).
+   */
+  function closeDrawer() {
+    if (write.isPending) return
+    resetSelection()
   }
 
-  const reviewColumns = useMemo(() => makeReviewColumns(openDrawer), [])
-  const decisionMeta = decisionModalMeta[decision]
-  const blindReasonLabel = blindReasonText(blindReason)
+  function closeConfirm() {
+    if (write.isPending) return
+    setConfirmOpen(false)
+  }
+
+  // 닫기 가드는 `onClose`만 막는다 — 라우트 이탈·새로고침은 그 가드를 지나가지 않고, 나가면
+  // 삭제는 서버에 들어가는데 결과를 알릴 화면이 사라진다. 그 마지막 구멍을 여기서 막는다.
+  usePendingWriteExitGuard(write.isPending)
+
+  function submit() {
+    // 같은 버튼을 두 번 눌러도 요청은 한 번만 나간다.
+    if (!review || write.isPending || !canSubmit) return
+    write.mutate(
+      {
+        reviewId: review.reviewId,
+        decision,
+        reasonCode: needsReason && isSelectableBlindReason(reasonCode) ? reasonCode : null,
+        reasonText,
+      },
+      {
+        onSuccess: () => {
+          setToast(`${decisionModalMeta[decision].confirmLabel} 처리했어요.`)
+          resetSelection()
+        },
+        onError: error => {
+          setToast(writeErrorMessage(error))
+          setConfirmOpen(false)
+        },
+      },
+    )
+  }
 
   return (
     <div className="p-6">
       <PageIntro title="리뷰 관리" description="등록된 리뷰를 확인하고 부적절한 리뷰를 숨겨요." />
 
-      <MockDataNotice>
-        운영자용 리뷰 조회/블라인드 경로가 admin 모듈에 생기면 그대로 실연동돼요.
-      </MockDataNotice>
+      {/* 목록 실패는 빈 상태로 떨어뜨리지 않는다 — "리뷰 없음"과 "못 불러옴"이 구분되지 않는다. */}
+      {list.isError && (
+        <Alert variant="error" title="목록을 불러오지 못했어요" className="mb-5">
+          <p>{listErrorMessage(list.error)}</p>
+        </Alert>
+      )}
 
       <FilterBar className="mb-3.5">
-        <FilterSelect options={statusFilterOptions} value={statusFilter} onChange={setStatusFilter} />
+        <FilterSelect
+          options={statusFilterOptions}
+          value={statusFilter}
+          onChange={value => setStatusFilter(value as ReviewStatusValue | 'all')}
+        />
         <FilterSelect
           options={ratingFilterOptions}
           value={ratingFilter}
           onChange={setRatingFilter}
+          narrow
+        />
+        <FilterSelect
+          options={reportedFilterOptions}
+          value={reportedFilter}
+          onChange={setReportedFilter}
           narrow
         />
         <SearchInput
@@ -258,130 +324,265 @@ function ReviewsPage() {
           placeholder="리뷰 내용 / 상품 검색"
           className="w-64"
         />
+        {list.totalCount != null && (
+          <span className="text-body-sm text-text-tertiary tabular-nums">
+            조건에 맞는 리뷰 {list.totalCount}건
+          </span>
+        )}
       </FilterBar>
 
       <DataTable
-        columns={reviewColumns}
-        rows={filtered}
-        rowKey={row => row.id}
-        onRowClick={openDrawer}
-        loading={isLoading}
-        emptyLabel="조건에 맞는 리뷰가 없어요."
+        columns={makeReviewColumns(row => setSelectedId(row.reviewId))}
+        rows={list.rows}
+        rowKey={row => String(row.reviewId)}
+        onRowClick={row => setSelectedId(row.reviewId)}
+        loading={list.isLoading}
+        emptyLabel={list.isError ? '목록을 불러오지 못했어요.' : '조건에 맞는 리뷰가 없어요.'}
       />
 
-      <Drawer open={selected !== undefined} onClose={closeDrawer} title="리뷰 상세" width="lg">
-        {selected && (
-          <DetailDrawerBody
-            subtitle={`${selected.id} / ${selected.writerMasked}`}
-            actions={
-              <Button
-                variant="primary"
-                leftIcon={<Check className="size-4" />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                제출
-              </Button>
-            }
+      {list.hasNext && (
+        <div className="mt-3.5 flex justify-center">
+          <Button
+            variant="secondary"
+            onClick={list.fetchNextPage}
+            disabled={list.isFetchingNextPage}
           >
-            <DrawerSummaryCard
-              pills={
-                <>
-                  <StatusMetaPill meta={statusMeta[selected.status]} />
-                  {selected.blindActor && <ActorTag actor={selected.blindActor} />}
-                  {selected.reportCount > 0 && (
-                    <StatusPill variant="warning">신고 {selected.reportCount}건</StatusPill>
-                  )}
-                </>
-              }
-            >
-              <SummaryGrid
-                items={[
-                  { label: '상품', value: selected.productName },
-                  { label: '셀러', value: selected.sellerName },
-                  { label: '작성 시각', value: selected.createdAt },
-                  { label: '첨부 사진', value: `${selected.photoCount}장` },
-                ]}
-              />
-            </DrawerSummaryCard>
+            {list.isFetchingNextPage ? '불러오는 중' : '더 보기'}
+          </Button>
+        </div>
+      )}
 
-            <DetailField label="리뷰 내용">
-              <div className="rounded-md border border-border-subtle bg-surface-sunken px-3 py-2.5">
-                <RatingInput value={selected.rating} readonly size={16} />
-                <p className="mt-2 break-keep text-body-sm text-text-secondary">
-                  {selected.content}
-                </p>
-              </div>
-            </DetailField>
-
-            <DetailField label={`처리 이력 / ${selected.history.length}건`}>
-              <HistoryList items={selected.history} emptyLabel="처리 이력이 없어요." />
-            </DetailField>
-
-            <DetailField label="처리 결정">
-              <DecisionRadioGroup
-                name="review-decision"
-                value={decision}
-                onChange={setDecision}
-                options={[
-                  { value: 'keep', label: '노출 유지', caption: '신고 종결' },
-                  { value: 'blind', label: '블라인드', caption: '비노출, 되돌릴 수 있음' },
-                  { value: 'delete', label: '삭제', caption: '복구 불가' },
-                ]}
-              />
-            </DetailField>
-
-            <DetailField label="처리 사유">
-              <Select
-                options={blindReasonOptions}
-                value={blindReason}
-                onChange={setBlindReason}
-                placeholder="사유 선택"
-              />
-            </DetailField>
-
-            <DetailField label="작성자 안내 문구" visibility="visible-to-user">
-              <Textarea
-                value={writerNotice}
-                onChange={setWriterNotice}
-                maxLength={300}
-                rows={3}
-                placeholder="작성자에게 전달할 안내를 입력하세요."
-              />
-            </DetailField>
-
-            <DetailField label="내부 메모" visibility="internal-only">
-              <Textarea
-                value={internalMemo}
-                onChange={setInternalMemo}
-                maxLength={300}
-                rows={3}
-                placeholder="내부 공유용 메모를 입력하세요."
-              />
-            </DetailField>
-          </DetailDrawerBody>
+      <Drawer open={selectedId !== null} onClose={closeDrawer} title="리뷰 상세" width="lg">
+        {detail.isLoading && (
+          <p className="text-body-sm text-text-tertiary">리뷰 정보를 불러오고 있어요.</p>
+        )}
+        {detail.isError && (
+          <Alert variant="error" title="상세를 불러오지 못했어요">
+            <p>{detailErrorMessage(detail.error)}</p>
+          </Alert>
+        )}
+        {review && (
+          <ReviewDetailBody
+            review={review}
+            allowed={allowed}
+            decision={decision}
+            onDecisionChange={setDecision}
+            needsReason={needsReason}
+            reasonCode={reasonCode}
+            onReasonCodeChange={setReasonCode}
+            reasonText={reasonText}
+            onReasonTextChange={setReasonText}
+            canSubmit={canSubmit}
+            onSubmitClick={() => setConfirmOpen(true)}
+          />
         )}
       </Drawer>
 
-      {selected && (
+      {review && (
         <Modal
           open={confirmOpen}
-          onClose={() => setConfirmOpen(false)}
-          title={decisionMeta.title}
-          description={decisionMeta.description}
-          confirmLabel={decisionMeta.confirmLabel}
-          confirmVariant={decisionMeta.confirmVariant}
-          onConfirm={() => applyDecision(selected, decisionMeta.nextStatus)}
+          onClose={closeConfirm}
+          title={decisionModalMeta[decision].title}
+          description={decisionModalMeta[decision].description}
+          confirmLabel={decisionModalMeta[decision].confirmLabel}
+          confirmVariant={decisionModalMeta[decision].confirmVariant}
+          onConfirm={submit}
+          loading={write.isPending}
         >
           <SummaryGrid
             items={[
-              { label: '작성자', value: selected.writerMasked },
-              { label: '사유', value: blindReasonLabel },
+              { label: '작성자', value: review.authorNickname },
+              {
+                label: '처리 사유',
+                value: needsReason
+                  ? (isSelectableBlindReason(reasonCode)
+                      ? BLIND_REASON_LABELS[reasonCode]
+                      : '-')
+                  : '해제는 사유를 받지 않아요',
+              },
             ]}
           />
         </Modal>
       )}
 
-      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="warning" />}
+      {toast && <Toast open onClose={() => setToast(null)} message={toast} variant="info" />}
     </div>
+  )
+}
+
+interface ReviewDetailBodyProps {
+  review: AdminReviewDetailView
+  allowed: ReviewDecision[]
+  decision: ReviewDecision
+  onDecisionChange: (value: ReviewDecision) => void
+  needsReason: boolean
+  reasonCode: string
+  onReasonCodeChange: (value: string) => void
+  reasonText: string
+  onReasonTextChange: (value: string) => void
+  canSubmit: boolean
+  onSubmitClick: () => void
+}
+
+function ReviewDetailBody({
+  review,
+  allowed,
+  decision,
+  onDecisionChange,
+  needsReason,
+  reasonCode,
+  onReasonCodeChange,
+  reasonText,
+  onReasonTextChange,
+  canSubmit,
+  onSubmitClick,
+}: ReviewDetailBodyProps) {
+  // 원문과 구매자에게 보이는 문장이 다른 경우는 마스킹된 리뷰뿐이다 — 같으면 한 번만 보여 준다.
+  const masked = review.visibleContent !== review.content
+  return (
+    <DetailDrawerBody
+      subtitle={`#${review.reviewId} / ${review.authorNickname}`}
+      actions={
+        <Button
+          variant="primary"
+          leftIcon={<Check className="size-4" />}
+          onClick={onSubmitClick}
+          disabled={!canSubmit}
+        >
+          제출
+        </Button>
+      }
+    >
+      <DrawerSummaryCard
+        pills={
+          <>
+            <StatusMetaPill meta={statusMeta[review.status]} />
+            {review.blindActor && <ActorTag actor={review.blindActor} />}
+            {review.reportCount > 0 && (
+              <StatusPill variant="warning">신고 {review.reportCount}건</StatusPill>
+            )}
+          </>
+        }
+      >
+        <SummaryGrid
+          items={[
+            { label: '상품', value: review.productName },
+            { label: '셀러', value: review.sellerName },
+            { label: '옵션', value: review.optionName },
+            { label: '작성 시각', value: toDateTimeLabel(review.createdAt) },
+          ]}
+        />
+      </DrawerSummaryCard>
+
+      <DetailField label="리뷰 내용">
+        <div className="rounded-md border border-border-subtle bg-surface-sunken px-3 py-2.5">
+          <RatingInput value={review.rating} readonly size={16} />
+          <p className="mt-2 break-keep whitespace-pre-wrap text-body-sm text-text-secondary">
+            {review.content}
+          </p>
+        </div>
+      </DetailField>
+
+      {/* 마스킹된 리뷰는 구매자가 보는 문장이 원문과 다르다 — 둘을 함께 봐야 판단할 수 있다. */}
+      {masked && (
+        <DetailField label="구매자에게 보이는 문장">
+          <p className="break-keep rounded-md border border-border-subtle bg-surface-sunken px-3 py-2.5 text-body-sm text-text-secondary">
+            {review.visibleContent}
+          </p>
+        </DetailField>
+      )}
+
+      <DetailField label={`첨부 사진 / ${review.photoCount}장`}>
+        {review.imageUrls.length === 0 ? (
+          <MediaPlaceholder className="h-[72px] w-full text-caption">
+            <ImageOff className="mr-1.5 size-4" />
+            첨부된 사진이 없어요.
+          </MediaPlaceholder>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {review.imageUrls.map((url, index) => (
+              <img
+                key={url}
+                src={url}
+                alt={`리뷰 사진 ${index + 1}`}
+                className="size-[72px] rounded-md object-cover"
+              />
+            ))}
+          </div>
+        )}
+      </DetailField>
+
+      <DetailField label={`신고 이력 / ${review.reports.length}건`}>
+        <HistoryList items={review.reports} emptyLabel="접수된 신고가 없어요." />
+      </DetailField>
+
+      <DetailField label={`처리 이력 / ${review.actions.length}건`}>
+        <HistoryList
+          items={review.actions}
+          renderDescription={() => review.blindReasonText}
+          emptyLabel="처리 이력이 없어요."
+        />
+      </DetailField>
+
+      <DetailField label="처리 결정">
+        {allowed.length === 0 && (
+          <Alert variant="info" title="이미 삭제된 리뷰예요" className="mb-2.5">
+            <p>삭제는 되돌릴 수 없어서 블라인드도 해제도 할 수 없어요.</p>
+          </Alert>
+        )}
+        <DecisionRadioGroup<ReviewDecision>
+          name="review-decision"
+          value={decision}
+          onChange={onDecisionChange}
+          options={[
+            {
+              value: 'blind',
+              label: '블라인드',
+              caption: allowed.includes('blind')
+                ? '비노출, 되돌릴 수 있음'
+                : '이미 블라인드된 리뷰예요',
+              disabled: !allowed.includes('blind'),
+            },
+            {
+              value: 'unblind',
+              label: '블라인드 해제',
+              caption: allowed.includes('unblind')
+                ? '다시 노출하고 평점에 반영'
+                : '블라인드된 리뷰만 풀 수 있어요',
+              disabled: !allowed.includes('unblind'),
+            },
+            {
+              value: 'delete',
+              label: '삭제',
+              caption: '되돌릴 수 없음',
+              disabled: !allowed.includes('delete'),
+            },
+          ]}
+        />
+      </DetailField>
+
+      {needsReason && (
+        <>
+          <DetailField label="처리 사유">
+            <Select
+              options={blindReasonOptions}
+              value={reasonCode}
+              onChange={onReasonCodeChange}
+              placeholder="사유 선택"
+            />
+          </DetailField>
+
+          <DetailField label="처리 사유 메모" visibility="internal-only">
+            <Textarea
+              value={reasonText}
+              onChange={onReasonTextChange}
+              maxLength={500}
+              rows={3}
+              placeholder="운영 기록으로 남길 메모를 입력하세요."
+            />
+          </DetailField>
+        </>
+      )}
+    </DetailDrawerBody>
   )
 }

@@ -1,6 +1,9 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { API_PATH_PREFIX } from '@aechak/api'
+import { adminBase, apiBase, errorBody } from './base'
+import { inquiryHandlers } from './inquiries.handlers'
+import { claimHandlers } from './claims.handlers'
+import { reviewHandlers } from './reviews.handlers'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-seller의 src/testing/msw 관례를
 // web-admin에 이식했다. 모듈 모킹 대신 네트워크 레벨에서 가로채 실제 HTTP 경로(URL·봉투·에러
@@ -10,10 +13,37 @@ import { API_PATH_PREFIX } from '@aechak/api'
 // api 모듈에서 받는다. 두 호스트를 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가 똑같이
 // 받아 주어, 실제 배포에서만 드러나는 호스트 오배치를 테스트가 놓친다. 두 상수는 test-setup.ts의
 // configureApiHosts 인자와 같은 값이어야 한다(admin 로컬 포트는 seller와 겹치지 않는 8082).
-export const API_ORIGIN = 'http://localhost:8080'
-export const ADMIN_ORIGIN = 'http://localhost:8082'
-const apiBase = `${API_ORIGIN}${API_PATH_PREFIX}`
-const adminBase = `${ADMIN_ORIGIN}${API_PATH_PREFIX}`
+export { ADMIN_ORIGIN, API_ORIGIN } from './base'
+export {
+  ADMIN_CLAIMS_URL,
+  ADMIN_CLAIM_DETAIL_URL,
+  ADMIN_CLAIM_INTERVENE_URL,
+  ADMIN_CLAIM_REASONS_URL,
+  currentAdminClaim,
+  makeAdminClaimWire,
+  seedAdminClaims,
+  type AdminClaimWire,
+} from './claims.handlers'
+export {
+  ADMIN_INQUIRIES_URL,
+  ADMIN_INQUIRY_ANSWER_URL,
+  ADMIN_INQUIRY_DETAIL_URL,
+  ADMIN_INQUIRY_STATUS_URL,
+  currentAdminInquiry,
+  makeAdminInquiryWire,
+  seedAdminInquiries,
+  type AdminInquiryWire,
+} from './inquiries.handlers'
+export {
+  ADMIN_REVIEWS_URL,
+  ADMIN_REVIEW_BLIND_URL,
+  ADMIN_REVIEW_DETAIL_URL,
+  ADMIN_REVIEW_UNBLIND_URL,
+  currentAdminReview,
+  makeAdminReviewWire,
+  seedAdminReviews,
+  type AdminReviewWire,
+} from './reviews.handlers'
 
 export const ADMIN_ROSTER_URL = `${adminBase}/admin/admins`
 export const ADMIN_ROSTER_MEMBER_URL = `${ADMIN_ROSTER_URL}/:userId`
@@ -128,7 +158,6 @@ export function currentAdminApplication(applicationId: number): AdminApplication
   return found ? clone(found) : null
 }
 
-const errorBody = (errorCode: number, message: string) => ({ errorCode, message })
 
 function summaryOf(row: AdminApplicationWire) {
   // 목록 행에는 6필드뿐이다 — 사업자등록번호도 전화번호도 없다(BE AdminApplicationSummaryResponse).
@@ -1085,5 +1114,8 @@ export const handlers = [
   ...rosterHandlers,
   ...memberHandlers,
   ...orderHandlers,
+  ...inquiryHandlers,
+  ...claimHandlers,
+  ...reviewHandlers,
 ]
 export const server = setupServer(...handlers)
