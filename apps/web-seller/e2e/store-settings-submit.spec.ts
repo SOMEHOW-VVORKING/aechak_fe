@@ -21,6 +21,10 @@ const API_ORIGIN = 'http://localhost:8080'
 const SELLER_ORIGIN = 'http://localhost:8081'
 const DOCS_ORIGIN = 'https://docs.e2e.local'
 
+// 제출 성공 토스트 — 세 테스트가 같은 문구를 본다. SCRUM-345가 "알림으로 알려드릴게요"를 걷은
+// 자리라(셀러에게 가는 심사 통보 알림이 없다) 문구가 또 바뀔 수 있어 한곳에 모아 둔다.
+const SUBMITTED_TOAST = '제출했어요. 심사 결과는 이 화면에서 확인할 수 있어요.'
+
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -283,7 +287,7 @@ test('[AC-STORE-E2E-001] 제출하기 한 번이 presigned 업로드 → 저장 
   await page.getByLabel('예금주').fill('정지은')
   await submit.click()
 
-  await expect(page.getByText('제출했어요. 심사 결과를 알림으로 알려드릴게요.')).toBeVisible()
+  await expect(page.getByText(SUBMITTED_TOAST)).toBeVisible()
 
   // 순서가 계약이다 — 발급과 PUT이 서류별로 짝지어 직렬로 돌고(한 건이 실패하면 거기서 멈춘다),
   // 저장이 성공한 뒤에만 submit이 나간다(반려 상태에서 저장 없이 제출하면 BE가 10101을 준다).
@@ -372,7 +376,7 @@ test('[AC-STORE-E2E-002] 전송 중에는 제출·임시저장이 모두 잠겨,
   await save.click({ force: true })
 
   releaseSubmit()
-  await expect(page.getByText('제출했어요. 심사 결과를 알림으로 알려드릴게요.')).toBeVisible()
+  await expect(page.getByText(SUBMITTED_TOAST)).toBeVisible()
   expect(recorded.calls.filter(call => call === 'POST /seller-applications')).toHaveLength(1)
   expect(recorded.calls.filter(call => call === 'POST /seller-applications/submit')).toHaveLength(1)
   // 업로드도 한 번씩만 — 다시 눌릴 때마다 presigned를 또 받으면 S3에 고아 객체가 쌓인다.
@@ -456,7 +460,7 @@ test('[AC-STORE-E2E-004] 반려는 사유와 재제출하기를 보여주고, �
   await expect(page.getByText('첨부됨 (저장 전)')).toHaveCount(1)
   await resubmit.click()
 
-  await expect(page.getByText('제출했어요. 심사 결과를 알림으로 알려드릴게요.')).toBeVisible()
+  await expect(page.getByText(SUBMITTED_TOAST)).toBeVisible()
   expect(recorded.calls).toEqual([
     'GET /seller-applications',
     'POST /files/presigned-url SELLER_DOCUMENT application/pdf',
