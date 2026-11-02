@@ -31,6 +31,9 @@ export const ADMIN_ORDER_METRICS_URL = `${ADMIN_ORDERS_URL}/metrics`
 export const ADMIN_ORDER_DETAIL_URL = `${ADMIN_ORDERS_URL}/:orderId`
 export const ADMIN_ORDER_NUDGE_URL = `${ADMIN_ORDER_DETAIL_URL}/dispatch-nudges`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
+// 기본 핸들러를 두지 않는다 — 로그아웃을 부르는지/안 부르는지가 테스트의 단언이라,
+// 조용히 204를 주는 기본값이 있으면 "취소했는데 호출했다"는 회귀가 통과한다.
+export const WEB_LOGOUT_URL = `${apiBase}/auth/web/logout`
 
 type WireStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 type WireBusinessType = 'PERSONAL_GENERAL' | 'SOLE_PROPRIETORSHIP' | 'CORPORATE'

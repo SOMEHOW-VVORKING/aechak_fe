@@ -38,3 +38,22 @@ export function loginErrorMessage(errorCode: number): string {
   if (errorCode === 20006) return '구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.'
   return '로그인에 실패했어요. 다시 시도해 주세요.'
 }
+
+/**
+ * 서버 세션 종료(`POST /auth/web/logout`) — 자격증명이 httpOnly refresh 쿠키라 body도
+ * Authorization도 없고, 쿠키가 없거나 이미 폐기된 토큰이어도 204를 주는 멱등 EP다.
+ *
+ * 구매자 앱(`web-buyer` shared/auth/auth.session.ts)과 **전송 실패 처리가 다르다**. 구매자는
+ * 실패를 삼키고 로컬 플래그만 내려도 로그아웃이 성립하지만, 셀러센터에서 세션의 유일한 증거는
+ * 이 쿠키다 — 호출이 실패하면 쿠키가 살아 있어 다음 네비게이션에서 __root 가드가 같은 계정으로
+ * 세션을 복원한다. 그걸 "로그아웃됐다"고 보여 주면 운영자는 계정이 바뀐 줄 알고 데모를 이어 간다.
+ * 그래서 실패는 삼키지 않고 그대로 던지고, 화면이 사실대로 말한다.
+ */
+export async function endServerSession(): Promise<void> {
+  // 경로가 `/auth/`라 호스트 분기와 401 재시도 인터셉터는 이미 비껴가지만, refresh와 같은 표식을
+  // 명시해 기능 호스트 설정이 바뀌어도 목적지(api 모듈)와 쿠키 동봉이 흔들리지 않게 한다.
+  await axiosInstance.post('/auth/web/logout', undefined, {
+    forceApiHost: true,
+    withCredentials: true,
+  })
+}

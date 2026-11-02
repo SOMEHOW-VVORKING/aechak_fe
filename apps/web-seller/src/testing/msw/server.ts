@@ -32,6 +32,9 @@ export const SELLER_INQUIRIES_URL = `${sellerBase}/sellers/me/inquiries`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
+// 기본 핸들러를 두지 않는다 — 로그아웃을 부르는지/안 부르는지가 테스트의 단언이라,
+// 조용히 204를 주는 기본값이 있으면 "취소했는데 호출했다"는 회귀가 통과한다.
+export const WEB_LOGOUT_URL = `${apiBase}/auth/web/logout`
 
 // BE ApplicationResponse 모양의 서버 상태. null = 신청 이력 없음(GET 404/10100).
 export interface SellerApplicationWire {
