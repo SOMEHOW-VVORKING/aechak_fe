@@ -10,6 +10,7 @@ import {
   ADMIN_PRODUCT_INSPECTIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
+  seedAdminAuditLogs,
   seedAdminClaims,
   seedAdminInquiries,
   seedAdminOrders,
@@ -44,7 +45,8 @@ const normalizePath = (pathname: string) =>
  * `/admin/orders` 계열 넷(목록·지표·상세·발송 독촉)이 더해져 주문 배송 모니터링이,
  * `/admin/product-inspections` 넷이 더해져 AI 검수 큐가 실연동이 됐다. 2026-10-30 실측에서는
  * `/admin/inquiries` 넷·`/admin/claims` 넷·`/admin/reviews` 다섯이 확인돼 서비스 문의·클레임·
- * 리뷰도 실연동이 됐다(SCRUM-331).
+ * 리뷰도 실연동이 됐다(SCRUM-331). 2026-11-03에는 `GET /admin/audit-logs` 하나가 확인돼 어드민
+ * 액션 로그가 실연동이 됐다(SCRUM-318).
  * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
 const LIVE_LABELS = [
@@ -56,6 +58,7 @@ const LIVE_LABELS = [
   '서비스 문의 관리',
   '취소/반품/교환',
   '리뷰 관리',
+  '어드민 액션 로그',
 ] as const
 
 /**
@@ -69,7 +72,6 @@ const PENDING_LABELS = [
   '신고 제재 관리',
   '채팅 CS 모니터링',
   '알림/공지 관리',
-  '어드민 액션 로그',
 ] as const
 
 /** 꼬리표 글자는 버튼 접근명 끝에 붙는다 — 어느 항목에 붙었는지까지 이름으로 확인할 수 있다. */
@@ -121,6 +123,9 @@ describe('어드민 nav', () => {
     seedAdminInquiries()
     seedAdminClaims()
     seedAdminReviews()
+    // AC-ADMIN-NAV-006의 대시보드 차례는 `/audit-log`에서 시작하므로 이 시드가 없으면 감사 로그가
+    // 앞 테스트의 모듈 상태를 그대로 읽는다.
+    seedAdminAuditLogs()
   })
 
   it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
@@ -227,7 +232,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 7항목의 목적지에는 띠가 **있어야** 하고, 실연동 8항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 6항목의 목적지에는 띠가 **있어야** 하고, 실연동 9항목에는 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).

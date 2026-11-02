@@ -54,8 +54,9 @@ const PENDING_TAG = '준비 중'
 // 꼬리표 유무는 dev 실측으로 갈랐다(2026-10-30, `GET /v3/api-docs`). admin-api-dev에 있는 경로는
 // `/admin/admins`(+`/{userId}`), `/admin/seller-applications` 계열 넷, `/admin/members` 계열
 // 넷(목록·상세·제재·해제), `/admin/orders` 계열 넷(목록·지표·상세·발송 독촉, SCRUM-339),
-// 그리고 이번에 더해진 `/admin/inquiries` 넷(목록·상세·답변·상태 전이), `/admin/claims`
-// 넷(목록·사유 카탈로그·상세·개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제)이다.
+// `/admin/inquiries` 넷(목록·상세·답변·상태 전이), `/admin/claims` 넷(목록·사유 카탈로그·상세·
+// 개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제), 그리고 이번에 확인된
+// `GET /admin/audit-logs` 하나(어드민 액션 로그, SCRUM-318)다.
 // seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
 // 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
 // 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -180,12 +181,8 @@ const navGroups: NavGroup[] = [
         icon: <Megaphone className={iconClass} />,
         tag: PENDING_TAG,
       },
-      {
-        key: '/audit-log',
-        label: '어드민 액션 로그',
-        icon: <ScrollText className={iconClass} />,
-        tag: PENDING_TAG,
-      },
+      // `/admin/audit-logs`가 생겨 실연동됐다(SCRUM-318) — 꼬리표를 떼고 화면의 띠도 걷었다.
+      { key: '/audit-log', label: '어드민 액션 로그', icon: <ScrollText className={iconClass} /> },
     ],
   },
 ]

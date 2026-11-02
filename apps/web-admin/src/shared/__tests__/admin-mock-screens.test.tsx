@@ -74,24 +74,26 @@ const NOT_SAVED = '저장되지 않아요'
 const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시는 새로 고치면 사라져요.'
 
 /**
- * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 7화면.
+ * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 6화면.
  * (일반 회원 관리는 `/admin/members` 넷, 주문 배송 모니터링은 `/admin/orders` 넷, AI 검수 큐는
  *  `/admin/product-inspections` 넷이 생겨 빠졌고, 서비스 문의·클레임·리뷰는 2026-10-30 실측에서
- *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다 — 실연동 화면 계약은
- *  각 feature 의 `__tests__`가 본다.)
+ *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다. 어드민 액션 로그는
+ *  2026-11-03 실측의 `GET /admin/audit-logs`로 빠졌고 읽기 전용 계약은
+ *  `features/audit-log/__tests__`가 AC-ADM-AUD-009로 이어 본다 — 실연동 화면 계약은 각 feature 의
+ *  `__tests__`가 본다.)
  *
  * 2026-10-18(SCRUM-238)이 이 화면들의 진입을 `UnavailableScreen`으로 막았고, 2026-10-26
  * (SCRUM-302)이 nav 항목만 되살렸다. 그 상태가 "메뉴는 보이는데 눌러도 아무것도 못 본다"였고
  * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적으로 되돌렸다(SCRUM-308).
  *
  * 그래서 이 파일이 고정하는 계약은 셋이다.
- * 1. 7화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
+ * 1. 6화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
  *    있는 문자열로 확인한다(개수만 세면 한 화면이 다른 화면으로 바뀌어도 통과한다).
- * 2. 7화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
+ * 2. 6화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
  * 3. 저장·제출·발송을 눌러도 **요청이 한 건도 더 나가지 않는다.** 서버에 없는 경로로 나가면
  *    운영자 화면에 500·404가 찍힌다.
  *
- * nav 꼬리표와 띠가 짝이 맞는지, 실연동 3화면에 띠가 없는지는 `admin-nav.test.tsx`가 본다.
+ * nav 꼬리표와 띠가 짝이 맞는지, 실연동 화면에 띠가 없는지는 `admin-nav.test.tsx`가 본다.
  */
 const SCREENS = [
   ['대시보드', '/', '확인이 필요한 일'],
@@ -100,7 +102,6 @@ const SCREENS = [
   ['신고 제재 관리', '/reports', '프리미엄 관절 영양제 180정'],
   ['채팅 CS 모니터링', '/chat-monitoring', 'ROOM-4821'],
   ['알림/공지 관리', '/notices', '10월 28일 새벽 결제 시스템 점검 안내'],
-  ['어드민 액션 로그', '/audit-log', '상담방 운영 개입'],
 ] as const satisfies readonly (readonly [string, string, string])[]
 
 /** 목록 표를 그리는 화면. 대시보드만 표가 아니라 지표 카드로 내용을 보여준다. */
@@ -109,7 +110,6 @@ const TABLE_SCREENS = SCREENS.filter(([, path]) => path !== '/')
 /**
  * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이고,
  * `prefill`은 버튼이 잠겨 있을 때 먼저 골라야 하는 Select 옵션이다.
- * 어드민 액션 로그는 읽기 전용이라 여기 없고, 아래에서 쓰기 버튼이 **없다는 것**을 단언한다.
  *
  * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러다(셀러의
  * `handleSaveMemo`/`handleConfirmSuspend`, 상품 검수의 `handlePass`/`handleKeepBlinded`/
@@ -290,40 +290,4 @@ describe('어드민 예시 데이터 화면', () => {
     expect(bodyRowCount()).toBe(6)
   })
 
-  /**
-   * 어드민 액션 로그는 **읽기 전용**이다 — 감사 기록을 운영자가 고칠 수 있으면 기록의 의미가 없다.
-   *
-   * 이름 목록으로만 없음을 단언하면 두 군데서 샌다: 상세 Drawer를 열지 않으면 그 안에 붙은 쓰기
-   * 버튼을 못 보고, 목록에 없는 이름(`승인`·`내보내기` 등)으로 붙이면 그대로 통과한다. 그래서
-   * **목록과 상세 각각에서 허용 목록 밖의 버튼이 하나도 없는지**를 본다.
-   */
-  it('[AC-ADMIN-MOCK-006] 어드민 액션 로그는 읽기 전용이라 목록과 상세 모두 쓰기 버튼이 없다', async () => {
-    const user = userEvent.setup()
-    const requests = recordRequests()
-    renderAt('/audit-log')
-
-    expect(await screen.findByRole('heading', { name: '어드민 액션 로그' })).toBeInTheDocument()
-
-    // nav를 빼고 화면 본문만 본다 — 본문에 있어도 되는 버튼은 행을 여는 시각 링크뿐이다.
-    // 이름 목록으로 금지하는 대신 **허용 목록 밖이 없는지**를 보므로, 어떤 이름으로 쓰기 버튼을
-    // 붙여도 걸린다.
-    const main = screen.getByRole('main')
-    const [firstRow, ...otherRows] = await within(main).findAllByRole('button')
-    if (!firstRow) throw new Error('액션 로그 목록에 행이 없다')
-    for (const button of [firstRow, ...otherRows]) {
-      expect(button).toHaveAccessibleName(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
-    }
-
-    await user.click(firstRow)
-
-    const drawer = await screen.findByRole('dialog', { name: '액션 로그 상세' })
-    // 상세에 허용되는 조작은 닫기 하나다.
-    const drawerButtons = within(drawer).getAllByRole('button')
-    expect(drawerButtons.map(button => button.getAttribute('aria-label') ?? button.textContent)).toEqual([
-      '닫기',
-    ])
-
-    // 읽기 전용 화면은 셸 배지 조회 말고는 아무 요청도 만들지 않는다.
-    expect(unexpectedRequests(requests)).toEqual([])
-  })
 })
