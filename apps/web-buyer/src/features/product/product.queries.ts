@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { errorResponse, getProductDetail, getProductOptions, getProductReviews } from '@aechak/api'
+import {
+  errorResponse,
+  getProductDetail,
+  getProductOptions,
+  getProductReviewSummary,
+  getProductReviews,
+  type ProductReviewSummaryResponse,
+} from '@aechak/api'
 import { findMockProduct, registerProducts } from '@/shared/catalog'
 import { getProductDetailMock, type ProductDetail, type ProductReviewEntry } from './product.mock'
 import {
@@ -81,5 +88,16 @@ export function useProductReviewPreview(id: string, options: { enabled: boolean 
         throw e
       }
     },
+  })
+}
+
+// 리뷰 AI 요약. 리뷰 목록 API처럼 JWT 필수라 호출부가 미리보기와 같은 조건을 enabled로 넘긴다.
+// 응답이 조회자의 대표 펫 체급에 따라 달라서 펫이 바뀌면 shared/pet이 이 키 전체를 지우고,
+// 리뷰를 쓰거나 지우면 review feature가 그 상품 키를 무효화한다. 키를 바꾸면 두 곳도 함께 바꾼다.
+export function useProductReviewSummary(id: string, options: { enabled: boolean }) {
+  return useQuery<ProductReviewSummaryResponse>({
+    queryKey: ['review-summary', id],
+    enabled: options.enabled && id !== '',
+    queryFn: async ({ signal }) => (await getProductReviewSummary(id, signal)).data,
   })
 }

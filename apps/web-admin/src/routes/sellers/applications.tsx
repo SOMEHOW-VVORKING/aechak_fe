@@ -78,14 +78,16 @@ const decisionModalMeta: Record<
 > = {
   approve: {
     title: '입점을 승인할까요?',
-    description: '승인 즉시 셀러 어드민이 활성화되고 신청자에게 통보돼요.',
+    description:
+      '승인 즉시 셀러 어드민이 활성화되고 신청자 화면도 승인 상태로 바뀌어요. 다만 메일·알림은 나가지 않으니 승인 사실은 따로 알려 주세요.',
     confirmLabel: '승인',
     confirmVariant: 'primary',
     message: '입점을 승인했어요.',
   },
   reject: {
     title: '신청을 반려할까요?',
-    description: '반려 사유가 신청자에게 통보돼요. 신청자는 보완 후 다시 제출할 수 있어요.',
+    description:
+      '반려 사유는 신청자의 스토어 설정 화면에 그대로 표시되고, 신청자는 보완 후 다시 제출할 수 있어요. 메일·알림은 나가지 않으니 반려 사실은 따로 알려 주세요.',
     confirmLabel: '반려',
     confirmVariant: 'danger',
     message: '신청을 반려했어요.',
@@ -486,7 +488,7 @@ function SellerApplicationsPage() {
               </p>
             </DetailField>
 
-            {/* BE 심사 결정은 승인/반려 2종이다 — 보완 요청은 별도 상태가 아니라 반려(사유 통보)
+            {/* BE 심사 결정은 승인/반려 2종이다 — 보완 요청은 별도 상태가 아니라 반려(사유 기록)
                 후 신청자가 재제출하는 플로우로 흡수됐다(ApplicationStatus 1:1 정리). */}
             {decidable && (
               <DetailField label="심사 결과">
@@ -496,9 +498,15 @@ function SellerApplicationsPage() {
                   onChange={setDecision}
                   options={[
                     { value: 'approve', label: '승인', caption: '입점 승인 후 셀러 어드민 활성화' },
-                    { value: 'reject', label: '반려', caption: '신청 반려 / 사유 통보 후 재제출 유도' },
+                    { value: 'reject', label: '반려', caption: '신청 반려 / 사유 기록 후 재제출 유도' },
                   ]}
                 />
+                {/* 승인·반려 뒤 신청자에게 나가는 메일·알림이 없다(BE에 통지 경로가 없다) —
+                    모달에서만 밝히면 결정 전에는 못 읽으므로 선택 칸에도 적는다. */}
+                <p className="text-caption text-text-tertiary">
+                  결과는 신청자의 스토어 설정 화면에만 반영돼요. 메일·알림은 나가지 않으니 결과는
+                  따로 알려 주세요.
+                </p>
               </DetailField>
             )}
 
@@ -518,14 +526,14 @@ function SellerApplicationsPage() {
                     onChange={text => setReasonDraft(current => ({ ...current, text }))}
                     maxLength={REJECTION_REASON_MAX_LENGTH}
                     rows={3}
-                    placeholder="신청자에게 통보할 반려 사유를 입력하세요."
+                    placeholder="신청자 화면에 표시할 반려 사유를 입력하세요."
                   />
                 )}
               </DetailField>
             )}
 
             {detail.status === 'rejected' && detail.rejectionReason && (
-              <DetailField label="통보된 반려 사유" visibility="visible-to-user">
+              <DetailField label="신청자에게 보이는 반려 사유" visibility="visible-to-user">
                 <p className="text-body-sm text-text-primary">{detail.rejectionReason}</p>
               </DetailField>
             )}

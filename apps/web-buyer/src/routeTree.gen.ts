@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WishlistRouteImport } from './routes/wishlist'
-import { Route as PreviewRouteImport } from './routes/preview'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as AddressesRouteImport } from './routes/addresses'
@@ -59,11 +58,6 @@ import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/prod
 const WishlistRoute = WishlistRouteImport.update({
   id: '/wishlist',
   path: '/wishlist',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PreviewRoute = PreviewRouteImport.update({
-  id: '/preview',
-  path: '/preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutRoute = CheckoutRouteImport.update({
@@ -292,7 +286,6 @@ export interface FileRoutesByFullPath {
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
@@ -338,7 +331,6 @@ export interface FileRoutesByTo {
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
@@ -387,7 +379,6 @@ export interface FileRoutesById {
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/_tabs/chat': typeof TabsChatRoute
   '/_tabs/market': typeof TabsMarketRoute
@@ -437,7 +428,6 @@ export interface FileRouteTypes {
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/chat'
     | '/market'
@@ -483,7 +473,6 @@ export interface FileRouteTypes {
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/chat'
     | '/market'
@@ -531,7 +520,6 @@ export interface FileRouteTypes {
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/_tabs/chat'
     | '/_tabs/market'
@@ -580,7 +568,6 @@ export interface RootRouteChildren {
   AddressesRoute: typeof AddressesRoute
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
-  PreviewRoute: typeof PreviewRoute
   WishlistRoute: typeof WishlistRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   MypageProductInquiriesRoute: typeof MypageProductInquiriesRoute
@@ -626,13 +613,6 @@ declare module '@tanstack/react-router' {
       path: '/wishlist'
       fullPath: '/wishlist'
       preLoaderRoute: typeof WishlistRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/preview': {
-      id: '/preview'
-      path: '/preview'
-      fullPath: '/preview'
-      preLoaderRoute: typeof PreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout': {
@@ -969,7 +949,6 @@ const rootRouteChildren: RootRouteChildren = {
   AddressesRoute: AddressesRoute,
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
-  PreviewRoute: PreviewRoute,
   WishlistRoute: WishlistRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   MypageProductInquiriesRoute: MypageProductInquiriesRoute,

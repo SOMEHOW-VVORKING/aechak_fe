@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav, type NavGroup } from '@aechak/design-system/web'
 import {
@@ -89,7 +89,19 @@ const groups: NavGroup[] = [
   },
 ]
 
-export function AppShell() {
+interface AppShellProps {
+  /**
+   * SideNav 맨 아래에 붙는 노드(로그아웃 진입점). 이 셸은 `src/shared/`에 있어 `src/features/`를
+   * import할 수 없으므로(boundaries: shared는 아무것도 import 못 한다) 인증 로직이 든 노드는
+   * `routes/__root.tsx`가 주입한다 — AGENTS.md의 "콜백/노드 주입" 규약 자리다.
+   *
+   * SideNav는 접힘(레일) 상태에서 footer를 그리지 않는다. 좁은 화면에서는 nav 항목도 전부
+   * 숨으므로 운영자는 어차피 펼쳐서 쓰고, 로그아웃도 같은 한 번의 펼치기 뒤에 있다.
+   */
+  navFooter?: ReactNode
+}
+
+export function AppShell({ navFooter }: AppShellProps) {
   const navigate = useNavigate()
   const pathname = useRouterState({ select: state => state.location.pathname })
   const isNarrow = useIsNarrowViewport()
@@ -119,6 +131,7 @@ export function AppShell() {
         onSelect={key => navigate({ to: key })}
         collapsed={collapsed}
         onCollapsedChange={setCollapsed}
+        footer={navFooter}
         header={
           <div className="flex items-center gap-2.5">
             <span className="flex size-9 flex-none items-center justify-center rounded-md bg-brand-subtle text-brand">

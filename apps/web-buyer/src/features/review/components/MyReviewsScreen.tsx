@@ -15,7 +15,7 @@ import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
-import { useAccount } from '@/shared/account'
+import { useMe } from '@/shared/account'
 import { ProductLineRow } from '@/shared/catalog'
 import {
   reviewErrorMessage,
@@ -25,7 +25,7 @@ import {
   type MyReviewTabView,
   type MyWrittenReview,
 } from '../review.queries'
-import { REVIEW_REWARD, type PendingReview } from '../review.mock'
+import { REVIEW_REWARD, TEXT_REVIEW_REWARD, type PendingReview } from '../review.mock'
 import { LoadMoreButton } from './LoadMoreButton'
 import { MyReviewCard } from './MyReviewCard'
 
@@ -44,17 +44,19 @@ const STATUS_NOTICE: Partial<Record<ReviewStatus, string>> = {
 const tabLabel = (label: string, count: number | null) => (count == null ? label : `${label} ${count}`)
 
 // 내 리뷰(b4-st-6). 작성 대기(배송완료·구매확정 미작성) / 작성 완료 탭 + 등록 완료 토스트.
-export function MyReviewsScreen({ submitted = false }: { submitted?: boolean }) {
+export function MyReviewsScreen({ submitted = false, photo = false }: { submitted?: boolean; photo?: boolean }) {
   const navigate = useNavigate()
   const { pending, completed } = useMyReviews()
-  const { nickname } = useAccount()
+  const nickname = useMe().account?.nickname ?? ''
   const deleteReview = useDeleteReview()
 
   // 방금 리뷰를 등록하고 돌아왔으면 완료 탭을 먼저 보여주고 성공 토스트를 띄운다.
   const [tab, setTab] = useState<MyReviewTab>(submitted ? 'completed' : 'pending')
   const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' }>({
     open: submitted,
-    message: submitted ? `리뷰가 등록됐어요. 적립금 ${REVIEW_REWARD.toLocaleString('ko-KR')}원 지급 예정` : '',
+    message: submitted
+      ? `리뷰가 등록됐어요. 적립금 ${(photo ? REVIEW_REWARD : TEXT_REVIEW_REWARD).toLocaleString('ko-KR')}원 지급 예정`
+      : '',
     variant: 'success',
   })
   const [deleteTarget, setDeleteTarget] = useState<MyWrittenReview | null>(null)

@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import { setAccessToken } from '@aechak/api'
+import { logout } from '@/shared/auth'
 import { routeTree } from '../../../routeTree.gen'
 import {
   ORDER_CONFIRM_URL,
@@ -15,6 +17,10 @@ import {
   seedOrderGroups,
   server,
 } from '@/testing/msw/server'
+
+// 주문 내역은 회원 전용 화면이라 비회원에게는 로그인 안내가 뜬다 — 토큰이 세션의 정본이므로
+// 이 화면들의 전제인 회원 세션을 토큰으로 세운다.
+beforeEach(() => setAccessToken('member-token'))
 
 // 주문 목록·상세는 서버(GET /order-groups, GET /orders/{orderId})로 구동한다. 응답 계약·필터·커서는
 // testing/msw/server.ts가 소유하고 여기선 seedOrderGroups로 시나리오만 세운다(afterEach가 리셋).
@@ -202,6 +208,24 @@ const CANCELLED = makeOrderGroupRow({
 })
 
 describe('/orders 주문 목록', () => {
+  it('[AC-ORDER-GUEST-001] 비회원은 주문 내역 대신 로그인 안내를 보고 서버를 부르지 않는다', async () => {
+    // GET /order-groups는 회원 전용이다. 화면을 그대로 열면 401 → 전역 로그인 리다이렉트로
+    // 빈 화면만 스치고 사라진다 — 왜 비었는지와 다음 행동을 그 자리에 보여준다.
+    let requested = 0
+    server.use(
+      http.get(ORDER_GROUPS_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { orderGroups: [], nextCursor: null, hasNext: false } })
+      }),
+    )
+    logout()
+    renderAt('/orders')
+
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    expect(requested).toBe(0)
+  })
+
   it('[AC-ORDER-ROUTE-001] 그룹 카드 안에 셀러 주문별 상태 pill을 보여준다(혼합 상태 그룹)', async () => {
     seedOrderGroups([MIXED, PAID_ONLY])
     renderAt('/orders')

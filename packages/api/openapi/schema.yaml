@@ -433,6 +433,30 @@ paths:
                 $ref: "#/components/schemas/ReviewListEnvelope"
         "404":
           description: "존재하지 않는 상품"
+  /products/{productId}/review-summary:
+    get:
+      summary: "상품 리뷰 AI 요약 조회"
+      description: >-
+        상품 전체 리뷰 요약과, 조회자 대표 펫과 같은 종/체급 보호자들의 리뷰 요약을 함께 준다.
+        인증 필요(비로그인 401). productId는 상품 공개 ULID. 미존재/비노출 상품은 404.
+      operationId: "getProductReviewSummary"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductReviewSummaryEnvelope"
+        "404":
+          description: "존재하지 않는 상품"
   /reviews:
     post:
       summary: "리뷰 작성"
@@ -2084,6 +2108,144 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SellerOptionCombinationChangeResponse"
+  /sellers/me/product-drafts:
+    get:
+      summary: "셀러 상품 임시저장 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. 최근 저장순이며 페이지네이션이 없다 — 셀러당 보관 상한이
+        10건이라 전건을 한 번에 준다. 마지막 저장으로부터 30일이 지난 초안은 목록에서 빠지고
+        다음 저장 때 지워진다. 응답의 `totalCount`는 `items.length`와 같다.
+      operationId: "getSellerProductDrafts"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftListResponse"
+    post:
+      summary: "셀러 상품 임시저장 생성"
+      description: >-
+        등록 폼을 채우는 중에도 저장되도록 전 필드가 선택이다 — 필수값·가격 범위·옵션 구성 검증은
+        정식 등록(POST /sellers/me/products)만 건다. 남는 검증은 길이·개수 상한뿐이고 위반은
+        400 errorCode 90001이다. 보관 상한 10건을 넘기면 422 errorCode 40401 —
+        덮어쓰기(PUT)는 상한을 보지 않는다.
+        이미지 키는 presigned로 받은 tmp 키를 그대로 보관한다. tmp/는 S3 수명주기로 하루 뒤
+        지워지므로 하루 지난 초안의 이미지 키는 정식 등록에서 404 errorCode 100001이 된다.
+      operationId: "createSellerProductDraft"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductDraftSaveRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftSaveResponse"
+  /sellers/me/product-drafts/{draftId}:
+    get:
+      summary: "셀러 상품 임시저장 단건 조회"
+      description: >-
+        등록 폼 프리필용. 없는 초안·남의 초안·보관 기간이 지난 초안을 모두 404 errorCode 40400으로
+        묶는다. 요청의 중첩 입력(이미지 키 목록·옵션)은 서버가 해석하지 않고 보낸 모양 그대로
+        돌려주므로, 응답 필드를 그대로 다시 PUT해도 된다.
+      operationId: "getSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "초안 공개 식별자(ULID 26자)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftResponse"
+    put:
+      summary: "셀러 상품 임시저장 덮어쓰기"
+      description: >-
+        폼 내용을 통째로 덮어쓴다 — 보내지 않은 필드는 "유지"가 아니라 "비움"이다. 보관 상한을 보지
+        않으므로 상한에 걸린 셀러도 이어쓰기는 계속 저장된다. 대상이 없으면 404 errorCode 40400.
+      operationId: "updateSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductDraftSaveRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftSaveResponse"
+    delete:
+      summary: "셀러 상품 임시저장 삭제"
+      description: >-
+        되돌릴 수 없다. 대상이 없으면 404 errorCode 40400. 정식 등록이 끝난 뒤 이어쓰던 초안을
+        치우는 데도 쓴다(등록 요청에 초안 id를 실을 자리가 없어 두 단계다).
+      operationId: "deleteSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content"
+  /sellers/me/product-drafts/autofill:
+    post:
+      summary: "셀러 상품 등록 폼 AI 초안 받기"
+      description: >-
+        상품명으로 AI가 카테고리·상세 설명·옵션 초안을 만든다. 아무것도 저장하지 않는다 — 셀러가
+        받아들인 값은 등록·임시저장 요청으로 다시 나간다. AI가 못 만들어도 200이고 state로 알린다
+        (OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴 수 있어 FE는 열거로 가두지 않는다). OK가 "모든
+        필드를 받았다"를 뜻하지 않는다 — 비어 있는 사유는 fieldStatus(필드명 → 사유 문자열)에,
+        셀러에게 보일 안내는 sellerNotice에 실린다. 초안이 드는 필드는 넷(categoryId·description·
+        optionGroups·optionCombinations)뿐이고 상품명·가격·할인·이미지는 설계상 늘 비어 있다.
+        쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004. 셀러당 쿨다운(기본 20초) 안의
+        재호출은 429 errorCode 40402이고 모델을 부르지 않는다. 상품명이 비면 400 errorCode 90001.
+      operationId: "autofillSellerProductDraft"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductDraftAutofillRequest"
+      responses:
+        "200":
+          description: "OK — 실패(UNAVAILABLE 등)도 이 코드로 온다"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftAutofillResponse"
   /sellers/me/dashboard/summary:
     get:
       summary: "셀러센터 대시보드 집계"
@@ -2259,6 +2421,51 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ShippingPolicyUpdateRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /sellers/me/store:
+    get:
+      summary: "셀러 스토어 설정 조회"
+      description: >-
+        셀러센터(seller 모듈) 전용. 대상은 늘 인증 주체의 스토어 1건이라 경로에 식별자가 없다.
+        **셀러가 아닌 계정도 200이다** — 한 화면이 입점 신청과 스토어 운영을 겸하므로
+        isSeller=false·store=null·applicationStatus(신청 이력 없으면 null)로 신청 단계를 그린다.
+        정지·휴점 셀러도 조회는 열려 있다(쓰기만 활성 셀러로 막힌다). 미인증은 401 errorCode 20004.
+        주소 3필드(zipCode·roadAddress·detailAddress)는 배송 정책의 출고지와 같은 컬럼이라
+        두 화면이 같은 값을 본다.
+      operationId: "getSellerStore"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSettingsResponse"
+    put:
+      summary: "셀러 스토어 설정 저장"
+      description: >-
+        **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(이미지를 빼면 제거,
+        주소를 빼면 비워진다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것.
+        자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002,
+        셀러로 등록된 적 없는 계정은 403 errorCode 10004다(조회가 200인 것과 다르다).
+        본문 검증(빈 상호, 상호 100자·브랜드 소개 1000자·이미지 키 1024자·우편번호 10자·
+        도로명·상세주소 255자 초과)은 전부 400 errorCode 90001이다. 상호는 서버가 앞뒤 공백을
+        떼고 저장하는데, 본문 검증을 통과하고도 떼면 비는 공백 문자만의 상호는 도메인이
+        400 errorCode 10006으로 거절한다. 이미지 키는 업로드 승격 전 임시 키를 보내면 서버가
+        승격해 저장하고, 조회로 받은 키를 그대로 돌려보내면 재승격 없이 유지된다. 남의 tmp 키나
+        용도가 다른 키는 403 errorCode 100002·100003이고 그때는 상호도 저장되지 않는다.
+      operationId: "updateSellerStore"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreSettingsUpdateRequest"
       responses:
         "204":
           description: "No Content"
@@ -3013,16 +3220,18 @@ paths:
     post:
       summary: "어드민 관리자 승격"
       description: >-
-        성공은 204 No Content(본문 없음)다. **승격 직후 그 사람의 토큰에는 권한이 반영되지 않는다** —
-        role은 로그인 시점 JWT 스냅샷이라 승격된 계정이 api에서 다시 로그인해야 ADMIN 토큰을 받는다.
-        화면에 그 안내를 고정 문구로 둬야 한다(계약의 일부).
+        성공은 204 No Content(본문 없음)다. **승격은 그 계정이 access를 다시 받을 때 반영된다** —
+        TokenService가 access를 구울 때마다 역할을 DB에서 다시 읽으므로(SCRUM-329) 재로그인은
+        필요 없다. 이미 발급된 access(수명 30분)는 만료 전까지 옛 역할로 통과하고, 갱신은 시각이
+        아니라 401로 촉발되므로 반영 시점에 상한을 약속할 수 없다.
+        화면에 그 반영 시점을 고정 문구로 둬야 한다(계약의 일부).
         400 errorCode 90001 — userId 누락(@Valid).
         404 errorCode 30000 USER_NOT_FOUND.
         409 errorCode 30012 USER_ALREADY_ADMIN.
         409 errorCode 30017 USER_NOT_PROMOTABLE — ACTIVE가 아닌 계정(정지·온보딩 미완). 계약 초안의
         30015가 아니고, P0-4 보고 시점의 500도 아니다(현재 develop에서 409/30017로 고정됐다).
         403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 승격. 강등 직후에도 옛 ADMIN
-        토큰이 게이트를 통과하므로 자기 자격을 되돌리는 경로를 막는다.
+        access가 남은 수명 동안 게이트를 통과하므로 자기 자격을 되돌리는 경로를 막는다.
       operationId: "promoteAdmin"
       security:
         - bearerAuth: []
@@ -3044,8 +3253,10 @@ paths:
         403 errorCode 30014 SELF_ROLE_CHANGE_NOT_ALLOWED — 자기 자신 강등.
         409 errorCode 30013 LAST_ADMIN_CANNOT_BE_DEMOTED — 관리자가 0명이 되는 강등. 0명이 되면
         어드민 전 EP가 20011로 막히고 복구 경로가 DB 직접 조작이나 기동 부트스트랩뿐이라 서버가 막는다.
-        강등해도 이미 발급된 access(30분)·refresh(7일)는 만료까지 ADMIN으로 통과한다(토큰 무효화
-        배선 없음) — 즉시 차단으로 설명하면 안 된다.
+        강등은 즉시가 아니다 — 이미 발급된 access(수명 30분)가 만료될 때까지 ADMIN으로 통과하고,
+        그 뒤의 갱신은 역할을 DB에서 다시 읽어(SCRUM-329) 일반 회원으로 내려온다. 토큰을 앞당겨
+        폐기하는 배선은 없다. refresh 수명(7일)까지 통과한다고도, 재로그인 전까지 유지된다고도
+        설명하면 안 된다.
       operationId: "demoteAdmin"
       security:
         - bearerAuth: []
@@ -3059,6 +3270,33 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /sellers/me/products/{productId}/inspection:
+    get:
+      summary: "내 상품 검수 진행 단계와 사유"
+      description: >-
+        progressStep은 서버가 계산한다. 가장 최근 검수가 QUEUED면 REQUESTED, IN_FLIGHT면
+        AI_REVIEWING이다. 관리자가 반려한 상품을 고쳐 AI를 통과해 관리자 재확인을 기다리면
+        ADMIN_REVIEWING이고, 그 밖에는 상품 inspectionStatus(APPROVED, REJECTED)를 따르며 PENDING이면
+        REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께
+        reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다.
+        rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를
+        타지 않은 상품은 inspectionStatus와 progressStep만 채워진다. 남의 상품·없는 상품은 404 errorCode 40000.
+      operationId: "getMyProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductInspectionResponse"
   /admin/members:
     get:
       summary: "어드민 일반 회원 목록"
@@ -3329,6 +3567,299 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /admin/product-inspections:
+    get:
+      summary: "어드민 상품 검토 큐 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용이며 권한 없음은 403 errorCode 20011. AI가 위반으로 반려한 상품과,
+        관리자가 반려한 상품을 고쳐 AI를 통과한 상품이 PENDING_REVIEW로 쌓인다. 오프셋 페이지네이션이고
+        정렬은 판정 시각(blindedAt) 내림차순·id 내림차순이다. status를 주지 않으면 전체다.
+        page 음수는 0으로, size는 1~100으로 서버가 보정한다.
+      operationId: "getAdminProductInspections"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ReviewQueueStatus"
+          description: "대문자 enum 이름을 그대로 보낸다. 생략하면 전체"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductInspectionListResponse"
+  /admin/product-inspections/{productId}:
+    get:
+      summary: "어드민 상품 검토 상세"
+      description: >-
+        productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로,
+        설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는
+        상품이 한 번도 검수를 타지 않았으면 null이다. 없는 상품은 404 errorCode 40000.
+      operationId: "getAdminProductInspectionDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductInspectionDetailResponse"
+  /admin/product-inspections/{productId}/approve:
+    post:
+      summary: "어드민 상품 검토 승인"
+      description: >-
+        성공은 204 No Content(빈 바디)다. AI 반려가 오탐이면 승인한다. 상품을 APPROVED로 바꾸고 열린
+        검토 행을 승인으로 닫는다.
+        열린 검토 행이 없으면 409 errorCode 40500 — 셀러가 고친 내용이 먼저 AI를 통과해 행이
+        닫혔거나 다른 관리자가 먼저 처리한 경우라 클라이언트는 목록을 다시 조회하면 된다.
+        없는 상품은 404 errorCode 40000.
+      operationId: "approveAdminProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content"
+  /admin/product-inspections/{productId}/reject:
+    post:
+      summary: "어드민 상품 검토 반려"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 상품을 REJECTED로 확정하고 사유를 남긴다. 사유는 셀러 검수
+        조회의 rejectReason으로 그대로 보인다. 이후 셀러가 고친 내용이 AI를 통과해도 관리자가 다시
+        확인할 때까지 REJECTED로 남는다. 사유 누락·공백·500자 초과는 400 errorCode 90001.
+        열린 검토 행이 없으면 409 errorCode 40500. 없는 상품은 404 errorCode 40000.
+      operationId: "rejectAdminProductInspection"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectAdminProductInspectionRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/orders:
+    get:
+      summary: "어드민 주문 목록"
+      description: >-
+        플랫폼 전체 주문. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다
+        (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 주문 역순
+        (orderedAt DESC, orderId DESC) 고정이고 **커서 페이징**이다.
+        **결제대기(PENDING_PAYMENT) 주문은 대상이 아니다** — 결제 전에도 테이블에 남는 행이라
+        모니터링에 섞으면 안 된다. `status=PENDING_PAYMENT`를 지정하면 400 errorCode 90001
+        ("status: 결제대기 주문은 조회 대상이 아닙니다.")이다.
+        `orderedFrom`·`orderedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음
+        날 0시 미만으로 환산한다). 시작일이 종료일보다 늦으면 400 errorCode 90001.
+        `keyword`는 100자까지고(초과는 400 errorCode 90001), `sellerId`는 양수여야 한다.
+        **`keyword`는 구매자를 찾지 못한다** — 주문번호·셀러 상호·상품명·옵션명만 본다.
+        `delayedOnly=true`면 지연 신호가 붙은 행만 남는다 — **지연 판정 기준은 서버가 쥔다**
+        (발송 기한 `order.dispatch.sla-days`, 배송 정체 `order.delivery.sla-days`).
+        커서에는 필터가 실리지 않아 필터를 바꿔도 거부되지 않지만, 커서가 가리키는 앵커가 새 필터
+        집합과 무관해 결과가 섞인다 — **필터를 바꾸면 커서를 버리고 처음부터 받을 것.**
+        망가진 커서는 400 errorCode 90002.
+      operationId: "getAdminOrders"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: "주문 상태 하나. PENDING_PAYMENT는 보내면 400/90001"
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+        - name: sellerId
+          in: query
+          description: "셀러 id(양수). 빈 값은 키째 빼서 보낼 것"
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: keyword
+          in: query
+          description: >-
+            주문번호 / 셀러 상호 / 상품명 / 옵션명 부분 일치(대소문자 무시). 빈 값은 키째 빼서 보낼 것.
+            **구매자는 검색 대상이 아니다** — 닉네임이 user BC 테이블에 있어 이 쿼리가 조인하지 못하고
+            주문에 남은 수령인명은 암호문이라 LIKE가 불가능하다. 화면 안내 문구에 구매자를 적으면
+            운영자가 닉네임을 넣고 0건을 "주문이 없다"로 읽는다
+          schema:
+            type: string
+            maxLength: 100
+        - name: orderedFrom
+          in: query
+          description: "주문일 하한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+        - name: orderedTo
+          in: query
+          description: "주문일 상한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+        - name: delayedOnly
+          in: query
+          description: "지연 신호가 붙은 행만. 생략은 false"
+          schema:
+            type: boolean
+        - name: cursor
+          in: query
+          description: "직전 응답의 nextCursor. 필터를 바꿨으면 재사용하지 말 것"
+          schema:
+            type: string
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrderListResponse"
+  /admin/orders/metrics:
+    get:
+      summary: "어드민 주문 모니터링 지표"
+      description: >-
+        모니터링 카드 넷. **목록과 경로가 나뉘어 있고 받는 파라미터도 다르다** — 상태·지연·키워드를
+        받지 않는다. 카드가 그 축으로 모수를 쪼개 보여주므로 상태로 좁히면 카드 넷 중 셋이 0으로
+        눌린다. 화면은 셀러·기간만 공유하고 상태·지연·키워드는 목록에만 건다.
+        **금액 카드의 뜻은 서버가 정한다** — `totalOrderAmount`는 상품금액 + 셀러배송비 -
+        안분 쿠폰할인인 **주문 금액**이고 실제 수납액이 아니다. 적립금은 주문그룹 단위로 쓰여
+        셀러별 주문에 안분할 근거가 없어 빠지지 않으므로 적립금을 쓴 주문에서 PG 청구액보다 크다 —
+        카드를 "결제액"으로 적으면 운영자가 거짓을 읽는다. 취소 주문과 취소·반품으로 종결된 품목이
+        빠져(건수 카드 셋과 모수가 다르다) 클라이언트가 목록 행을 더해 재현할 수 없다.
+        카드 라벨은 이 필드 이름에 맞추고 FE에서 금액을 계산하지 말 것.
+        시작일이 종료일보다 늦으면 400 errorCode 90001.
+      operationId: "getAdminOrderMetrics"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sellerId
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: orderedFrom
+          in: query
+          description: "주문일 하한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+        - name: orderedTo
+          in: query
+          description: "주문일 상한(포함), YYYY-MM-DD"
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrderMetricsResponse"
+  /admin/orders/{orderId}:
+    get:
+      summary: "어드민 주문 상세"
+      description: >-
+        목록 행과 같은 주문 단위 응답에 품목 전문·상태 전이 이력·독촉 이력을 덧붙인다.
+        `orderId`는 주문 공개 식별자(ULID)다 — 숫자 id가 아니다.
+        배송 진행 타임라인의 재료는 `statusHistory`이고 **단계 이름과 표시 규칙은 화면이 정한다.**
+        전이 행은 전이가 일어난 트랜잭션에서 동기 insert되므로 `occurredAt`이 실제 전이 시각이다.
+        없는 주문은 404 errorCode 50000.
+      operationId: "getAdminOrderDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: "주문 공개 식별자(ULID)"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrderDetailResponse"
+  /admin/orders/{orderId}/dispatch-nudges:
+    post:
+      summary: "어드민 셀러 발송 독촉 기록"
+      description: >-
+        **알림을 보내지 않는다.** 어드민 실행 모듈이 발송 어댑터를 조립하지 않아 이 경로는 기록만
+        남긴다(append-only). 응답에 발송 여부 필드가 없는 것도 그 이유다 — 보내지도 않은 것을
+        보냈다고 말하는 필드를 두지 않는다. 화면 문구도 "알림이 나간다"가 아니라 "기록을 남긴다"로
+        써야 한다(운영자가 셀러에게 연락이 갔다고 믿고 후속 조치를 멈춘다).
+        성공은 201 Created다.
+        409 errorCode 50500 — 발송 전 상태(결제완료·상품준비·발송대기)가 아닌 주문.
+        409 errorCode 50501 — 쿨다운(`order.dispatch.nudge-cooldown-hours`, 기본 6시간) 안의 재독촉.
+        400 errorCode 50502 / 90001 — 독촉 메모 300자 초과.
+        404 errorCode 50000 — 없는 주문.
+      operationId: "nudgeAdminOrderDispatch"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: "주문 공개 식별자(ULID)"
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NudgeOrderDispatchRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrderDispatchNudgeResponse"
 components:
   schemas:
     Species:
@@ -4922,6 +5453,84 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ReviewListData"
+    PetWeightBand:
+      type: string
+      enum: [DOG_UNDER_5, DOG_5_10, DOG_10_25, DOG_25_PLUS, CAT_UNDER_4, CAT_4_6, CAT_6_PLUS]
+    AiReviewSummaryPointResponse:
+      type: object
+      required: [aspectCode, headline, mentionCount, quotes]
+      properties:
+        aspectCode:
+          type: string
+        headline:
+          type: string
+          description: "AI가 쓴 한 문장"
+        mentionCount:
+          type: integer
+          description: "이 장단점을 말한 리뷰 수"
+        quotes:
+          type: array
+          items:
+            type: string
+          description: "리뷰에서 그대로 떼어 온 문장. 비어 있을 수 있다"
+    AiReviewSummaryResponse:
+      type: object
+      required: [analyzedReviewCount, pros, cons, consAbsenceReason, generatedAt]
+      properties:
+        analyzedReviewCount:
+          type: integer
+          description: "AI가 실제로 읽은 리뷰 수. mentionCount의 분모"
+        pros:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiReviewSummaryPointResponse"
+        cons:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiReviewSummaryPointResponse"
+        consAbsenceReason:
+          type: string
+          nullable: true
+          description: >-
+            cons가 비어 있는 사유. NO_NEGATIVE_MENTIONS_FOUND, BELOW_MENTION_THRESHOLD,
+            PARTIALLY_UNEXTRACTED, NARRATION_MISSING 중 하나이고 cons가 있으면 null.
+            BE가 enum이 아니라 문자열로 내보내 모르는 값이 올 수 있다.
+        generatedAt:
+          type: string
+          nullable: true
+          description: "ISO LocalDateTime(오프셋 없음)"
+    SimilarPetAiReviewSummaryResponse:
+      type: object
+      required: [species, weightBand, summary]
+      properties:
+        species:
+          $ref: "#/components/schemas/Species"
+        weightBand:
+          $ref: "#/components/schemas/PetWeightBand"
+        summary:
+          $ref: "#/components/schemas/AiReviewSummaryResponse"
+    ProductReviewSummaryResponse:
+      type: object
+      required: [productSummary, similarPetSummary]
+      properties:
+        productSummary:
+          allOf:
+            - $ref: "#/components/schemas/AiReviewSummaryResponse"
+          nullable: true
+          description: "상품 전체 리뷰 요약. 리뷰가 적거나 반복된 장단점이 없으면 null"
+        similarPetSummary:
+          allOf:
+            - $ref: "#/components/schemas/SimilarPetAiReviewSummaryResponse"
+          nullable: true
+          description: >-
+            조회자 대표 펫과 같은 종, 같은 체급 보호자들의 리뷰 요약. 펫이 없거나 체중을 모르거나
+            그 묶음 리뷰가 적으면 null
+    ProductReviewSummaryEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProductReviewSummaryResponse"
     CreateReviewRequest:
       type: object
       required: [orderItemId, rating, content]
@@ -5555,8 +6164,9 @@ components:
       type: string
       enum: [DRAFT, PENDING, APPROVED, REJECTED]
       description: >-
-        상품 심사 상태. 지금 서버는 등록 즉시 APPROVED를 매기고 DRAFT·PENDING·REJECTED로 가는
-        경로가 없다(심사 기능 확장 대비 정의만 존재)
+        상품 심사 상태. 검수 게이트가 꺼져 있으면 등록 즉시 APPROVED다. 켜져 있으면 PENDING으로
+        등록되어 AI 판정이나 관리자 승인 뒤 APPROVED가 된다. REJECTED는 관리자 반려로만 생긴다.
+        DRAFT로 가는 경로는 없다
     SellerAssignableSaleStatus:
       type: string
       enum: [ON_SALE, SUSPENDED]
@@ -5598,6 +6208,119 @@ components:
           type: integer
           minimum: 0
           description: "재고. 음수는 400 errorCode 40200"
+    # ─── 셀러 상품 등록 폼 AI 초안(POST /sellers/me/product-drafts/autofill) ───────────
+    # 옵션 모양은 BE 임시저장 페이로드(ProductDraftPayload)와 같다 — 그룹명과 추가금·재고가 null일 수
+    # 있어 등록 요청의 OptionGroupInput/OptionCombinationInput과 다른 타입이다.
+    SellerProductDraftOptionGroupItem:
+      type: object
+      required: [values]
+      properties:
+        name:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: "옵션 그룹명. AI가 못 정하면 null"
+        values:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 100
+    SellerProductDraftOptionCombinationItem:
+      type: object
+      required: [optionValues]
+      properties:
+        optionValues:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+        additionalPrice:
+          type: integer
+          format: int64
+          nullable: true
+        stockQuantity:
+          type: integer
+          nullable: true
+          description: "AI는 재고를 정하지 않아 보통 null이다"
+    SellerProductDraftAutofillLockedFields:
+      type: object
+      properties:
+        description:
+          type: string
+          nullable: true
+        optionGroups:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupItem"
+    SellerProductDraftAutofillRequest:
+      type: object
+      required: [productName]
+      properties:
+        productName:
+          type: string
+          maxLength: 255
+          description: "비면 400 errorCode 90001(AI가 422로 거절할 입력을 BE가 먼저 거른다)"
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+          description: "depth 1·2·3 아무거나. AI가 상품명에서 품목을 못 집으면 이것으로 보완한다"
+        lockedFields:
+          allOf:
+            - $ref: "#/components/schemas/SellerProductDraftAutofillLockedFields"
+          nullable: true
+          description: "셀러가 이미 쓴 값. AI가 덮지 않고 그 전제로 나머지를 만든다"
+    SellerProductDraftAutofillDraft:
+      type: object
+      required: [optionGroups, optionCombinations]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+          description: "AI가 고른 카테고리. depth가 3이 아닐 수 있다"
+        description:
+          type: string
+          nullable: true
+        optionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupItem"
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionCombinationItem"
+    SellerProductDraftAutofillData:
+      type: object
+      required: [state, draft, fieldStatus, basis]
+      properties:
+        state:
+          type: string
+          description: "OK·FAILED·UNAVAILABLE. AI 쪽이 값을 늘릴 수 있어 enum으로 적지 않는다 — OK가 아니면 폼을 그대로 둔다"
+        draft:
+          $ref: "#/components/schemas/SellerProductDraftAutofillDraft"
+        fieldStatus:
+          type: object
+          additionalProperties:
+            type: string
+          description: "필드명 → 채움/비움 사유(예: FILLED, EMPTY_NOT_ATTEMPTED). 값 집합은 AI가 소유한다"
+        basis:
+          type: object
+          additionalProperties:
+            type: string
+          description: "필드명 → 무엇을 근거로 채웠는가(예: NAME)"
+        sellerNotice:
+          type: string
+          nullable: true
+          description: "셀러에게 그대로 보여도 되는 한 줄 안내"
+    SellerProductDraftAutofillResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftAutofillData"
     SellerProductRegisterRequest:
       type: object
       required: [categoryId, productName, regularPrice, thumbnailImageKey, optionCombinations]
@@ -5830,6 +6553,213 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SellerProductDetailData"
+    SellerProductDraftOptionGroupInput:
+      type: object
+      required: [values]
+      description: >-
+        초안의 옵션 그룹. 등록 요청(SellerProductOptionGroupInput)과 달리 이름이 비어 있어도 되고
+        값이 0개여도 된다 — 폼을 채우는 중의 모양을 그대로 담는다
+      properties:
+        name:
+          type: string
+          nullable: true
+          maxLength: 100
+        values:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 100
+    SellerProductDraftOptionCombinationInput:
+      type: object
+      required: [optionValues]
+      description: "초안의 옵션 조합. 추가금·재고는 비운 칸이면 null이다"
+      properties:
+        optionValues:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            maxLength: 100
+        additionalPrice:
+          type: integer
+          format: int64
+          nullable: true
+        stockQuantity:
+          type: integer
+          nullable: true
+    SellerProductDraftSaveRequest:
+      type: object
+      description: >-
+        전 필드 선택. 서버는 보낸 것을 그대로 보관하고 등록 시점 검증을 하지 않는다 —
+        길이·개수 상한만 보고 위반은 400 errorCode 90001이다
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+          description: "소분류(depth 3) id. 초안 단계에서는 깊이를 검사하지 않는다"
+        productName:
+          type: string
+          nullable: true
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 16000
+          description: "TEXT 컬럼(utf8mb4 최악 4바이트/자)을 넘기지 않게 글자 수로 끊는다"
+        regularPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountStartAt:
+          type: string
+          nullable: true
+          description: "오프셋 없는 LocalDateTime. 초안은 할인가 없이 기간만 있어도 받는다"
+        discountEndAt:
+          type: string
+          nullable: true
+        thumbnailImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        additionalImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+          description: "등록은 9장까지지만 초안은 20장까지 담는다"
+        detailImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+        optionGroups:
+          type: array
+          nullable: true
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupInput"
+        optionCombinations:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionCombinationInput"
+    SellerProductDraftListItem:
+      type: object
+      required: [draftId, productName, savedAt]
+      properties:
+        draftId:
+          type: string
+          description: "초안 공개 식별자(ULID 26자)"
+        productName:
+          type: string
+          nullable: true
+          description: "아직 상품명을 안 적은 초안은 null"
+        savedAt:
+          type: string
+          description: "마지막 저장 시각(오프셋 없는 LocalDateTime)"
+    SellerProductDraftListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftListItem"
+          description: "최근 저장순"
+        totalCount:
+          type: integer
+    SellerProductDraftListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftListData"
+    SellerProductDraftData:
+      type: object
+      required:
+        [draftId, savedAt, additionalImageKeys, detailImageKeys, optionGroups, optionCombinations]
+      description: >-
+        등록 폼 프리필 응답. 중첩 입력은 요청에서 nullable이었어도 응답은 항상 배열이다(빈 배열)
+      properties:
+        draftId:
+          type: string
+        savedAt:
+          type: string
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+        productName:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        regularPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountStartAt:
+          type: string
+          nullable: true
+        discountEndAt:
+          type: string
+          nullable: true
+        thumbnailImageKey:
+          type: string
+          nullable: true
+        additionalImageKeys:
+          type: array
+          items:
+            type: string
+        detailImageKeys:
+          type: array
+          items:
+            type: string
+        optionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupInput"
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionCombinationInput"
+    SellerProductDraftResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftData"
+    SellerProductDraftSaveData:
+      type: object
+      required: [draftId, savedAt]
+      properties:
+        draftId:
+          type: string
+        savedAt:
+          type: string
+          description: "서버가 찍은 저장 시각 — 화면의 '방금 저장' 표시 출처다"
+    SellerProductDraftSaveResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftSaveData"
     CourierSummary:
       type: object
       required: [courierCode, courierName, trackingFormatPattern]
@@ -6213,6 +7143,116 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+    SellerStatus:
+      type: string
+      enum: [ACTIVE, PAUSED, SUSPENDED, WITHDRAWN, WITHDRAWAL_REQUESTED]
+      description: >-
+        셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 —
+        나머지는 403 errorCode 10002다.
+    TelesalesNoticeStatus:
+      type: string
+      enum: [NOT_REQUIRED, REQUIRED, NOTIFIED, REGISTERED]
+      description: >-
+        통신판매업 신고 안내 상태. 서버가 구매확정 누적으로 올리는 값이고 셀러가 바꿀 수 없다 —
+        REQUIRED 이상이면 신고 대상임을 화면에서 알린다.
+    StoreData:
+      type: object
+      required: [sellerId, status, storeName, confirmedOrderCount, telesalesNoticeStatus]
+      properties:
+        sellerId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/SellerStatus"
+        storeName:
+          type: string
+        brandIntro:
+          type: string
+          nullable: true
+        profileImageUrl:
+          type: string
+          nullable: true
+          description: "조회용 전체 URL. 저장할 때는 이 값이 아니라 profileImageKey를 보낸다"
+        profileImageKey:
+          type: string
+          nullable: true
+        bannerImageUrl:
+          type: string
+          nullable: true
+        bannerImageKey:
+          type: string
+          nullable: true
+        zipCode:
+          type: string
+          nullable: true
+        roadAddress:
+          type: string
+          nullable: true
+        detailAddress:
+          type: string
+          nullable: true
+        confirmedOrderCount:
+          type: integer
+          description: "누적 구매확정 건수 — 통신판매업 신고 안내 판정에 쓰는 서버 계산값"
+        telesalesNoticeStatus:
+          $ref: "#/components/schemas/TelesalesNoticeStatus"
+    StoreSettingsData:
+      type: object
+      required: [isSeller]
+      description: >-
+        아직 셀러가 아니면 store=null이고 applicationStatus로 입점 신청 단계를 그린다
+        (신청 이력조차 없으면 applicationStatus도 null).
+      properties:
+        isSeller:
+          type: boolean
+        applicationStatus:
+          allOf:
+            - $ref: "#/components/schemas/ApplicationStatus"
+          nullable: true
+        store:
+          allOf:
+            - $ref: "#/components/schemas/StoreData"
+          nullable: true
+    StoreSettingsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/StoreSettingsData"
+    StoreSettingsUpdateRequest:
+      type: object
+      required: [storeName]
+      description: >-
+        전체 덮어쓰기 본문. 선택 항목을 빼면 비운 것으로 저장된다 — 부분 수정 용도로 쓰지 말 것.
+        상호만 필수이고 서버가 앞뒤 공백을 떼고 판정한다.
+      properties:
+        storeName:
+          type: string
+          maxLength: 100
+        brandIntro:
+          type: string
+          nullable: true
+          maxLength: 1000
+        profileImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        bannerImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        zipCode:
+          type: string
+          nullable: true
+          maxLength: 10
+        roadAddress:
+          type: string
+          nullable: true
+          maxLength: 255
+        detailAddress:
+          type: string
+          nullable: true
+          maxLength: 255
     SellerOrderStatusFilter:
       type: string
       description: >-
@@ -7573,6 +8613,187 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    InspectionProgressStep:
+      type: string
+      enum: [REQUESTED, AI_REVIEWING, ADMIN_REVIEWING, APPROVED, REJECTED]
+    InspectionProcessingState:
+      type: string
+      enum: [QUEUED, IN_FLIGHT, SETTLED]
+    InspectionJudgment:
+      type: string
+      enum: [PASS, FLAG, UNJUDGED, FAILED]
+      description: "AI 판정. UNJUDGED는 기한 안에 판정을 받지 못한 것, FAILED는 판정 과정이 실패한 것"
+    ReviewQueueStatus:
+      type: string
+      enum: [PENDING_REVIEW, APPROVED, REJECTED, SUPERSEDED]
+      description: "관리자 검토 행 상태. SUPERSEDED는 셀러가 고친 내용이 AI를 통과해 관리자 확인 없이 닫힌 것"
+    SellerProductInspectionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductInspection"
+    SellerProductInspection:
+      type: object
+      required: [productId, inspectionStatus, progressStep]
+      properties:
+        productId:
+          type: string
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        progressStep:
+          $ref: "#/components/schemas/InspectionProgressStep"
+        processingState:
+          allOf:
+            - $ref: "#/components/schemas/InspectionProcessingState"
+          nullable: true
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+        reasonCode:
+          type: string
+          nullable: true
+        reasonSummary:
+          type: string
+          nullable: true
+          description: "셀러가 쓴 문장 중 걸린 구절"
+        sellerNotice:
+          type: string
+          nullable: true
+          description: "AI가 제안한 수정 방향"
+        rejectReason:
+          type: string
+          nullable: true
+          description: "관리자 반려 사유. 관리자가 반려한 상품일 때만 온다. AI가 반려했으면 null"
+        requestedAt:
+          type: string
+          nullable: true
+        settledAt:
+          type: string
+          nullable: true
+    AdminProductInspectionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminProductInspectionListData"
+    AdminProductInspectionListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProductInspectionSummary"
+        totalCount:
+          type: integer
+          format: int64
+    AdminProductInspectionSummary:
+      type: object
+      required: [productId, productName, sellerName, status, latestJudgment, blindedAt]
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        sellerName:
+          type: string
+        status:
+          $ref: "#/components/schemas/ReviewQueueStatus"
+        latestJudgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+          description: "상품의 가장 최근 검수 판정. 셀러가 고친 내용을 AI가 아직 보는 중이면 null"
+        blindedAt:
+          type: string
+          description: "이 행을 열었거나 다시 연 판정의 시각"
+    AdminProductInspectionDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminProductInspectionDetail"
+    AdminProductInspectionDetail:
+      type: object
+      required:
+        [productId, productName, sellerName, categoryNames, description, representativeImageUrl, optionNames,
+         inspectionStatus, awaitingAdminReview, processingState, judgment, reasonCode, reasonSummary, sellerNotice,
+         requestedAt, settledAt, rejections]
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        sellerName:
+          type: string
+        categoryNames:
+          type: array
+          items:
+            type: string
+          description: "대분류부터 소분류 순"
+        description:
+          type: string
+          nullable: true
+        representativeImageUrl:
+          type: string
+          nullable: true
+        optionNames:
+          type: array
+          items:
+            type: string
+          description: "그룹명 뒤에 그 그룹의 값 이름들을 붙여 늘어놓는다"
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        awaitingAdminReview:
+          type: boolean
+          description: "열린 검토 행이 있는가. false면 승인·반려가 409 errorCode 40500"
+        processingState:
+          allOf:
+            - $ref: "#/components/schemas/InspectionProcessingState"
+          nullable: true
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+        reasonCode:
+          type: string
+          nullable: true
+        reasonSummary:
+          type: string
+          nullable: true
+        sellerNotice:
+          type: string
+          nullable: true
+        requestedAt:
+          type: string
+          nullable: true
+        settledAt:
+          type: string
+          nullable: true
+        rejections:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProductRejection"
+          description: "이전 관리자 반려. 최근 것부터"
+    AdminProductRejection:
+      type: object
+      required: [reason, rejectedAt]
+      properties:
+        reason:
+          type: string
+        rejectedAt:
+          type: string
+    RejectAdminProductInspectionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: "셀러에게 그대로 보이는 반려 사유. 공백만이면 400 errorCode 90001"
     ProductInquiryCategory:
       type: string
       description: "상품 문의 유형"
@@ -7724,6 +8945,301 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/AnswerInquiryData"
+    AdminOrderDelayReason:
+      type: string
+      description: >-
+        지연 사유. 두 축은 겹칠 수 없다(상태 집합이 배타적이다). DISPATCH_OVERDUE는 발송 전
+        상태인데 발송 기한을 넘긴 건, DELIVERY_OVERDUE는 배송 중인데 배송 기한을 넘긴 건이다.
+        null이면 정상 흐름이고 판정은 서버가 한다 — 화면이 날짜를 빼서 세면 카드 건수와 행 신호가 어긋난다
+      enum: [DISPATCH_OVERDUE, DELIVERY_OVERDUE]
+    TriggeredBy:
+      type: string
+      description: "상태 전이를 일으킨 주체(be TriggeredBy)"
+      enum: [SYSTEM, BUYER, SELLER, ADMIN]
+    ConfirmType:
+      type: string
+      description: "구매확정 방식(be ConfirmType). AUTO는 자동확정 배치가 만든 값이다"
+      enum: [MANUAL, AUTO]
+    AdminOrderShipment:
+      type: object
+      required: [courierCode, courierName, trackingNumber]
+      description: "주문당 최신 배송 한 건. 교환 재발송이 붙으면 나중 행이 현재 배송이다"
+      properties:
+        courierCode:
+          type: string
+        courierName:
+          type: string
+        trackingNumber:
+          type: string
+        dispatchedAt:
+          type: string
+          nullable: true
+        deliveredAt:
+          type: string
+          nullable: true
+        lastTrackingStatus:
+          type: string
+          nullable: true
+    AdminOrderClaimRef:
+      type: object
+      required: [claimId, claimType, status]
+      description: "주문당 최신 진행 클레임 한 건. 품목을 풀어준 클레임(반려·철회)은 실리지 않는다"
+      properties:
+        claimId:
+          type: string
+          description: "클레임 공개 식별자"
+        claimType:
+          $ref: "#/components/schemas/ClaimType"
+        status:
+          $ref: "#/components/schemas/ClaimStatus"
+    AdminOrderSummary:
+      type: object
+      required:
+        [
+          orderId,
+          status,
+          orderedAt,
+          sellerId,
+          sellerName,
+          buyerNickname,
+          representativeItemName,
+          itemCount,
+          totalProductAmount,
+          sellerShippingFee,
+          allocatedCouponDiscount,
+          payableAmount,
+          purchaseConfirmDueAt,
+          delayed,
+          delayReason,
+          shipment,
+          activeClaim,
+        ]
+      description: >-
+        주문 한 건의 목록 행. 상세도 같은 모양을 품는다.
+        **수령인명·연락처·주소는 담지 않는다** — 배송 진행 감시에 쓰이지 않는 개인정보라
+        서버가 아예 싣지 않는다(그래서 화면에 마스킹할 대상이 없다).
+        `shipment`가 null이면 송장 미등록이고, 금액 넷은 모두 서버가 계산해 내려준다
+      properties:
+        orderId:
+          type: string
+          description: "주문 공개 식별자(ULID). 상세·독촉 경로가 지목하는 값"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        orderedAt:
+          type: string
+          description: "주문 시각(오프셋 없는 LocalDateTime)"
+        sellerId:
+          type: integer
+          format: int64
+        sellerName:
+          type: string
+          nullable: true
+          description: "스토어명이 비어 있는 셀러면 null"
+        buyerNickname:
+          type: string
+          description: "구매자 닉네임. 실명·연락처는 응답에 없다"
+        representativeItemName:
+          type: string
+          nullable: true
+          description: "대표 품목명. itemCount와 함께 '상품명 외 N건'을 그리는 재료"
+        itemCount:
+          type: integer
+        totalProductAmount:
+          type: integer
+          format: int64
+        sellerShippingFee:
+          type: integer
+          format: int64
+        allocatedCouponDiscount:
+          type: integer
+          format: int64
+        payableAmount:
+          type: integer
+          format: int64
+          description: >-
+            주문 금액(상품금액 + 셀러배송비 - 안분 쿠폰할인). 서버가 계산한다. 지표 카드의
+            `totalOrderAmount`와 같은 규칙이다 — 취소·반품으로 종결된 품목이 빠지고 취소된 주문은
+            0이다. 적립금은 빠지지 않아 **실제 수납액이 아니다**
+        purchaseConfirmDueAt:
+          type: string
+          nullable: true
+          description: "자동 구매확정 기한. 배송완료 뒤에만 값이 있다"
+        delayed:
+          type: boolean
+          description: "delayReason != null과 같다 — 서버 판정이다"
+        delayReason:
+          allOf:
+            - $ref: "#/components/schemas/AdminOrderDelayReason"
+          nullable: true
+        shipment:
+          allOf:
+            - $ref: "#/components/schemas/AdminOrderShipment"
+          nullable: true
+        activeClaim:
+          allOf:
+            - $ref: "#/components/schemas/AdminOrderClaimRef"
+          nullable: true
+    AdminOrderListData:
+      type: object
+      required: [items, totalCount, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOrderSummary"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "**항상 null이다** — 전체 주문 건수를 매 페이지마다 세지 않는다"
+        nextCursor:
+          type: string
+          nullable: true
+          description: "다음 페이지 앵커. hasNext가 false면 null"
+        hasNext:
+          type: boolean
+    AdminOrderListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminOrderListData"
+    AdminOrderMetricsData:
+      type: object
+      required: [awaitingDispatchCount, shippingCount, delayedCount, totalOrderAmount]
+      description: >-
+        카드 넷. `awaitingDispatchCount`는 결제완료·상품준비·발송대기를 합친 "아직 송장이 붙지
+        않은 전부"다(셀러가 발주 확인조차 하지 않은 건이 가장 위험한 쪽이라 빼면 카드가 거짓이 된다).
+        `delayedCount`는 목록 행의 지연 신호와 같은 기준으로 센다.
+        `totalOrderAmount`만 모수가 다르다 — 취소 주문과 종결된 품목이 빠진다
+      properties:
+        awaitingDispatchCount:
+          type: integer
+          format: int64
+        shippingCount:
+          type: integer
+          format: int64
+        delayedCount:
+          type: integer
+          format: int64
+        totalOrderAmount:
+          type: integer
+          format: int64
+          description: >-
+            주문 금액 합(상품금액 + 셀러배송비 - 안분 쿠폰할인). **실제 수납액이 아니다** —
+            적립금이 빠지지 않는다. 취소 주문과 취소·반품으로 종결된 품목 제외. 뜻은 서버가 정한다
+    AdminOrderMetricsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminOrderMetricsData"
+    AdminOrderItem:
+      type: object
+      required:
+        [orderItemId, productId, productName, optionName, quantity, unitPrice, discountAllocatedAmount, itemStatus]
+      properties:
+        orderItemId:
+          type: integer
+          format: int64
+        productId:
+          type: string
+        productName:
+          type: string
+        optionName:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+        unitPrice:
+          type: integer
+          format: int64
+        discountAllocatedAmount:
+          type: integer
+          format: int64
+        itemStatus:
+          $ref: "#/components/schemas/OrderItemStatus"
+    AdminOrderStatusHistory:
+      type: object
+      required: [fromStatus, toStatus, triggeredBy, occurredAt]
+      description: "상태 전이 한 행. 타임라인의 재료이고 occurredAt이 실제 전이 시각이다"
+      properties:
+        fromStatus:
+          allOf:
+            - $ref: "#/components/schemas/OrderStatus"
+          nullable: true
+          description: "최초 생성 행은 null일 수 있다"
+        toStatus:
+          $ref: "#/components/schemas/OrderStatus"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        occurredAt:
+          type: string
+    AdminOrderDispatchNudge:
+      type: object
+      required: [nudgeId, adminUserId, memo, nudgedAt]
+      description: >-
+        발송 독촉 기록 한 건. **알림 발송 여부를 담지 않는다** — 이 경로는 기록만 남긴다
+      properties:
+        nudgeId:
+          type: integer
+          format: int64
+        adminUserId:
+          type: integer
+          format: int64
+        memo:
+          type: string
+          nullable: true
+          description: "공백만 보낸 메모는 서버가 null로 접는다"
+        nudgedAt:
+          type: string
+    AdminOrderDispatchNudgeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminOrderDispatchNudge"
+    AdminOrderDetailData:
+      type: object
+      required: [order, orderGroupId, purchaseConfirmedAt, confirmType, items, statusHistory, nudges]
+      properties:
+        order:
+          $ref: "#/components/schemas/AdminOrderSummary"
+        orderGroupId:
+          type: string
+        purchaseConfirmedAt:
+          type: string
+          nullable: true
+        confirmType:
+          allOf:
+            - $ref: "#/components/schemas/ConfirmType"
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOrderItem"
+        statusHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOrderStatusHistory"
+          description: "오래된 순. 화면이 단계 이름과 표시 규칙을 정한다"
+        nudges:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOrderDispatchNudge"
+    AdminOrderDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminOrderDetailData"
+    NudgeOrderDispatchRequest:
+      type: object
+      description: "독촉 메모는 선택이다 — 사유 없이 누른 독촉도 '운영자가 봤다'는 기록으로 쓸모가 있다"
+      properties:
+        memo:
+          type: string
+          maxLength: 300
     ProductInquiryAnswer:
       type: object
       description: "셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다"

@@ -36,6 +36,7 @@ export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
 export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
+export const PRODUCT_REVIEW_SUMMARY_URL = `${base}/products/:productId/review-summary`
 export const REVIEWS_URL = `${base}/reviews`
 export const REVIEW_DETAIL_URL = `${base}/reviews/:reviewId`
 export const MY_REVIEWS_URL = `${base}/users/me/reviews`
@@ -2336,6 +2337,12 @@ export const handlers = [
       },
     })
   }),
+  // 리뷰 AI 요약. 기본은 실 픽스처 id도 요약 없음(카드 미노출)이고, 요약이 필요한 테스트가 server.use로 갈아끼운다.
+  http.get(PRODUCT_REVIEW_SUMMARY_URL, ({ params }) =>
+    params.productId === REAL_PRODUCT_ID
+      ? HttpResponse.json({ data: { productSummary: null, similarPetSummary: null } })
+      : new HttpResponse(null, { status: 404 }),
+  ),
 ]
 
 export const server = setupServer(...handlers)

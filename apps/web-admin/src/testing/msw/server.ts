@@ -21,11 +21,19 @@ export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
 export const ADMIN_APPLICATION_REJECT_URL = `${ADMIN_APPLICATION_DETAIL_URL}/reject`
+export const ADMIN_PRODUCT_INSPECTIONS_URL = `${adminBase}/admin/product-inspections`
 export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
 export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
 export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`
 export const ADMIN_MEMBER_RELEASE_URL = `${ADMIN_MEMBER_SANCTION_URL}/release`
+export const ADMIN_ORDERS_URL = `${adminBase}/admin/orders`
+export const ADMIN_ORDER_METRICS_URL = `${ADMIN_ORDERS_URL}/metrics`
+export const ADMIN_ORDER_DETAIL_URL = `${ADMIN_ORDERS_URL}/:orderId`
+export const ADMIN_ORDER_NUDGE_URL = `${ADMIN_ORDER_DETAIL_URL}/dispatch-nudges`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
+// 기본 핸들러를 두지 않는다 — 로그아웃을 부르는지/안 부르는지가 테스트의 단언이라,
+// 조용히 204를 주는 기본값이 있으면 "취소했는데 호출했다"는 회귀가 통과한다.
+export const WEB_LOGOUT_URL = `${apiBase}/auth/web/logout`
 
 type WireStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 type WireBusinessType = 'PERSONAL_GENERAL' | 'SOLE_PROPRIETORSHIP' | 'CORPORATE'
@@ -702,5 +710,380 @@ function terminalStateError(row: AdminMemberWire): Response | null {
   return null
 }
 
-export const handlers = [...applicationHandlers, ...rosterHandlers, ...memberHandlers]
+
+// ─── 주문 배송 모니터링 (admin 호스트 /admin/orders) ───────────────────────────
+// BE AdminOrderMonitoringController + AdminOrderMonitoringService + AdminOrderDispatchNudgeService의
+// 가드와 집계 기준을 미러한다. 기준이 계약의 일부라서(결제대기 제외, 지연 판정은 서버가 쥔다,
+// 주문 금액만 취소를 뺀다, 독촉은 발송 전 상태 + 쿨다운) FE가 틀리면 이 스텁에서 드러난다.
+
+export type WireOrderStatus =
+  | 'PENDING_PAYMENT'
+  | 'PAID'
+  | 'PREPARING'
+  | 'DISPATCH_PENDING'
+  | 'SHIPPING'
+  | 'DELIVERED'
+  | 'PURCHASE_CONFIRMED'
+  | 'CANCELLED'
+
+export type WireOrderDelayReason = 'DISPATCH_OVERDUE' | 'DELIVERY_OVERDUE'
+
+/** 송장이 아직 붙지 않은 구간 — BE `OrderStatus.isAwaitingDispatch()`와 같은 집합이다. */
+const AWAITING_DISPATCH: WireOrderStatus[] = ['PAID', 'PREPARING', 'DISPATCH_PENDING']
+
+/** 결제대기는 모니터링 대상이 아니다 — 결제 전에도 주문 테이블에 남는 행이다. */
+const MONITORED: WireOrderStatus[] = [
+  'PAID',
+  'PREPARING',
+  'DISPATCH_PENDING',
+  'SHIPPING',
+  'DELIVERED',
+  'PURCHASE_CONFIRMED',
+  'CANCELLED',
+]
+
+export interface AdminOrderNudgeWire {
+  nudgeId: number
+  adminUserId: number
+  memo: string | null
+  nudgedAt: string
+}
+
+/** 상세 응답 모양의 서버 상태. 목록 행은 주문 단위 필드만 투영한다. */
+export interface AdminOrderWire {
+  orderId: string
+  status: WireOrderStatus
+  orderedAt: string
+  sellerId: number
+  sellerName: string | null
+  buyerNickname: string
+  totalProductAmount: number
+  sellerShippingFee: number
+  allocatedCouponDiscount: number
+  payableAmount: number
+  purchaseConfirmDueAt: string | null
+  /** 지연 판정은 서버가 쥔다 — 스텁도 날짜를 다시 세지 않고 이 값을 그대로 쓴다. */
+  delayReason: WireOrderDelayReason | null
+  shipment: {
+    courierCode: string
+    courierName: string
+    trackingNumber: string
+    dispatchedAt: string | null
+    deliveredAt: string | null
+    lastTrackingStatus: string | null
+  } | null
+  activeClaim: { claimId: string; claimType: string; status: string } | null
+  orderGroupId: string
+  items: {
+    orderItemId: number
+    productId: string
+    productName: string
+    optionName: string | null
+    quantity: number
+    unitPrice: number
+    discountAllocatedAmount: number
+    itemStatus: string
+  }[]
+  statusHistory: {
+    fromStatus: WireOrderStatus | null
+    toStatus: WireOrderStatus
+    triggeredBy: string
+    occurredAt: string
+  }[]
+  nudges: AdminOrderNudgeWire[]
+}
+
+let orders: AdminOrderWire[] = []
+let nudgeIdSeq = 0
+
+/** 쿨다운 안의 재독촉을 테스트가 만들 수 있게 '지금'을 스텁이 고정한다(BE 기본 6시간). */
+export const NUDGE_NOW = '2026-10-30T12:00:00'
+
+export function makeAdminOrderWire(overrides: Partial<AdminOrderWire> = {}): AdminOrderWire {
+  return {
+    orderId: '01HZXK0000000000000000O01',
+    status: 'PAID',
+    orderedAt: '2026-10-26T21:31:00',
+    sellerId: 7,
+    sellerName: '멍멍마켓',
+    buyerNickname: '코코맘',
+    totalProductAmount: 70_000,
+    sellerShippingFee: 3_000,
+    allocatedCouponDiscount: 0,
+    payableAmount: 73_000,
+    purchaseConfirmDueAt: null,
+    delayReason: null,
+    shipment: null,
+    activeClaim: null,
+    orderGroupId: '01HZXK0000000000000000G01',
+    items: [
+      {
+        orderItemId: 1,
+        productId: '01HZXK0000000000000000P01',
+        productName: '프리미엄 관절 영양제 180정',
+        optionName: '2개입',
+        quantity: 2,
+        unitPrice: 35_000,
+        discountAllocatedAmount: 0,
+        itemStatus: 'ORDERED',
+      },
+      {
+        orderItemId: 2,
+        productId: '01HZXK0000000000000000P02',
+        productName: '치석 제거 덴탈껌 30개',
+        optionName: null,
+        quantity: 1,
+        unitPrice: 12_000,
+        discountAllocatedAmount: 0,
+        itemStatus: 'ORDERED',
+      },
+    ],
+    statusHistory: [
+      { fromStatus: null, toStatus: 'PAID', triggeredBy: 'BUYER', occurredAt: '2026-10-26T21:31:00' },
+    ],
+    nudges: [],
+    ...overrides,
+  }
+}
+
+const cloneOrder = (row: AdminOrderWire): AdminOrderWire => ({
+  ...row,
+  shipment: row.shipment ? { ...row.shipment } : null,
+  activeClaim: row.activeClaim ? { ...row.activeClaim } : null,
+  items: row.items.map(item => ({ ...item })),
+  statusHistory: row.statusHistory.map(entry => ({ ...entry })),
+  // 독촉 이력은 **서버가 돌려주는 순서로 쥔다** — id 내림차순
+  // (`findAllByOrderIdOrderByIdDesc`). 시드가 어떤 순서로 주든 여기서 서버 순서로 눕히므로,
+  // 핸들러가 "배열의 끝이 최신"에 기대면 그 자리에서 틀린 행을 고른다.
+  nudges: [...row.nudges].sort((a, b) => b.nudgeId - a.nudgeId).map(entry => ({ ...entry })),
+})
+
+export function seedAdminOrders(rows: AdminOrderWire[] = []): void {
+  orders = rows.map(cloneOrder)
+  // 시드된 이력과 번호가 겹치면 "가장 큰 id가 최신"이 깨져 쿨다운 판정이 꼬인다.
+  nudgeIdSeq = Math.max(0, ...orders.flatMap(row => row.nudges.map(entry => entry.nudgeId)))
+}
+
+/** 핸들러가 반영한 현재 주문 — 테스트가 독촉 기록을 읽는다. */
+export function currentAdminOrder(orderId: string): AdminOrderWire | null {
+  const found = orders.find(row => row.orderId === orderId)
+  return found ? cloneOrder(found) : null
+}
+
+function orderSummaryOf(row: AdminOrderWire) {
+  return {
+    orderId: row.orderId,
+    status: row.status,
+    orderedAt: row.orderedAt,
+    sellerId: row.sellerId,
+    sellerName: row.sellerName,
+    buyerNickname: row.buyerNickname,
+    // 서버가 품목에서 **파생시키는** 두 값이다(`AdminOrderSummaryResult.of`:
+    // `lines.firstOrNull()?.productName`, `lines.size`). 스텁이 따로 받게 두면 "대표 품목명은
+    // 급식기인데 품목 전문에는 영양제만 있는" 응답을 테스트가 만들 수 있고, 서버는 그런 응답을
+    // 보내지 못한다 — 목록 행과 상세가 어긋나는 FE 결함이 통과한다(교차검토로 드러난 자리).
+    representativeItemName: row.items[0]?.productName ?? null,
+    itemCount: row.items.length,
+    // 금액은 파생시키지 않고 그대로 싣는다 — FE 가 금액을 계산하지 않는다는 단언(AC-006)이
+    // 스텁의 산수와 겹치면 둘 다 틀렸을 때 서로를 가린다.
+    totalProductAmount: row.totalProductAmount,
+    sellerShippingFee: row.sellerShippingFee,
+    allocatedCouponDiscount: row.allocatedCouponDiscount,
+    payableAmount: row.payableAmount,
+    purchaseConfirmDueAt: row.purchaseConfirmDueAt,
+    // delayed는 delayReason != null과 같다 — 서버가 둘을 함께 내려 준다.
+    delayed: row.delayReason != null,
+    delayReason: row.delayReason,
+    shipment: row.shipment,
+    activeClaim: row.activeClaim,
+  }
+}
+
+/** 커서는 서버와 같은 모양(base64url "ao:주문시각마이크로:주문행id")이다. */
+const encodeOrderCursor = (index: number) =>
+  btoa(`ao:${index + 1}:${index + 1}`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+function decodeOrderCursor(raw: string): number | null {
+  try {
+    const parts = atob(raw.replace(/-/g, '+').replace(/_/g, '/')).split(':')
+    if (parts.length !== 3 || parts[0] !== 'ao') return null
+    const anchor = Number(parts[2])
+    return Number.isFinite(anchor) && anchor > 0 ? anchor : null
+  } catch {
+    return null
+  }
+}
+
+const hoursBetween = (from: string, to: string) =>
+  (new Date(to).getTime() - new Date(from).getTime()) / 3_600_000
+
+/**
+ * BE `AdminOrderMonitoringQueryAdapter.keywordMatches` 와 같은 집합 — 주문번호·셀러 상호·
+ * 상품명·옵션명이고 **구매자는 없다.** 닉네임이 user BC 테이블에 있어 그 쿼리가 조인하지 못한다.
+ *
+ * 스텁이 닉네임까지 찾아주면 "구매자로 검색된다"고 믿는 FE 가 테스트를 통과하고 실서버에서만
+ * 0건이 된다 — 스텁이 FE 결함을 가리는 자리라 BE 와 똑같이 못 찾아야 한다(교차검토 지적).
+ */
+function matchesKeyword(row: AdminOrderWire, keyword: string): boolean {
+  const needle = keyword.toLowerCase()
+  const has = (value: string | null) => (value ?? '').toLowerCase().includes(needle)
+  return (
+    has(row.orderId) ||
+    has(row.sellerName) ||
+    row.items.some(item => has(item.productName) || has(item.optionName))
+  )
+}
+
+const orderHandlers = [
+  http.get(ADMIN_ORDERS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const status = params.get('status')
+    // 결제대기는 모니터링 대상이 아니라 400이다 — 서버가 선택지에서 빼라고 말하는 자리다.
+    if (status === 'PENDING_PAYMENT') {
+      return HttpResponse.json(
+        errorBody(90001, 'status: 결제대기 주문은 조회 대상이 아닙니다.'),
+        { status: 400 },
+      )
+    }
+    if (status != null && !MONITORED.includes(status as WireOrderStatus)) {
+      return HttpResponse.json(errorBody(90001, 'status: 잘못된 값입니다.'), { status: 400 })
+    }
+    const cursorParam = params.get('cursor')
+    let anchor: number | null = null
+    if (cursorParam != null) {
+      anchor = decodeOrderCursor(cursorParam)
+      if (anchor == null) {
+        return HttpResponse.json(errorBody(90002, '유효하지 않은 커서입니다.'), { status: 400 })
+      }
+    }
+    const sizeParam = params.get('size')
+    // size 범위 밖은 서버가 @Range로 거절한다(회원 목록처럼 절삭하지 않는다).
+    if (sizeParam != null) {
+      const size = Number(sizeParam)
+      if (!Number.isFinite(size) || size < 1 || size > 100) {
+        return HttpResponse.json(errorBody(90001, 'size는 1~100 사이여야 합니다.'), { status: 400 })
+      }
+    }
+    const size = sizeParam == null ? 20 : Number(sizeParam)
+    const keyword = params.get('keyword')
+    const delayedOnly = params.get('delayedOnly') === 'true'
+    const sellerId = params.get('sellerId')
+
+    const matched = orders
+      .filter(row => MONITORED.includes(row.status))
+      .filter(row => (status == null ? true : row.status === status))
+      .filter(row => (sellerId == null ? true : row.sellerId === Number(sellerId)))
+      .filter(row => (delayedOnly ? row.delayReason != null : true))
+      .filter(row => (keyword == null ? true : matchesKeyword(row, keyword)))
+
+    // 정렬은 서버가 소유한다 — orderedAt DESC, orderId DESC.
+    const sorted = [...matched].sort((a, b) =>
+      a.orderedAt === b.orderedAt
+        ? b.orderId.localeCompare(a.orderId)
+        : a.orderedAt < b.orderedAt
+          ? 1
+          : -1,
+    )
+    const afterCursor = anchor == null ? sorted : sorted.slice(anchor)
+    const page = afterCursor.slice(0, size)
+    const hasNext = afterCursor.length > size
+    return HttpResponse.json({
+      data: {
+        items: page.map(orderSummaryOf),
+        // 서버는 전체 건수를 세지 않는다 — 항상 null이다.
+        totalCount: null,
+        nextCursor: hasNext ? encodeOrderCursor((anchor ?? 0) + page.length - 1) : null,
+        hasNext,
+      },
+    })
+  }),
+
+  http.get(ADMIN_ORDER_METRICS_URL, () => {
+    const monitored = orders.filter(row => MONITORED.includes(row.status))
+    return HttpResponse.json({
+      data: {
+        awaitingDispatchCount: monitored.filter(row => AWAITING_DISPATCH.includes(row.status)).length,
+        shippingCount: monitored.filter(row => row.status === 'SHIPPING').length,
+        delayedCount: monitored.filter(row => row.delayReason != null).length,
+        // 금액만 모수가 다르다 — 취소 주문이 빠진다(건수 카드 셋과 어긋나는 것이 정상이다).
+        // 필드명은 서버와 같아야 한다 — 어긋나면 화면이 undefined 를 포맷하다 떨어진다.
+        totalOrderAmount: monitored
+          .filter(row => row.status !== 'CANCELLED')
+          .reduce((sum, row) => sum + row.payableAmount, 0),
+      },
+    })
+  }),
+
+  http.get(ADMIN_ORDER_DETAIL_URL, ({ params }) => {
+    const row = orders.find(item => item.orderId === String(params['orderId']))
+    if (!row) {
+      return HttpResponse.json(errorBody(50000, '주문을 찾을 수 없습니다.'), { status: 404 })
+    }
+    return HttpResponse.json({
+      data: {
+        order: orderSummaryOf(row),
+        orderGroupId: row.orderGroupId,
+        purchaseConfirmedAt: row.status === 'PURCHASE_CONFIRMED' ? row.orderedAt : null,
+        confirmType: row.status === 'PURCHASE_CONFIRMED' ? 'MANUAL' : null,
+        items: row.items,
+        statusHistory: row.statusHistory,
+        // 쥔 순서가 이미 서버 순서(id 내림차순)다.
+        nudges: row.nudges,
+      },
+    })
+  }),
+
+  http.post(ADMIN_ORDER_NUDGE_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as { memo?: string } | null
+    const memo = body?.memo ?? null
+    // @Valid가 먼저다 — 300자 초과는 상태 가드보다 앞에서 400이다.
+    if ((memo ?? '').length > 300) {
+      return HttpResponse.json(
+        errorBody(90001, '독촉 메모는 300자 이하여야 합니다.'),
+        { status: 400 },
+      )
+    }
+    const row = orders.find(item => item.orderId === String(params['orderId']))
+    if (!row) {
+      return HttpResponse.json(errorBody(50000, '주문을 찾을 수 없습니다.'), { status: 404 })
+    }
+    // BE 가드 순서: 발송 전 상태 → 쿨다운.
+    if (!AWAITING_DISPATCH.includes(row.status)) {
+      return HttpResponse.json(
+        errorBody(50500, '발송 전 상태의 주문만 발송 독촉할 수 있습니다.'),
+        { status: 409 },
+      )
+    }
+    // BE `findLatestByOrderId` 는 id 최대 행이다 — 배열 순서에 기대지 않고 같은 뜻으로 고른다.
+    const latest = row.nudges.reduce<AdminOrderNudgeWire | null>(
+      (newest, entry) => (newest == null || entry.nudgeId > newest.nudgeId ? entry : newest),
+      null,
+    )
+    if (latest && hoursBetween(latest.nudgedAt, NUDGE_NOW) < 6) {
+      return HttpResponse.json(
+        errorBody(50501, '직전 발송 독촉 이후 충분한 시간이 지나지 않았습니다.'),
+        { status: 409 },
+      )
+    }
+    nudgeIdSeq += 1
+    // 공백만 들어온 메모는 서버가 null로 접는다.
+    const normalized = memo?.trim() || null
+    const created: AdminOrderNudgeWire = {
+      nudgeId: nudgeIdSeq,
+      adminUserId: CURRENT_ADMIN_USER_ID,
+      memo: normalized,
+      nudgedAt: NUDGE_NOW,
+    }
+    // id 내림차순을 유지한다 — 새 기록이 가장 큰 id다.
+    row.nudges.unshift(created)
+    return HttpResponse.json({ data: created }, { status: 201 })
+  }),
+]
+
+export const handlers = [
+  ...applicationHandlers,
+  ...rosterHandlers,
+  ...memberHandlers,
+  ...orderHandlers,
+]
 export const server = setupServer(...handlers)

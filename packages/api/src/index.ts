@@ -10,6 +10,7 @@ export {
   setAccessToken,
   setOnAuthExpired,
   setOnOnboardingRequired,
+  subscribeAccessToken,
 } from './client'
 export type { ApiHostConfig, ErrorBody } from './client'
 export { ApiHostConfigError, bootstrapApiHosts, resolveApiHosts } from './env'

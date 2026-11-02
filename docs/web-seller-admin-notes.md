@@ -401,10 +401,10 @@ status === 'resubmission-required'`인 서류가 하나라도 남아있으면 �
   "이미 구현된 화면은 손대지 말 것" 지시를 문자 그대로 지키는 가장 낮은 리스크 선택.
   분기 이전엔 `revision-requested`가 애초에 도달 불가능한 코드였다(mock이 항상 `rejected`만
   반환) — 이번에 분기가 생기면서 실제로 렌더링 가능해졌지만 시각적으로는 변경 없음.
-- **`approved` → 짧은 안내만(2-B는 여전히 범위 밖).** 파이프라인·폼·서류 목록 전부 숨기고
-  `EmptyState`로 "입점 신청이 승인됐어요 / 스토어 정보를 설정하는 화면은 곧 제공될 예정이에요"
-  한 줄만 보여준다 — `PageHeader` 타이틀도 이때만 "스토어 개설 · 서류 보완"이 아니라 "스토어
-  설정"으로 바뀐다(2-B가 생기면 이 타이틀의 화면이 될 자리).
+- **`approved` → 스토어 설정 실연동(SCRUM-355).** 파이프라인·폼·서류 목록을 숨기고
+  `GET·PUT /sellers/me/store` 로 스토어 정보를 그린다. `PageHeader` 타이틀은 "스토어 설정",
+  pill 은 "승인 완료"다. 예전에는 이 자리가 "곧 제공될 예정"이라는 빈 화면이어서
+  승인된 셀러가 자기 스토어 이름조차 못 봤다.
 - **mock 상태 스위치 메커니즘**: `mockFetchSellerApplication(status?)`가 이제
   `SELLER_APPLICATION_FIXTURES: Record<SellerApplicationStatus, SellerApplication>`에서
   픽스처를 골라 반환한다 — 인자 없이 호출하면 항상 `'rejected'`(기존 회귀 테스트·프로덕션

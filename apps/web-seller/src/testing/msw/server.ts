@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { API_PATH_PREFIX } from '@aechak/api'
 import { PRODUCT_IMAGE_TYPES } from '@/features/products/products.contract'
-import { MOCK_CATEGORY_TREE } from '@/features/products/products.mock'
+import { MOCK_CATEGORY_TREE, leafIdOf } from '@/features/products/products.mock'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-buyer의 src/testing/msw 관례를
 // web-seller에 이식했다. 실제 HTTP 경로(URL·envelope·에러 계약)까지 검증하려고 모듈 모킹 대신
@@ -20,9 +20,12 @@ const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
 export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
+export const SELLER_PRODUCT_DRAFT_AUTOFILL_URL = `${sellerBase}/sellers/me/product-drafts/autofill`
+export const SELLER_PRODUCT_DRAFTS_URL = `${sellerBase}/sellers/me/product-drafts`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
 export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-policy`
+export const SELLER_STORE_URL = `${sellerBase}/sellers/me/store`
 export const SELLER_SETTLEMENTS_URL = `${sellerBase}/sellers/me/settlements`
 export const SELLER_SETTLEMENT_MONTHS_URL = `${sellerBase}/sellers/me/settlements/months`
 export const SELLER_DASHBOARD_SUMMARY_URL = `${sellerBase}/sellers/me/dashboard/summary`
@@ -30,6 +33,9 @@ export const SELLER_INQUIRIES_URL = `${sellerBase}/sellers/me/inquiries`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
+// 기본 핸들러를 두지 않는다 — 로그아웃을 부르는지/안 부르는지가 테스트의 단언이라,
+// 조용히 204를 주는 기본값이 있으면 "취소했는데 호출했다"는 회귀가 통과한다.
+export const WEB_LOGOUT_URL = `${apiBase}/auth/web/logout`
 
 // BE ApplicationResponse 모양의 서버 상태. null = 신청 이력 없음(GET 404/10100).
 export interface SellerApplicationWire {
@@ -397,6 +403,34 @@ export function currentSellerProducts(): SellerProductSummaryWire[] {
   return sellerProducts.map(p => ({ ...p }))
 }
 
+// ─── AI 초안(POST /sellers/me/product-drafts/autofill) ─────────────────────────
+// BE는 AI 실패도 200 + state로 돌려주고 쿨다운만 429/40402다 — 세 경우를 시나리오로 가른다.
+export type ProductDraftAutofillScenario = 'ok' | 'unavailable' | 'cooldown'
+let autofillScenario: ProductDraftAutofillScenario = 'ok'
+let lastAutofillBody: unknown = null
+
+/** OK 시나리오가 돌려주는 초안 — 카테고리는 MSW 카테고리 트리의 소분류 id다. */
+export const AUTOFILL_DRAFT_WIRE = {
+  categoryId: leafIdOf('고양이 > 식기/급수기 > 자동 급식기'),
+  description: '정해진 시간에 사료를 내보내는 자동 급식기예요. 외출이 잦은 집에 알맞아요.',
+  optionGroups: [{ name: '용량', values: ['3L', '5L'] }],
+  optionCombinations: [
+    { optionValues: ['3L'], additionalPrice: 0, stockQuantity: null },
+    { optionValues: ['5L'], additionalPrice: 5000, stockQuantity: null },
+  ],
+}
+export const AUTOFILL_SELLER_NOTICE = '가격과 재고는 직접 입력해 주세요.'
+
+export function seedProductDraftAutofill(scenario: ProductDraftAutofillScenario = 'ok'): void {
+  autofillScenario = scenario
+  lastAutofillBody = null
+}
+
+/** 초안 핸들러가 받은 마지막 요청 본문 — 잠근 값(lockedFields)이 실리는지 단언할 때 쓴다. */
+export function lastProductDraftAutofillBody(): unknown {
+  return lastAutofillBody
+}
+
 const badRequest = (message: string) =>
   HttpResponse.json({ errorCode: 90001, message }, { status: 400 })
 
@@ -640,9 +674,206 @@ const sellerProductHandlers = [
       },
     })
   }),
-  // 카테고리 트리 — api 호스트다(셀러 모듈에는 이 컨트롤러가 없다). 목업 임시저장 시드와 id가 같아야
-  // 프리필이 맞으므로 products.mock의 트리를 그대로 쓴다.
+  // AI 초안 — 저장하지 않는다. 상품명이 비면 BE가 AI보다 먼저 400/90001로 거른다.
+  http.post(SELLER_PRODUCT_DRAFT_AUTOFILL_URL, async ({ request }) => {
+    const body = (await request.json()) as { productName?: string }
+    lastAutofillBody = body
+    if (!body.productName?.trim()) return badRequest('상품명을 입력해 주세요.')
+    if (autofillScenario === 'cooldown') {
+      return HttpResponse.json(
+        { errorCode: 40402, message: '잠시 후 다시 시도해 주세요.' },
+        { status: 429 },
+      )
+    }
+    if (autofillScenario === 'unavailable') {
+      return HttpResponse.json({
+        data: {
+          state: 'UNAVAILABLE',
+          draft: { categoryId: null, description: null, optionGroups: [], optionCombinations: [] },
+          fieldStatus: {},
+          basis: {},
+          sellerNotice: null,
+        },
+      })
+    }
+    return HttpResponse.json({
+      data: {
+        state: 'OK',
+        draft: AUTOFILL_DRAFT_WIRE,
+        fieldStatus: {
+          categoryId: 'FILLED',
+          description: 'FILLED',
+          optionGroups: 'FILLED',
+          regularPrice: 'EMPTY_NOT_ATTEMPTED',
+        },
+        basis: { description: 'NAME' },
+        sellerNotice: AUTOFILL_SELLER_NOTICE,
+      },
+    })
+  }),
+  // 카테고리 트리 — api 호스트다(셀러 모듈에는 이 컨트롤러가 없다). 초안 프리필이 categoryId로
+  // 소분류를 되살리므로 테스트 시드와 id가 같아야 한다 — products.mock의 트리를 그대로 쓴다.
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: MOCK_CATEGORY_TREE })),
+]
+
+// ─── 셀러 상품 임시저장 (seller 호스트 /sellers/me/product-drafts) ────────────
+// BE SellerProductDraftController/ProductDraftService를 비춘다 — 저장은 upsert가 아니라 POST(생성)와
+// PUT(통째 덮어쓰기)로 갈리고, 생성만 보관 상한 10건을 본다(422/40401). 없는 초안·남의 초안은 전부
+// 404/40400이다. payload(이미지 키 목록·옵션)는 서버가 해석하지 않고 받은 모양 그대로 돌려준다.
+
+export interface SellerProductDraftWire {
+  draftId: string
+  savedAt: string
+  categoryId: number | null
+  productName: string | null
+  description: string | null
+  regularPrice: number | null
+  discountPrice: number | null
+  discountStartAt: string | null
+  discountEndAt: string | null
+  thumbnailImageKey: string | null
+  additionalImageKeys: string[]
+  detailImageKeys: string[]
+  optionGroups: { name?: string | null; values: string[] }[]
+  optionCombinations: { optionValues: string[]; additionalPrice?: number | null; stockQuantity?: number | null }[]
+}
+
+/** BE MAX_PRODUCT_DRAFTS. 생성만 이 상한을 본다. */
+export const MAX_PRODUCT_DRAFTS = 10
+
+let productDrafts: SellerProductDraftWire[] = []
+let draftIdSeq = 0
+let draftSavedAtSeq = 0
+
+export function makeSellerProductDraftWire(
+  overrides: Partial<SellerProductDraftWire> = {},
+): SellerProductDraftWire {
+  draftIdSeq += 1
+  return {
+    draftId: `01JMSWDRAFT${String(draftIdSeq).padStart(15, '0')}`,
+    savedAt: '2026-10-05T09:30:00',
+    categoryId: null,
+    productName: null,
+    description: null,
+    regularPrice: null,
+    discountPrice: null,
+    discountStartAt: null,
+    discountEndAt: null,
+    thumbnailImageKey: null,
+    additionalImageKeys: [],
+    detailImageKeys: [],
+    optionGroups: [],
+    optionCombinations: [],
+    ...overrides,
+  }
+}
+
+/** 최근 저장순(BE findAllLive)으로 세운다 — 준 순서가 그대로 목록 순서다. */
+export function seedSellerProductDrafts(rows: SellerProductDraftWire[] = []): void {
+  productDrafts = rows.map(row => ({ ...row }))
+  draftSavedAtSeq = 0
+}
+
+/** 핸들러가 반영한 현재 초안 목록 — 테스트가 저장·삭제 결과를 읽는 창구다. */
+export function currentSellerProductDrafts(): SellerProductDraftWire[] {
+  return productDrafts.map(row => ({ ...row }))
+}
+
+const draftNotFound = () =>
+  HttpResponse.json({ errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' }, { status: 404 })
+
+interface ProductDraftSaveBody {
+  categoryId?: number | null
+  productName?: string | null
+  description?: string | null
+  regularPrice?: number | null
+  discountPrice?: number | null
+  discountStartAt?: string | null
+  discountEndAt?: string | null
+  thumbnailImageKey?: string | null
+  additionalImageKeys?: string[] | null
+  detailImageKeys?: string[] | null
+  optionGroups?: SellerProductDraftWire['optionGroups'] | null
+  optionCombinations?: SellerProductDraftWire['optionCombinations'] | null
+}
+
+/** 저장 때마다 시각이 움직여야 "방금 저장"이 참이다 — 초 단위로 하나씩 올린다. */
+const nextSavedAt = () => {
+  draftSavedAtSeq += 1
+  return `2026-10-20T10:${String(draftSavedAtSeq).padStart(2, '0')}:00`
+}
+
+/** 보내지 않은 필드는 "유지"가 아니라 "비움"이다(BE ProductDraft.overwrite). */
+function draftFrom(draftId: string, body: ProductDraftSaveBody, savedAt: string): SellerProductDraftWire {
+  return {
+    draftId,
+    savedAt,
+    categoryId: body.categoryId ?? null,
+    productName: body.productName ?? null,
+    description: body.description ?? null,
+    regularPrice: body.regularPrice ?? null,
+    discountPrice: body.discountPrice ?? null,
+    discountStartAt: body.discountStartAt ?? null,
+    discountEndAt: body.discountEndAt ?? null,
+    thumbnailImageKey: body.thumbnailImageKey ?? null,
+    additionalImageKeys: body.additionalImageKeys ?? [],
+    detailImageKeys: body.detailImageKeys ?? [],
+    optionGroups: body.optionGroups ?? [],
+    optionCombinations: body.optionCombinations ?? [],
+  }
+}
+
+const productDraftHandlers = [
+  http.get(SELLER_PRODUCT_DRAFTS_URL, () =>
+    HttpResponse.json({
+      data: {
+        items: productDrafts.map(d => ({
+          draftId: d.draftId,
+          productName: d.productName,
+          savedAt: d.savedAt,
+        })),
+        totalCount: productDrafts.length,
+      },
+    }),
+  ),
+  // 생성 — 201. 상한을 넘기면 422/40401이고 목록은 그대로다.
+  http.post(SELLER_PRODUCT_DRAFTS_URL, async ({ request }) => {
+    if (productDrafts.length >= MAX_PRODUCT_DRAFTS) {
+      return errorAt(422, 40401, '임시저장은 최대 10개까지 보관할 수 있습니다.')
+    }
+    const body = (await request.json()) as ProductDraftSaveBody
+    draftIdSeq += 1
+    const created = draftFrom(
+      `01JMSWDRAFT${String(draftIdSeq).padStart(15, '0')}`,
+      body,
+      nextSavedAt(),
+    )
+    productDrafts = [created, ...productDrafts]
+    return HttpResponse.json(
+      { data: { draftId: created.draftId, savedAt: created.savedAt } },
+      { status: 201 },
+    )
+  }),
+  http.get(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, ({ params }) => {
+    const draft = productDrafts.find(d => d.draftId === params['draftId'])
+    if (!draft) return draftNotFound()
+    return HttpResponse.json({ data: { ...draft } })
+  }),
+  // 덮어쓰기 — 상한을 보지 않는다. 저장순이 바뀌므로 목록 맨 앞으로 올라온다.
+  http.put(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, async ({ params, request }) => {
+    const draftId = params['draftId'] as string
+    if (!productDrafts.some(d => d.draftId === draftId)) return draftNotFound()
+    const body = (await request.json()) as ProductDraftSaveBody
+    const saved = draftFrom(draftId, body, nextSavedAt())
+    productDrafts = [saved, ...productDrafts.filter(d => d.draftId !== draftId)]
+    return HttpResponse.json({ data: { draftId, savedAt: saved.savedAt } })
+  }),
+  http.delete(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, ({ params }) => {
+    const draftId = params['draftId'] as string
+    if (!productDrafts.some(d => d.draftId === draftId)) return draftNotFound()
+    productDrafts = productDrafts.filter(d => d.draftId !== draftId)
+    return new HttpResponse(null, { status: 204 })
+  }),
 ]
 
 // ─── 택배사 마스터 (seller 호스트 /sellers/couriers) ──────────────────────────
@@ -2384,13 +2615,122 @@ const reviewsHandlers = [
   }),
 ]
 
+// BE StoreSettingsResponse 모양의 서버 상태(GET·PUT /sellers/me/store).
+export interface StoreWire {
+  sellerId: number
+  status: 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'WITHDRAWN' | 'WITHDRAWAL_REQUESTED'
+  storeName: string
+  brandIntro: string | null
+  profileImageUrl: string | null
+  profileImageKey: string | null
+  bannerImageUrl: string | null
+  bannerImageKey: string | null
+  zipCode: string | null
+  roadAddress: string | null
+  detailAddress: string | null
+  confirmedOrderCount: number
+  telesalesNoticeStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'NOTIFIED' | 'REGISTERED'
+}
+
+export interface StoreSettingsWire {
+  isSeller: boolean
+  applicationStatus: SellerApplicationWire['status'] | null
+  store: StoreWire | null
+}
+
+export const DEFAULT_STORE: StoreWire = {
+  sellerId: 7,
+  status: 'ACTIVE',
+  storeName: '애착상회',
+  brandIntro: null,
+  profileImageUrl: null,
+  profileImageKey: null,
+  bannerImageUrl: null,
+  bannerImageKey: null,
+  zipCode: null,
+  roadAddress: null,
+  detailAddress: null,
+  confirmedOrderCount: 0,
+  telesalesNoticeStatus: 'NOT_REQUIRED',
+}
+
+const DEFAULT_STORE_SETTINGS: StoreSettingsWire = {
+  isSeller: true,
+  applicationStatus: 'APPROVED',
+  store: DEFAULT_STORE,
+}
+
+let storeSettings: StoreSettingsWire = { ...DEFAULT_STORE_SETTINGS, store: { ...DEFAULT_STORE } }
+
+export function makeStoreWire(patch: Partial<StoreWire> = {}): StoreWire {
+  return { ...DEFAULT_STORE, ...patch }
+}
+
+/** 인자 없이 부르면 승인된 활성 셀러 기본값으로 되돌린다. */
+export function seedStoreSettings(state: StoreSettingsWire = DEFAULT_STORE_SETTINGS): void {
+  storeSettings = { ...state, store: state.store ? { ...state.store } : null }
+}
+
+/** 핸들러가 저장한 현재 스토어 — 테스트가 PUT 본문 반영을 단언할 때 읽는다. */
+export function currentStore(): StoreWire | null {
+  return storeSettings.store ? { ...storeSettings.store } : null
+}
+
+interface StoreUpdateBody {
+  storeName: string
+  brandIntro?: string | null
+  profileImageKey?: string | null
+  bannerImageKey?: string | null
+  zipCode?: string | null
+  roadAddress?: string | null
+  detailAddress?: string | null
+}
+
+const storeHandlers = [
+  // 셀러가 아닌 계정도 200이다 — 한 화면이 입점 신청과 스토어 운영을 겸한다.
+  http.get(SELLER_STORE_URL, () => HttpResponse.json({ data: { ...storeSettings } })),
+  http.put(SELLER_STORE_URL, async ({ request }) => {
+    const body = (await request.json()) as StoreUpdateBody
+    const store = storeSettings.store
+    // 자격 게이트가 본문 검증보다 앞선다(BE: 승격 전에 getActive).
+    if (!store) return errorAt(403, 10004, '셀러로 등록되지 않은 계정입니다.')
+    if (store.status !== 'ACTIVE') return errorAt(403, 10002, '활성 상태의 셀러만 이용할 수 있습니다.')
+    // Bean Validation 미러 — 빈 상호와 길이 초과는 전부 90001이다(10006이 아니다).
+    const tooLong =
+      body.storeName.length > 100 ||
+      (body.brandIntro?.length ?? 0) > 1000 ||
+      (body.zipCode?.length ?? 0) > 10 ||
+      (body.roadAddress?.length ?? 0) > 255 ||
+      (body.detailAddress?.length ?? 0) > 255
+    if (body.storeName.trim().length === 0 || tooLong) {
+      return errorAt(400, 90001, '요청 본문이 올바르지 않습니다.')
+    }
+    storeSettings = {
+      ...storeSettings,
+      store: {
+        ...store,
+        storeName: body.storeName.trim(),
+        brandIntro: body.brandIntro ?? null,
+        profileImageKey: body.profileImageKey ?? null,
+        bannerImageKey: body.bannerImageKey ?? null,
+        zipCode: body.zipCode ?? null,
+        roadAddress: body.roadAddress ?? null,
+        detailAddress: body.detailAddress ?? null,
+      },
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
+  ...productDraftHandlers,
   ...courierHandlers,
   ...sellerOrderHandlers,
   ...claimHandlers,
   ...shippingPolicyHandlers,
+  ...storeHandlers,
   ...settlementHandlers,
   ...dashboardHandlers,
   ...inquiryHandlers,
