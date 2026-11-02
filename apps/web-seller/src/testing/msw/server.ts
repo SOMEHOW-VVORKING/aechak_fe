@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { API_PATH_PREFIX } from '@aechak/api'
 import { PRODUCT_IMAGE_TYPES } from '@/features/products/products.contract'
-import { MOCK_CATEGORY_TREE } from '@/features/products/products.mock'
+import { MOCK_CATEGORY_TREE, leafIdOf } from '@/features/products/products.mock'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-buyer의 src/testing/msw 관례를
 // web-seller에 이식했다. 실제 HTTP 경로(URL·envelope·에러 계약)까지 검증하려고 모듈 모킹 대신
@@ -20,6 +20,7 @@ const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
 export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
+export const SELLER_PRODUCT_DRAFT_AUTOFILL_URL = `${sellerBase}/sellers/me/product-drafts/autofill`
 export const SELLER_PRODUCT_DRAFTS_URL = `${sellerBase}/sellers/me/product-drafts`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
@@ -398,6 +399,34 @@ export function currentSellerProducts(): SellerProductSummaryWire[] {
   return sellerProducts.map(p => ({ ...p }))
 }
 
+// ─── AI 초안(POST /sellers/me/product-drafts/autofill) ─────────────────────────
+// BE는 AI 실패도 200 + state로 돌려주고 쿨다운만 429/40402다 — 세 경우를 시나리오로 가른다.
+export type ProductDraftAutofillScenario = 'ok' | 'unavailable' | 'cooldown'
+let autofillScenario: ProductDraftAutofillScenario = 'ok'
+let lastAutofillBody: unknown = null
+
+/** OK 시나리오가 돌려주는 초안 — 카테고리는 MSW 카테고리 트리의 소분류 id다. */
+export const AUTOFILL_DRAFT_WIRE = {
+  categoryId: leafIdOf('고양이 > 식기/급수기 > 자동 급식기'),
+  description: '정해진 시간에 사료를 내보내는 자동 급식기예요. 외출이 잦은 집에 알맞아요.',
+  optionGroups: [{ name: '용량', values: ['3L', '5L'] }],
+  optionCombinations: [
+    { optionValues: ['3L'], additionalPrice: 0, stockQuantity: null },
+    { optionValues: ['5L'], additionalPrice: 5000, stockQuantity: null },
+  ],
+}
+export const AUTOFILL_SELLER_NOTICE = '가격과 재고는 직접 입력해 주세요.'
+
+export function seedProductDraftAutofill(scenario: ProductDraftAutofillScenario = 'ok'): void {
+  autofillScenario = scenario
+  lastAutofillBody = null
+}
+
+/** 초안 핸들러가 받은 마지막 요청 본문 — 잠근 값(lockedFields)이 실리는지 단언할 때 쓴다. */
+export function lastProductDraftAutofillBody(): unknown {
+  return lastAutofillBody
+}
+
 const badRequest = (message: string) =>
   HttpResponse.json({ errorCode: 90001, message }, { status: 400 })
 
@@ -638,6 +667,43 @@ const sellerProductHandlers = [
         appliedStockDelta: combination.stockQuantity - before,
         isActive: combination.isActive,
         updatedAt: '2026-10-07T11:00:00',
+      },
+    })
+  }),
+  // AI 초안 — 저장하지 않는다. 상품명이 비면 BE가 AI보다 먼저 400/90001로 거른다.
+  http.post(SELLER_PRODUCT_DRAFT_AUTOFILL_URL, async ({ request }) => {
+    const body = (await request.json()) as { productName?: string }
+    lastAutofillBody = body
+    if (!body.productName?.trim()) return badRequest('상품명을 입력해 주세요.')
+    if (autofillScenario === 'cooldown') {
+      return HttpResponse.json(
+        { errorCode: 40402, message: '잠시 후 다시 시도해 주세요.' },
+        { status: 429 },
+      )
+    }
+    if (autofillScenario === 'unavailable') {
+      return HttpResponse.json({
+        data: {
+          state: 'UNAVAILABLE',
+          draft: { categoryId: null, description: null, optionGroups: [], optionCombinations: [] },
+          fieldStatus: {},
+          basis: {},
+          sellerNotice: null,
+        },
+      })
+    }
+    return HttpResponse.json({
+      data: {
+        state: 'OK',
+        draft: AUTOFILL_DRAFT_WIRE,
+        fieldStatus: {
+          categoryId: 'FILLED',
+          description: 'FILLED',
+          optionGroups: 'FILLED',
+          regularPrice: 'EMPTY_NOT_ATTEMPTED',
+        },
+        basis: { description: 'NAME' },
+        sellerNotice: AUTOFILL_SELLER_NOTICE,
       },
     })
   }),

@@ -1968,6 +1968,102 @@ export interface SellerProductOptionCombinationInput {
   stockQuantity: number
 }
 
+export interface SellerProductDraftOptionGroupItem {
+  /**
+   * 옵션 그룹명. AI가 못 정하면 null
+   * @maxLength 100
+   * @nullable
+   */
+  name?: string | null
+  /** @maxItems 50 */
+  values: string[]
+}
+
+export interface SellerProductDraftOptionCombinationItem {
+  /** @maxItems 5 */
+  optionValues: string[]
+  /** @nullable */
+  additionalPrice?: number | null
+  /**
+   * AI는 재고를 정하지 않아 보통 null이다
+   * @nullable
+   */
+  stockQuantity?: number | null
+}
+
+export interface SellerProductDraftAutofillLockedFields {
+  /** @nullable */
+  description?: string | null
+  /** @nullable */
+  optionGroups?: SellerProductDraftOptionGroupItem[] | null
+}
+
+/**
+ * 셀러가 이미 쓴 값. AI가 덮지 않고 그 전제로 나머지를 만든다
+ * @nullable
+ */
+export type SellerProductDraftAutofillRequestLockedFields =
+  SellerProductDraftAutofillLockedFields | null
+
+export interface SellerProductDraftAutofillRequest {
+  /**
+   * 비면 400 errorCode 90001(AI가 422로 거절할 입력을 BE가 먼저 거른다)
+   * @maxLength 255
+   */
+  productName: string
+  /**
+   * depth 1·2·3 아무거나. AI가 상품명에서 품목을 못 집으면 이것으로 보완한다
+   * @nullable
+   */
+  categoryId?: number | null
+  /**
+   * 셀러가 이미 쓴 값. AI가 덮지 않고 그 전제로 나머지를 만든다
+   * @nullable
+   */
+  lockedFields?: SellerProductDraftAutofillRequestLockedFields
+}
+
+export interface SellerProductDraftAutofillDraft {
+  /**
+   * AI가 고른 카테고리. depth가 3이 아닐 수 있다
+   * @nullable
+   */
+  categoryId?: number | null
+  /** @nullable */
+  description?: string | null
+  optionGroups: SellerProductDraftOptionGroupItem[]
+  optionCombinations: SellerProductDraftOptionCombinationItem[]
+}
+
+/**
+ * 필드명 → 채움/비움 사유(예: FILLED, EMPTY_NOT_ATTEMPTED). 값 집합은 AI가 소유한다
+ */
+export type SellerProductDraftAutofillDataFieldStatus = { [key: string]: string }
+
+/**
+ * 필드명 → 무엇을 근거로 채웠는가(예: NAME)
+ */
+export type SellerProductDraftAutofillDataBasis = { [key: string]: string }
+
+export interface SellerProductDraftAutofillData {
+  /** OK·FAILED·UNAVAILABLE. AI 쪽이 값을 늘릴 수 있어 enum으로 적지 않는다 — OK가 아니면 폼을 그대로 둔다 */
+  state: string
+  draft: SellerProductDraftAutofillDraft
+  /** 필드명 → 채움/비움 사유(예: FILLED, EMPTY_NOT_ATTEMPTED). 값 집합은 AI가 소유한다 */
+  fieldStatus: SellerProductDraftAutofillDataFieldStatus
+  /** 필드명 → 무엇을 근거로 채웠는가(예: NAME) */
+  basis: SellerProductDraftAutofillDataBasis
+  /**
+   * 셀러에게 그대로 보여도 되는 한 줄 안내
+   * @nullable
+   */
+  sellerNotice?: string | null
+}
+
+export interface SellerProductDraftAutofillResponse {
+  data: SellerProductDraftAutofillData
+}
+
 export interface SellerProductRegisterRequest {
   /** 활성 소분류(depth 3)만. 중·대분류는 400 errorCode 40100, 없으면 404 errorCode 40101 */
   categoryId: number
@@ -16326,6 +16422,88 @@ export const useDeleteSellerProductDraft = <TError = unknown, TContext = unknown
   TContext
 > => {
   const mutationOptions = getDeleteSellerProductDraftMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 상품명으로 AI가 카테고리·상세 설명·옵션 초안을 만든다. 아무것도 저장하지 않는다 — 셀러가 받아들인 값은 등록·임시저장 요청으로 다시 나간다. AI가 못 만들어도 200이고 state로 알린다 (OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴 수 있어 FE는 열거로 가두지 않는다). OK가 "모든 필드를 받았다"를 뜻하지 않는다 — 비어 있는 사유는 fieldStatus(필드명 → 사유 문자열)에, 셀러에게 보일 안내는 sellerNotice에 실린다. 초안이 드는 필드는 넷(categoryId·description· optionGroups·optionCombinations)뿐이고 상품명·가격·할인·이미지는 설계상 늘 비어 있다. 쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004. 셀러당 쿨다운(기본 20초) 안의 재호출은 429 errorCode 40402이고 모델을 부르지 않는다. 상품명이 비면 400 errorCode 90001.
+ * @summary 셀러 상품 등록 폼 AI 초안 받기
+ */
+export const autofillSellerProductDraft = (
+  sellerProductDraftAutofillRequest: SellerProductDraftAutofillRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerProductDraftAutofillResponse>({
+    url: `/sellers/me/product-drafts/autofill`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sellerProductDraftAutofillRequest,
+    signal,
+  })
+}
+
+export const getAutofillSellerProductDraftMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autofillSellerProductDraft>>,
+    TError,
+    { data: SellerProductDraftAutofillRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof autofillSellerProductDraft>>,
+  TError,
+  { data: SellerProductDraftAutofillRequest },
+  TContext
+> => {
+  const mutationKey = ['autofillSellerProductDraft']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof autofillSellerProductDraft>>,
+    { data: SellerProductDraftAutofillRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return autofillSellerProductDraft(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AutofillSellerProductDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof autofillSellerProductDraft>>
+>
+export type AutofillSellerProductDraftMutationBody = SellerProductDraftAutofillRequest
+export type AutofillSellerProductDraftMutationError = unknown
+
+/**
+ * @summary 셀러 상품 등록 폼 AI 초안 받기
+ */
+export const useAutofillSellerProductDraft = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof autofillSellerProductDraft>>,
+      TError,
+      { data: SellerProductDraftAutofillRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof autofillSellerProductDraft>>,
+  TError,
+  { data: SellerProductDraftAutofillRequest },
+  TContext
+> => {
+  const mutationOptions = getAutofillSellerProductDraftMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
