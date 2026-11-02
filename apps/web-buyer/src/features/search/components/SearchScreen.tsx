@@ -23,6 +23,7 @@ export function SearchScreen() {
 
   const [query, setQuery] = useState('')
   const recent = data?.recentKeywords ?? []
+  const suggested = data?.suggestedKeywords ?? []
 
   const submit = (keyword: string) => {
     const q = keyword.trim()
@@ -92,22 +93,28 @@ export function SearchScreen() {
           ) : (
             <Card className="flex flex-col items-center gap-2 px-4 py-6">
               <Clock className="size-6 text-icon-muted" />
+              {/* 최근·추천 검색어(GET /search/keywords)는 회원 전용이다. 비회원에게 "여기에
+                  표시돼요"라고 적으면 저장되지 않는 것을 저장될 것처럼 읽게 된다. */}
               <span className="text-body-sm text-text-tertiary">
-                최근 검색한 상품이 여기에 표시돼요
+                {isLoggedIn
+                  ? '최근 검색한 상품이 여기에 표시돼요'
+                  : '로그인하면 최근 검색어를 저장해 드려요'}
               </span>
             </Card>
           )}
         </section>
 
-        {/* 추천 검색어 */}
-        <section className="flex flex-col gap-2.5">
-          <span className="text-label font-semibold text-text-primary">추천 검색어</span>
-          <div className="flex flex-wrap gap-2">
-            {(data?.suggestedKeywords ?? []).map(keyword => (
-              <KeywordChip key={keyword} keyword={keyword} onClick={() => submit(keyword)} />
-            ))}
-          </div>
-        </section>
+        {/* 추천 검색어 — 비어 있으면(비회원·서버 무응답) 제목만 남은 빈 칸이 되므로 섹션을 접는다. */}
+        {suggested.length > 0 && (
+          <section className="flex flex-col gap-2.5">
+            <span className="text-label font-semibold text-text-primary">추천 검색어</span>
+            <div className="flex flex-wrap gap-2">
+              {suggested.map(keyword => (
+                <KeywordChip key={keyword} keyword={keyword} onClick={() => submit(keyword)} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </MobileScreen>
   )

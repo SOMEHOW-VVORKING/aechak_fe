@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
+import { setAccessToken } from '@aechak/api'
 import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
   PRODUCT_OPTIONS_URL,
@@ -63,6 +64,8 @@ function serveReviewSummary(data: ProductReviewSummaryResponse) {
 describe('/products/$productId', () => {
   beforeEach(() => {
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
     resetRegistry()
   })
 
@@ -310,6 +313,19 @@ describe('/products/$productId', () => {
     expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
     await waitFor(() => expect(reviewCalls).toBe(0))
     expect(screen.queryByText('소음이 조금 있어요. 기능은 무난해요.')).not.toBeInTheDocument()
+    // 호출을 막은 쿼리는 react-query v5에서 isPending=true다 — 그걸로 분기하면 스켈레톤 3장이
+    // 영구히 남는다. 이 안내가 보이려면 로딩 분기가 isFetching이어야 한다.
+    expect(screen.getByText('리뷰를 보려면 로그인이 필요해요.')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-031] 비회원도 상세 본문(이름·가격·옵션 진입)을 끝까지 본다', async () => {
+    // GET /products/{id}는 BE가 permitAll로 열어 둔 게스트 카탈로그다 — 비회원이 공유 링크로
+    // 들어와도 상세가 로그인 화면으로 바뀌지 않아야 한다.
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    expect(screen.queryByText('로그인이 필요해요')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-020] 미리보기 조회가 실패하면 빈 목록 대신 사유를 알린다', async () => {

@@ -98,6 +98,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
   const canFetchServerReviews =
     isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
+  // 목업 상품처럼 상세가 리뷰를 이미 들고 있으면 안내가 필요 없다(previewReviews가 채워진다).
+  const reviewsNeedLogin = !isLoggedIn && data != null && data.reviews.length === 0
   const reviewPreview = useProductReviewPreview(productId, { enabled: canFetchServerReviews })
   // AI 요약도 JWT 필수이고 목업 상품은 서버에 없어 미리보기와 같은 조건으로만 부른다.
   const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchServerReviews })
@@ -267,12 +269,22 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                     <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
                       리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.
                     </Card>
-                  ) : reviewPreview.isPending && previewReviews.length === 0 ? (
+                  ) : // isPending이 아니라 isFetching을 본다 — react-query v5는 enabled:false인 쿼리도
+                  // isPending=true라서, 호출을 막은 비회원에게 스켈레톤 3장이 영구히 남는다
+                  // (실제로 요청이 떠 있는지를 묻는 건 isFetching이다). 아래 비회원 안내도 이
+                  // 조건을 통과해야 닿는다.
+                  reviewPreview.isFetching && previewReviews.length === 0 ? (
                     <div className="flex flex-col gap-3">
                       {[0, 1, 2].map(i => (
                         <Skeleton key={i} variant="rect" className="h-24 w-full" />
                       ))}
                     </div>
+                  ) : reviewsNeedLogin ? (
+                    // 상세 본문은 permitAll이라 비회원도 끝까지 보지만 리뷰 목록만 비어 있다 —
+                    // 그 칸을 빈 자리로 두지 않고 왜 비었는지 적는다.
+                    <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
+                      리뷰를 보려면 로그인이 필요해요.
+                    </Card>
                   ) : (
                     <div className="flex flex-col gap-3">
                       {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => {
