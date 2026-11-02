@@ -14,15 +14,24 @@ describe('auth.store', () => {
     expect(getIsLoggedIn()).toBe(false)
   })
 
-  it('[AC-AUTH-STORE-002] 토큰이 생기면 회원, 비워지면 비회원이 된다(토큰이 정본)', () => {
+  it('[AC-AUTH-STORE-002] 토큰이 생기면 회원이 된다(토큰이 정본)', () => {
     resetAuth()
 
     setAccessToken('live-token')
+
     expect(getSessionState()).toBe('member')
     expect(getIsLoggedIn()).toBe(true)
+  })
+
+  it('[AC-AUTH-STORE-006] 토큰이 비워지는 것만으로는 비회원으로 확정하지 않는다', () => {
+    // client.ts의 401 인터셉터는 refresh가 5xx·네트워크로 실패해도 토큰을 버린다. 그걸 비회원으로
+    // 못 박으면 refresh 쿠키가 멀쩡한 회원에게 회원 전용 화면이 "로그인이 필요해요"라고 거짓을
+    // 말하고, 서버가 복구돼도 재확인을 건너뛴다. 확인 전으로 남겨 다음 네비게이션에 맡긴다.
+    setAccessToken('live-token')
 
     setAccessToken(null)
-    expect(getSessionState()).toBe('guest')
+
+    expect(getSessionState()).toBe('unknown')
     expect(getIsLoggedIn()).toBe(false)
   })
 

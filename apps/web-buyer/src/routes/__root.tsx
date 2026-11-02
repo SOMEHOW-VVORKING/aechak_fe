@@ -7,9 +7,10 @@ export const Route = createRootRoute({
   // 회원 전용 요청을 쏴 401 → 전역 로그인 리다이렉트로 게스트 카탈로그에 닿지 못한다.
   // 두 번째 네비게이션부터는 상태가 이미 확정이라 요청을 보내지 않는다(restoreSessionOrGuest 참고).
   // /login/complete는 예외다 — 그 라우트가 직접 refresh로 세션을 수령하므로, 여기서 먼저 쏘면
-  // refresh 쿠키를 연달아 두 번 회전시킨다.
+  // refresh 쿠키를 연달아 두 번 회전시킨다. 꼬리 슬래시는 떼고 비교한다: 라우터는 `/login/complete/`도
+  // 같은 라우트로 매칭하지만 pathname에는 슬래시가 남아, 문자열 그대로 비교하면 예외가 빗나간다.
   beforeLoad: ({ location }) =>
-    location.pathname === '/login/complete' ? undefined : restoreSessionOrGuest(),
+    location.pathname.replace(/\/+$/, '') === '/login/complete' ? undefined : restoreSessionOrGuest(),
   component: RootLayout,
 })
 

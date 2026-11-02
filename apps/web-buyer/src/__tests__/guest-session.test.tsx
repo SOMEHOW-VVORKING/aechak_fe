@@ -97,4 +97,49 @@ describe('첫 진입 세션 확인', () => {
     expect(categoryCalls).toBe(0)
     expect(cartCalls).toBe(0)
   })
+
+  it('[AC-GUEST-005] 확인이 5xx로 실패하면 비회원으로 못 박지 않고 다음 화면에서 다시 확인한다', async () => {
+    // 일시 장애 한 번으로 비회원이 되면, refresh 쿠키가 멀쩡한 회원에게 회원 전용 화면이
+    // "로그인이 필요해요"라고 거짓을 말하고 서버가 복구돼도 그대로 남는다.
+    let calls = 0
+    server.use(
+      http.post(WEB_REFRESH_URL, () => {
+        calls += 1
+        return calls === 1
+          ? HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 })
+          : HttpResponse.json({
+              data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 },
+            })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/market')
+    await screen.findByText('강아지 연어 사료 2kg')
+    await waitFor(() => expect(getSessionState()).toBe('unknown'))
+
+    await user.click(screen.getByRole('button', { name: '검색' }))
+
+    await screen.findByText('최근 검색어')
+    await waitFor(() => expect(getSessionState()).toBe('member'))
+    expect(calls).toBe(2)
+  })
+
+  it('[AC-GUEST-006] 꼬리 슬래시가 붙은 /login/complete/ 도 세션 확인을 중복하지 않는다', async () => {
+    // 그 라우트가 직접 refresh로 세션을 수령하므로 루트의 확인은 건너뛰어야 한다 — 문자열을
+    // 그대로 비교하면 꼬리 슬래시에서 예외가 빗나가 쿠키를 연달아 한 번 더 회전시킨다.
+    // 2회는 그 라우트 자체의 기존 동작이고(루트 확인이 없어도 2회), 3회면 루트가 끼어든 것이다.
+    let refreshCalls = 0
+    server.use(
+      http.post(WEB_REFRESH_URL, () => {
+        refreshCalls += 1
+        return HttpResponse.json({
+          data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 },
+        })
+      }),
+    )
+    const router = renderAt('/login/complete/?status=ACTIVE')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    expect(refreshCalls).toBe(2)
+  })
 })

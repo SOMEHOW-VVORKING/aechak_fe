@@ -32,9 +32,14 @@ function setState(next: SessionState) {
   emit()
 }
 
-// 토큰이 움직이면 그대로 따라간다. 토큰이 생기면 회원, 비워지면 비회원이다 — 비우는 쪽은 로그아웃,
-// 탈퇴, 세션 만료(401 → refresh 실패) 전부 "세션이 없다"는 같은 뜻이다.
-subscribeAccessToken(token => setState(token == null ? 'guest' : 'member'))
+// 토큰이 움직이면 그대로 따라간다. 토큰이 생기면 회원이다.
+//
+// 비워지는 쪽은 'guest'가 아니라 'unknown'이다 — client.ts의 401 인터셉터는 refresh가 5xx나
+// 네트워크로 실패해도 토큰을 버리므로, 비우는 것만으로는 "세션이 없다"와 "지금 확인에 실패했다"를
+// 가를 수 없다. 멀쩡한 refresh 쿠키를 들고 있는 회원을 일시 장애 한 번으로 비회원으로 못 박으면
+// 회원 전용 화면이 "로그인이 필요해요"라고 거짓을 말한다. 'unknown'으로 두면 다음 네비게이션에서
+// 다시 확인해 스스로 복구된다. 비회원 확정은 401을 실제로 본 쪽(logout)만 한다.
+subscribeAccessToken(token => setState(token == null ? 'unknown' : 'member'))
 
 function subscribe(cb: () => void): () => void {
   listeners.add(cb)
