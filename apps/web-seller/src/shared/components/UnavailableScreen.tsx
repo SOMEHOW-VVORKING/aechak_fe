@@ -1,19 +1,63 @@
-import { EmptyState, PageHeader } from '@aechak/design-system/web'
+import { Card, EmptyState, PageHeader, StatusPill } from '@aechak/design-system/web'
+
+export interface UpcomingItem {
+  label: string
+  description: string
+}
 
 interface UnavailableScreenProps {
   title: string
   message: string
   description?: string
   action?: { label: string; onClick: () => void }
+  /**
+   * 화면이 나중에 무엇을 보여줄지 적는 목록. 안내 한 줄만 두면 운영자가 "뭘 준비 중인지" 알 수
+   * 없을 때 들어올 항목을 글로 적는다.
+   *
+   * **지금은 쓰는 자리가 없다**(SCRUM-307): 문의/리뷰/쿠폰/공지/계정 다섯은 안내 대신 예시
+   * 데이터로 목록·폼을 그리고 `SampleDataNotice` 띠로 저장되지 않음을 알리는 쪽으로 바뀌었다.
+   * 프롭은 남겨 둔다 — 서버가 내려가 게이트가 닫히는 화면(주문·클레임)에서 다시 쓸 자리다.
+   */
+  upcoming?: UpcomingItem[]
 }
 
-// BE 엔드포인트가 아직 없는 화면의 운영 진입 차단 안내 — 헤더 + "준비 중" EmptyState.
-// 목업으로 동작하던 화면이 저장되는 것처럼 보이지 않게, 주소로 직접 들어와도 이 안내만 보여준다.
-export function UnavailableScreen({ title, message, description, action }: UnavailableScreenProps) {
+// 화면의 운영 진입 차단 안내 — 헤더 + "준비 중" EmptyState. 저장되지 않는 화면이 멀쩡해 보이지
+// 않게, 주소로 직접 들어와도 이 안내만 보여준다.
+//
+// 지금 남은 쓰임은 **서버가 내려갔을 때 진입점을 닫는 게이트**다(`serverAvailability` 분기 —
+// 주문·클레임). BE가 처음부터 없는 화면은 SCRUM-307에서 예시 데이터 + `SampleDataNotice`로 옮겼다.
+export function UnavailableScreen({
+  title,
+  message,
+  description,
+  action,
+  upcoming,
+}: UnavailableScreenProps) {
   return (
     <div className="p-6">
-      <PageHeader title={title} />
+      <PageHeader
+        title={title}
+        // 스크롤하지 않아도 화면 상태가 먼저 읽히게 제목 옆에 표시한다(비활성 상태라 muted).
+        actions={<StatusPill variant="muted">준비 중</StatusPill>}
+      />
       <EmptyState title={message} description={description} action={action} />
+
+      {upcoming && upcoming.length > 0 && (
+        <Card padding="md" className="mx-auto max-w-xl">
+          <p className="mb-3 text-body-sm font-semibold text-text-primary">이 화면에 들어올 것</p>
+          <ul>
+            {upcoming.map(item => (
+              <li
+                key={item.label}
+                className="border-b border-border-subtle py-2.5 first:pt-0 last:border-b-0 last:pb-0"
+              >
+                <p className="text-body-sm font-medium text-text-secondary">{item.label}</p>
+                <p className="mt-0.5 text-caption text-text-tertiary">{item.description}</p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   )
 }

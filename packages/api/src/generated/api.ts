@@ -643,6 +643,209 @@ export interface OrderDetailEnvelope {
   data: OrderDetailResponse
 }
 
+/**
+ * 주문그룹(결제 단위) 상태. 셀러 주문 상태(OrderStatus)와 다른 상태머신이다 — PARTIALLY_CANCELLED는 그룹 안 일부 셀러 주문만 취소된 경우다
+ */
+export type OrderGroupStatus = (typeof OrderGroupStatus)[keyof typeof OrderGroupStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const OrderGroupStatus = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PAID: 'PAID',
+  PARTIALLY_CANCELLED: 'PARTIALLY_CANCELLED',
+  CANCELLED: 'CANCELLED',
+} as const
+
+/**
+ * 주문그룹 아래 셀러 주문 하나. 목록의 SellerOrderItemResponse와 달리 대표 품목이 아니라 전체 품목(items)을 주고 itemCount가 없다
+ */
+export interface OrderGroupSellerOrderResponse {
+  /** orders.public_id (ULID) */
+  orderId: string
+  status: OrderStatus
+  /** @nullable */
+  sellerName: string | null
+  /** 이 셀러 주문의 배송비(셀러 몫) */
+  sellerShippingFee: number
+  items: OrderLineItemResponse[]
+}
+
+export interface OrderGroupDetailResponse {
+  orderGroupId: string
+  status: OrderGroupStatus
+  totalProductAmount: number
+  totalShippingFee: number
+  usedPoint: number
+  finalPaymentAmount: number
+  /** 결제 가능 시한(오프셋 포함 절대 시각, 생성+10분). status가 PENDING_PAYMENT여도 이 시각이 지났으면 만료된 그룹이다 */
+  expiresAt: string
+  deliveryAddress: OrderDeliveryAddressResponse
+  orders: OrderGroupSellerOrderResponse[]
+}
+
+export interface OrderGroupDetailEnvelope {
+  data: OrderGroupDetailResponse
+}
+
+/**
+ * 클레임 요청 사유 고정 어휘(be ClaimReasonCode). **유형별로 고를 수 있는 코드가 다르고 그 집합은 GET /claims/reasons가 내려준다** — 화면이 이 enum으로 선택지를 조립하지 말 것(문구도 서버가 준다). 이 enum은 응답 파싱과 요청 본문 타입에만 쓴다
+ */
+export type ClaimReasonCode = (typeof ClaimReasonCode)[keyof typeof ClaimReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClaimReasonCode = {
+  CHANGE_OF_MIND: 'CHANGE_OF_MIND',
+  WRONG_OPTION: 'WRONG_OPTION',
+  PRICE_MISMATCH: 'PRICE_MISMATCH',
+  DELIVERY_DELAY: 'DELIVERY_DELAY',
+  DEFECTIVE: 'DEFECTIVE',
+  WRONG_ITEM: 'WRONG_ITEM',
+  NOT_AS_DESCRIBED: 'NOT_AS_DESCRIBED',
+  OTHER: 'OTHER',
+} as const
+
+export interface ClaimReasonResponse {
+  code: ClaimReasonCode
+  /** 구매자 선택지에 그대로 쓰는 문구 — 화면이 코드로 문구를 다시 만들지 말 것 */
+  label: string
+  /** true면 상세 사유 입력이 필수다(현재 OTHER만). 안 채우면 400 50413 */
+  detailRequired: boolean
+}
+
+export interface ClaimTypeReasonsResponse {
+  claimType: ClaimType
+  /** 나열 순서가 화면 선택지 순서다 */
+  reasons: ClaimReasonResponse[]
+}
+
+export interface ClaimReasonCatalogResponse {
+  claimTypes: ClaimTypeReasonsResponse[]
+}
+
+export interface ClaimReasonCatalogEnvelope {
+  data: ClaimReasonCatalogResponse
+}
+
+export interface ClaimLineResponse {
+  orderItemId: number
+  /** 상품명 조회가 비면 빈 문자열이 온다 — 화면은 빈 값을 주문 품목 이름으로 메운다 */
+  productName: string
+  quantity: number
+  /** 이 품목 몫 환불액(배송비 안분 제외) */
+  refundAmount: number
+}
+
+/**
+ * @nullable
+ */
+export type ClaimItemResponseRefundStatus = RefundStatus | null
+
+/**
+ * @nullable
+ */
+export type ClaimItemResponseSellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * @nullable
+ */
+export type ClaimItemResponseReturnCostBearer = ReturnCostBearer | null
+
+export interface ClaimItemResponse {
+  claimPublicId: string
+  claimType: ClaimType
+  status: ClaimStatus
+  /** @nullable */
+  refundStatus: ClaimItemResponseRefundStatus
+  /** @nullable */
+  sellerApprovalStatus: ClaimItemResponseSellerApprovalStatus
+  /** @nullable */
+  returnCostBearer: ClaimItemResponseReturnCostBearer
+  /** 품목 환불액 합 + 안분된 배송비 환불액(서버 계산). 화면이 다시 더하지 말 것. **교환 건에도 0이 아닌 값이 온다** — 교환은 환불 집행 대상이 아니므로 화면은 이 값을 환불로 그리지 않는다(RequestClaimResponse.refundAmount와 같은 사정이다) */
+  refundAmount: number
+  /**
+   * 셀러 거부 사유 — 구매자에게 그대로 노출된다
+   * @nullable
+   */
+  rejectionReason: string | null
+  /**
+   * ISO LocalDateTime(오프셋 없음, KST). 예: 2026-10-20T10:00:00
+   * @nullable
+   */
+  requestedAt: string | null
+  /**
+   * ISO LocalDateTime(오프셋 없음, KST). 셀러 승인 또는 기한 자동승인 시각
+   * @nullable
+   */
+  approvedAt: string | null
+  /**
+   * ISO LocalDateTime(오프셋 없음, KST). 거부·철회·환불완료·교환 재발송 시각
+   * @nullable
+   */
+  resolvedAt: string | null
+  items: ClaimLineResponse[]
+}
+
+export interface ClaimListResponse {
+  /** 거부·철회된 과거 건까지 포함한다 */
+  items: ClaimItemResponse[]
+}
+
+export interface ClaimListEnvelope {
+  data: ClaimListResponse
+}
+
+export interface ClaimTargetRequest {
+  orderItemId: number
+  /**
+   * 그 품목의 주문 수량과 같아야 한다 — 더 적으면 422 50410, 더 많으면 422 50406
+   * @minimum 1
+   */
+  quantity: number
+}
+
+export interface RequestClaimRequest {
+  claimType: ClaimType
+  /** GET /claims/reasons가 내려준 code를 그대로 보낸다. SCRUM-273 머지 전에는 60자 이내 자유 문자열을 받고 머지 뒤에는 ClaimReasonCode 어휘만 받는다 — 어느 쪽에서도 통하는 값이 그 code다 */
+  reasonCode: string
+  /**
+   * 선택지의 detailRequired가 true면 필수. 500자까지
+   * @maxLength 500
+   * @nullable
+   */
+  reasonDetail?: string | null
+  /** 생략하면 주문 전체를 전량 대상으로 본다 */
+  items?: ClaimTargetRequest[]
+}
+
+/**
+ * @nullable
+ */
+export type RequestClaimResponseSellerApprovalStatus = SellerApprovalStatus | null
+
+export interface RequestClaimResponse {
+  claimPublicId: string
+  claimType: ClaimType
+  status: ClaimStatus
+  /** 요청 시점에 확정된 환불액(배송비 안분 포함, 주문 전체 대상일 때만 배송비가 들어간다). **교환도 같은 계산식을 타 0이 아닌 값이 온다** — be ClaimService가 유형을 가리지 않고 ClaimAmountCalculator를 부르고, 교환은 실제 환불 집행 대상(ClaimType.REFUNDABLE)에서만 빠진다. 그래서 교환에서는 이 값을 환불로 보여 주면 안 된다(나가지 않는 돈이다) */
+  refundAmount: number
+  /** @nullable */
+  sellerApprovalStatus: RequestClaimResponseSellerApprovalStatus
+  /**
+   * 셀러 미응답 시 자동승인되는 기한. ISO LocalDateTime(오프셋 없음, KST)
+   * @nullable
+   */
+  autoApproveDueAt: string | null
+  /**
+   * ISO LocalDateTime(오프셋 없음, KST)
+   * @nullable
+   */
+  requestedAt: string | null
+}
+
+export interface RequestClaimEnvelope {
+  data: RequestClaimResponse
+}
+
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -913,6 +1116,14 @@ export interface ReviewImageResponse {
   sortOrder: number
 }
 
+export interface ReviewReplyResponse {
+  content: string
+  /** 답글을 처음 등록한 시각(ISO LocalDateTime, 오프셋 없음) */
+  repliedAt: string
+  /** 마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다 */
+  updatedAt: string
+}
+
 export type ReviewItemResponseRating =
   (typeof ReviewItemResponseRating)[keyof typeof ReviewItemResponseRating]
 
@@ -924,6 +1135,12 @@ export const ReviewItemResponseRating = {
   NUMBER_4: 4,
   NUMBER_5: 5,
 } as const
+
+/**
+ * 셀러가 이 리뷰에 남긴 답글. 리뷰당 최대 하나이고 없으면 null이다. 답글 식별자는 셀러센터만 쓰므로 여기엔 담기지 않는다.
+ * @nullable
+ */
+export type ReviewItemResponseSellerReply = ReviewReplyResponse | null
 
 export interface ReviewItemResponse {
   reviewId: number
@@ -938,6 +1155,117 @@ export interface ReviewItemResponse {
   /** ISO LocalDateTime(오프셋 없음, 예: 2026-08-12T10:00:00) */
   createdAt: string
   images: ReviewImageResponse[]
+  /**
+   * 셀러가 이 리뷰에 남긴 답글. 리뷰당 최대 하나이고 없으면 null이다. 답글 식별자는 셀러센터만 쓰므로 여기엔 담기지 않는다.
+   * @nullable
+   */
+  sellerReply: ReviewItemResponseSellerReply
+}
+
+export interface SellerReviewReplyResponse {
+  replyId: number
+  reviewId: number
+  content: string
+  /** 처음 등록한 시각(ISO LocalDateTime, 오프셋 없음) */
+  repliedAt: string
+  /** 마지막으로 고친 시각. 고치지 않았으면 repliedAt과 같다 */
+  updatedAt: string
+}
+
+export interface SellerReviewReplyEnvelope {
+  data: SellerReviewReplyResponse
+}
+
+export interface ReviewReplyWriteRequest {
+  /**
+   * 길이는 **공백을 포함한 원문**으로 센다(공백 1개 + 500자는 잘라내면 500자여도 거절된다 — 공백으로 한도를 늘릴 수 없게 했다). 저장은 앞뒤 공백을 잘라낸 값으로 하고, 공백뿐인 값은 400 errorCode 90001이다.
+   * @minLength 1
+   * @maxLength 500
+   */
+  content: string
+}
+
+export type SellerReviewItemResponseRating =
+  (typeof SellerReviewItemResponseRating)[keyof typeof SellerReviewItemResponseRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerReviewItemResponseRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
+/**
+ * 내 답글. 없으면 null이다
+ * @nullable
+ */
+export type SellerReviewItemResponseReply = SellerReviewReplyResponse | null
+
+export interface SellerReviewItemResponse {
+  reviewId: number
+  /** 상품 공개 ULID. 목록 필터의 productId와 같은 값이다 */
+  productId: string
+  /** 지금의 상품명(주문 시점 스냅샷이 아니다) */
+  productName: string
+  rating: SellerReviewItemResponseRating
+  /** 마스킹된 리뷰는 공개 본문으로 치환된 값이 온다 — 셀러도 구매자와 같은 것을 본다 */
+  content: string
+  optionName: string
+  /** 구매자 목록과 같은 닉네임. 탈퇴한 작성자는 익명 라벨이다 */
+  authorNickname: string
+  /** ISO LocalDateTime(오프셋 없음) */
+  createdAt: string
+  images: ReviewImageResponse[]
+  /**
+   * 내 답글. 없으면 null이다
+   * @nullable
+   */
+  reply: SellerReviewItemResponseReply
+}
+
+/**
+ * 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5').
+ */
+export type SellerReviewSummaryResponseRatingDistribution = { [key: string]: number }
+
+export interface SellerReviewSummaryResponse {
+  reviewCount: number
+  /**
+   * 리뷰가 없으면 null
+   * @nullable
+   */
+  averageRating: number | null
+  /** 별점(1~5)별 개수. 없는 별점도 0을 담는다. 키는 JSON 문자열('1'~'5'). */
+  ratingDistribution: SellerReviewSummaryResponseRatingDistribution
+}
+
+/**
+ * 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null. 별점·답글 필터를 반영하지 않는다
+ * @nullable
+ */
+export type SellerReviewListDataSummary = SellerReviewSummaryResponse | null
+
+export interface SellerReviewListData {
+  /**
+   * 첫 페이지(cursor 없음)에만 실리고 이후 페이지는 null. 별점·답글 필터를 반영하지 않는다
+   * @nullable
+   */
+  summary: SellerReviewListDataSummary
+  reviews: SellerReviewItemResponse[]
+  /**
+   * 필터를 반영한 총건수 — 첫 페이지에만, 이후 null
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SellerReviewListEnvelope {
+  data: SellerReviewListData
 }
 
 /**
@@ -1737,6 +2065,366 @@ export interface CourierListResponse {
   data: CourierListData
 }
 
+/**
+ * 정산 상태(화면 어휘 소문자). pending 정산 대기 / scheduled 정산 예정 / completed 정산 완료 / held 정산 보류. 서버가 주문 단위로 접을 때 보류가 가장 세고 그다음은 덜 진행된 쪽이다
+ */
+export type SellerSettlementStatus =
+  (typeof SellerSettlementStatus)[keyof typeof SellerSettlementStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSettlementStatus = {
+  pending: 'pending',
+  scheduled: 'scheduled',
+  completed: 'completed',
+  held: 'held',
+} as const
+
+export interface SellerSettlementSummary {
+  /** 주문 공개 식별자(ULID). 상세 조회 경로에 그대로 싣는다 */
+  orderId: string
+  /** 정산월(`yyyy-MM`). 구매확정일에서 뽑으므로 월 필터가 늘 걸린다 */
+  settlementMonth: string
+  /**
+   * 구매확정 시각. 오프셋 없는 LocalDateTime(예: 2026-06-18T10:00:00)
+   * @nullable
+   */
+  confirmedAt: string | null
+  /** 지급 예정일(`yyyy-MM-dd`). 구매확정일 +5일(역일)이다 */
+  expectedPayoutDate: string
+  /** 상품 금액 합(원). 품목 grossAmount의 합이다 */
+  productAmount: number
+  /** 수수료 합(원) = platformFeeAmount + pgFeeAmount. 쿠폰 부담·환불 차감은 포함하지 않는다 */
+  feeAmount: number
+  /** 지급 예정액 합(원) = productAmount + shippingFee - couponBurden - feeAmount - refundDeduction. 저장된 원장 값이라 화면이 다시 계산하지 않는다 */
+  finalAmount: number
+  status: SellerSettlementStatus
+}
+
+export interface SellerSettlementListData {
+  settlements: SellerSettlementSummary[]
+  totalCount: number
+  page: number
+  size: number
+  /** 정산이 없으면 0이다(1이 아니다) */
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerSettlementListResponse {
+  data: SellerSettlementListData
+}
+
+export interface SellerSettlementMonthsData {
+  /** `yyyy-MM` 최신순 */
+  months: string[]
+}
+
+export interface SellerSettlementMonthsResponse {
+  data: SellerSettlementMonthsData
+}
+
+export interface SellerSettlementItem {
+  orderItemId: number
+  /**
+   * 주문품목·상품 버전 스냅샷이 없으면 null이다
+   * @nullable
+   */
+  productName: string | null
+  /** @nullable */
+  quantity: number | null
+  grossAmount: number
+  shippingFee: number
+  /** 플랫폼 수수료(원) */
+  commission: number
+  pgFee: number
+  sellerCouponBurden: number
+  refundDeduction: number
+  /** 이 품목의 지급 예정액(원). 저장된 값 그대로다 */
+  netAmount: number
+}
+
+export type SellerSettlementDetailDataAllOf = {
+  shippingFee: number
+  /** 셀러가 부담한 쿠폰 금액(원). 수수료가 아니라 별도 차감이다 */
+  couponBurden: number
+  platformFeeAmount: number
+  pgFeeAmount: number
+  refundDeduction: number
+  /** 정산 행에 박힌 생성 시점 요율 스냅샷(비율, DECIMAL(5,4)). 정책이 바뀌어도 과거 정산은 그대로 둔다 — **화면이 요율을 하드코딩하지 말고 이 값을 쓸 것.** 서버는 자릿수까지(0.0800) 내려 주지만 JSON 수로 파싱하면 scale이 사라지므로 표시할 때만 소수 4자리 기준으로 백분율을 만든다(금액은 손대지 않는다) */
+  platformFeeRate: number
+  /** platformFeeRate와 같은 규칙 */
+  pgFeeRate: number
+  /** 취소된 정산 행은 빠진다. 요약 금액은 이 배열의 합이다 */
+  items: SellerSettlementItem[]
+}
+
+export type SellerSettlementDetailData = SellerSettlementSummary & SellerSettlementDetailDataAllOf
+
+export interface SellerSettlementDetailResponse {
+  data: SellerSettlementDetailData
+}
+
+export interface ShippingPolicyData {
+  /**
+   * courier_masters PK(대문자). 미설정이면 null. 저장 시 이 값을 그대로 되돌려 보낸다
+   * @nullable
+   */
+  defaultCourierCode: string | null
+  /** 기본 배송비(원). 구매자 주문 금액 계산이 읽는 값이다 */
+  baseShippingFee: number
+  /**
+   * 무료배송 기준 금액(원). null은 무료배송 미운영이고 0원과 다르다
+   * @nullable
+   */
+  freeShippingThreshold: number | null
+  /**
+   * 출고지 우편번호. 스토어 설정의 주소와 같은 컬럼이다
+   * @nullable
+   */
+  originZipCode: string | null
+  /** @nullable */
+  originRoadAddress: string | null
+  /** @nullable */
+  originDetailAddress: string | null
+  /** true면 반품지 3필드를 쓰지 않고 출고지를 반품지로 본다. 서버가 이 값으로 반품지 저장 여부를 가르므로 화면의 체크 상태를 그대로 싣는다 */
+  returnSameAsOrigin: boolean
+  /**
+   * returnSameAsOrigin=true면 저장되지 않아 null로 내려온다
+   * @nullable
+   */
+  returnZipCode: string | null
+  /** @nullable */
+  returnRoadAddress: string | null
+  /** @nullable */
+  returnDetailAddress: string | null
+  jejuExtraFee: number
+  remoteAreaExtraFee: number
+  returnFee: number
+  /** 교환 배송비(왕복) */
+  exchangeFee: number
+  /** 평균 발송 소요 영업일. 허용 범위는 1~7이고 기본값은 2다 */
+  avgDispatchDays: number
+  /**
+   * 상품 상세에 붙는 배송 정책 안내문(2000자). 미작성이면 null
+   * @nullable
+   */
+  shippingPolicyText: string | null
+}
+
+export interface ShippingPolicyResponse {
+  data: ShippingPolicyData
+}
+
+/**
+ * 전체 덮어쓰기 본문. 선택 항목을 빼면 비운 것으로 저장된다 — 부분 수정 용도로 쓰지 말 것. 필수로 적은 일곱은 BE에서 null 불허라 빠지면 400이다(returnSameAsOrigin만 기본값 true).
+ */
+export interface ShippingPolicyUpdateRequest {
+  /**
+   * @maxLength 30
+   * @nullable
+   */
+  defaultCourierCode?: string | null
+  baseShippingFee: number
+  /** @nullable */
+  freeShippingThreshold?: number | null
+  /**
+   * @maxLength 10
+   * @nullable
+   */
+  originZipCode?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  originRoadAddress?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  originDetailAddress?: string | null
+  returnSameAsOrigin: boolean
+  /**
+   * @maxLength 10
+   * @nullable
+   */
+  returnZipCode?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  returnRoadAddress?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  returnDetailAddress?: string | null
+  jejuExtraFee: number
+  remoteAreaExtraFee: number
+  returnFee: number
+  exchangeFee: number
+  avgDispatchDays: number
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  shippingPolicyText?: string | null
+}
+
+/**
+ * 셀러 주문 목록 세그먼트(be SellerOrderStatusFilter). OrderStatus enum 이름이 아니라 세그먼트 어휘이고 하나가 상태 여러 개를 묶는다 — all = PENDING_PAYMENT를 뺀 전부 (결제 전 주문이 테이블에 남는 모델이라 셀러에게 미결제 건을 보이지 않는다), new = PAID, awaiting-dispatch = PREPARING·DISPATCH_PENDING, shipping = SHIPPING, delivered = DELIVERED·PURCHASE_CONFIRMED, cancelled = CANCELLED
+ */
+export type SellerOrderStatusFilter =
+  (typeof SellerOrderStatusFilter)[keyof typeof SellerOrderStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerOrderStatusFilter = {
+  all: 'all',
+  new: 'new',
+  'awaiting-dispatch': 'awaiting-dispatch',
+  shipping: 'shipping',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const
+
+export interface SellerOrderShipment {
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  /** @nullable */
+  dispatchedAt: string | null
+  /** @nullable */
+  deliveredAt: string | null
+  /**
+   * 택배사가 준 마지막 추적 문구. 고정 어휘가 아니라 자유 문자열이라 그대로 띄운다
+   * @nullable
+   */
+  lastTrackingStatus: string | null
+}
+
+export interface SellerOrderClaim {
+  claimId: string
+  claimType: ClaimType
+  status: ClaimStatus
+}
+
+export interface SellerOrderLine {
+  orderItemId: number
+  /** 상품 공개 식별자(products.public_id) */
+  productId: string
+  productName: string
+  /**
+   * 주문 시점 스냅샷 URL. 없으면 null이고 화면이 플레이스홀더를 그린다
+   * @nullable
+   */
+  thumbnailUrl: string | null
+  optionName: string
+  quantity: number
+  unitPrice: number
+  /** 이 라인에 배분된 할인액 */
+  discountAllocatedAmount: number
+  itemStatus: OrderItemStatus
+}
+
+/**
+ * 주문당 최신 배송 한 건. 송장 등록 전에는 null
+ * @nullable
+ */
+export type SellerOrderSummaryShipment = SellerOrderShipment | null
+
+/**
+ * 품목을 붙잡고 있는 최신 클레임 한 건. 거부·철회만 품목을 풀어주므로 그때 null
+ * @nullable
+ */
+export type SellerOrderSummaryActiveClaim = SellerOrderClaim | null
+
+export interface SellerOrderSummary {
+  /** orders.public_id(ULID). 주문 처리 경로가 그대로 쓰는 식별자 */
+  orderId: string
+  /** 결제 한 번(주문그룹) 식별자. 같은 그룹의 다른 셀러 주문은 셀러에게 보이지 않는다 */
+  orderGroupId: string
+  status: OrderStatus
+  orderedAt: string
+  buyerNickname: string
+  /** **평문이다.** 마스킹은 화면 책임 */
+  recipientName: string
+  /** **평문이다.** 마스킹은 화면 책임 */
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailAddress: string | null
+  /** @nullable */
+  deliveryMemo: string | null
+  /** 이 주문의 품목 라인 수 */
+  itemCount: number
+  totalProductAmount: number
+  sellerShippingFee: number
+  allocatedCouponDiscount: number
+  payableAmount: number
+  /**
+   * 자동 구매확정 기한. 배송완료 처리 때 부여되므로 그 전에는 null
+   * @nullable
+   */
+  purchaseConfirmDueAt: string | null
+  /**
+   * 주문당 최신 배송 한 건. 송장 등록 전에는 null
+   * @nullable
+   */
+  shipment: SellerOrderSummaryShipment
+  /**
+   * 품목을 붙잡고 있는 최신 클레임 한 건. 거부·철회만 품목을 풀어주므로 그때 null
+   * @nullable
+   */
+  activeClaim: SellerOrderSummaryActiveClaim
+}
+
+export interface SellerOrderListData {
+  orders: SellerOrderSummary[]
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerOrderListResponse {
+  data: SellerOrderListData
+}
+
+export type SellerOrderDetailDataAllOf = {
+  items: SellerOrderLine[]
+}
+
+export type SellerOrderDetailData = SellerOrderSummary & SellerOrderDetailDataAllOf
+
+export interface SellerOrderDetailResponse {
+  data: SellerOrderDetailData
+}
+
+export interface ShipmentRegisterRequest {
+  /**
+   * 택배사 마스터의 courierCode를 그대로. 대소문자를 바꾸면 404 errorCode 50303
+   * @maxLength 30
+   */
+  courierCode: string
+  /**
+   * 서버가 trim한다. 택배사 trackingFormatPattern과 어긋나면 400 errorCode 50304
+   * @maxLength 50
+   */
+  trackingNumber: string
+}
+
+export interface ShipmentRegisterData {
+  shipmentId: number
+  dispatchedAt: string
+  /** 등록 직후 주문 상태 — PREPARING에서 불러도 2단 전이해 SHIPPING이다 */
+  orderStatus: OrderStatus
+}
+
+export interface ShipmentRegisterResponse {
+  data: ShipmentRegisterData
+}
+
 export interface SellerProductSaleStatusChangeRequest {
   saleStatus: SellerAssignableSaleStatus
 }
@@ -1820,6 +2508,72 @@ export interface SellerProductListResponse {
   data: SellerProductListData
 }
 
+/**
+ * 대시보드 기간 코드. 직전 구간은 현재 구간과 같은 길이로 맞붙는 반개구간이고(`7d`면 `[now-14d, now-7d)`), `all`에는 직전 구간이 없어 previousValue가 null이다.
+ */
+export type SellerDashboardPeriod =
+  (typeof SellerDashboardPeriod)[keyof typeof SellerDashboardPeriod]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerDashboardPeriod = {
+  all: 'all',
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+} as const
+
+export interface SellerDashboardMetric {
+  value: number
+  /**
+   * **직전 기간 말의 잔량이 아니다.** "직전 구간에 발생(주문·요청)했고 **지금도** 그 단계인 건수"다 — 집계 스냅샷 테이블이 없어 지금 상태를 기간만 과거로 옮겨 다시 센다. 열흘 전 요청을 오늘 승인하면 `7d`의 이 값이 올라가고, 셀러가 묵은 건을 처리하면 내려간다. 그래서 value와의 비율을 "지난 기간보다 늘었다"로 읽으면 뜻이 어긋난다. `period=all`이면 비교할 구간이 없어 null이다(0으로 내리지 않는다 — "직전에 0건"과 "비교 대상 없음"을 가른다).
+   * @nullable
+   */
+  previousValue: number | null
+  /** false면 값이 아니라 "아직 집계할 수 없다"는 뜻이고 value는 0으로 채워져 온다. 화면이 0건으로 표기하면 "건수가 없다"와 구분되지 않는다. 현재 false인 지표는 unansweredInquiries 하나다(셀러에 귀속되는 문의 모델이 없다). */
+  supported: boolean
+}
+
+export interface SellerDashboardMetrics {
+  newOrders: SellerDashboardMetric
+  awaitingShipment: SellerDashboardMetric
+  shippingDelayed: SellerDashboardMetric
+  cancelRequests: SellerDashboardMetric
+  returnRequests: SellerDashboardMetric
+  exchangeRequests: SellerDashboardMetric
+  collectionInvoicePending: SellerDashboardMetric
+  collectionCompletionPending: SellerDashboardMetric
+  reshipPending: SellerDashboardMetric
+  unansweredInquiries: SellerDashboardMetric
+}
+
+export interface SellerDashboardSettlementSummary {
+  /** pendingAmount + onHoldAmount. PAID·CANCELLED는 앞으로 받을 돈이 아니라 빠진다 */
+  totalAmount: number
+  pendingAmount: number
+  onHoldAmount: number
+}
+
+export interface SellerDashboardProductStatuses {
+  awaitingInspection: number
+  rejected: number
+  suspended: number
+  /** 활성 조합 중 재고가 남은 것이 없음 — 상품 목록의 재고 필터와 같은 판정이다 */
+  soldOut: number
+}
+
+/**
+ * 상품 상태 4건수는 서로 배타적이지 않다(판매 중지 상품의 재고가 0이면 중지와 품절에 함께 센다) — 합이 상품 수와 같을 필요가 없다. shippingDelayed도 awaitingShipment의 부분집합이라 두 카드의 합이 전체가 아니다.
+ */
+export interface SellerDashboardSummaryData {
+  metrics: SellerDashboardMetrics
+  settlement: SellerDashboardSettlementSummary
+  productStatuses: SellerDashboardProductStatuses
+}
+
+export interface SellerDashboardSummaryResponse {
+  data: SellerDashboardSummaryData
+}
+
 export interface SellerProductOptionCombination {
   /** 내부 숫자 PK — 재고 변경 경로에 그대로 싣는다 */
   optionCombinationId: number
@@ -1836,6 +2590,316 @@ export interface SellerProductOptionsData {
 
 export interface SellerProductOptionsResponse {
   data: SellerProductOptionsData
+}
+
+/**
+ * 클레임 정산 반영 상태(be ClaimSettlementStatus)
+ */
+export type ClaimSettlementStatus =
+  (typeof ClaimSettlementStatus)[keyof typeof ClaimSettlementStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClaimSettlementStatus = {
+  PENDING: 'PENDING',
+  SETTLED: 'SETTLED',
+} as const
+
+/**
+ * 셀러 판단 축(be SellerApprovalStatus). 승인·거부 가능 여부는 상태가 아니라 이 축이 가른다 — REQUESTED가 아니면 409 errorCode 50408이다
+ */
+export type SellerApprovalStatus = (typeof SellerApprovalStatus)[keyof typeof SellerApprovalStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerApprovalStatus = {
+  REQUESTED: 'REQUESTED',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const
+
+/**
+ * 반품 발송비 부담 주체(be ReturnCostBearer). 귀책이 아니라 **비용 부담 기준**이고 셀러가 승인할 때 직접 지정한다 — 서버는 사유로 유도하지 않는다. 취소 유형에는 이 필드가 없고, 기한 초과 자동승인은 부담 주체를 정하지 않아 null로 남는다
+ */
+export type ReturnCostBearer = (typeof ReturnCostBearer)[keyof typeof ReturnCostBearer]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReturnCostBearer = {
+  BUYER: 'BUYER',
+  SELLER: 'SELLER',
+} as const
+
+/**
+ * 배송 종류(be ShipmentType). 초회 발송·회수·교환 재발송이 한 테이블에 공존한다
+ */
+export type ShipmentType = (typeof ShipmentType)[keyof typeof ShipmentType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ShipmentType = {
+  INITIAL: 'INITIAL',
+  RETURN_COLLECT: 'RETURN_COLLECT',
+  EXCHANGE_RESHIP: 'EXCHANGE_RESHIP',
+} as const
+
+/**
+ * 셀러가 할 일이 남은 단계(be SellerClaimPendingStage). 목록 필터와 대시보드 처리 대기 집계가 이 축 하나를 공유한다. DECISION_PENDING=승인·거부 판단 대기(CLAIM_REQUESTED), COLLECTION_INVOICE_PENDING=회수 송장 등록 대기(COLLECTING·회수 미시작), COLLECTION_COMPLETION_PENDING=회수 완료 처리 대기(COLLECTING·회수 시작됨), RESHIP_PENDING=교환 재발송 대기(APPROVED·교환·미종결)
+ */
+export type SellerClaimPendingStage =
+  (typeof SellerClaimPendingStage)[keyof typeof SellerClaimPendingStage]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerClaimPendingStage = {
+  DECISION_PENDING: 'DECISION_PENDING',
+  COLLECTION_INVOICE_PENDING: 'COLLECTION_INVOICE_PENDING',
+  COLLECTION_COMPLETION_PENDING: 'COLLECTION_COMPLETION_PENDING',
+  RESHIP_PENDING: 'RESHIP_PENDING',
+} as const
+
+/**
+ * 클레임 진행 이력의 사건 어휘(be SellerClaimHistoryEvent). 이력 전용 테이블이 없어 클레임의 시각 컬럼에서 조립하며, 종결 시각 한 칸의 성격을 네 축으로 되짚어 이름을 붙인다 (환불 완료=REFUNDED, 거부=REJECTED, 철회=WITHDRAWN, 개입=ADMIN_OVERRIDDEN, 그 밖=RESOLVED)
+ */
+export type SellerClaimHistoryEvent =
+  (typeof SellerClaimHistoryEvent)[keyof typeof SellerClaimHistoryEvent]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerClaimHistoryEvent = {
+  REQUESTED: 'REQUESTED',
+  COLLECTION_STARTED: 'COLLECTION_STARTED',
+  APPROVED: 'APPROVED',
+  CLAWBACK_DEPOSITED: 'CLAWBACK_DEPOSITED',
+  REJECTED: 'REJECTED',
+  WITHDRAWN: 'WITHDRAWN',
+  ADMIN_OVERRIDDEN: 'ADMIN_OVERRIDDEN',
+  REFUNDED: 'REFUNDED',
+  RESOLVED: 'RESOLVED',
+} as const
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummaryRefundStatus = RefundStatus | null
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummarySellerApprovalStatus = SellerApprovalStatus | null
+
+/**
+ * @nullable
+ */
+export type SellerClaimSummarySettlementStatus = ClaimSettlementStatus | null
+
+/**
+ * 승인 때 지정된다 — 판단 전이거나 취소 클레임이면 null
+ * @nullable
+ */
+export type SellerClaimSummaryReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 셀러 클레임 목록 한 행. 상태를 한 값으로 접지 않고 네 축(status·refundStatus· sellerApprovalStatus·settlementStatus)을 그대로 내리며, 반품비 문구도 조립하지 않고 근거 3필드(returnCostBearer·returnShippingFee·dispatched)만 내린다 — 접는 일은 화면이 한다. **collectionStartedAt이 없다** — 회수 중 클레임의 단계(송장 등록 대기 / 완료 처리 대기)는 이 행만으로 가를 수 없고, 단계 필터(pendingStage)나 상세의 이력이 필요하다.
+ */
+export interface SellerClaimSummary {
+  /** 클레임 공개 식별자(ULID 26자) — 모든 처리 경로의 경로 변수 */
+  claimPublicId: string
+  orderPublicId: string
+  claimType: ClaimType
+  /**
+   * 구매자가 고른 사유 코드. 고정 어휘 전환(SCRUM-273) 전에는 자유 문자열이라 알 수 없는 값이 올 수 있다 — 화면이 코드별 라벨 표를 들고 있으면 안 되고 reasonLabel을 쓴다
+   * @nullable
+   */
+  reasonCode: string | null
+  /**
+   * 사람이 읽을 사유 문구. **SCRUM-273(PR #150)이 머지된 뒤부터 실린다** — 그 전에는 필드 자체가 없으므로 required에 넣지 않는다. 있으면 쓰고 없으면 reasonCode를 그대로 보여준다
+   * @nullable
+   */
+  reasonLabel?: string | null
+  /**
+   * 구매자가 직접 적은 사유 상세(최대 500자). 셀러가 부담 주체를 판단하는 근거다
+   * @nullable
+   */
+  reasonDetail: string | null
+  status: ClaimStatus
+  /** @nullable */
+  refundStatus: SellerClaimSummaryRefundStatus
+  /** @nullable */
+  sellerApprovalStatus: SellerClaimSummarySellerApprovalStatus
+  /** @nullable */
+  settlementStatus: SellerClaimSummarySettlementStatus
+  /**
+   * 승인 때 지정된다 — 판단 전이거나 취소 클레임이면 null
+   * @nullable
+   */
+  returnCostBearer: SellerClaimSummaryReturnCostBearer
+  /**
+   * 반품 발송비. 취소에는 발생하지 않아 null이고, 셀러 배송 정책 테이블이 생기기 전까지는 서버 설정값(order.claim.return-shipping-fee, 기본 0)이 정책 스냅샷이다
+   * @nullable
+   */
+  returnShippingFee: number | null
+  /** 이 주문의 초회 발송이 끝났는지. 반품비 문구가 "미발송"인지 가르는 근거다. **BE 필드명에 is 접두가 없다** — 문서에서 깎인 것이 아니라 원래 dispatched다 */
+  dispatched: boolean
+  /** 환불 예정액 = 품목 환불액 합 + 배송비 환불액. 구매자 목록과 같은 계산기를 쓴다 */
+  refundAmount: number
+  /** 대상 품목의 상품명(중복 제거) */
+  productNames: string[]
+  /** 대상 품목 수(중복 제거 전) */
+  itemCount: number
+  /** @nullable */
+  rejectionReason: string | null
+  /**
+   * 셀러 운영 메모. 어드민 개입 사유(adminReason)와 주체가 다르고 구매자에게 안 나간다
+   * @nullable
+   */
+  sellerMemo: string | null
+  /**
+   * 오프셋 없는 LocalDateTime(예: 2026-10-24T10:00:00)
+   * @nullable
+   */
+  requestedAt: string | null
+  /**
+   * 셀러 미응답 자동승인 기한. 지나면 배치가 반품비 부담 주체 없이 승인한다
+   * @nullable
+   */
+  autoApproveDueAt: string | null
+  /** @nullable */
+  approvedAt: string | null
+  /**
+   * 종결 시각 한 칸 — 환불 완료·거부·철회·개입·교환 재발송이 모두 여기 찍힌다
+   * @nullable
+   */
+  resolvedAt: string | null
+}
+
+/**
+ * 유형별 건수. 세 키는 0이어도 빠지지 않는다(SellerClaimPageResult.of가 채운다). **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다 — 탭 배지용이다
+ */
+export interface SellerClaimTypeCounts {
+  CANCEL: number
+  RETURN: number
+  EXCHANGE: number
+}
+
+export interface SellerClaimListData {
+  claims: SellerClaimSummary[]
+  /** 필터를 모두 반영한 전체 건수(유형 필터 포함) — counts와 기준이 다르다 */
+  totalCount: number
+  counts: SellerClaimTypeCounts
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerClaimListResponse {
+  data: SellerClaimListData
+}
+
+/**
+ * 클레임 대상 주문. 수령인명·연락처는 복호 평문이라 마스킹은 화면이 한다. `sellerShippingFee`는 이 셀러 몫 배송비다(주문그룹 전체가 아니다)
+ */
+export interface SellerClaimOrderInfo {
+  orderPublicId: string
+  orderStatus: OrderStatus
+  orderedAt: string
+  sellerShippingFee: number
+  recipientName: string
+  contactNumber: string
+  zipCode: string
+  baseAddress: string
+  /** @nullable */
+  detailAddress: string | null
+  /** @nullable */
+  deliveryMemo: string | null
+}
+
+/**
+ * 클레임 대상 주문품목. 수량 쪼개기를 받지 않으므로 주문 수량 전부가 대상이다
+ */
+export interface SellerClaimItem {
+  orderItemId: number
+  productName: string
+  /** 옵션값을 " / "로 이은 주문 시점 스냅샷. 옵션 없는 상품은 "기본" */
+  optionName: string
+  quantity: number
+  unitPrice: number
+  refundAmount: number
+  itemStatus: OrderItemStatus
+}
+
+export interface SellerClaimHistoryEntry {
+  event: SellerClaimHistoryEvent
+  occurredAt: string
+}
+
+export interface SellerClaimDetailData {
+  claim: SellerClaimSummary
+  order: SellerClaimOrderInfo
+  items: SellerClaimItem[]
+  /** 시각 오름차순(같은 시각은 사건 선언 순서). COLLECTION_STARTED 유무가 회수 단계를 가른다 */
+  history: SellerClaimHistoryEntry[]
+}
+
+export interface SellerClaimDetailResponse {
+  data: SellerClaimDetailData
+}
+
+/**
+ * @nullable
+ */
+export type ApproveClaimRequestReturnCostBearer = ReturnCostBearer | null
+
+/**
+ * 반품비 부담 주체는 반품·교환만 쓴다 — 취소는 비워 보낸다(서버가 저장하지 않는다). 본문 없이 보내도 서버는 받지만(required=false) 빈 객체를 보내 의도를 드러낸다
+ */
+export interface ApproveClaimRequest {
+  /** @nullable */
+  returnCostBearer?: ApproveClaimRequestReturnCostBearer
+}
+
+export interface RejectClaimRequest {
+  /**
+   * 공백만 보내면 400 errorCode 50405. 구매자에게 그대로 노출된다
+   * @maxLength 500
+   */
+  rejectionReason: string
+}
+
+/**
+ * 덮어쓰기. null·공백은 삭제로 본다
+ */
+export interface UpdateClaimMemoRequest {
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  sellerMemo?: string | null
+}
+
+export interface StartClaimCollectionRequest {
+  /**
+   * GET /sellers/couriers의 대문자 코드 그대로(소문자는 404 errorCode 50303)
+   * @maxLength 30
+   */
+  courierCode: string
+  /** @maxLength 50 */
+  trackingNumber: string
+}
+
+export interface ReshipClaimRequest {
+  /** @maxLength 30 */
+  courierCode: string
+  /** @maxLength 50 */
+  trackingNumber: string
+}
+
+export interface ReshipClaimData {
+  shipmentType: ShipmentType
+  courierCode: string
+  courierName: string
+  trackingNumber: string
+  /** @nullable */
+  dispatchedAt: string | null
+}
+
+export interface ReshipClaimResponse {
+  data: ReshipClaimData
 }
 
 /**
@@ -1877,6 +2941,178 @@ export interface AdminRosterListResponse {
 export interface PromoteAdminRequest {
   /** 승격할 계정의 내부 숫자 id. 누락은 400 errorCode 90001 */
   userId: number
+}
+
+/**
+ * 목록 상태 필터. 저장 상태와 1:1이 아니다 — NORMAL은 제재가 없는 계정이라 온보딩 전 (PENDING_ONBOARDING)까지 포함한다. 알 수 없는 값은 서버가 ALL로 본다
+ */
+export type AdminMemberStatusFilter =
+  (typeof AdminMemberStatusFilter)[keyof typeof AdminMemberStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminMemberStatusFilter = {
+  ALL: 'ALL',
+  NORMAL: 'NORMAL',
+  RESTRICTED: 'RESTRICTED',
+  SUSPENDED: 'SUSPENDED',
+  BANNED: 'BANNED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 계정 상태. 제재는 생애주기와 한 축이다. WITHDRAWN(본인 의사)과 BANNED(운영 조치)는 차단 효과가 같아도 다른 값이다 — 섞으면 사후에 가릴 수 없다
+ */
+export type AdminMemberStatus = (typeof AdminMemberStatus)[keyof typeof AdminMemberStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminMemberStatus = {
+  PENDING_ONBOARDING: 'PENDING_ONBOARDING',
+  ACTIVE: 'ACTIVE',
+  RESTRICTED: 'RESTRICTED',
+  SUSPENDED: 'SUSPENDED',
+  BANNED: 'BANNED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 제재 이력 한 행의 조치. RELEASE는 해제 경로가 만드는 값이라 제재 요청에 보내면 400/90001이다
+ */
+export type SanctionAction = (typeof SanctionAction)[keyof typeof SanctionAction]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SanctionAction = {
+  RESTRICT: 'RESTRICT',
+  SUSPEND: 'SUSPEND',
+  BAN: 'BAN',
+  FORCE_WITHDRAW: 'FORCE_WITHDRAW',
+  RELEASE: 'RELEASE',
+} as const
+
+/**
+ * 제재 사유 고정 어휘. 자유 문자열이 아닌 이유는 "같은 사유로 몇 번 제재했는가"를 답할 수 있어야 하기 때문이다. OTHER는 reasonDetail이 필수다(없으면 400/30800)
+ */
+export type SanctionReasonCode = (typeof SanctionReasonCode)[keyof typeof SanctionReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SanctionReasonCode = {
+  ABUSIVE_REVIEW: 'ABUSIVE_REVIEW',
+  CHAT_DISPUTE: 'CHAT_DISPUTE',
+  FALSE_REPORT: 'FALSE_REPORT',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 목록·상세의 한 회원. `status`는 지금 실제로 적용되는 상태이고 `storedStatus`는 저장값이다 — 임시 정지 기간이 지나면 status는 ACTIVE로 내려가고 storedStatus는 SUSPENDED로 남는다. 화면은 둘을 함께 써야 "이미 풀렸다"와 "정지를 걸었던 이력이 있다"를 구분할 수 있다
+ */
+export interface AdminMemberSummary {
+  userId: number
+  /** 외부 노출용 26자 식별자 */
+  publicId: string
+  /**
+   * 온보딩 전이거나 탈퇴로 프로필이 지워진 계정이면 null
+   * @nullable
+   */
+  nickname: string | null
+  status: AdminMemberStatus
+  storedStatus: AdminMemberStatus
+  /**
+   * 임시 정지의 만료 시각(오프셋 없는 LocalDateTime). 다른 상태면 null
+   * @nullable
+   */
+  sanctionUntil: string | null
+  warningCount: number
+  /** 이 회원을 대상으로 접수된 신고 누적 수 */
+  reportCount: number
+  /** 가입 시각(오프셋 없는 LocalDateTime) = users.created_at */
+  joinedAt: string
+}
+
+export interface AdminMemberListData {
+  items: AdminMemberSummary[]
+  /**
+   * 현재 필터 기준 전체 행 수
+   * @nullable
+   */
+  totalCount: number | null
+  /**
+   * 다음 페이지 앵커. hasNext가 false면 null이다
+   * @nullable
+   */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface AdminMemberListResponse {
+  data: AdminMemberListData
+}
+
+/**
+ * 해제 행은 제재 어휘를 쓰지 않아 null이다
+ * @nullable
+ */
+export type AdminSanctionHistoryReasonCode = SanctionReasonCode | null
+
+/**
+ * 제재 이력 한 행. 추가 전용이라 해제도 action=RELEASE 행으로 쌓인다
+ */
+export interface AdminSanctionHistory {
+  sanctionId: number
+  action: SanctionAction
+  /**
+   * 해제 행은 제재 어휘를 쓰지 않아 null이다
+   * @nullable
+   */
+  reasonCode: AdminSanctionHistoryReasonCode
+  /** @nullable */
+  reasonDetail: string | null
+  /**
+   * 임시 정지의 만료 시각. 다른 조치는 null
+   * @nullable
+   */
+  effectiveUntil: string | null
+  /**
+   * 운영자 내부 메모 — 회원에게 노출하지 않는다
+   * @nullable
+   */
+  memo: string | null
+  actedByAdminId: number
+  /** 조치 시각(오프셋 없는 LocalDateTime) */
+  actedAt: string
+}
+
+export interface AdminMemberDetailData {
+  member: AdminMemberSummary
+  /** 최신순, 최대 50건 */
+  sanctions: AdminSanctionHistory[]
+}
+
+export interface AdminMemberDetailResponse {
+  data: AdminMemberDetailData
+}
+
+export interface SanctionMemberRequest {
+  action: SanctionAction
+  reasonCode: SanctionReasonCode
+  /**
+   * reasonCode=OTHER면 필수
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /**
+   * SUSPEND에만 보낸다. 다른 조치에 보내면 400/30802
+   * @minimum 1
+   * @maximum 365
+   */
+  durationDays?: number
+  /** @maxLength 300 */
+  memo?: string
+}
+
+export interface ReleaseSanctionRequest {
+  /** @maxLength 500 */
+  reasonDetail?: string
+  /** @maxLength 300 */
+  memo?: string
 }
 
 /**
@@ -2314,6 +3550,131 @@ export interface RejectAdminProductInspectionRequest {
 }
 
 /**
+ * 상품 문의 유형
+ */
+export type ProductInquiryCategory =
+  (typeof ProductInquiryCategory)[keyof typeof ProductInquiryCategory]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryCategory = {
+  PRODUCT: 'PRODUCT',
+  DELIVERY: 'DELIVERY',
+  CLAIM: 'CLAIM',
+  ETC: 'ETC',
+} as const
+
+/**
+ * 상품 문의 상태. RECEIVED가 화면의 '답변 대기'다 — 서버 어휘가 '접수'라 PENDING이 아니다. WITHDRAWN은 구매자가 질문을 거둬간 것이고 셀러 목록에는 내려오지 않는다
+ */
+export type ProductInquiryStatus = (typeof ProductInquiryStatus)[keyof typeof ProductInquiryStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductInquiryStatus = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 셀러 목록의 상태 탭. 도메인 상태(ProductInquiryStatus)와 값이 다른 이유 — 철회된 문의는 셀러 목록에 아예 나오지 않으므로 고를 수 있는 값이 아니다
+ */
+export type SellerInquiryStatusFilter =
+  (typeof SellerInquiryStatusFilter)[keyof typeof SellerInquiryStatusFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerInquiryStatusFilter = {
+  RECEIVED: 'RECEIVED',
+  ANSWERED: 'ANSWERED',
+} as const
+
+/**
+ * 셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다
+ */
+export interface SellerInquiryAnswer {
+  content: string
+  answeredAt: string
+}
+
+/**
+ * 화면 상단 지표 3종. **탭·유형·검색어와 무관한 셀러 전체 범위**이고 철회된 문의는 세지 않는다. overdue는 서버가 저장한 answerDueAt으로 판정한 값이라 화면이 다시 계산하면 안 된다
+ */
+export interface SellerInquiryMetrics {
+  /** 답변 대기(RECEIVED) 건수 */
+  pending: number
+  /** 답변 대기 중 답변 기한을 넘긴 건수 */
+  overdue: number
+  /** 답변 대기 + 답변 완료 건수(철회 제외) */
+  total: number
+}
+
+/**
+ * @nullable
+ */
+export type SellerInquirySummaryAnswer = SellerInquiryAnswer | null
+
+/**
+ * 셀러가 받은 문의 한 행. `authorMasked`는 서버가 닉네임 첫 글자만 남긴 값이고 원문 닉네임은 내려오지 않는다. `productId`는 접수 시점에 복사한 상품 공개 식별자라 상품이 내려가도 남는다
+ */
+export interface SellerInquirySummary {
+  /** 문의 공개 식별자(ULID 26자) */
+  inquiryId: string
+  /** 상품 공개 식별자(접수 시점 복사본) */
+  productId: string
+  /** 접수 시점 상품명 복사본 */
+  productName: string
+  category: ProductInquiryCategory
+  title: string
+  /** 비밀글도 셀러에게는 본문이 그대로 내려온다(답변 당사자) */
+  content: string
+  /** 마스킹된 작성자 표시명(예: 김**). 닉네임이 없으면 '익명' */
+  authorMasked: string
+  /** 비밀글 — 작성자와 이 셀러만 본문을 읽는다 */
+  secret: boolean
+  status: ProductInquiryStatus
+  askedAt: string
+  /** 서버가 접수 시점에 계산한 답변 기한(영업일 2일, 주말 제외) */
+  answerDueAt: string
+  /** 미답변 상태로 기한을 넘겼는지 — 서버 판정 결과다 */
+  overdue: boolean
+  /** @nullable */
+  answer: SellerInquirySummaryAnswer
+}
+
+export interface SellerInquiryListData {
+  inquiries: SellerInquirySummary[]
+  metrics: SellerInquiryMetrics
+  /** 필터를 모두 반영한 건수 — metrics와 기준이 다르다 */
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface SellerInquiryListResponse {
+  data: SellerInquiryListData
+}
+
+export interface AnswerInquiryRequest {
+  /**
+   * 공백만이면 400 errorCode 120105, 2000자 초과면 400 errorCode 120106
+   * @minLength 1
+   * @maxLength 2000
+   */
+  content: string
+}
+
+export interface AnswerInquiryData {
+  inquiryId: string
+  status: ProductInquiryStatus
+  answeredAt: string
+}
+
+export interface AnswerInquiryResponse {
+  data: AnswerInquiryData
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -2512,6 +3873,34 @@ export type GetMyMutesParams = {
   size?: SnsSizeParameter
 }
 
+export type GetSellerOrdersParams = {
+  status?: SellerOrderStatusFilter
+  /**
+   * 주문번호·수령인·구매자 닉네임 부분 일치. 서버가 trim하고 빈 값은 미적용
+   * @maxLength 100
+   */
+  keyword?: string
+  /**
+   * 주문일 하한(yyyy-MM-dd). 형식 위반은 400 errorCode 90001
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  orderedFrom?: string
+  /**
+   * 주문일 상한(yyyy-MM-dd). 서버가 to+1일 00:00 반개구간으로 바꿔 통째로 포함한다
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  orderedTo?: string
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
 export type GetSellerProductsParams = {
   /**
    * 상품명 부분 일치(대소문자 무시). trim 후 빈 값이면 미적용
@@ -2578,11 +3967,167 @@ export const GetSellerProductsSort = {
   price_desc: 'price_desc',
 } as const
 
+export type GetSellerDashboardSummaryParams = {
+  /**
+   * 생략하면 전체 기간(`all`)이다. 미지 값은 400 errorCode 90001 message "period: 지원하지 않는 값입니다."
+   */
+  period?: SellerDashboardPeriod
+}
+
+export type GetSellerSettlementsParams = {
+  /**
+   * 정산월(`yyyy-MM`, 구매확정일 기준). 생략하면 전체 조회다 — 화면의 '전체' 선택은 이 파라미터를 보내지 않는 것으로 표현한다. 고를 수 있는 월은 `/months`가 준다
+   * @pattern ^\d{4}-(0[1-9]|1[0-2])$
+   */
+  month?: string
+  /**
+   * 생략하면 전체. 소문자 네 어휘만 받는다
+   */
+  status?: SellerSettlementStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerReviewsParams = {
+  /**
+   * 상품 공개 ULID. 미지정이면 내 상품 전체
+   */
+  productId?: string
+  /**
+   * 별점 필터. 1~5 밖은 400 errorCode 90001 message 'rating: 1~5 사이여야 합니다.'
+   */
+  rating?: GetSellerReviewsRating
+  /**
+   * true면 답글 완료, false면 답글 없음. 미지정이면 전체
+   */
+  hasReply?: boolean
+  /**
+   * 이전 응답의 nextCursor. 커서에 셀러와 필터 셋이 함께 담겨 있어 필터를 바꾼 뒤 재사용하면 400 errorCode 90002다 — 조용히 엉뚱한 페이지를 주지 않는다.
+   */
+  cursor?: string
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerReviewsRating =
+  (typeof GetSellerReviewsRating)[keyof typeof GetSellerReviewsRating]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetSellerReviewsRating = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const
+
+export type GetSellerClaimsParams = {
+  /**
+   * 반복 파라미터로 보낸다(?claimType=CANCEL&claimType=RETURN). 미지 값은 400 errorCode 90001 message "claimType: 지원하지 않는 값입니다."
+   */
+  claimType?: ClaimType[]
+  /**
+   * claimType과 같은 규칙. 축끼리는 AND, 한 축 안의 값끼리는 OR
+   */
+  status?: ClaimStatus[]
+  /**
+   * claimType과 같은 규칙
+   */
+  refundStatus?: RefundStatus[]
+  /**
+   * 셀러가 아직 할 일이 남은 단계(SCRUM-278). 대시보드 처리 대기 집계와 **같은 판정**을 쓰므로 카드에서 목록으로 넘어와도 두 숫자가 어긋나지 않는다. 상태 축만으로는 가를 수 없는 자리가 있어 필요하다 — 회수 중(COLLECTING) 한 상태에 송장 등록 대기와 완료 처리 대기가 함께 들어 있고, 목록 응답에는 그 둘을 가르는 collectionStartedAt이 없다
+   */
+  pendingStage?: SellerClaimPendingStage[]
+  /**
+   * 요청일 하한(yyyy-MM-dd, 당일 00:00 포함). 네 자리 연도만 받는다 — 형식 위반은 400 errorCode 90001 message "requestedFrom: 날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)"
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  requestedFrom?: string
+  /**
+   * 요청일 상한(종료일 당일을 통째로 포함한다 — 서버가 다음 날 00:00 반개구간으로 바꾼다). from > to는 400 errorCode 90001
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  requestedTo?: string
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetSellerInquiriesParams = {
+  /**
+   * 비우면 답변 대기와 답변 완료를 함께 돌려준다(화면의 '전체' 탭). 빈 값(`?status=`)은 미입력이 아니라 형식 오류이므로 키째 빼서 보낼 것
+   */
+  status?: SellerInquiryStatusFilter
+  /**
+   * 비우면 전체 유형. 빈 값은 status와 같은 규칙
+   */
+  category?: ProductInquiryCategory
+  /**
+   * 문의 제목 또는 상품명 부분일치(대소문자 무시). 공백만이면 키째 뺄 것
+   * @maxLength 100
+   */
+  keyword?: string
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
 export type GetAdminRosterParams = {
   /**
    * @minimum 0
    */
   page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminMembersParams = {
+  status?: AdminMemberStatusFilter
+  /**
+   * 닉네임 부분일치 또는 회원 id 완전일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 가입일 하한(포함), YYYY-MM-DD
+   */
+  joinedFrom?: string
+  /**
+   * 가입일 상한(포함), YYYY-MM-DD
+   */
+  joinedTo?: string
+  /**
+   * 직전 응답의 nextCursor. 상태 필터가 바뀌면 재사용 금지(400/90002)
+   */
+  cursor?: string
   /**
    * @minimum 1
    * @maximum 100
@@ -7897,7 +9442,7 @@ export function useGetOrderDetailSuspense<
 }
 
 /**
- * 배송완료(DELIVERED)이고 진행 중 클레임이 없는 주문만 확정된다. **비가역**이다 — 확정하면 적립금이 지급되고 반품 기한·정산의 기산점이 된다. 거절 분기(be OrderErrorCode): 409 50007(배송완료가 아니거나 진행 중 클레임이 있음) / 409 50008(이미 구매확정됨 — 자동확정이 앞질렀거나 동시 요청에서 경합에 진 경우) / 404 50000(없음·남의 주문·결제대기). 성공은 204 No Content(빈 바디)다 — 서버 OpenAPI 문서는 200으로 적고 있으나 컨트롤러는 `ResponseEntity.noContent()`를 돌려준다(SCRUM-275 계열 문서 불일치).
+ * 배송완료(DELIVERED)이고 진행 중 클레임이 없는 주문만 확정된다. **비가역**이다 — 확정하면 적립금이 지급되고 리뷰 작성 기한(확정 +30일)·정산의 기산점이 된다. **반품·교환은 확정하면 더 못 한다** — 두 유형은 DELIVERED에서만 받으므로 PURCHASE_CONFIRMED로 넘어간 주문은 어느 클레임도 받지 않는다(반품 기한은 확정이 아니라 배송완료 +7일 기준이다). 거절 분기(be OrderErrorCode): 409 50007(배송완료가 아니거나 진행 중 클레임이 있음) / 409 50008(이미 구매확정됨 — 자동확정이 앞질렀거나 동시 요청에서 경합에 진 경우) / 404 50000(없음·남의 주문·결제대기). 성공은 204 No Content(빈 바디)다 — 서버 OpenAPI 문서는 200으로 적고 있으나 컨트롤러는 `ResponseEntity.noContent()`를 돌려준다(SCRUM-275 계열 문서 불일치).
  * @summary 구매확정
  */
 export const confirmPurchase = (orderPublicId: string, signal?: AbortSignal) => {
@@ -7960,6 +9505,762 @@ export const useConfirmPurchase = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getConfirmPurchaseMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 결제 한 번(주문그룹)의 금액·배송지 스냅샷과 그 아래 셀러별 주문 전부. 주문 상세 (GET /orders/{orderId})는 셀러 주문 하나만 주지만 이 경로는 같은 결제의 형제 주문을 함께 준다. status는 **주문그룹 상태**(PENDING_PAYMENT·PAID·PARTIALLY_CANCELLED·CANCELLED)로 셀러 주문 상태머신과 다르다 — 주문별 표시 상태는 orders[].status를 본다. 주문 목록(GET /order-groups)과 달리 결제대기 그룹·주문도 그대로 내려오므로 화면이 PENDING_PAYMENT를 걸러야 한다. **couponDiscountAmount가 없다** — 주문 목록·상세에는 있는데 이 응답에만 빠져 있다(쿠폰은 현재 항상 0). 없거나 남의 것이면 404 50109.
+ * @summary 주문그룹 조회(결제 단위)
+ */
+export const getOrderGroup = (orderGroupId: string, signal?: AbortSignal) => {
+  return customInstance<OrderGroupDetailEnvelope>({
+    url: `/order-groups/${orderGroupId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetOrderGroupQueryKey = (orderGroupId?: string) => {
+  return [`/order-groups/${orderGroupId}`] as const
+}
+
+export const getGetOrderGroupQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderGroupQueryKey(orderGroupId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderGroup>>> = ({ signal }) =>
+    getOrderGroup(orderGroupId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderGroupId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOrderGroup>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderGroupQueryResult = NonNullable<Awaited<ReturnType<typeof getOrderGroup>>>
+export type GetOrderGroupQueryError = unknown
+
+export function useGetOrderGroup<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderGroup>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderGroup>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroup<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderGroup>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderGroup>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroup<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문그룹 조회(결제 단위)
+ */
+
+export function useGetOrderGroup<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderGroupQueryOptions(orderGroupId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetOrderGroupSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderGroupQueryKey(orderGroupId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderGroup>>> = ({ signal }) =>
+    getOrderGroup(orderGroupId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getOrderGroup>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderGroupSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOrderGroup>>
+>
+export type GetOrderGroupSuspenseQueryError = unknown
+
+export function useGetOrderGroupSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroupSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderGroupSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문그룹 조회(결제 단위)
+ */
+
+export function useGetOrderGroupSuspense<
+  TData = Awaited<ReturnType<typeof getOrderGroup>>,
+  TError = unknown,
+>(
+  orderGroupId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderGroup>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderGroupSuspenseQueryOptions(orderGroupId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 취소·반품·교환 각각에서 고를 수 있는 사유 코드와 **그대로 쓸 화면 문구**, 상세 입력 필수 여부. 나열 순서가 선택지 순서다. 사유 어휘와 유형별 허용 집합은 서버가 소유하므로 화면이 목록을 복제하지 않는다 — 어휘가 늘거나 유형별 허용이 바뀌어도 배포 없이 따라간다. **SCRUM-273(BE PR #150)이 머지되기 전에는 dev에 이 경로가 없어 404가 돌아온다.** 그래도 화면이 죽지 않게 호출부가 실패를 흡수하고 "사유를 불러오지 못했어요"로 떨어진다(하드코딩 폴백 금지). 그 PR 전까지 POST /orders/{id}/claims의 reasonCode는 60자 이내 자유 문자열이고, 머지 뒤에는 이 목록의 코드만 받는다 — 양쪽에서 통하는 값이 이 목록의 code다.
+ * @summary 클레임 유형별 사유 선택지
+ */
+export const getClaimReasons = (signal?: AbortSignal) => {
+  return customInstance<ClaimReasonCatalogEnvelope>({
+    url: `/claims/reasons`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetClaimReasonsQueryKey = () => {
+  return [`/claims/reasons`] as const
+}
+
+export const getGetClaimReasonsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetClaimReasonsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getClaimReasons>>> = ({ signal }) =>
+    getClaimReasons(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClaimReasons>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetClaimReasonsQueryResult = NonNullable<Awaited<ReturnType<typeof getClaimReasons>>>
+export type GetClaimReasonsQueryError = unknown
+
+export function useGetClaimReasons<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getClaimReasons>>,
+          TError,
+          Awaited<ReturnType<typeof getClaimReasons>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetClaimReasons<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getClaimReasons>>,
+          TError,
+          Awaited<ReturnType<typeof getClaimReasons>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetClaimReasons<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 클레임 유형별 사유 선택지
+ */
+
+export function useGetClaimReasons<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetClaimReasonsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetClaimReasonsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetClaimReasonsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getClaimReasons>>> = ({ signal }) =>
+    getClaimReasons(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getClaimReasons>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetClaimReasonsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClaimReasons>>
+>
+export type GetClaimReasonsSuspenseQueryError = unknown
+
+export function useGetClaimReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetClaimReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetClaimReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 클레임 유형별 사유 선택지
+ */
+
+export function useGetClaimReasonsSuspense<
+  TData = Awaited<ReturnType<typeof getClaimReasons>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getClaimReasons>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetClaimReasonsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이 셀러 주문에 걸린 클레임 전부(거부·철회된 과거 건까지). 주문 상세의 activeClaim은 품목을 붙잡고 있는 1건만 주므로, 종결된 이력은 이 경로로만 볼 수 있다. refundAmount는 품목 환불액 + 안분된 배송비 환불액을 서버가 계산한 값이다 — 화면이 다시 더하지 말 것. **교환 건에도 금액이 실려 온다**(계산식이 유형을 가리지 않는다) — 교환은 환불이 없으므로 화면이 그 값을 환불로 그리면 나가지 않을 돈을 약속한다. 시각 필드(requestedAt·approvedAt·resolvedAt)는 **LocalDateTime 직렬화라 오프셋이 없다** (주문 상세의 orderedAt·dispatchedAt은 OffsetDateTime으로 오프셋이 붙는다 — 같은 주문 도메인인데 직렬화가 갈린다). 값은 KST이므로 어댑터가 오프셋을 붙여 해석한다. 없거나 남의 주문이면 404 50000.
+ * @summary 주문의 클레임 내역
+ */
+export const getOrderClaims = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<ClaimListEnvelope>({
+    url: `/orders/${orderPublicId}/claims`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetOrderClaimsQueryKey = (orderPublicId?: string) => {
+  return [`/orders/${orderPublicId}/claims`] as const
+}
+
+export const getGetOrderClaimsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderClaimsQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderClaims>>> = ({ signal }) =>
+    getOrderClaims(orderPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOrderClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderClaimsQueryResult = NonNullable<Awaited<ReturnType<typeof getOrderClaims>>>
+export type GetOrderClaimsQueryError = unknown
+
+export function useGetOrderClaims<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderClaims<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrderClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getOrderClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderClaims<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문의 클레임 내역
+ */
+
+export function useGetOrderClaims<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderClaimsQueryOptions(orderPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetOrderClaimsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetOrderClaimsQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderClaims>>> = ({ signal }) =>
+    getOrderClaims(orderPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getOrderClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrderClaimsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOrderClaims>>
+>
+export type GetOrderClaimsSuspenseQueryError = unknown
+
+export function useGetOrderClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrderClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 주문의 클레임 내역
+ */
+
+export function useGetOrderClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getOrderClaims>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getOrderClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetOrderClaimsSuspenseQueryOptions(orderPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 요청 시점에 환불액을 확정해 저장하고 셀러 응답 기한(자동승인 기한)을 부여한다. **유형별로 받는 주문 상태가 다르다** — CANCEL은 PAID·PREPARING·DISPATCH_PENDING, RETURN·EXCHANGE는 DELIVERED만. 구매확정(PURCHASE_CONFIRMED)은 어느 유형도 받지 않는다. RETURN·EXCHANGE는 추가로 배송완료 시각 + 7일 안이어야 하고 배송완료 이력이 없으면 받지 않는다. items를 생략하면 **주문 전체를 전량 대상**으로 본다. 수량을 쪼갠 요청은 받지 않으므로 items를 줄 때 quantity는 그 품목의 주문 수량과 같아야 한다. 거절 분기(be OrderErrorCode): 409 50401(그 상태/기한에서 받지 않는 유형) / 409 50403(그 품목에 이미 진행 중 클레임) / 422 50406(주문 수량 초과) / 422 50410(수량을 쪼갠 요청) / 404 50000(없음·남의 주문) / 400 50412(그 유형에서 고를 수 없는 사유 — SCRUM-273 이후) / 400 50413(기타 사유인데 상세 미입력 — SCRUM-273 이후) / 400 90001(바인딩 검증).
+ * @summary 클레임(취소·반품·교환) 요청
+ */
+export const requestClaim = (
+  orderPublicId: string,
+  requestClaimRequest: RequestClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<RequestClaimEnvelope>({
+    url: `/orders/${orderPublicId}/claims`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: requestClaimRequest,
+    signal,
+  })
+}
+
+export const getRequestClaimMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestClaim>>,
+    TError,
+    { orderPublicId: string; data: RequestClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof requestClaim>>,
+  TError,
+  { orderPublicId: string; data: RequestClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['requestClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof requestClaim>>,
+    { orderPublicId: string; data: RequestClaimRequest }
+  > = props => {
+    const { orderPublicId, data } = props ?? {}
+
+    return requestClaim(orderPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RequestClaimMutationResult = NonNullable<Awaited<ReturnType<typeof requestClaim>>>
+export type RequestClaimMutationBody = RequestClaimRequest
+export type RequestClaimMutationError = unknown
+
+/**
+ * @summary 클레임(취소·반품·교환) 요청
+ */
+export const useRequestClaim = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof requestClaim>>,
+      TError,
+      { orderPublicId: string; data: RequestClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof requestClaim>>,
+  TError,
+  { orderPublicId: string; data: RequestClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getRequestClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * **셀러가 판단하기 전(CLAIM_REQUESTED)에만** 거둘 수 있다. 회수가 시작된 뒤 (COLLECTING)에는 전이가 막혀 409 50402로 거절된다 — 화면은 CLAIM_REQUESTED일 때만 버튼을 띄운다. 철회하면 반품·교환이 잡아 둔 품목이 풀려 같은 품목에 다시 요청할 수 있다. 성공은 204 No Content. 404 50400(클레임 없음·이 주문 것이 아님) / 404 50000(주문 없음·남의 것) / 409 50402(이미 셀러가 판단했거나 종결된 건).
+ * @summary 클레임 철회
+ */
+export const withdrawClaim = (orderPublicId: string, claimPublicId: string) => {
+  return customInstance<void>({
+    url: `/orders/${orderPublicId}/claims/${claimPublicId}`,
+    method: 'DELETE',
+  })
+}
+
+export const getWithdrawClaimMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof withdrawClaim>>,
+    TError,
+    { orderPublicId: string; claimPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof withdrawClaim>>,
+  TError,
+  { orderPublicId: string; claimPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['withdrawClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof withdrawClaim>>,
+    { orderPublicId: string; claimPublicId: string }
+  > = props => {
+    const { orderPublicId, claimPublicId } = props ?? {}
+
+    return withdrawClaim(orderPublicId, claimPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type WithdrawClaimMutationResult = NonNullable<Awaited<ReturnType<typeof withdrawClaim>>>
+
+export type WithdrawClaimMutationError = unknown
+
+/**
+ * @summary 클레임 철회
+ */
+export const useWithdrawClaim = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof withdrawClaim>>,
+      TError,
+      { orderPublicId: string; claimPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof withdrawClaim>>,
+  TError,
+  { orderPublicId: string; claimPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getWithdrawClaimMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
@@ -11000,6 +13301,670 @@ export function useGetSellerCouriersSuspense<
 }
 
 /**
+ * 셀러센터(seller 모듈) 전용. 커서가 아니라 오프셋 페이지네이션(page·size)이고 정렬은 서버가 주문일 내림차순으로 고정한다. `status`는 응답 상태값(OrderStatus enum 이름)이 아니라 **화면 세그먼트 어휘**다 — 한 세그먼트가 상태 여러 개를 묶는다(아래 SellerOrderStatusFilter). 미지 세그먼트는 400 errorCode 90001이다. `orderedFrom`·`orderedTo`는 yyyy-MM-dd이고 서버가 [from 00:00, to+1일 00:00) 반개구간으로 바꿔 상한 날짜를 통째로 포함한다. from > to면 400 errorCode 90001이다. 빈 값 파라미터는 키째 빼서 보낼 것 — 서버가 미입력이 아니라 형식 오류로 거절하는 자리가 있다. 수령인명·연락처는 **마스킹되지 않은 평문**으로 온다(마스킹은 화면 책임).
+ * @summary 셀러 주문 목록
+ */
+export const getSellerOrders = (params?: GetSellerOrdersParams, signal?: AbortSignal) => {
+  return customInstance<SellerOrderListResponse>({
+    url: `/sellers/me/orders`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerOrdersQueryKey = (params?: GetSellerOrdersParams) => {
+  return [`/sellers/me/orders`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerOrdersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerOrdersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerOrders>>> = ({ signal }) =>
+    getSellerOrders(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerOrders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerOrders>>>
+export type GetSellerOrdersQueryError = unknown
+
+export function useGetSellerOrders<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerOrdersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerOrders>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerOrders>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrders<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerOrders>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerOrders>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrders<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 주문 목록
+ */
+
+export function useGetSellerOrders<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerOrdersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerOrdersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerOrdersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerOrders>>> = ({ signal }) =>
+    getSellerOrders(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerOrders>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerOrdersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerOrders>>
+>
+export type GetSellerOrdersSuspenseQueryError = unknown
+
+export function useGetSellerOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerOrdersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 주문 목록
+ */
+
+export function useGetSellerOrdersSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrders>>,
+  TError = unknown,
+>(
+  params?: GetSellerOrdersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrders>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerOrdersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 주문 단위 필드는 목록 행과 같고 `items`(품목 라인)가 더 붙는다. 남의 주문과 없는 주문을 같은 404 errorCode 50000으로 가린다(주문번호 존재 여부를 노출하지 않는다).
+ * @summary 셀러 주문 상세
+ */
+export const getSellerOrderDetail = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SellerOrderDetailResponse>({
+    url: `/sellers/me/orders/${orderPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerOrderDetailQueryKey = (orderPublicId?: string) => {
+  return [`/sellers/me/orders/${orderPublicId}`] as const
+}
+
+export const getGetSellerOrderDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerOrderDetailQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerOrderDetail>>> = ({ signal }) =>
+    getSellerOrderDetail(orderPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerOrderDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerOrderDetail>>
+>
+export type GetSellerOrderDetailQueryError = unknown
+
+export function useGetSellerOrderDetail<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrderDetail<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerOrderDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerOrderDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrderDetail<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 주문 상세
+ */
+
+export function useGetSellerOrderDetail<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerOrderDetailQueryOptions(orderPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerOrderDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerOrderDetailQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerOrderDetail>>> = ({ signal }) =>
+    getSellerOrderDetail(orderPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerOrderDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerOrderDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerOrderDetail>>
+>
+export type GetSellerOrderDetailSuspenseQueryError = unknown
+
+export function useGetSellerOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 주문 상세
+ */
+
+export function useGetSellerOrderDetailSuspense<
+  TData = Awaited<ReturnType<typeof getSellerOrderDetail>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerOrderDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerOrderDetailSuspenseQueryOptions(orderPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * PAID → PREPARING. 전이의 심판은 조건부 UPDATE라 경합에서 진 쪽은 409 errorCode 50004다 (PAID가 아닌 모든 상태도 같은 코드). 본문 없음, 응답 본문 없음(204).
+ * @summary 발주 확인
+ */
+export const acceptSellerOrder = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/sellers/me/orders/${orderPublicId}/accept`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getAcceptSellerOrderMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptSellerOrder>>,
+    TError,
+    { orderPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acceptSellerOrder>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['acceptSellerOrder']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acceptSellerOrder>>,
+    { orderPublicId: string }
+  > = props => {
+    const { orderPublicId } = props ?? {}
+
+    return acceptSellerOrder(orderPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AcceptSellerOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acceptSellerOrder>>
+>
+
+export type AcceptSellerOrderMutationError = unknown
+
+/**
+ * @summary 발주 확인
+ */
+export const useAcceptSellerOrder = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof acceptSellerOrder>>,
+      TError,
+      { orderPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof acceptSellerOrder>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getAcceptSellerOrderMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * **경로는 단수 `shipment`다**(복수는 404). PREPARING 또는 DISPATCH_PENDING에서만 받고 그 밖은 409 errorCode 50005다. PREPARING에서 부르면 DISPATCH_PENDING을 거쳐 2단 전이해 최종 상태가 SHIPPING이다. 이미 최초 배송 행이 있으면 409 errorCode 50302이므로 **송장 정정 경로가 아니다** — 등록은 한 번뿐이다. `courierCode`는 택배사 마스터 (GET /sellers/couriers)의 값을 그대로 보낸다(미존재는 404 errorCode 50303), 송장번호가 택배사 패턴과 어긋나면 400 errorCode 50304다.
+ * @summary 송장 등록
+ */
+export const registerSellerOrderShipment = (
+  orderPublicId: string,
+  shipmentRegisterRequest: ShipmentRegisterRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ShipmentRegisterResponse>({
+    url: `/sellers/me/orders/${orderPublicId}/shipment`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: shipmentRegisterRequest,
+    signal,
+  })
+}
+
+export const getRegisterSellerOrderShipmentMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerSellerOrderShipment>>,
+    TError,
+    { orderPublicId: string; data: ShipmentRegisterRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerSellerOrderShipment>>,
+  TError,
+  { orderPublicId: string; data: ShipmentRegisterRequest },
+  TContext
+> => {
+  const mutationKey = ['registerSellerOrderShipment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerSellerOrderShipment>>,
+    { orderPublicId: string; data: ShipmentRegisterRequest }
+  > = props => {
+    const { orderPublicId, data } = props ?? {}
+
+    return registerSellerOrderShipment(orderPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RegisterSellerOrderShipmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerSellerOrderShipment>>
+>
+export type RegisterSellerOrderShipmentMutationBody = ShipmentRegisterRequest
+export type RegisterSellerOrderShipmentMutationError = unknown
+
+/**
+ * @summary 송장 등록
+ */
+export const useRegisterSellerOrderShipment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof registerSellerOrderShipment>>,
+      TError,
+      { orderPublicId: string; data: ShipmentRegisterRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof registerSellerOrderShipment>>,
+  TError,
+  { orderPublicId: string; data: ShipmentRegisterRequest },
+  TContext
+> => {
+  const mutationOptions = getRegisterSellerOrderShipmentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * SHIPPING → DELIVERED. 구매확정 기한(`purchaseConfirmDueAt`)이 이때 부여된다. 거절 순서는 최초 배송 행 조회 → `deliveredAt` 확인 → 조건부 UPDATE다 — 배송 행이 없으면 404 errorCode 50300, 이미 배송완료거나 상태가 SHIPPING이 아니어서 전이가 실패하면 **둘 다** 409 errorCode 50301이다(50002가 아니다). 본문 없음, 응답 본문 없음(204).
+ * @summary 배송 완료 처리
+ */
+export const completeSellerOrderDelivery = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/sellers/me/orders/${orderPublicId}/delivery-complete`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getCompleteSellerOrderDeliveryMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeSellerOrderDelivery>>,
+    TError,
+    { orderPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeSellerOrderDelivery>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['completeSellerOrderDelivery']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeSellerOrderDelivery>>,
+    { orderPublicId: string }
+  > = props => {
+    const { orderPublicId } = props ?? {}
+
+    return completeSellerOrderDelivery(orderPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CompleteSellerOrderDeliveryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeSellerOrderDelivery>>
+>
+
+export type CompleteSellerOrderDeliveryMutationError = unknown
+
+/**
+ * @summary 배송 완료 처리
+ */
+export const useCompleteSellerOrderDelivery = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completeSellerOrderDelivery>>,
+      TError,
+      { orderPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completeSellerOrderDelivery>>,
+  TError,
+  { orderPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getCompleteSellerOrderDeliveryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이며 커서가 아니다. 공개 카탈로그와 달리 노출 조건을 걸지 않아 미승인·판매중지 상품도 전부 보인다. 조회 권한은 ACTIVE·PAUSED· WITHDRAWAL_REQUESTED 셀러이고 그 밖은 403 errorCode 40006. 형식 오류는 전부 400 errorCode 90001이고 message에 필드별 사유가 실린다 — 빈 값(?stock=)도 미입력이 아니라 형식 오류로 거절되므로 값이 없는 파라미터는 키째 빼서 보낼 것.
  * @summary 셀러 상품 목록
  */
@@ -11976,6 +14941,2793 @@ export const useChangeSellerProductOptionCombination = <TError = unknown, TConte
 }
 
 /**
+ * 셀러센터(seller 모듈) 첫 화면이 한 번에 묻는 네 묶음 — 처리 대기 10지표, 정산 요약 3금액, 상품 상태 4건수. 로그인 직후 랜딩이라 파라미터 없이 들어와도 200이고, 데이터가 없는 새 셀러도 전부 0이다. 조회 권한은 ACTIVE·PAUSED·WITHDRAWAL_REQUESTED 셀러이고 그 밖은 403 errorCode 10003(SUSPENDED·WITHDRAWN·셀러 아님). 미로그인은 401 errorCode 20004.
+**기간 축의 단위가 목록 필터와 다르다.** 여기 기간은 응답 기준 시각(`now`)을 끝으로 하는 **시각 단위 반개구간**(`7d` = `[now-7일, now)`)이고, 주문·클레임 목록 필터 (`orderedFrom`/`orderedTo`·`requestedFrom`/`requestedTo`)는 **날짜 단위**다(시작일 00:00 ~ 종료일 다음 날 00:00). 그래서 카드의 기간을 목록 필터로 정확히 재현할 수 없다 — 목록이 양쪽 경계에서 더 넓게 잡는다. 카드에서 목록으로 넘어갈 때 **단계·상태 축만 넘기고 기간은 넘기지 않으면** 어긋나지 않는다.
+지표의 기간 축은 주문 3지표가 주문일(`order_groups.created_at`), 클레임 6지표가 요청일(`claims.requested_at`)이다. 정산 요약과 상품 상태는 기간 필터를 받지 않는 현재 스냅샷이다.
+ * @summary 셀러센터 대시보드 집계
+ */
+export const getSellerDashboardSummary = (
+  params?: GetSellerDashboardSummaryParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerDashboardSummaryResponse>({
+    url: `/sellers/me/dashboard/summary`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerDashboardSummaryQueryKey = (params?: GetSellerDashboardSummaryParams) => {
+  return [`/sellers/me/dashboard/summary`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerDashboardSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerDashboardSummaryQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerDashboardSummary>>> = ({
+    signal,
+  }) => getSellerDashboardSummary(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerDashboardSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerDashboardSummary>>
+>
+export type GetSellerDashboardSummaryQueryError = unknown
+
+export function useGetSellerDashboardSummary<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerDashboardSummaryParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerDashboardSummary>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerDashboardSummary<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerDashboardSummary>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerDashboardSummary<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 대시보드 집계
+ */
+
+export function useGetSellerDashboardSummary<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerDashboardSummaryQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerDashboardSummarySuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerDashboardSummaryQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerDashboardSummary>>> = ({
+    signal,
+  }) => getSellerDashboardSummary(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerDashboardSummarySuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerDashboardSummary>>
+>
+export type GetSellerDashboardSummarySuspenseQueryError = unknown
+
+export function useGetSellerDashboardSummarySuspense<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerDashboardSummaryParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerDashboardSummarySuspense<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerDashboardSummarySuspense<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 대시보드 집계
+ */
+
+export function useGetSellerDashboardSummarySuspense<
+  TData = Awaited<ReturnType<typeof getSellerDashboardSummary>>,
+  TError = unknown,
+>(
+  params?: GetSellerDashboardSummaryParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerDashboardSummary>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerDashboardSummarySuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. **주문 하나가 한 행이다** — 정산 원장은 주문품목당 1행이지만 이 목록은 주문 단위로 접고 금액은 품목 합이다. 정렬은 구매확정일 최신순 고정이다. 오프셋 페이지네이션이며 커서가 아니다. 취소된 정산 행은 집계에서 빠지고, 정산 행이 전부 취소된 주문과 주문 행이 없는 정산 행은 목록·총건수에서 함께 빠진다. 한 주문 안에서 상태가 갈리면 **덜 진행된 쪽으로 접히고 보류가 가장 세다**(보류 > 대기 > 예정 > 완료) — 상태 필터를 걸어도 금액은 쪼개지 않고 주문 전체 합을 준다. 자격은 활성·휴점 셀러이고(정지·탈퇴신청·비셀러는 403) 미인증은 401 errorCode 20004. 형식 오류는 전부 400 errorCode 90001이다 — month가 `yyyy-MM`이 아니거나, status가 네 어휘 밖이거나, size가 범위 밖일 때다. **값이 빈 파라미터는 키째 빼서 보낼 것.** 배포된 OpenAPI 문서는 이 질의를 `request` 객체 하나로 그리지만(@ModelAttribute 렌더링 결함) 실제 계약은 아래 평면 파라미터다 — BE 컨트롤러가 정답이다.
+ * @summary 셀러 정산 목록
+ */
+export const getSellerSettlements = (params?: GetSellerSettlementsParams, signal?: AbortSignal) => {
+  return customInstance<SellerSettlementListResponse>({
+    url: `/sellers/me/settlements`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerSettlementsQueryKey = (params?: GetSellerSettlementsParams) => {
+  return [`/sellers/me/settlements`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerSettlementsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlements>>> = ({ signal }) =>
+    getSellerSettlements(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlements>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlements>>
+>
+export type GetSellerSettlementsQueryError = unknown
+
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerSettlementsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlements>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlements>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlements>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlements>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 목록
+ */
+
+export function useGetSellerSettlements<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlements>>> = ({ signal }) =>
+    getSellerSettlements(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlements>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlements>>
+>
+export type GetSellerSettlementsSuspenseQueryError = unknown
+
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerSettlementsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 목록
+ */
+
+export function useGetSellerSettlementsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlements>>,
+  TError = unknown,
+>(
+  params?: GetSellerSettlementsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlements>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 월 필터가 고를 수 있는 정산월만 최신순으로 준다(정산 행이 있는 월뿐이다). 비어 있으면 아직 정산 행이 없는 셀러다 — 화면은 '전체'만 남긴다.
+ * @summary 정산월 목록
+ */
+export const getSellerSettlementMonths = (signal?: AbortSignal) => {
+  return customInstance<SellerSettlementMonthsResponse>({
+    url: `/sellers/me/settlements/months`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerSettlementMonthsQueryKey = () => {
+  return [`/sellers/me/settlements/months`] as const
+}
+
+export const getGetSellerSettlementMonthsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementMonthsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlementMonths>>> = ({
+    signal,
+  }) => getSellerSettlementMonths(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementMonthsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlementMonths>>
+>
+export type GetSellerSettlementMonthsQueryError = unknown
+
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlementMonths>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 정산월 목록
+ */
+
+export function useGetSellerSettlementMonths<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementMonthsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementMonthsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementMonthsQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlementMonths>>> = ({
+    signal,
+  }) => getSellerSettlementMonths(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementMonthsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlementMonths>>
+>
+export type GetSellerSettlementMonthsSuspenseQueryError = unknown
+
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 정산월 목록
+ */
+
+export function useGetSellerSettlementMonthsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlementMonths>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlementMonths>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementMonthsSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행 클릭 시 열리는 건별 상세. 목록과 같은 요약 + 금액 분해 + 품목 내역이다. 남의 정산은 403 errorCode 70003, 없는 주문번호와 정산이 전부 취소된 주문은 404 errorCode 70002다. 금액 불변식은 요약 = 품목 내역의 합이고, `feeAmount = platformFeeAmount + pgFeeAmount`다(쿠폰 부담·환불 차감은 수수료가 아니다). `finalAmount`는 저장된 지급 예정액의 합이라 배송비가 더해지고 쿠폰 부담·환불 차감이 빠진 값이다 — `productAmount - feeAmount`와 같지 않다.
+ * @summary 셀러 정산 상세
+ */
+export const getSellerSettlement = (orderPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SellerSettlementDetailResponse>({
+    url: `/sellers/me/settlements/${orderPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerSettlementQueryKey = (orderPublicId?: string) => {
+  return [`/sellers/me/settlements/${orderPublicId}`] as const
+}
+
+export const getGetSellerSettlementQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlement>>> = ({ signal }) =>
+    getSellerSettlement(orderPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!orderPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlement>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlement>>
+>
+export type GetSellerSettlementQueryError = unknown
+
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlement>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlement>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerSettlement>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerSettlement>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 상세
+ */
+
+export function useGetSellerSettlement<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementQueryOptions(orderPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerSettlementSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerSettlementQueryKey(orderPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerSettlement>>> = ({ signal }) =>
+    getSellerSettlement(orderPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerSettlement>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerSettlementSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerSettlement>>
+>
+export type GetSellerSettlementSuspenseQueryError = unknown
+
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 정산 상세
+ */
+
+export function useGetSellerSettlementSuspense<
+  TData = Awaited<ReturnType<typeof getSellerSettlement>>,
+  TError = unknown,
+>(
+  orderPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerSettlement>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerSettlementSuspenseQueryOptions(orderPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 대상은 늘 인증 주체의 정책 1건이라 경로에 식별자가 없다. 정책을 한 번도 저장하지 않은 셀러도 404가 아니라 컬럼 기본값(추가비·반품비·교환비 0원, avgDispatchDays 2, returnSameAsOrigin true)을 받는다. 자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002, 셀러가 아닌 계정은 404 errorCode 10000, 미인증은 401 errorCode 20004다(상품 목록이 휴점을 허용하는 것과 다르다). 출고지 주소 3필드는 스토어 설정과 같은 컬럼(zipCode·roadAddress·detailAddress)이라 두 화면이 같은 값을 본다. 반품지가 출고지와 같으면(returnSameAsOrigin=true) 반품지 3필드는 저장되지 않아 null로 내려온다 — 화면이 출고지 값으로 채워 보여 줄 것.
+ * @summary 셀러 배송 정책 조회
+ */
+export const getSellerShippingPolicy = (signal?: AbortSignal) => {
+  return customInstance<ShippingPolicyResponse>({
+    url: `/sellers/me/shipping-policy`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerShippingPolicyQueryKey = () => {
+  return [`/sellers/me/shipping-policy`] as const
+}
+
+export const getGetSellerShippingPolicyQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerShippingPolicyQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerShippingPolicy>>> = ({
+    signal,
+  }) => getSellerShippingPolicy(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerShippingPolicyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerShippingPolicy>>
+>
+export type GetSellerShippingPolicyQueryError = unknown
+
+export function useGetSellerShippingPolicy<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerShippingPolicy>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerShippingPolicy<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerShippingPolicy>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerShippingPolicy<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 배송 정책 조회
+ */
+
+export function useGetSellerShippingPolicy<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerShippingPolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerShippingPolicySuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerShippingPolicyQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerShippingPolicy>>> = ({
+    signal,
+  }) => getSellerShippingPolicy(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerShippingPolicySuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerShippingPolicy>>
+>
+export type GetSellerShippingPolicySuspenseQueryError = unknown
+
+export function useGetSellerShippingPolicySuspense<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerShippingPolicySuspense<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerShippingPolicySuspense<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 배송 정책 조회
+ */
+
+export function useGetSellerShippingPolicySuspense<
+  TData = Awaited<ReturnType<typeof getSellerShippingPolicy>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerShippingPolicy>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerShippingPolicySuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(부분 수정이 아니다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것. returnSameAsOrigin=true면 서버가 반품지 3필드를 무시하고 null로 저장한다. 금액·발송일 검증은 도메인이 하고 위반은 전부 400 errorCode 10005다(음수, 기본 배송비· 지역 추가비·반품비·교환비 1,000,000원 초과, 무료배송 기준 100,000,000원 초과, 무료배송 기준 < 기본 배송비, avgDispatchDays가 1~7 밖). 길이 위반은 400 errorCode 90001(shippingPolicyText 2000자, 우편번호 10자, 도로명·상세주소 255자, 택배사 코드 30자). defaultCourierCode는 `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다 — 없거나 비활성인 코드는 404 errorCode 50303이고, 셀러 게이트가 택배사 검증보다 앞선다.
+ * @summary 셀러 배송 정책 저장
+ */
+export const updateSellerShippingPolicy = (
+  shippingPolicyUpdateRequest: ShippingPolicyUpdateRequest,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/shipping-policy`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: shippingPolicyUpdateRequest,
+  })
+}
+
+export const getUpdateSellerShippingPolicyMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerShippingPolicy>>,
+    TError,
+    { data: ShippingPolicyUpdateRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerShippingPolicy>>,
+  TError,
+  { data: ShippingPolicyUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerShippingPolicy']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerShippingPolicy>>,
+    { data: ShippingPolicyUpdateRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return updateSellerShippingPolicy(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerShippingPolicyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerShippingPolicy>>
+>
+export type UpdateSellerShippingPolicyMutationBody = ShippingPolicyUpdateRequest
+export type UpdateSellerShippingPolicyMutationError = unknown
+
+/**
+ * @summary 셀러 배송 정책 저장
+ */
+export const useUpdateSellerShippingPolicy = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerShippingPolicy>>,
+      TError,
+      { data: ShippingPolicyUpdateRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerShippingPolicy>>,
+  TError,
+  { data: ShippingPolicyUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerShippingPolicyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 내 상품에 달린 노출 상태 리뷰만 최신순(reviews.id 내림차순)으로 내린다 — 정렬 파라미터가 없다. 소유권은 reviews -> products.seller_id 조인 조건으로 판정하므로 남의 상품 리뷰는 조건에서 빠져 결과에 나타나지 않는다(권한 오류가 아니라 "없는 것"이다). `productId`에 남의 상품 공개 ULID를 넣어도 403/404가 아니라 빈 목록과 0건 요약이 온다. `summary`와 `totalCount`는 첫 페이지(cursor 없음)에만 실린다. `summary`는 **별점·답글 필터를 무시하고** 상품 범위 전체의 분포를 담는다(분포 막대가 지금 고른 별점과 무관해야 한다) — 반대로 `totalCount`는 필터를 반영한다. 차단·숨김·삭제 리뷰는 목록과 분포 모두에서 빠지고, 마스킹 리뷰의 `content`는 공개 본문으로 치환된 값이다. 자격 게이트는 탈퇴·정지·비셀러만 막는다(403 errorCode 110011) — 휴점·탈퇴신청 셀러는 조회할 수 있다. 형식 오류는 400 errorCode 90001이고, 필터를 바꾼 뒤 이전 커서를 다시 쓰면 400 errorCode 90002다.
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+export const getSellerReviews = (params?: GetSellerReviewsParams, signal?: AbortSignal) => {
+  return customInstance<SellerReviewListEnvelope>({
+    url: `/sellers/me/reviews`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerReviewsQueryKey = (params?: GetSellerReviewsParams) => {
+  return [`/sellers/me/reviews`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerReviews>>> = ({ signal }) =>
+    getSellerReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerReviews>>>
+export type GetSellerReviewsQueryError = void
+
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params: undefined | GetSellerReviewsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerReviews>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerReviews>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+
+export function useGetSellerReviews<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerReviewsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerReviewsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerReviewsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerReviews>>> = ({ signal }) =>
+    getSellerReviews(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerReviews>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerReviewsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerReviews>>
+>
+export type GetSellerReviewsSuspenseQueryError = void
+
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params: undefined | GetSellerReviewsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 리뷰 목록(커서 페이지네이션)
+ */
+
+export function useGetSellerReviewsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerReviews>>,
+  TError = void,
+>(
+  params?: GetSellerReviewsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerReviews>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerReviewsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 리뷰당 답글은 하나다. 이미 답글이 있으면 덮어쓰지 않고 409 errorCode 110201로 거절하고 기존 답글을 그대로 둔다 — 수정은 PUT이 받는다. 답글 주소가 답글 id가 아니라 리뷰 id인 이유도 1:1이기 때문이다(화면이 답글 id를 들고 다니지 않아도 된다). 남의 상품 리뷰·없는 리뷰·비노출(차단·숨김·삭제) 리뷰는 모두 404 errorCode 110000이다 — 403을 주지 않는 것은 남의 리뷰가 있다는 사실 자체를 알리지 않기 위함이다. 답글 쓰기 자격은 조회보다 좁다: ACTIVE·휴점(PAUSED) 셀러만 통과하고 탈퇴신청 셀러는 403 errorCode 110011이다. 내용은 **공백을 포함한 원문**이 1~500자여야 하고(위반은 400 errorCode 90001), 저장은 앞뒤 공백을 잘라낸 값으로 한다 — 공백으로 한도를 늘릴 수는 없다.
+ * @summary 셀러 답글 등록
+ */
+export const writeSellerReviewReply = (
+  reviewId: number,
+  reviewReplyWriteRequest: ReviewReplyWriteRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerReviewReplyEnvelope>({
+    url: `/sellers/me/reviews/${reviewId}/reply`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: reviewReplyWriteRequest,
+    signal,
+  })
+}
+
+export const getWriteSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeSellerReviewReply>>,
+    TError,
+    { reviewId: number; data: ReviewReplyWriteRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationKey = ['writeSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof writeSellerReviewReply>>,
+    { reviewId: number; data: ReviewReplyWriteRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return writeSellerReviewReply(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type WriteSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>
+>
+export type WriteSellerReviewReplyMutationBody = ReviewReplyWriteRequest
+export type WriteSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 등록
+ */
+export const useWriteSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof writeSellerReviewReply>>,
+      TError,
+      { reviewId: number; data: ReviewReplyWriteRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof writeSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationOptions = getWriteSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 기존 답글 내용을 통째로 바꾼다. 답글이 없으면 404 errorCode 110200이고, 남의 상품 리뷰는 답글 유무와 무관하게 404 errorCode 110000이다. 자격·길이 규칙은 등록과 같다.
+ * @summary 셀러 답글 수정
+ */
+export const editSellerReviewReply = (
+  reviewId: number,
+  reviewReplyWriteRequest: ReviewReplyWriteRequest,
+) => {
+  return customInstance<SellerReviewReplyEnvelope>({
+    url: `/sellers/me/reviews/${reviewId}/reply`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: reviewReplyWriteRequest,
+  })
+}
+
+export const getEditSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof editSellerReviewReply>>,
+    TError,
+    { reviewId: number; data: ReviewReplyWriteRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof editSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationKey = ['editSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof editSellerReviewReply>>,
+    { reviewId: number; data: ReviewReplyWriteRequest }
+  > = props => {
+    const { reviewId, data } = props ?? {}
+
+    return editSellerReviewReply(reviewId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type EditSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof editSellerReviewReply>>
+>
+export type EditSellerReviewReplyMutationBody = ReviewReplyWriteRequest
+export type EditSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 수정
+ */
+export const useEditSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof editSellerReviewReply>>,
+      TError,
+      { reviewId: number; data: ReviewReplyWriteRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof editSellerReviewReply>>,
+  TError,
+  { reviewId: number; data: ReviewReplyWriteRequest },
+  TContext
+> => {
+  const mutationOptions = getEditSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 답글 행을 지운다(소프트 삭제가 아니다). 지운 뒤 같은 리뷰에 다시 등록할 수 있다. 답글이 없으면 404 errorCode 110200이다.
+ * @summary 셀러 답글 삭제
+ */
+export const deleteSellerReviewReply = (reviewId: number) => {
+  return customInstance<void>({ url: `/sellers/me/reviews/${reviewId}/reply`, method: 'DELETE' })
+}
+
+export const getDeleteSellerReviewReplyMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+    TError,
+    { reviewId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationKey = ['deleteSellerReviewReply']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+    { reviewId: number }
+  > = props => {
+    const { reviewId } = props ?? {}
+
+    return deleteSellerReviewReply(reviewId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteSellerReviewReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>
+>
+
+export type DeleteSellerReviewReplyMutationError = void
+
+/**
+ * @summary 셀러 답글 삭제
+ */
+export const useDeleteSellerReviewReply = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+      TError,
+      { reviewId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSellerReviewReply>>,
+  TError,
+  { reviewId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteSellerReviewReplyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 오프셋 페이지네이션이고 정렬은 claims.id 내림차순 고정이다 (정렬 파라미터가 없다). 키워드 검색이 없다 — 주문번호로 찾는 입력을 만들면 안 된다. 자격 게이트가 상품·주문보다 좁다: **조회까지 ACTIVE 셀러만** 통과하고(ClaimFacade가 모든 경로를 isActiveSeller로 감싼다) 휴점·탈퇴신청 셀러는 목록 조회도 403 errorCode 50404다. 형식 오류는 전부 400 errorCode 90001이고, 빈 값 파라미터(`?status=`·`?requestedFrom=`)는 미입력이 아니라 형식 오류로 거절된다 — 값이 없는 파라미터는 키째 빼서 보낼 것. `counts`는 **유형 필터를 무시하고** 상태·단계·기간 필터만 반영한다(유형 탭 배지가 지금 고른 탭과 무관해야 하기 때문) — 세 유형 키는 0이어도 빠지지 않는다.
+ * @summary 셀러 클레임 목록
+ */
+export const getSellerClaims = (params?: GetSellerClaimsParams, signal?: AbortSignal) => {
+  return customInstance<SellerClaimListResponse>({
+    url: `/sellers/me/claims`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerClaimsQueryKey = (params?: GetSellerClaimsParams) => {
+  return [`/sellers/me/claims`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerClaimsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaims>>> = ({ signal }) =>
+    getSellerClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimsQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerClaims>>>
+export type GetSellerClaimsQueryError = void
+
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params: undefined | GetSellerClaimsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaims>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaims>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 목록
+ */
+
+export function useGetSellerClaims<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerClaimsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaims>>> = ({ signal }) =>
+    getSellerClaims(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaims>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerClaims>>
+>
+export type GetSellerClaimsSuspenseQueryError = void
+
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params: undefined | GetSellerClaimsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 목록
+ */
+
+export function useGetSellerClaimsSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaims>>,
+  TError = void,
+>(
+  params?: GetSellerClaimsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaims>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행 + 주문·수령자 + 대상 품목 + 진행 이력. 수령인명·연락처는 **복호 평문**이라 마스킹은 화면이 한다(어드민 심사 API 선례와 통일). 이력에는 전용 테이블이 없어 클레임이 들고 있는 시각 컬럼에서 조립하며, 목록에 없는 `COLLECTION_STARTED`가 여기서 드러난다 — 회수 중 클레임이 송장 등록 대기인지 완료 처리 대기인지 가르는 유일한 응답 근거다. 남의 클레임·없는 클레임은 모두 404 errorCode 50400이고, ACTIVE 셀러가 아니면 403 errorCode 50404다.
+ * @summary 셀러 클레임 상세
+ */
+export const getSellerClaim = (claimPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SellerClaimDetailResponse>({
+    url: `/sellers/me/claims/${claimPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerClaimQueryKey = (claimPublicId?: string) => {
+  return [`/sellers/me/claims/${claimPublicId}`] as const
+}
+
+export const getGetSellerClaimQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaim>>> = ({ signal }) =>
+    getSellerClaim(claimPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!claimPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaim>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerClaim>>>
+export type GetSellerClaimQueryError = void
+
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaim>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaim>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerClaim>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerClaim>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 상세
+ */
+
+export function useGetSellerClaim<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimQueryOptions(claimPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerClaimSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerClaimQueryKey(claimPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerClaim>>> = ({ signal }) =>
+    getSellerClaim(claimPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerClaim>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerClaimSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerClaim>>
+>
+export type GetSellerClaimSuspenseQueryError = void
+
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 클레임 상세
+ */
+
+export function useGetSellerClaimSuspense<
+  TData = Awaited<ReturnType<typeof getSellerClaim>>,
+  TError = void,
+>(
+  claimPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerClaim>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerClaimSuspenseQueryOptions(claimPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 상태만 바꾼다 — 환불 집행은 이 경로가 아니라 배치가 한다(승인 직후 refundStatus는 NONE이다). 취소는 바로 APPROVED, 반품·교환은 COLLECTING(회수 대기)으로 간다. **반품비 부담 주체는 셀러가 직접 지정한다** — 서버는 사유로 유도하지 않고 받은 값을 그대로 저장하며, 취소에서는 그 값을 저장하지 않는다(Claim.approveBySeller가 CANCEL이면 건너뛴다). 이미 판단한 건은 409 errorCode 50408, 상태가 맞지 않으면 409 errorCode 50402다.
+ * @summary 셀러 클레임 승인
+ */
+export const approveSellerClaim = (
+  claimPublicId: string,
+  approveClaimRequest: ApproveClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/approve`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: approveClaimRequest,
+    signal,
+  })
+}
+
+export const getApproveSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: ApproveClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ApproveClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['approveSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveSellerClaim>>,
+    { claimPublicId: string; data: ApproveClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return approveSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ApproveSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveSellerClaim>>
+>
+export type ApproveSellerClaimMutationBody = ApproveClaimRequest
+export type ApproveSellerClaimMutationError = void
+
+/**
+ * @summary 셀러 클레임 승인
+ */
+export const useApproveSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: ApproveClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ApproveClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getApproveSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 거부 사유는 구매자에게 그대로 노출되므로 **빈 값을 받지 않는다** — 공백만 보내면 400 errorCode 50405다(본문 자체를 생략해도 같다). 500자를 넘으면 400 errorCode 90001이고 서버가 trim 후 500자로 자른다. 반품·교환 거부는 붙잡고 있던 주문품목을 주문 상태로 되돌린다.
+ * @summary 셀러 클레임 거부
+ */
+export const rejectSellerClaim = (
+  claimPublicId: string,
+  rejectClaimRequest: RejectClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/reject`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: rejectClaimRequest,
+    signal,
+  })
+}
+
+export const getRejectSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: RejectClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: RejectClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['rejectSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectSellerClaim>>,
+    { claimPublicId: string; data: RejectClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return rejectSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type RejectSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectSellerClaim>>
+>
+export type RejectSellerClaimMutationBody = RejectClaimRequest
+export type RejectSellerClaimMutationError = void
+
+/**
+ * @summary 셀러 클레임 거부
+ */
+export const useRejectSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: RejectClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: RejectClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getRejectSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 덮어쓰기다(병합이 아니다). null·공백을 보내면 메모를 지운다. 상태 전이와 무관해서 종결된 클레임에도 쓸 수 있다. 500자 초과는 400 errorCode 90001. 구매자 응답에는 나가지 않는다.
+ * @summary 셀러 클레임 운영 메모
+ */
+export const updateSellerClaimMemo = (
+  claimPublicId: string,
+  updateClaimMemoRequest: UpdateClaimMemoRequest,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/memo`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: updateClaimMemoRequest,
+  })
+}
+
+export const getUpdateSellerClaimMemoMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+    TError,
+    { claimPublicId: string; data: UpdateClaimMemoRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+  TError,
+  { claimPublicId: string; data: UpdateClaimMemoRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerClaimMemo']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+    { claimPublicId: string; data: UpdateClaimMemoRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return updateSellerClaimMemo(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerClaimMemoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>
+>
+export type UpdateSellerClaimMemoMutationBody = UpdateClaimMemoRequest
+export type UpdateSellerClaimMemoMutationError = unknown
+
+/**
+ * @summary 셀러 클레임 운영 메모
+ */
+export const useUpdateSellerClaimMemo = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+      TError,
+      { claimPublicId: string; data: UpdateClaimMemoRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerClaimMemo>>,
+  TError,
+  { claimPublicId: string; data: UpdateClaimMemoRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerClaimMemoMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 승인해 회수 대기(COLLECTING)로 넘어온 반품·교환만. 상태는 COLLECTING에 머물고 회수 시작 시각만 남는다 — "물건을 받기 전에는 환불하지 않는다"의 근거다. 취소에 부르면 409 errorCode 50409, 이미 등록했으면 409 errorCode 50302, 택배사 코드가 없으면 404 errorCode 50303이다. courierCode는 `GET /sellers/couriers`가 준 대문자 코드를 그대로 보낸다. **송장번호 형식은 이 경로가 검사하지 않는다** — `CourierMaster.validateTrackingNumber`를 부르는 곳은 최초 발송(SellerOrderService)뿐이고 회수·재발송은 공백·길이(50자)만 본다. 형식 위반(400 errorCode 50304)을 기대하지 말 것.
+ * @summary 반품·교환 회수 송장 등록
+ */
+export const startSellerClaimCollection = (
+  claimPublicId: string,
+  startClaimCollectionRequest: StartClaimCollectionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/collection`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: startClaimCollectionRequest,
+    signal,
+  })
+}
+
+export const getStartSellerClaimCollectionMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startSellerClaimCollection>>,
+    TError,
+    { claimPublicId: string; data: StartClaimCollectionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string; data: StartClaimCollectionRequest },
+  TContext
+> => {
+  const mutationKey = ['startSellerClaimCollection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startSellerClaimCollection>>,
+    { claimPublicId: string; data: StartClaimCollectionRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return startSellerClaimCollection(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type StartSellerClaimCollectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>
+>
+export type StartSellerClaimCollectionMutationBody = StartClaimCollectionRequest
+export type StartSellerClaimCollectionMutationError = void
+
+/**
+ * @summary 반품·교환 회수 송장 등록
+ */
+export const useStartSellerClaimCollection = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof startSellerClaimCollection>>,
+      TError,
+      { claimPublicId: string; data: StartClaimCollectionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof startSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string; data: StartClaimCollectionRequest },
+  TContext
+> => {
+  const mutationOptions = getStartSellerClaimCollectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 회수 송장이 등록된 건만. 이 전이로 상태가 APPROVED가 되고 반품 환불 집행이 그 뒤에만 일어난다 (교환은 재발송이 남는다). 송장이 없거나 이미 완료했으면 409 errorCode 50409다. 본문이 없다.
+ * @summary 반품·교환 회수 완료
+ */
+export const completeSellerClaimCollection = (claimPublicId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/sellers/me/claims/${claimPublicId}/collection/complete`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getCompleteSellerClaimCollectionMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+    TError,
+    { claimPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['completeSellerClaimCollection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+    { claimPublicId: string }
+  > = props => {
+    const { claimPublicId } = props ?? {}
+
+    return completeSellerClaimCollection(claimPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CompleteSellerClaimCollectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>
+>
+
+export type CompleteSellerClaimCollectionMutationError = void
+
+/**
+ * @summary 반품·교환 회수 완료
+ */
+export const useCompleteSellerClaimCollection = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+      TError,
+      { claimPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completeSellerClaimCollection>>,
+  TError,
+  { claimPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getCompleteSellerClaimCollectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 회수가 끝난 교환(APPROVED·미종결)만. 환불이 없는 대신 이 송장 등록이 교환을 종결시킨다 (resolvedAt이 찍힌다). 조건을 벗어나면 409 errorCode 50411, 이미 등록했으면 409 errorCode 50302다. 응답은 201이고 등록된 송장을 돌려준다. 회수와 같이 **송장번호 형식은 검사하지 않는다**(공백·길이 50자만 본다).
+ * @summary 교환 재발송 송장 등록
+ */
+export const reshipSellerClaim = (
+  claimPublicId: string,
+  reshipClaimRequest: ReshipClaimRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ReshipClaimResponse>({
+    url: `/sellers/me/claims/${claimPublicId}/reship`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: reshipClaimRequest,
+    signal,
+  })
+}
+
+export const getReshipSellerClaimMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reshipSellerClaim>>,
+    TError,
+    { claimPublicId: string; data: ReshipClaimRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reshipSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ReshipClaimRequest },
+  TContext
+> => {
+  const mutationKey = ['reshipSellerClaim']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reshipSellerClaim>>,
+    { claimPublicId: string; data: ReshipClaimRequest }
+  > = props => {
+    const { claimPublicId, data } = props ?? {}
+
+    return reshipSellerClaim(claimPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReshipSellerClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reshipSellerClaim>>
+>
+export type ReshipSellerClaimMutationBody = ReshipClaimRequest
+export type ReshipSellerClaimMutationError = void
+
+/**
+ * @summary 교환 재발송 송장 등록
+ */
+export const useReshipSellerClaim = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof reshipSellerClaim>>,
+      TError,
+      { claimPublicId: string; data: ReshipClaimRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof reshipSellerClaim>>,
+  TError,
+  { claimPublicId: string; data: ReshipClaimRequest },
+  TContext
+> => {
+  const mutationOptions = getReshipSellerClaimMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 접수 시점에 복사해 둔 sellerId로 잠그므로 **자기 상품에 온 문의만** 나온다. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다(정렬 파라미터 없음). **철회(WITHDRAWN)된 문의는 어느 탭에도 나오지 않고 지표에도 세지 않는다** — 구매자가 질문을 거둬간 것이라 status 필터로 고를 수도 없다(RECEIVED·ANSWERED 둘뿐). `metrics`는 **탭·유형·검색어를 무시하고** 셀러 전체 범위를 센다(탭을 눌러도 상단 지표가 흔들리지 않아야 하기 때문). `overdue`와 `metrics.overdue`는 **서버가 저장한 `answerDueAt`과 서버 시각으로 같은 규칙으로 판정한 결과**다 — 화면이 날짜를 빼서 다시 세면 두 숫자가 어긋난다. 비밀글(`secret`)도 셀러는 답변 당사자라 본문이 그대로 내려온다. 자격 게이트는 상품 조회와 같다: 정지·탈퇴 셀러는 403 errorCode 120112이고 휴점·탈퇴신청 셀러는 받은 문의를 읽는다. 형식 오류는 전부 400 errorCode 90001이다.
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+export const getSellerInquiries = (params?: GetSellerInquiriesParams, signal?: AbortSignal) => {
+  return customInstance<SellerInquiryListResponse>({
+    url: `/sellers/me/inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerInquiriesQueryKey = (params?: GetSellerInquiriesParams) => {
+  return [`/sellers/me/inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesQueryError = void
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiries<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerInquiries>>> = ({ signal }) =>
+    getSellerInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerInquiries>>
+>
+export type GetSellerInquiriesSuspenseQueryError = void
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params: undefined | GetSellerInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러가 받은 상품 문의 목록
+ */
+
+export function useGetSellerInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerInquiries>>,
+  TError = void,
+>(
+  params?: GetSellerInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerInquiriesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **문의당 한 번만 받는다** — 이미 답변한 문의는 409 errorCode 120109이고 수정 경로가 없다 (구매자가 이미 읽은 답변이 조용히 바뀌지 않게 한 결정). 철회된 문의는 409 errorCode 120114, 남의 상품에 온 문의는 403 errorCode 120108, 없는 문의는 404 errorCode 120100이다. 답변은 ACTIVE 셀러만 등록한다(정지·휴점 포함 그 외는 403 errorCode 120112) — 읽기보다 게이트가 좁다. 응답은 201이고 바뀐 상태와 답변 시각을 돌려준다.
+ * @summary 상품 문의 답변 등록
+ */
+export const answerSellerInquiry = (
+  inquiryId: string,
+  answerInquiryRequest: AnswerInquiryRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AnswerInquiryResponse>({
+    url: `/sellers/me/inquiries/${inquiryId}/answer`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: answerInquiryRequest,
+    signal,
+  })
+}
+
+export const getAnswerSellerInquiryMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    TError,
+    { inquiryId: string; data: AnswerInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['answerSellerInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof answerSellerInquiry>>,
+    { inquiryId: string; data: AnswerInquiryRequest }
+  > = props => {
+    const { inquiryId, data } = props ?? {}
+
+    return answerSellerInquiry(inquiryId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AnswerSellerInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof answerSellerInquiry>>
+>
+export type AnswerSellerInquiryMutationBody = AnswerInquiryRequest
+export type AnswerSellerInquiryMutationError = void
+
+/**
+ * @summary 상품 문의 답변 등록
+ */
+export const useAnswerSellerInquiry = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof answerSellerInquiry>>,
+      TError,
+      { inquiryId: string; data: AnswerInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof answerSellerInquiry>>,
+  TError,
+  { inquiryId: string; data: AnswerInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getAnswerSellerInquiryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). 정렬은 가입 순(userId 오름차순) 고정이고 오프셋 페이지네이션이다. page/size 형식 오류는 서버가 보정한다(page<0→0, size는 1~100 절삭) — 400을 내지 않는다. `nickname`은 온보딩 전 계정이면 null로 온다. `isSelf`는 요청자(JWT sub) 자신의 행 표시이고 필드명이 그대로 직렬화된다. 가입 시각 필드명은 `promotedAt`이 아니라 `joinedAt`(= users.created_at)이다 — 승격 시각 컬럼이 없어 BE가 이름을 바꿨고, 화면이 이것을 승격 시각으로 표기하면 거짓말이 된다.
  * @summary 어드민 관리자 명부 목록
  */
@@ -12542,6 +18294,599 @@ export function useGetMyProductInspectionSuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). `users.role = GENERAL`만 본다 — 관리자 계정은 명부 경로 (`/admin/admins`)가 따로 있어 이 목록에 없다. 정렬은 가입 역순(userId 내림차순) 고정이고 **커서 페이징**이다(오프셋 page 없음). `status`·`size` 형식 오류는 서버가 보정한다 (알 수 없는 status→전체, size는 1~100 절삭) — 400을 내지 않는다. 단, **상태 필터를 바꾼 채 옛 커서를 보내면 400 errorCode 90002**다(두 집합이 한 목록에 섞이지 않게 서버가 끊는다) — 필터를 바꿀 때는 커서를 버리고 처음부터 받아야 한다. 망가진 커서도 같은 90002다. `joinedFrom`·`joinedTo`는 날짜(`YYYY-MM-DD`)이고 **둘 다 포함**이다(서버가 상한을 다음 날 0시 미만으로 변환한다). `keyword`는 닉네임 부분일치 또는 회원 id 완전일치 중 하나만 맞아도 잡힌다. `nickname`은 온보딩 전 계정이거나 탈퇴로 프로필이 지워진 계정이면 null이다.
+ * @summary 어드민 일반 회원 목록
+ */
+export const getAdminMembers = (params?: GetAdminMembersParams, signal?: AbortSignal) => {
+  return customInstance<AdminMemberListResponse>({
+    url: `/admin/members`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminMembersQueryKey = (params?: GetAdminMembersParams) => {
+  return [`/admin/members`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMembersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMembers>>> = ({ signal }) =>
+    getAdminMembers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMembers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMembersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminMembers>>>
+export type GetAdminMembersQueryError = unknown
+
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminMembersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMembers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMembers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMembers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMembers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 일반 회원 목록
+ */
+
+export function useGetAdminMembers<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMembersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminMembersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMembersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMembers>>> = ({ signal }) =>
+    getAdminMembers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMembers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMembersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMembers>>
+>
+export type GetAdminMembersSuspenseQueryError = unknown
+
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminMembersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 일반 회원 목록
+ */
+
+export function useGetAdminMembersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMembers>>,
+  TError = unknown,
+>(
+  params?: GetAdminMembersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMembers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMembersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다** (관리자는 이 경로의 대상이 아니다).
+ * @summary 어드민 회원 상세
+ */
+export const getAdminMemberDetail = (userId: number, signal?: AbortSignal) => {
+  return customInstance<AdminMemberDetailResponse>({
+    url: `/admin/members/${userId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminMemberDetailQueryKey = (userId?: number) => {
+  return [`/admin/members/${userId}`] as const
+}
+
+export const getGetAdminMemberDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMemberDetailQueryKey(userId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMemberDetail>>> = ({ signal }) =>
+    getAdminMemberDetail(userId, signal)
+
+  return { queryKey, queryFn, enabled: !!userId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMemberDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMemberDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMemberDetail>>
+>
+export type GetAdminMemberDetailQueryError = unknown
+
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMemberDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMemberDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMemberDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMemberDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 회원 상세
+ */
+
+export function useGetAdminMemberDetail<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMemberDetailQueryOptions(userId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminMemberDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMemberDetailQueryKey(userId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMemberDetail>>> = ({ signal }) =>
+    getAdminMemberDetail(userId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMemberDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminMemberDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminMemberDetail>>
+>
+export type GetAdminMemberDetailSuspenseQueryError = unknown
+
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 회원 상세
+ */
+
+export function useGetAdminMemberDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminMemberDetail>>,
+  TError = unknown,
+>(
+  userId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminMemberDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMemberDetailSuspenseQueryOptions(userId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이용 제한·임시 정지·영구 정지·탈퇴 처리 네 조치를 적용하고 제재 이력 한 행을 남긴다. 성공은 204 No Content(본문 없음)다. 거부된 요청은 상태도 이력도 바꾸지 않는다. `durationDays`는 **임시 정지(SUSPEND)에만** 쓴다 — 만료 시각은 서버가 계산한다. 400 errorCode 90001 — action·reasonCode 누락, `RELEASE` 전송(해제는 release 경로), durationDays 범위 밖(1~365), reasonDetail 500자/memo 300자 초과. 400 errorCode 30801 — SUSPEND인데 durationDays 누락. 400 errorCode 30802 — SUSPEND가 아닌데 durationDays를 보냄. 400 errorCode 30800 — reasonCode=OTHER인데 reasonDetail이 비었음. 403 errorCode 30020 — 자기 자신 제재. 404 errorCode 30000 — 없는 계정. 409 errorCode 30021 — 관리자 계정(먼저 강등해야 한다). 409 errorCode 30018 — 영구 정지된 계정(종단 상태라 추가 제재 없음). 409 errorCode 30003 — 이미 탈퇴한 계정.
+ * @summary 어드민 회원 제재
+ */
+export const sanctionAdminMember = (
+  userId: number,
+  sanctionMemberRequest: SanctionMemberRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/members/${userId}/sanctions`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: sanctionMemberRequest,
+    signal,
+  })
+}
+
+export const getSanctionAdminMemberMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sanctionAdminMember>>,
+    TError,
+    { userId: number; data: SanctionMemberRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sanctionAdminMember>>,
+  TError,
+  { userId: number; data: SanctionMemberRequest },
+  TContext
+> => {
+  const mutationKey = ['sanctionAdminMember']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sanctionAdminMember>>,
+    { userId: number; data: SanctionMemberRequest }
+  > = props => {
+    const { userId, data } = props ?? {}
+
+    return sanctionAdminMember(userId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SanctionAdminMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sanctionAdminMember>>
+>
+export type SanctionAdminMemberMutationBody = SanctionMemberRequest
+export type SanctionAdminMemberMutationError = unknown
+
+/**
+ * @summary 어드민 회원 제재
+ */
+export const useSanctionAdminMember = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sanctionAdminMember>>,
+      TError,
+      { userId: number; data: SanctionMemberRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sanctionAdminMember>>,
+  TError,
+  { userId: number; data: SanctionMemberRequest },
+  TContext
+> => {
+  const mutationOptions = getSanctionAdminMemberMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 이용 제한·임시 정지를 풀어 ACTIVE로 되돌리고 해제 이력 한 행을 남긴다(UPDATE가 아니다). 성공은 204 No Content(본문 없음)다. DELETE가 아닌 이유는 사유·메모를 본문으로 받기 때문이다 — 감사 기록이 비면 안 된다. 409 errorCode 30019 — 걸려 있는 제재가 없음(영구 정지·탈퇴도 여기에 든다. 둘은 해제 불가). 403 errorCode 30020 — 자기 자신. 409 errorCode 30021 — 관리자 계정. 404 errorCode 30000 — 없는 계정. **기간이 지난 임시 정지는 해제할 수 있다** — 접근은 이미 풀려 있지만 저장값을 정리하는 경로다.
+ * @summary 어드민 회원 제재 해제
+ */
+export const releaseAdminMemberSanction = (
+  userId: number,
+  releaseSanctionRequest?: ReleaseSanctionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/members/${userId}/sanctions/release`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: releaseSanctionRequest,
+    signal,
+  })
+}
+
+export const getReleaseAdminMemberSanctionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+    TError,
+    { userId: number; data: ReleaseSanctionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+  TError,
+  { userId: number; data: ReleaseSanctionRequest },
+  TContext
+> => {
+  const mutationKey = ['releaseAdminMemberSanction']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+    { userId: number; data: ReleaseSanctionRequest }
+  > = props => {
+    const { userId, data } = props ?? {}
+
+    return releaseAdminMemberSanction(userId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReleaseAdminMemberSanctionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>
+>
+export type ReleaseAdminMemberSanctionMutationBody = ReleaseSanctionRequest
+export type ReleaseAdminMemberSanctionMutationError = unknown
+
+/**
+ * @summary 어드민 회원 제재 해제
+ */
+export const useReleaseAdminMemberSanction = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+      TError,
+      { userId: number; data: ReleaseSanctionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof releaseAdminMemberSanction>>,
+  TError,
+  { userId: number; data: ReleaseSanctionRequest },
+  TContext
+> => {
+  const mutationOptions = getReleaseAdminMemberSanctionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**
