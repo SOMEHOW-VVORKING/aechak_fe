@@ -16,6 +16,11 @@ export async function endServerSession(): Promise<void> {
   }
 }
 
+// 루트 게이트가 세션 확인을 기다리는 상한. axios에 timeout이 없어서 이 상한이 없으면 refresh 한
+// 건이 응답하지 않는 동안 앱 전체가 빈 화면이 된다 — BE가 permitAll로 열어 둔 공개 카탈로그까지
+// 인증 서버 응답을 기다리게 되므로, 기다림을 끊고 먼저 그린다(확인은 백그라운드에서 계속된다).
+const SESSION_GATE_TIMEOUT_MS = 1500
+
 /**
  * 세션을 한 번 확인해 'unknown'을 'member' 또는 'guest'로 확정한다. 모든 라우트가 렌더 전에
  * 이것을 거친다(__root beforeLoad).
@@ -26,15 +31,27 @@ export async function endServerSession(): Promise<void> {
  * 네트워크/5xx는 세션 유무를 모르니 'unknown'으로 남겨 다음 네비게이션에서 다시 확인한다.
  *
  * 확정된 뒤에는 요청을 보내지 않는다 — refresh 쿠키는 호출마다 회전하므로 불필요한 재확인이
- * 멀쩡한 세션을 흔든다. 동시 호출은 client.ts의 공유 refreshPromise가 한 번으로 합친다.
+ * 멀쩡한 세션을 흔든다. 동시 호출은 client.ts의 공유 refreshPromise가 한 번으로 합친다(상한에
+ * 걸려 다음 네비게이션에서 다시 불려도 진행 중인 요청에 합류하므로 쿠키가 또 회전하지 않는다).
  */
 export async function restoreSessionOrGuest(): Promise<void> {
   if (getSessionState() !== 'unknown') return
-  try {
-    await restoreSession()
-    login()
-  } catch (error) {
+  // 확정은 백그라운드로 계속 둔다 — 아래 상한에 걸려 먼저 렌더해도, 응답이 오면 상태가 올라가고
+  // 화면이 다시 그려진다. 이 체인은 reject하지 않는다(두 갈래 다 받는다).
+  const confirmed = restoreSession().then(
+    () => login(),
     // refresh 401(쿠키 없음/만료 20002, 재사용 20003) = 세션 없음 → 비회원 확정.
-    if (errorResponse(error)?.status === 401) logout()
+    (error: unknown) => {
+      if (errorResponse(error)?.status === 401) logout()
+    },
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const bound = new Promise<void>(resolve => {
+    timer = setTimeout(resolve, SESSION_GATE_TIMEOUT_MS)
+  })
+  try {
+    await Promise.race([confirmed, bound])
+  } finally {
+    clearTimeout(timer)
   }
 }
