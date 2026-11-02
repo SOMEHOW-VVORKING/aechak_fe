@@ -137,4 +137,38 @@ describe('셀러센터 로그아웃 (SCRUM-353)', () => {
     expect(await screen.findByText('로그아웃할까요?')).toBeInTheDocument()
     expect(logoutDialog().queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('[AC-SELLER-LOGOUT-006] 전송 중에는 Modal이 닫히지 않아 실패 안내가 사라지지 않는다', async () => {
+    // 응답을 테스트가 붙잡고 있는 핸들러 — "전송 중"을 실제로 만들어야 이 회귀가 드러난다.
+    let release: (() => void) | undefined
+    const inflight = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const calls: string[] = []
+    server.use(
+      http.post(WEB_LOGOUT_URL, async ({ request }) => {
+        calls.push(request.url)
+        await inflight
+        return HttpResponse.json({ errorCode: 50000, message: '서버 오류' }, { status: 500 })
+      }),
+    )
+    setAccessToken('seller-live-token')
+    const user = userEvent.setup()
+    renderAt('/products')
+
+    await confirmLogout(user)
+
+    // 취소·Escape·스크림이 전송 중에 닫아 버리면 `logout.reset()`이 진행 중 mutation에서
+    // 옵저버를 떼어(query-core mutationObserver.reset) 아래 실패 안내가 뜰 자리가 사라진다.
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    release?.()
+
+    expect(await logoutDialog().findByRole('alert')).toHaveTextContent('로그아웃을 확인하지 못했어요')
+    // 닫고 다시 열 수 있었다면 확인 버튼이 되살아나 두 번째 요청이 나간다.
+    expect(calls).toHaveLength(1)
+    expect(getAccessToken()).toBe('seller-live-token')
+  })
 })
