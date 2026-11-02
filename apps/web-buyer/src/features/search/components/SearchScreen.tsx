@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Clock, X } from 'lucide-react'
 import { Card, MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
-import { useIsLoggedIn } from '@/shared/auth'
+import { useSessionState } from '@/shared/auth'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   useDeleteAllRecentKeywords,
@@ -16,7 +16,8 @@ import { KeywordChip } from './KeywordChip'
 // 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다.
 export function SearchScreen() {
   const navigate = useNavigate()
-  const isLoggedIn = useIsLoggedIn()
+  const sessionState = useSessionState()
+  const isLoggedIn = sessionState === 'member'
   const { data } = useSearchLanding(isLoggedIn)
   const deleteOne = useDeleteRecentKeyword()
   const deleteAll = useDeleteAllRecentKeywords()
@@ -94,11 +95,12 @@ export function SearchScreen() {
             <Card className="flex flex-col items-center gap-2 px-4 py-6">
               <Clock className="size-6 text-icon-muted" />
               {/* 최근·추천 검색어(GET /search/keywords)는 회원 전용이다. 비회원에게 "여기에
-                  표시돼요"라고 적으면 저장되지 않는 것을 저장될 것처럼 읽게 된다. */}
+                  표시돼요"라고 적으면 저장되지 않는 것을 저장될 것처럼 읽게 된다. 반대로 세션
+                  확인이 끝나지 않은 'unknown'에 로그인을 권하면 회원에게 거짓을 읽힌다. */}
               <span className="text-body-sm text-text-tertiary">
-                {isLoggedIn
-                  ? '최근 검색한 상품이 여기에 표시돼요'
-                  : '로그인하면 최근 검색어를 저장해 드려요'}
+                {sessionState === 'guest'
+                  ? '로그인하면 최근 검색어를 저장해 드려요'
+                  : '최근 검색한 상품이 여기에 표시돼요'}
               </span>
             </Card>
           )}

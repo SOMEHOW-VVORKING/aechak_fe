@@ -31,7 +31,7 @@ import {
   toggleWishlist,
   useIsWished,
 } from '@/shared/catalog'
-import { LoginGate, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import { LoginGate, useLoginGate, useSessionState } from '@/shared/auth'
 import {
   DETAIL_REVIEW_LIMIT,
   useProductDetail,
@@ -93,13 +93,23 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 
   // 옵션은 시트를 열 때만 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
-  const isLoggedIn = useIsLoggedIn()
+  const sessionState = useSessionState()
+  const isLoggedIn = sessionState === 'member'
   // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
   // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
   const canFetchServerReviews =
     isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
-  // 목업 상품처럼 상세가 리뷰를 이미 들고 있으면 안내가 필요 없다(previewReviews가 채워진다).
-  const reviewsNeedLogin = !isLoggedIn && data != null && data.reviews.length === 0
+  // 미리보기를 못 채운 칸에 적을 사유. 목업 상품처럼 상세가 리뷰를 이미 들고 있으면 필요 없다
+  // (previewReviews가 채워진다). 세션 확인이 끝나지 않은 'unknown'에는 로그인 필요라고 적지 않는다 —
+  // refresh가 5xx·네트워크로 실패한 회원일 수 있어서, 그렇게 적으면 사실이 아닌 사유를 읽힌다.
+  const reviewsBlockedReason =
+    data == null || data.reviews.length > 0
+      ? null
+      : sessionState === 'guest'
+        ? '리뷰를 보려면 로그인이 필요해요.'
+        : sessionState === 'unknown'
+          ? '리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'
+          : null
   const reviewPreview = useProductReviewPreview(productId, { enabled: canFetchServerReviews })
   // AI 요약도 JWT 필수이고 목업 상품은 서버에 없어 미리보기와 같은 조건으로만 부른다.
   const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchServerReviews })
@@ -279,11 +289,11 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                         <Skeleton key={i} variant="rect" className="h-24 w-full" />
                       ))}
                     </div>
-                  ) : reviewsNeedLogin ? (
+                  ) : reviewsBlockedReason != null ? (
                     // 상세 본문은 permitAll이라 비회원도 끝까지 보지만 리뷰 목록만 비어 있다 —
                     // 그 칸을 빈 자리로 두지 않고 왜 비었는지 적는다.
                     <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
-                      리뷰를 보려면 로그인이 필요해요.
+                      {reviewsBlockedReason}
                     </Card>
                   ) : (
                     <div className="flex flex-col gap-3">

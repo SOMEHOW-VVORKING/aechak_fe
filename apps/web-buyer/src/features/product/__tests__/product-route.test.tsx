@@ -18,6 +18,7 @@ import {
   makeCartRow,
   seedCart,
   server,
+  WEB_REFRESH_URL,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -316,6 +317,24 @@ describe('/products/$productId', () => {
     // 호출을 막은 쿼리는 react-query v5에서 isPending=true다 — 그걸로 분기하면 스켈레톤 3장이
     // 영구히 남는다. 이 안내가 보이려면 로딩 분기가 isFetching이어야 한다.
     expect(screen.getByText('리뷰를 보려면 로그인이 필요해요.')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-032] 세션 확인이 실패하면 리뷰 칸에 로그인이 필요하다고 적지 않는다', async () => {
+    // refresh 5xx로 회원 여부를 모르는 상태(unknown)다 — refresh 쿠키가 멀쩡한 회원일 수 있어서
+    // "로그인이 필요해요"라고 적으면 사실이 아닌 사유를 읽힌다.
+    resetAuth()
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 }),
+      ),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
+    expect(
+      await screen.findByText('리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('리뷰를 보려면 로그인이 필요해요.')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-031] 비회원도 상세 본문(이름·가격·옵션 진입)을 끝까지 본다', async () => {
