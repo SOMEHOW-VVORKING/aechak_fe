@@ -16,12 +16,11 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -241,7 +240,56 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
   })
 
-  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
+  it('[AC-STORE-ROUTE-014] 승인인데 서버에 스토어가 없으면 읽기 실패와 다른 문구를 보여준다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({ isSeller: false, applicationStatus: 'APPROVED', store: null })
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('스토어가 아직 열리지 않았어요')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 주소 3필드는 배송 정책의 출고지와 **같은 컬럼**이다. 재진입 때 캐시된 옛 주소로 폼을
+   * 확정하면, 저장이 전체 덮어쓰기라 그 사이 배송 정책에서 바꾼 출고지가 되돌아간다.
+   * 같은 QueryClient 로 두 번 렌더해 캐시가 남은 재진입을 재현한다.
+   */
+  it('[AC-STORE-ROUTE-015] 재진입 때 캐시된 옛 주소로 저장하지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const first = renderAt('/store-settings', queryClient)
+    await screen.findByDisplayValue('경기 성남시 판교역로 2')
+    first.unmount()
+
+    // 그 사이 다른 화면(배송 정책)이 같은 주소 컬럼을 바꿨다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    // 캐시된 옛 주소가 아니라 다시 읽은 값이 폼에 들어가야 한다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('경기 성남시 판교역로 2')).not.toBeInTheDocument()
+
+    // 상호만 바꿔 저장해도 주소가 옛 값으로 되돌아가지 않는다.
+    const nameInput = screen.getByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
   it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
     renderAt('/store-settings')

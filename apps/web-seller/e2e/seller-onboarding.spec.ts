@@ -103,6 +103,33 @@ async function stubSellerApplication(page: Page) {
   })
 }
 
+/** 승인된 셀러의 스토어 설정 — 승인 뒤 화면이 읽는 실 경로다(GET/PUT /sellers/me/store). */
+async function stubSellerStore(page: Page) {
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/store`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        isSeller: true,
+        applicationStatus: 'APPROVED',
+        store: {
+          sellerId: 7,
+          status: 'ACTIVE',
+          storeName: '애착상회',
+          brandIntro: null,
+          profileImageUrl: null,
+          profileImageKey: null,
+          bannerImageUrl: null,
+          bannerImageKey: null,
+          zipCode: null,
+          roadAddress: null,
+          detailAddress: null,
+          confirmedOrderCount: 0,
+          telesalesNoticeStatus: 'NOT_REQUIRED',
+        },
+      },
+    }),
+  )
+}
+
 /** 승인된 셀러 — 가드를 통과해 운영 화면까지 들어가는 쪽을 재현한다. */
 async function stubApprovedApplication(page: Page) {
   await page.route(`${SELLER_ORIGIN}/api/v1/seller-applications`, route =>
@@ -168,6 +195,7 @@ test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드�
 }) => {
   await stubSession(page)
   await stubApprovedApplication(page)
+  await stubSellerStore(page)
   await stubDashboardSummary(page)
   await stubKakaoRedirect(page)
 
@@ -183,10 +211,11 @@ test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드�
   await expect(page.getByText('신규 주문')).toBeVisible()
   await expect(page).toHaveURL(`${ORIGIN}/`)
 
-  // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 승인 안내를 보여준다.
+  // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 실 스토어 값을 보여준다.
   await page.getByRole('button', { name: '스토어 설정' }).click()
   await expect(page).toHaveURL(`${ORIGIN}/store-settings`)
-  await expect(page.getByText('입점 신청이 승인됐어요')).toBeVisible()
+  await expect(page.getByRole('button', { name: '저장' })).toBeVisible()
+  await expect(page.locator('input[value="애착상회"]')).toBeVisible()
 })
 
 test('[AC-SELLER-E2E-002] 세션 없이 스토어 설정 진입(401 → refresh 실패)이면 로그인으로 튕긴다', async ({

@@ -23,25 +23,36 @@ const SELLER_STATUS_LABEL: Record<string, string> = {
 // 입점 승인 뒤의 스토어 설정 — GET·PUT /sellers/me/store 실연동. 예전에는 이 자리가
 // "곧 제공될 예정"이라는 빈 화면이어서, 승인된 셀러가 자기 스토어 이름조차 못 봤다.
 export function StoreProfileSection() {
-  const { data, isLoading, isError, refetch } = useSellerStore()
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useSellerStore()
   const updateStore = useUpdateSellerStore()
   const [form, setForm] = useState<StoreProfileFormValue | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const toast = useToast()
-  const seededRef = useRef(false)
+  // 폼을 시드한 응답의 시각. 1회성 플래그가 아니라 시각인 이유는 아래 effect 주석에 있다.
+  const seededAtRef = useRef(0)
+  // 사용자가 폼을 건드렸는지. 건드린 뒤에는 새 서버 값으로 덮지 않는다(입력 보존).
+  const dirtyRef = useRef(false)
 
   const store = data?.store ?? null
 
-  // 서버 값으로 한 번만 시드 — 저장 성공으로 캐시가 갱신돼도 재시딩하지 않아 입력을 보존한다
-  // (shipping-policy·입점 신청 폼과 같은 가드). 저장이 바꾼 값은 onSuccess에서 직접 반영한다.
+  /**
+   * 서버 값으로 시드. 입점 신청 폼의 "1회만" 가드와 달리 **진행 중인 조회가 끝난 뒤에만**
+   * 시드하고, 응답이 갱신되면 사용자가 건드리기 전까지 다시 시드한다.
+   *
+   * 1회성 가드로는 데이터가 지워진다: 주소 3필드는 배송 정책의 출고지와 **같은 컬럼**이다.
+   * 스토어 설정을 한 번 본 뒤(캐시 A) 배송 정책에서 출고지를 B로 저장하고 돌아오면, 캐시 A가
+   * 폼을 확정해 버리고 뒤늦게 도착한 B가 반영되지 않는다. 저장은 전체 덮어쓰기라 그 폼이
+   * 서버 출고지를 A로 되돌린다(codex 교차검증에서 잡힌 경로).
+   */
   useEffect(() => {
-    if (store && !seededRef.current) {
-      seededRef.current = true
-      setForm(formValueFrom(store))
-    }
-  }, [store])
+    if (!store || isFetching) return
+    if (dirtyRef.current || seededAtRef.current === dataUpdatedAt) return
+    seededAtRef.current = dataUpdatedAt
+    setForm(formValueFrom(store))
+  }, [store, isFetching, dataUpdatedAt])
 
   function handleChange(patch: Partial<StoreProfileFormValue>) {
+    dirtyRef.current = true
     setForm(prev => (prev ? { ...prev, ...patch } : prev))
     setActionError(null)
   }
@@ -60,6 +71,8 @@ export function StoreProfileSection() {
         // PUT이 204라 응답 바디가 없다 — 보낸 본문에 서버 규칙(공백 제거, 빈 칸 → null)을
         // 적용한 결과로 폼을 되맞춘다. 안 하면 저장된 값과 화면이 갈린다.
         onSuccess: applied => {
+          // 저장이 끝나면 다시 서버 값과 같아진 상태다 — dirty를 풀어 이후 응답이 폼을 따라오게 한다.
+          dirtyRef.current = false
           setForm(formValueFrom(applied))
           toast.show('저장했어요.')
         },
@@ -68,7 +81,10 @@ export function StoreProfileSection() {
     )
   }
 
-  if (isLoading) {
+  // `store && !form`도 로딩으로 묶는다 — 시드가 effect라 그 사이 한 프레임이 비는데,
+  // 그 프레임에 아래 실패 안내를 보이면 읽기에 성공한 화면이 실패로 깜빡인다. 캐시가 있어도
+  // 조회가 끝나기 전에는 폼이 없으므로, 뒤늦게 바뀐 서버 값을 입력으로 덮을 창도 사라진다.
+  if (isLoading || (store != null && form == null)) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton variant="rect" className="h-10 w-64" />
@@ -79,12 +95,24 @@ export function StoreProfileSection() {
 
   // 화면 전체가 이 한 조회에 달려 있다 — 실패를 빈 폼으로 떨구면 저장이 전체 덮어쓰기라
   // 서버에 있는 상호를 지워 버린다. 백지 대신 재시도를 둔다.
-  if (isError || !store || !form) {
+  if (isError) {
     return (
       <EmptyState
         title="스토어 정보를 불러오지 못했어요"
         description="저장은 전체 덮어쓰기라, 현재 값을 읽은 뒤에만 바꿀 수 있어요."
         action={{ label: '다시 시도', onClick: () => void refetch() }}
+      />
+    )
+  }
+
+  // 신청은 승인인데 서버에 스토어가 없는 상태(isSeller=false). BE 는 승인 트랜잭션에서 셀러를
+  // 열므로 정상 경로에는 없지만, 읽기 실패와 뜻이 달라 문구를 따로 둔다.
+  if (!store || !form) {
+    return (
+      <EmptyState
+        title="스토어가 아직 열리지 않았어요"
+        description="입점은 승인됐지만 서버에 스토어 정보가 없어요. 잠시 뒤 다시 불러와 주세요."
+        action={{ label: '다시 불러오기', onClick: () => void refetch() }}
       />
     )
   }
@@ -108,16 +136,6 @@ export function StoreProfileSection() {
       {isPaused && (
         <Alert variant="warning">
           운영 중인 스토어만 설정을 바꿀 수 있어요. 값은 볼 수 있지만 저장은 막혀 있어요.
-        </Alert>
-      )}
-
-      {/* 서버가 구매확정 누적으로 올리는 값이라 셀러가 화면에서 바꿀 수 없다 — 할 일만 적는다. */}
-      {store.telesalesNoticeStatus !== 'NOT_REQUIRED' && (
-        <Alert variant="info" title="통신판매업 신고 대상이에요">
-          <p>
-            구매확정 {store.confirmedOrderCount}건을 넘겼어요. 관할 구청에 통신판매업을 신고하고
-            신고증을 고객센터로 보내 주세요.
-          </p>
         </Alert>
       )}
 
