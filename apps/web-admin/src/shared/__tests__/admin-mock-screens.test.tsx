@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -74,22 +74,23 @@ const NOT_SAVED = '저장되지 않아요'
 const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시는 새로 고치면 사라져요.'
 
 /**
- * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 6화면.
+ * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 5화면.
  * (일반 회원 관리는 `/admin/members` 넷, 주문 배송 모니터링은 `/admin/orders` 넷, AI 검수 큐는
  *  `/admin/product-inspections` 넷이 생겨 빠졌고, 서비스 문의·클레임·리뷰는 2026-10-30 실측에서
  *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다. 어드민 액션 로그는
- *  2026-11-03 실측의 `GET /admin/audit-logs`로 빠졌고 읽기 전용 계약은
- *  `features/audit-log/__tests__`가 AC-ADM-AUD-009로 이어 본다 — 실연동 화면 계약은 각 feature 의
- *  `__tests__`가 본다.)
+ *  2026-11-03 실측의 `GET /admin/audit-logs`로, 알림/공지 관리는 같은 날 실측의 `/admin/notices`
+ *  여섯으로 빠졌다 — 실연동 화면 계약은 각 feature 의 `__tests__`가 본다. 공지의 대상 필터
+ *  계약(`'all'`이 실제 값인 축의 센티넬)은 여기 있던 AC-ADMIN-MOCK-007을
+ *  `features/notices/__tests__`가 서버 필터 단언으로 이어 본다.)
  *
  * 2026-10-18(SCRUM-238)이 이 화면들의 진입을 `UnavailableScreen`으로 막았고, 2026-10-26
  * (SCRUM-302)이 nav 항목만 되살렸다. 그 상태가 "메뉴는 보이는데 눌러도 아무것도 못 본다"였고
  * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적으로 되돌렸다(SCRUM-308).
  *
  * 그래서 이 파일이 고정하는 계약은 셋이다.
- * 1. 6화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
+ * 1. 5화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
  *    있는 문자열로 확인한다(개수만 세면 한 화면이 다른 화면으로 바뀌어도 통과한다).
- * 2. 6화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
+ * 2. 5화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
  * 3. 저장·제출·발송을 눌러도 **요청이 한 건도 더 나가지 않는다.** 서버에 없는 경로로 나가면
  *    운영자 화면에 500·404가 찍힌다.
  *
@@ -101,7 +102,6 @@ const SCREENS = [
   ['상품 검수 관리', '/products/review', '동결건조 닭가슴살 100g'],
   ['신고 제재 관리', '/reports', '프리미엄 관절 영양제 180정'],
   ['채팅 CS 모니터링', '/chat-monitoring', 'ROOM-4821'],
-  ['알림/공지 관리', '/notices', '10월 28일 새벽 결제 시스템 점검 안내'],
 ] as const satisfies readonly (readonly [string, string, string])[]
 
 /** 목록 표를 그리는 화면. 대시보드만 표가 아니라 지표 카드로 내용을 보여준다. */
@@ -165,14 +165,6 @@ const WRITE_FLOWS = [
     openRow: 'ROOM-4821',
     action: '운영자 개입',
     confirm: { dialog: '운영자로 대화에 들어갈까요?', button: '개입하기' },
-  },
-  {
-    screen: '알림/공지 관리',
-    path: '/notices',
-    openRow: '10월 28일 새벽 결제 시스템 점검 안내',
-    action: '게시하기',
-    // 드로어 액션과 Modal 확인 버튼이 같은 이름이라, 확인은 Modal 안으로 좁혀서 누른다.
-    confirm: { dialog: '공지를 게시하고 푸시를 보낼까요?', button: '게시하기' },
   },
 ] as const
 
@@ -263,31 +255,5 @@ describe('어드민 예시 데이터 화면', () => {
       expect(unexpectedRequests(requests)).toEqual([])
     },
   )
-
-  /**
-   * 예시 데이터라도 **필터는 실제로 걸러야 한다** — 동작하지 않는 필터는 AGENTS.md 2절이 금지한
-   * 장식 UI다. 공지의 대상 축만 이 테스트를 따로 갖는 이유는, 그 축에 `'all'`이 **실제 값**으로
-   * 있어서 다른 화면의 `'all'` 센티넬 관례를 그대로 쓰면 둘이 겹치기 때문이다(겹치면 "전체 대상"을
-   * 골라도 미선택으로 읽혀 전체가 그대로 남고, 옵션 key도 충돌한다 — 2026-10-27 실측).
-   */
-  it('[AC-ADMIN-MOCK-007] 공지의 대상 필터는 고른 대상의 공지만 남긴다', async () => {
-    renderAt('/notices')
-
-    expect(await screen.findByRole('heading', { name: '알림/공지 관리' })).toBeInTheDocument()
-    const bodyRowCount = () => within(screen.getByRole('table')).getAllByRole('row').length - 1
-    await waitFor(() => expect(bodyRowCount()).toBe(6))
-
-    const audienceSelect = selectWithOption('대상 전체')
-
-    // "전체 대상"(전체 회원에게 가는 공지)과 "대상 전체"(필터 미선택)는 **다른 것**이다.
-    await chooseOption(audienceSelect, '전체 대상')
-    expect(bodyRowCount()).toBe(3)
-
-    await chooseOption(audienceSelect, '셀러 대상')
-    expect(bodyRowCount()).toBe(1)
-
-    await chooseOption(audienceSelect, '대상 전체')
-    expect(bodyRowCount()).toBe(6)
-  })
 
 })

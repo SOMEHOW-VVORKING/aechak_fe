@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { adminBase, apiBase, errorBody } from './base'
 import { auditLogHandlers } from './audit-log.handlers'
+import { noticeHandlers } from './notices.handlers'
 import { inquiryHandlers } from './inquiries.handlers'
 import { claimHandlers } from './claims.handlers'
 import { reviewHandlers } from './reviews.handlers'
@@ -21,6 +22,16 @@ export {
   seedAdminAuditLogs,
   type AdminAuditLogWire,
 } from './audit-log.handlers'
+export {
+  ADMIN_NOTICES_URL,
+  ADMIN_NOTICE_DETAIL_URL,
+  ADMIN_NOTICE_PUBLISH_URL,
+  ADMIN_NOTICE_UNPUBLISH_URL,
+  currentAdminNotice,
+  makeAdminNoticeWire,
+  seedAdminNotices,
+  type AdminNoticeWire,
+} from './notices.handlers'
 export {
   ADMIN_CLAIMS_URL,
   ADMIN_CLAIM_DETAIL_URL,
@@ -1127,5 +1138,7 @@ export const handlers = [
   // 감사 로그 핸들러는 시드 없이도 빈 목록으로 답한다 — `/audit-log`가 클레임·문의·리뷰 테스트에서
   // 이탈 가드의 '다른 화면' 목적지로 쓰이고, 핸들러가 없으면 onUnhandledRequest:'error'로 깨진다.
   ...auditLogHandlers,
+  // 공지 핸들러도 시드 없이 빈 목록으로 답한다 — `/notices`가 nav 테스트에서 열린다.
+  ...noticeHandlers,
 ]
 export const server = setupServer(...handlers)
