@@ -9,7 +9,6 @@ import { RatingDistribution } from '@/shared/components/RatingDistribution'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
-import { useAccount } from '@/shared/account'
 import {
   reviewErrorMessage,
   serverReviewId,
@@ -120,7 +119,6 @@ function ReviewsBody({
   isFetchingNextPage: boolean
 }) {
   const navigate = useNavigate()
-  const { nickname } = useAccount()
   const deleteReview = useDeleteReview()
   // 정렬/포토 필터는 서버가 적용한다 — 여기서 다시 정렬하지 않고 훅이 준 순서 그대로 그린다.
   const visible = data.reviews
@@ -210,7 +208,7 @@ function ReviewsBody({
                 // 내가 쓴 리뷰: 작성자를 닉네임으로 표기하고 우측에 수정/삭제를 노출한다.
                 <MyReviewCard
                   review={review}
-                  nickname={nickname}
+                  nickname={review.author}
                   // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버에서 온 리뷰는
                   // 스토어에 없어 작성 화면이 대상을 못 찾으므로 버튼을 아예 내리고 삭제만 남긴다.
                   onEdit={

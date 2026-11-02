@@ -38,6 +38,26 @@ export async function bootstrapSession(): Promise<void> {
 }
 
 /**
+ * 서버 세션 종료(`POST /auth/web/logout`) — 자격증명이 httpOnly refresh 쿠키라 body도
+ * Authorization도 없고, 쿠키가 없거나 이미 폐기된 토큰이어도 204를 주는 멱등 EP다.
+ *
+ * 구매자 앱(`web-buyer` shared/auth/auth.session.ts)과 **전송 실패 처리가 다르다**. 구매자는
+ * 실패를 삼키고 로컬 플래그만 내려도 로그아웃이 성립하지만, 어드민에서 세션의 유일한 증거는
+ * 이 쿠키다 — 호출이 실패하면 쿠키가 살아 있어 다음 요청의 refresh가 같은 계정을 되살린다.
+ * 그걸 "로그아웃됐다"고 보여 주면 운영자는 계정이 바뀐 줄 알고 데모를 이어 간다. 그래서 실패는
+ * 삼키지 않고 그대로 던지고, 화면이 사실대로 말한다.
+ */
+export async function endServerSession(): Promise<void> {
+  // `/auth/*`는 api 모듈에만 있어 경로 판정으로도 api 호스트로 나가지만, 어드민은 `/admin` 경로의
+  // credentials를 끄는 앱이라 표식을 명시해 둔다 — refresh와 같은 조합이고, 쿠키가 자격증명인
+  // 이 호출에서 credentials가 꺼지면 서버가 폐기할 토큰을 받지 못한다.
+  await axiosInstance.post('/auth/web/logout', undefined, {
+    forceApiHost: true,
+    withCredentials: true,
+  })
+}
+
+/**
  * 로그인 실패 복귀(`?error=`)의 인라인 문구.
  *
  * 20006(온보딩 미완)을 셀러센터처럼 "구매자 앱에서 온보딩을 마치라"고 안내하지 않는다 — 어드민은

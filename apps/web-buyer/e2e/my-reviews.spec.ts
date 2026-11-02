@@ -6,6 +6,7 @@ import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@ae
 // CORS/프리플라이트 규칙은 reviews.spec과 같다(교차출처 8080 + withCredentials).
 
 const ORIGIN = 'http://localhost:5175'
+const USER_ME_URL = 'http://localhost:8080/api/v1/users/me'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -90,6 +91,26 @@ const preflight = (route: Route, methods: string) =>
 
 // state를 그대로 읽어 응답한다. 작성/삭제 스텁이 state를 바꾸면 다음 조회부터 실서버처럼 반영된다.
 async function stubMyReviews(page: Page, state: ServerState) {
+  // 내 리뷰 카드의 작성자 닉네임은 GET /users/me에서 읽는다. 계정 목업 닉네임과 다른 값이라 출처를 가른다.
+  await page.route(USER_ME_URL, (route: Route) => {
+    if (route.request().method() === 'OPTIONS') return preflight(route, 'GET')
+    return route.fulfill({
+      status: 200,
+      headers: CORS,
+      json: {
+        data: {
+          status: 'ACTIVE',
+          nickname: '연어러버',
+          profileImageUrl: null,
+          profileImageKey: null,
+          bio: null,
+          email: null,
+          phoneNumber: null,
+          isPhoneVerified: true,
+        },
+      },
+    })
+  })
   await page.route(/\/users\/me\/reviews(\?|$)/, (route: Route) => {
     if (route.request().method() === 'OPTIONS') return preflight(route, 'GET')
     if (state.status && state.status !== 200) {
@@ -119,9 +140,10 @@ test('[AC-MY-REVIEW-E2E-001] 작성 대기/작성 완료 탭이 서버 목록과
   await expect(page.getByText('작성 기간이 지났어요')).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-01-pending.png')
 
-  // 서버 2건 + 로컬 시드 리뷰 2건.
-  await page.getByRole('tab', { name: '작성 완료 4' }).click()
+  // 서버 2건뿐(로컬 시드 리뷰 없음).
+  await page.getByRole('tab', { name: '작성 완료 2' }).click()
   await expect(page.getByText('서버에 저장된 내 리뷰 본문이에요.')).toBeVisible()
+  await expect(page.getByText('연어러버').first()).toBeVisible()
   await expect(page.getByText('커뮤니티 정책에 따라 일부 표현이 가려졌어요.')).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-02-written.png')
 })
@@ -180,9 +202,9 @@ test('[AC-MY-REVIEW-E2E-002] 서버 작성 대기에서 리뷰를 쓰면 POST �
   await expect.poll(() => posted?.orderItemId).toBe(501)
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('연어 사료를 아이가 정말 잘 먹어요.')).toBeVisible()
-  // 서버 0 + 목업 3, 서버 1 + 목업 2.
+  // 작성 대기 서버 0, 작성 완료 서버 1.
   await expect(page.getByRole('tab', { name: '작성 대기 0' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '작성 완료 3' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '작성 완료 1' })).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-04-after-write.png')
 })
 
@@ -198,7 +220,7 @@ test('[AC-MY-REVIEW-E2E-003] 서버 리뷰를 삭제하면 DELETE를 부르고 �
   })
 
   await page.goto('/reviews/mine')
-  await page.getByRole('tab', { name: '작성 완료 4' }).click()
+  await page.getByRole('tab', { name: '작성 완료 2' }).click()
   const card = page.locator('div.rounded-card', { hasText: '서버에 저장된 내 리뷰 본문이에요.' })
   // 수정 API가 없어 서버 리뷰에는 삭제만 있다.
   await expect(card.getByRole('button', { name: '수정' })).toHaveCount(0)
@@ -209,7 +231,7 @@ test('[AC-MY-REVIEW-E2E-003] 서버 리뷰를 삭제하면 DELETE를 부르고 �
   await page.getByRole('button', { name: '삭제하기' }).click()
   await expect.poll(() => deletedId).toBe('701')
   await expect(page.getByText('서버에 저장된 내 리뷰 본문이에요.')).toBeHidden()
-  await expect(page.getByRole('tab', { name: '작성 완료 3' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '작성 완료 1' })).toBeVisible()
   await shot(page, 'test-results/pr-c/my-reviews-06-after-delete.png')
 })
 

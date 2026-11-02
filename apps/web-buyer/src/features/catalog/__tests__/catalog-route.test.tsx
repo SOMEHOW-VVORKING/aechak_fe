@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry, resetWishlist } from '@/shared/catalog'
-import { PRODUCT_FIXTURES, seedLikedProducts } from '@/testing/msw/server'
+import { PRODUCT_FIXTURES, PRODUCT_LIKE_URL, seedLikedProducts, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function likedSeed(ids: string[]) {
@@ -29,6 +31,8 @@ function renderAt(path: string) {
 describe('/market', () => {
   beforeEach(() => {
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
     resetRegistry()
     resetWishlist()
   })
@@ -123,6 +127,28 @@ describe('/market', () => {
     expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '찜 해제' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '찜하기' })).toBeInTheDocument()
+  })
+
+  it('[AC-GATE-001] 비회원이 마켓 카드 하트를 누르면 게이트가 뜨고 찜 요청이 나가지 않는다', async () => {
+    // 찜 토글은 회원 전용(POST/DELETE /products/{id}/like)이라 비회원은 요청 전에 막아야 한다.
+    // 마켓은 비회원에게 열린 화면이므로 이 게이트가 실제로 닿는 자리다.
+    let likeCalls = 0
+    server.use(
+      http.post(PRODUCT_LIKE_URL, () => {
+        likeCalls += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    logout()
+    renderAt('/market')
+
+    const hearts = await screen.findAllByRole('button', { name: '찜하기' })
+    await user.click(hearts[0]!)
+
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(likeCalls).toBe(0)
+    expect(screen.queryByRole('button', { name: '찜 해제' })).not.toBeInTheDocument()
   })
 
   it('[AC-CATALOG-012] 비회원은 카테고리 트랩 없이 상품만 본다(대분류 칩은 전체만)', async () => {

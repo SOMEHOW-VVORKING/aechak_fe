@@ -6,12 +6,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
+import { setAccessToken, setOnAuthExpired } from '@aechak/api'
+import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
-  setOnAuthExpired,
-  type ProductReviewSummaryResponse,
-  type AiReviewSummaryResponse,
-} from '@aechak/api'
-import {
+  PRODUCT_LIKE_URL,
   PRODUCT_OPTIONS_URL,
   PRODUCT_REVIEW_SUMMARY_URL,
   PRODUCT_REVIEWS_URL,
@@ -21,6 +19,7 @@ import {
   makeCartRow,
   seedCart,
   server,
+  WEB_REFRESH_URL,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -67,6 +66,8 @@ function serveReviewSummary(data: ProductReviewSummaryResponse) {
 describe('/products/$productId', () => {
   beforeEach(() => {
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
     resetRegistry()
   })
 
@@ -244,6 +245,82 @@ describe('/products/$productId', () => {
     expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
   })
 
+  /**
+   * 공유 버튼은 토스트만 띄우고 클립보드를 부르지 않았다 — 사용자가 복사됐다고 읽고 붙여넣으면
+   * 아무것도 없었다. SNS 프로필 공유와 같은 모양(writeText await + 실패 처리)인지 본다.
+   */
+  it('[AC-PRODUCT-034] 공유는 상품 링크를 실제로 클립보드에 쓰고 토스트를 띄운다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '공유' }))
+
+    expect(await screen.findByText('상품 링크를 복사했어요.')).toBeInTheDocument()
+    expect(await navigator.clipboard.readText()).toBe(
+      `${window.location.origin}/products/p-feeder-5l`,
+    )
+  })
+
+  it('[AC-PRODUCT-035] 클립보드 쓰기가 막히면 복사했다고 하지 않고 실패를 알린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+
+    await user.click(screen.getByRole('button', { name: '공유' }))
+
+    expect(await screen.findByText('링크를 복사하지 못했어요.')).toBeInTheDocument()
+    expect(screen.queryByText('상품 링크를 복사했어요.')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 목업 상품은 서버에 없다. 예전엔 하트를 채우고 "찜했어요."를 띄웠는데 /wishlist는 서버 pool을
+   * 찜 id-set으로 필터해 목업 상품이 절대 나타나지 않았다 — 찜했다고 읽고 목록에서 못 찾았다.
+   * 찜 POST가 나가지 않는다는 사실까지 핸들러 호출 수로 못박는다.
+   */
+  it('[AC-PRODUCT-036] 목업 상품은 찜을 받은 척하지 않고 담기지 않는다고 알린다', async () => {
+    let likeCalls = 0
+    server.use(
+      http.post(PRODUCT_LIKE_URL, () => {
+        likeCalls += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
+
+    expect(
+      await screen.findByText('미리보기 상품이라 찜 목록에 담기지 않아요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-disabled', 'true')
+    expect(likeCalls).toBe(0)
+  })
+
+  it('[AC-PRODUCT-037] 실 상품 찜은 그대로 서버로 나가고 하트가 채워진다', async () => {
+    let likeCalls = 0
+    server.use(
+      http.post(PRODUCT_LIKE_URL, () => {
+        likeCalls += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
+
+    expect(await screen.findByText('찜했어요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜 해제' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(likeCalls).toBe(1))
+  })
+
   it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {
     logout()
     const user = userEvent.setup()
@@ -314,6 +391,37 @@ describe('/products/$productId', () => {
     expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
     await waitFor(() => expect(reviewCalls).toBe(0))
     expect(screen.queryByText('소음이 조금 있어요. 기능은 무난해요.')).not.toBeInTheDocument()
+    // 호출을 막은 쿼리는 react-query v5에서 isPending=true다 — 그걸로 분기하면 스켈레톤 3장이
+    // 영구히 남는다. 이 안내가 보이려면 로딩 분기가 isFetching이어야 한다.
+    expect(screen.getByText('리뷰를 보려면 로그인이 필요해요.')).toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-032] 세션 확인이 실패하면 리뷰 칸에 로그인이 필요하다고 적지 않는다', async () => {
+    // refresh 5xx로 회원 여부를 모르는 상태(unknown)다 — refresh 쿠키가 멀쩡한 회원일 수 있어서
+    // "로그인이 필요해요"라고 적으면 사실이 아닌 사유를 읽힌다.
+    resetAuth()
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 }),
+      ),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
+    expect(
+      await screen.findByText('리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('리뷰를 보려면 로그인이 필요해요.')).not.toBeInTheDocument()
+  })
+
+  it('[AC-PRODUCT-031] 비회원도 상세 본문(이름·가격·옵션 진입)을 끝까지 본다', async () => {
+    // GET /products/{id}는 BE가 permitAll로 열어 둔 게스트 카탈로그다 — 비회원이 공유 링크로
+    // 들어와도 상세가 로그인 화면으로 바뀌지 않아야 한다.
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    expect(screen.queryByText('로그인이 필요해요')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-020] 미리보기 조회가 실패하면 빈 목록 대신 사유를 알린다', async () => {

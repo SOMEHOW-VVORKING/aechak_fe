@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import { resetWishlist } from '@/shared/catalog'
 import { logout, resetAuth } from '@/shared/auth'
-import { PRODUCT_FIXTURES, seedLikedProducts } from '@/testing/msw/server'
+import { LIKED_PRODUCTS_URL, PRODUCT_FIXTURES, seedLikedProducts, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 // 찜 목록은 서버(GET /users/me/liked-products)로 구동한다. 상태·응답 계약은 testing/msw/server.ts가
@@ -31,6 +33,8 @@ describe('/wishlist', () => {
   beforeEach(() => {
     resetWishlist()
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
   })
 
   it('[AC-WISH-004] 찜한 상품 그리드를 보여주고 하트 해제 시 실행 취소 토스트가 뜨며 목록에서 빠진다', async () => {
@@ -70,22 +74,24 @@ describe('/wishlist', () => {
     )
   })
 
-  it('[AC-GATE-001] 비회원이 카드 하트를 누르면 게이트가 뜨고 찜은 토글되지 않는다', async () => {
+  it('[AC-WISH-GUEST-001] 비회원은 찜 목록 대신 로그인 안내를 보고 서버를 부르지 않는다', async () => {
     seedLikedProducts(likedSeed(['p-real-1', 'p-real-2']))
-    const user = userEvent.setup()
+    let requested = 0
+    server.use(
+      http.get(LIKED_PRODUCTS_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { products: [], nextCursor: null, hasNext: false } })
+      }),
+    )
     logout()
     renderAt('/wishlist')
 
-    const hearts = await screen.findAllByRole('button', { name: '찜 해제' })
-    const initialCount = hearts.length
-    expect(initialCount).toBe(2)
-
-    await user.click(hearts[0]!)
-
-    // 게이트가 뜨고, 찜은 그대로(토글 안 됨) — 해제 토스트도 뜨지 않는다.
+    // 빈 화면이나 영구 스켈레톤이 아니라 왜 비었는지와 다음 행동이 보인다.
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: '찜 해제' })).toHaveLength(initialCount)
-    expect(screen.queryByText('찜을 해제했어요.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    // 회원 전용 API를 아예 부르지 않으므로 401 → 전역 로그인 리다이렉트로 화면을 잃지 않는다.
+    expect(requested).toBe(0)
+    expect(screen.queryByRole('button', { name: '찜 해제' })).not.toBeInTheDocument()
   })
 
   it('[AC-WISH-005] 찜한 상품이 없으면 빈 상태를 보여준다', async () => {

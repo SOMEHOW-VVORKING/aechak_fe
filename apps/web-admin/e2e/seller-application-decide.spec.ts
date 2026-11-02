@@ -445,7 +445,7 @@ test('[AC-ADM-E2E-023] 사유를 고르기 전에는 제출이 잠기고, 직접
 
   await page.getByRole('button', { name: '해피독몰' }).click()
   await expect(page.getByRole('heading', { name: '입점 신청 상세' })).toBeVisible()
-  await page.getByText('신청 반려 / 사유 통보 후 재제출 유도').click()
+  await page.getByText('신청 반려 / 사유 기록 후 재제출 유도').click()
 
   // 사유 없는 반려는 서버가 400/10102로 거절한다 — 화면이 먼저 막는다.
   await expect(page.getByRole('button', { name: '제출' })).toBeDisabled()
@@ -465,7 +465,7 @@ test('[AC-ADM-E2E-023] 사유를 고르기 전에는 제출이 잠기고, 직접
   await modalConfirm(page, '신청을 반려할까요?').click()
   await expect(page.getByText('신청을 반려했어요.')).toBeVisible()
 
-  // 프리셋이 아닌 사유는 운영자가 쓴 원문이 그대로 통보된다(앞뒤 공백만 걷는다).
+  // 프리셋이 아닌 사유는 운영자가 쓴 원문이 그대로 기록된다(앞뒤 공백만 걷는다).
   expect(recorded.decisions).toEqual([
     {
       method: 'POST',
@@ -498,7 +498,7 @@ test('[AC-ADM-E2E-024] 상세 조회 500이면 Drawer가 사유를 알리고 결
 
   await expect(page.getByText('신청 상세를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')).toBeVisible()
   // 백지 Drawer가 뜨면 "신청서가 비었다"로 읽힌다 — 요약 필드도, 결정 입력도 없어야 한다.
-  await expect(page.getByText('신청 반려 / 사유 통보 후 재제출 유도')).toHaveCount(0)
+  await expect(page.getByText('신청 반려 / 사유 기록 후 재제출 유도')).toHaveCount(0)
   // 상세를 못 받은 상태에서 결정 버튼이 눌리면 낡은 대상으로 승인·반려가 나간다.
   await expect(page.getByRole('button', { name: '제출' })).toHaveCount(0)
   expect(recorded.decisions).toEqual([])
