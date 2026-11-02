@@ -30,7 +30,7 @@ function renderAt(path: string) {
 
 // 결정 라디오는 접근 가능한 이름이 없다(DS Radio는 label을 받지 않고 DecisionRadioGroup이
 // 직접 텍스트를 그린다) — '반려'는 상태 필터 옵션과도 겹치므로 고유한 부제목으로 집는다.
-const REJECT_OPTION_CAPTION = '신청 반려 / 사유 통보 후 재제출 유도'
+const REJECT_OPTION_CAPTION = '신청 반려 / 사유 기록 후 재제출 유도'
 
 /**
  * 서류 열기는 클릭 제스처 안에서 빈 탭을 먼저 확보하고 재조회 뒤 URL을 채운다. 가짜 탭을
@@ -138,6 +138,42 @@ describe('/sellers/applications', () => {
       const row = screen.getByRole('button', { name: '해피독몰' }).closest('tr')
       expect(row).toHaveTextContent('승인')
     })
+  })
+
+  /**
+   * BE에 통지 도메인이 없어 승인·반려 뒤 신청자에게 메일도 알림도 나가지 않는다. 예전 문구가
+   * "신청자에게 통보돼요"라 운영자가 통보를 끝난 일로 읽었다 — 선택 칸과 확인 모달 둘 다에서
+   * 통보 없음과 운영자가 할 일을 말하는지 본다. 한쪽만 고치면 다른 쪽이 거짓으로 남는다.
+   */
+  it('[AC-SELLER-APP-017] 심사 결정 화면은 자동 통보가 없다고 밝히고 운영자가 할 일을 적는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sellers/applications')
+
+    await user.click(await screen.findByRole('button', { name: '해피독몰' }))
+    const drawer = await screen.findByRole('heading', { name: '입점 신청 상세' })
+    const panel = drawer.closest('[role="dialog"]') as HTMLElement
+
+    expect(
+      within(panel).getByText(/메일·알림은 나가지 않으니 결과는\s*따로 알려 주세요/),
+    ).toBeInTheDocument()
+    expect(within(panel).queryByText(/통보돼요/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '제출' }))
+    const approveModal = (
+      await screen.findByRole('heading', { name: '입점을 승인할까요?' })
+    ).closest('[role="dialog"]') as HTMLElement
+    expect(within(approveModal).getByText(/승인 사실은 따로 알려 주세요/)).toBeInTheDocument()
+    await user.click(within(approveModal).getByRole('button', { name: '취소' }))
+
+    await user.click(screen.getByText(REJECT_OPTION_CAPTION))
+    await user.selectOptions(screen.getByRole('combobox', { name: '반려 사유' }), 'incomplete-docs')
+    await user.click(screen.getByRole('button', { name: '제출' }))
+    const rejectModal = (
+      await screen.findByRole('heading', { name: '신청을 반려할까요?' })
+    ).closest('[role="dialog"]') as HTMLElement
+    // 반려 사유는 신청자 화면(스토어 설정)에 실제로 뜨므로, 그 사실은 남기고 통보만 지운다.
+    expect(within(rejectModal).getByText(/스토어 설정 화면에 그대로 표시되고/)).toBeInTheDocument()
+    expect(within(rejectModal).getByText(/반려 사실은 따로 알려 주세요/)).toBeInTheDocument()
   })
 
   it('[AC-SELLER-APP-004] 반려는 고른 슬러그가 서버 자유 문자열로 나간다', async () => {
@@ -353,8 +389,8 @@ describe('/sellers/applications', () => {
     await screen.findByRole('heading', { name: '입점 신청 상세' })
 
     expect(await screen.findByText('통장 사본이 흐려 확인할 수 없었어요')).toBeInTheDocument()
-    // 통보된 반려 사유 블록은 status가 rejected일 때만 뜨므로 이 화면에는 없다.
-    expect(screen.queryByText('통보된 반려 사유')).not.toBeInTheDocument()
+    // 신청자에게 보이는 반려 사유 블록은 status가 rejected일 때만 뜨므로 이 화면에는 없다.
+    expect(screen.queryByText('신청자에게 보이는 반려 사유')).not.toBeInTheDocument()
   })
 
   it('[AC-SELLER-APP-015] 목록 날짜 컬럼 라벨은 값과 같은 제출일이다', async () => {

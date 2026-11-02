@@ -106,7 +106,7 @@ const HEADER_META: Record<ScreenStatus, HeaderMeta> = {
   },
   submitted: {
     title: '스토어 개설 심사',
-    description: '입점 신청이 접수됐어요. 심사가 시작되면 알려드릴게요.',
+    description: '입점 신청이 접수됐어요. 심사가 시작되면 이 화면의 상태가 바뀌어요.',
     pillVariant: 'neutral',
     pillLabel: '심사 대기',
     pillIcon: Clock,
@@ -242,7 +242,7 @@ function StoreSettingsRoute() {
   function handleSubmit() {
     void performSave(() => {
       submitApplication.mutate({
-        onSuccess: () => toast.show('제출했어요. 심사 결과를 알림으로 알려드릴게요.'),
+        onSuccess: () => toast.show('제출했어요. 심사 결과는 이 화면에서 확인할 수 있어요.'),
         onError: error => setActionError(sellerApplicationErrorMessage(error)),
       })
     })
@@ -307,7 +307,7 @@ function StoreSettingsRoute() {
           icon: <Clock className="size-6" />,
           title: status === 'submitted' ? '심사 대기 중이에요' : '심사 중이에요',
           description:
-            '제출해주신 서류를 확인하고 있어요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
+            '제출해주신 서류를 확인하고 있어요. 보통 1~2영업일 걸려요. 따로 알림이 가지 않으니 이 화면에서 결과를 확인해 주세요.',
         }
       : status === 'approved'
         ? {
@@ -409,7 +409,7 @@ function StoreSettingsRoute() {
               ) : (
                 <>
                   <Clock className="size-3.5" />
-                  제출하면 1~2영업일 안에 심사 결과를 알림으로 보내드려요.
+                  제출하면 보통 1~2영업일 안에 결과가 이 화면에 표시돼요.
                 </>
               )}
             </span>
