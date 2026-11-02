@@ -14,12 +14,11 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -228,6 +227,39 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
 
     await screen.findByText('저장했어요.')
     expect(currentShippingPolicy().defaultCourierCode).toBeNull()
+  })
+
+  /**
+   * 출고지 3필드는 스토어 설정의 주소와 **같은 서버 컬럼**이다. 재진입 때 캐시된 옛 출고지로
+   * 폼을 확정하면, 전체 덮어쓰기 저장이 그 사이 스토어 설정에서 바꾼 주소를 되돌린다.
+   * 같은 QueryClient 로 두 번 렌더해 캐시가 남은 재진입을 재현한다.
+   */
+  it('[AC-SHIP-ROUTE-014] 재진입 때 캐시된 옛 출고지로 저장하지 않는다', async () => {
+    // 반품지가 출고지와 동일이라 같은 값을 가진 입력이 둘이다 — 출고지 칸을 id로 집는다.
+    const originRoad = () => document.getElementById('origin-road') as HTMLInputElement | null
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const first = renderAt('/shipping-policy', queryClient)
+    await waitFor(() => expect(originRoad()).toHaveValue('서울 마포구 와우산로 00'))
+    first.unmount()
+
+    // 그 사이 스토어 설정이 같은 주소 컬럼을 바꿨다.
+    seedShippingPolicy(
+      makeShippingPolicyWire({ ...SAVED, originRoadAddress: '서울 강남구 테헤란로 1' }),
+    )
+    const user = userEvent.setup()
+    renderAt('/shipping-policy', queryClient)
+
+    await waitFor(() => expect(originRoad()).toHaveValue('서울 강남구 테헤란로 1'))
+
+    // 배송비만 고쳐 저장해도 출고지가 옛 값으로 되돌아가지 않는다.
+    const amounts = screen.getAllByRole('textbox', { name: '값' })
+    await user.clear(amounts[0]!)
+    await user.type(amounts[0]!, '4000')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentShippingPolicy().baseShippingFee).toBe(4000)
+    expect(currentShippingPolicy().originRoadAddress).toBe('서울 강남구 테헤란로 1')
   })
 
   it('[AC-SHIP-ROUTE-013] 금액 칸에 소수를 넣어도 원 단위 정수로 저장된다', async () => {

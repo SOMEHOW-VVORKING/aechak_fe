@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Alert, Button, EmptyState, PageHeader, Skeleton } from '@aechak/design-system/web'
 import { useToast } from '@/shared/hooks/useToast'
+import { mergeDirty } from '@/shared/mergeDirty'
 import {
   SAVE_BLOCKED_MESSAGE,
   ShippingPolicyForm,
@@ -19,23 +20,34 @@ export const Route = createFileRoute('/shipping-policy/')({
 })
 
 function ShippingPolicyRoute() {
-  const { data, isLoading, isError, refetch } = useShippingPolicy()
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useShippingPolicy()
   const [form, setForm] = useState<ShippingPolicyFormValue | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const toast = useToast()
   const updatePolicy = useUpdateShippingPolicy()
-  const seededRef = useRef(false)
+  const seededAtRef = useRef(0)
+  const dirtyKeysRef = useRef(new Set<keyof ShippingPolicyFormValue>())
 
-  // 서버 값으로 한 번만 시드 — 저장 성공으로 캐시가 갱신돼도 재시딩하지 않아 입력을 보존한다
-  // (store-settings와 같은 가드). 저장이 바꾼 서버 파생 값은 onSuccess에서 직접 반영한다.
+  /**
+   * 서버 값으로 시드. **진행 중인 조회가 끝난 뒤에만** 시드하고, 응답이 갱신되면 사용자가
+   * 건드리지 않은 칸만 새 값으로 맞춘다(건드린 칸은 입력을 지킨다).
+   *
+   * 1회만 시드하면 데이터가 지워진다: 출고지 3필드는 스토어 설정의 주소와 **같은 서버
+   * 컬럼**이다. 이 화면을 한 번 본 뒤(캐시 A) 스토어 설정에서 주소를 B로 저장하고 돌아와
+   * 배송비만 고쳐 저장하면, 캐시 A가 확정한 폼이 전체 덮어쓰기로 출고지를 A로 되돌린다.
+   * 저장이 바꾼 서버 파생 값(반품지 동일 시 반품지 소거)은 onSuccess에서 직접 반영한다.
+   */
   useEffect(() => {
-    if (data && !seededRef.current) {
-      seededRef.current = true
-      setForm(formValueFrom(data))
-    }
-  }, [data])
+    if (!data || isFetching || seededAtRef.current === dataUpdatedAt) return
+    seededAtRef.current = dataUpdatedAt
+    const next = formValueFrom(data)
+    setForm(prev => (prev ? mergeDirty(next, prev, dirtyKeysRef.current) : next))
+  }, [data, isFetching, dataUpdatedAt])
 
   function handleChange(patch: Partial<ShippingPolicyFormValue>) {
+    for (const key of Object.keys(patch) as (keyof ShippingPolicyFormValue)[]) {
+      dirtyKeysRef.current.add(key)
+    }
     setForm(prev => (prev ? { ...prev, ...patch } : prev))
     setActionError(null)
   }
@@ -53,6 +65,7 @@ function ShippingPolicyRoute() {
       // PUT이 204라 응답 바디가 없다 — 보낸 본문에 서버 규칙(반품지 동일 시 반품지 소거)을
       // 적용한 결과를 폼에 되맞춘다. 안 하면 저장된 값과 화면이 갈린다.
       onSuccess: applied => {
+        dirtyKeysRef.current.clear()
         setForm(formValueFrom(applied))
         toast.show('저장했어요.')
       },
@@ -60,7 +73,8 @@ function ShippingPolicyRoute() {
     })
   }
 
-  if (isLoading) {
+  // 조회가 끝나기 전에는 폼이 없다(캐시 값으로 확정하지 않는다) — 그 사이는 스켈레톤이다.
+  if (isLoading || (data != null && form == null)) {
     return (
       <div className="flex flex-col gap-4 p-6">
         <Skeleton variant="rect" className="h-10 w-64" />
@@ -71,7 +85,7 @@ function ShippingPolicyRoute() {
 
   // 화면 전체가 이 한 조회에 달려 있다 — 실패를 빈 폼으로 떨구면 저장이 전체 덮어쓰기라
   // 서버에 있는 값을 0원으로 지워 버린다. 백지 대신 재시도를 둔다.
-  if (isError || !form) {
+  if (isError || !data || !form) {
     return (
       <div className="p-6">
         <PageHeader title="배송 정책" />

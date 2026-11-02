@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
 import {
   SELLER_STORE_URL,
   currentSellerApplication,
@@ -289,7 +290,45 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
   })
 
-  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
+  /**
+   * 입력 중에 도착한 새 응답은 **건드린 칸만** 비켜 가야 한다. 폼 전체를 지키면, 상호만 고치는
+   * 동안 다른 화면(배송 정책)이 바꾼 주소가 버려지고 전체 덮어쓰기 저장이 옛 주소를 되돌린다.
+   * 상호를 고친 뒤 무효화로 재조회를 일으켜 "입력 중 새 응답 도착"을 만든다.
+   */
+  it('[AC-STORE-ROUTE-016] 입력 중에 도착한 새 주소는 버리지 않고 건드린 칸만 지킨다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 그 사이 다른 화면이 같은 주소 컬럼을 바꿨고, 재조회가 새 값을 들고 온다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    // 건드리지 않은 주소는 새 값으로 맞춰지고, 건드린 상호는 입력이 남는다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.storeName).toBe('애착스토어')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
   it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
     renderAt('/store-settings')

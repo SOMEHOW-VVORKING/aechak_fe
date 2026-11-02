@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, EmptyState, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { AlertCircle } from 'lucide-react'
 import { useToast } from '@/shared/hooks/useToast'
+import { mergeDirty } from '@/shared/mergeDirty'
 import {
   formValueFrom,
   storeNameError,
@@ -30,29 +31,32 @@ export function StoreProfileSection() {
   const toast = useToast()
   // 폼을 시드한 응답의 시각. 1회성 플래그가 아니라 시각인 이유는 아래 effect 주석에 있다.
   const seededAtRef = useRef(0)
-  // 사용자가 폼을 건드렸는지. 건드린 뒤에는 새 서버 값으로 덮지 않는다(입력 보존).
-  const dirtyRef = useRef(false)
+  // 사용자가 건드린 칸. 그 칸만 입력을 지키고 나머지는 새 서버 값으로 맞춘다.
+  const dirtyKeysRef = useRef(new Set<keyof StoreProfileFormValue>())
 
   const store = data?.store ?? null
 
   /**
    * 서버 값으로 시드. 입점 신청 폼의 "1회만" 가드와 달리 **진행 중인 조회가 끝난 뒤에만**
-   * 시드하고, 응답이 갱신되면 사용자가 건드리기 전까지 다시 시드한다.
+   * 시드하고, 응답이 갱신되면 **건드리지 않은 칸은** 새 값으로 맞춘다.
    *
    * 1회성 가드로는 데이터가 지워진다: 주소 3필드는 배송 정책의 출고지와 **같은 컬럼**이다.
    * 스토어 설정을 한 번 본 뒤(캐시 A) 배송 정책에서 출고지를 B로 저장하고 돌아오면, 캐시 A가
    * 폼을 확정해 버리고 뒤늦게 도착한 B가 반영되지 않는다. 저장은 전체 덮어쓰기라 그 폼이
-   * 서버 출고지를 A로 되돌린다(codex 교차검증에서 잡힌 경로).
+   * 서버 출고지를 A로 되돌린다. 입력 보존을 폼 전체로 걸면 같은 일이 다시 생긴다 — 상호만
+   * 고치는 동안 도착한 새 주소가 버려지고 저장이 옛 주소를 되돌린다. 그래서 칸 단위다.
    */
   useEffect(() => {
-    if (!store || isFetching) return
-    if (dirtyRef.current || seededAtRef.current === dataUpdatedAt) return
+    if (!store || isFetching || seededAtRef.current === dataUpdatedAt) return
     seededAtRef.current = dataUpdatedAt
-    setForm(formValueFrom(store))
+    const next = formValueFrom(store)
+    setForm(prev => (prev ? mergeDirty(next, prev, dirtyKeysRef.current) : next))
   }, [store, isFetching, dataUpdatedAt])
 
   function handleChange(patch: Partial<StoreProfileFormValue>) {
-    dirtyRef.current = true
+    for (const key of Object.keys(patch) as (keyof StoreProfileFormValue)[]) {
+      dirtyKeysRef.current.add(key)
+    }
     setForm(prev => (prev ? { ...prev, ...patch } : prev))
     setActionError(null)
   }
@@ -71,8 +75,8 @@ export function StoreProfileSection() {
         // PUT이 204라 응답 바디가 없다 — 보낸 본문에 서버 규칙(공백 제거, 빈 칸 → null)을
         // 적용한 결과로 폼을 되맞춘다. 안 하면 저장된 값과 화면이 갈린다.
         onSuccess: applied => {
-          // 저장이 끝나면 다시 서버 값과 같아진 상태다 — dirty를 풀어 이후 응답이 폼을 따라오게 한다.
-          dirtyRef.current = false
+          // 저장이 끝나면 다시 서버 값과 같아진 상태다 — 건드린 칸 기록을 비워 이후 응답이 폼을 따라오게 한다.
+          dirtyKeysRef.current.clear()
           setForm(formValueFrom(applied))
           toast.show('저장했어요.')
         },
