@@ -101,7 +101,7 @@ interface AppShellProps {
   navFooter?: ReactNode
 }
 
-export function AppShell({ navFooter }: AppShellProps = {}) {
+export function AppShell({ navFooter }: AppShellProps) {
   const navigate = useNavigate()
   const pathname = useRouterState({ select: state => state.location.pathname })
   const isNarrow = useIsNarrowViewport()

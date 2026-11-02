@@ -71,16 +71,17 @@ describe('어드민 로그아웃 (SCRUM-353)', () => {
   })
   afterEach(() => setAccessToken(null))
 
-  it('[AC-ADMIN-LOGOUT-001] 확인 문구가 "다른 앱도 함께 로그아웃된다"는 사실을 밝힌다', async () => {
+  it('[AC-ADMIN-LOGOUT-001] 확인 문구가 쿠키 공유와 "다른 앱은 새로 고치면 다시 로그인"을 밝힌다', async () => {
     const user = userEvent.setup()
     renderAt('/admins')
 
     await user.click(await screen.findByRole('button', { name: '로그아웃' }))
 
     // 쿠키를 세 앱이 공유한다는 사실을 운영자가 확인 전에 읽어야 한다 — 없으면 옆 탭의 구매자
-    // 앱이 함께 끊긴 것을 장애로 읽는다.
-    expect(await screen.findByText(/구매자 앱과 셀러센터도 로그아웃/)).toBeInTheDocument()
-    expect(screen.getByText(/로그인 쿠키 하나를 함께/)).toBeInTheDocument()
+    // 앱이 끊긴 것을 장애로 읽는다. "지금 끊긴다"가 아니라 "새로 고치면"까지만 약속해야 맞다
+    // (다른 탭의 메모리 토큰·로그인 플래그는 이 앱이 건드릴 수 없다).
+    expect(await screen.findByText(/로그인 쿠키 하나를 함께/)).toBeInTheDocument()
+    expect(screen.getByText(/구매자 앱과 셀러센터도 새로 고치면 다시 로그인/)).toBeInTheDocument()
   })
 
   it('[AC-ADMIN-LOGOUT-002] 확인하면 api 호스트로 로그아웃 1회 → 토큰 파기 → 로그인 화면', async () => {
@@ -114,7 +115,7 @@ describe('어드민 로그아웃 (SCRUM-353)', () => {
     expect(screen.queryByText('로그아웃할까요?')).not.toBeInTheDocument()
   })
 
-  it('[AC-ADMIN-LOGOUT-004] 전송이 실패하면 "아직 로그인 상태"를 밝히고 세션을 건드리지 않는다', async () => {
+  it('[AC-ADMIN-LOGOUT-004] 전송이 실패하면 "확인하지 못했다"를 밝히고 세션을 건드리지 않는다', async () => {
     const calls = stubLogout(500)
     const user = userEvent.setup()
     const { router } = renderAt('/admins')
@@ -122,8 +123,8 @@ describe('어드민 로그아웃 (SCRUM-353)', () => {
     await confirmLogout(user)
 
     const alert = await logoutDialog().findByRole('alert')
-    expect(alert).toHaveTextContent('로그아웃하지 못했어요')
-    expect(alert).toHaveTextContent('아직 로그인 상태예요')
+    expect(alert).toHaveTextContent('로그아웃을 확인하지 못했어요')
+    expect(alert).toHaveTextContent('이 화면은 아직 로그인 상태예요')
     expect(calls).toHaveLength(1)
     // 실패에서 토큰을 비우면 쿠키가 살아 있는 채로 다음 요청이 세션을 되살려 "로그아웃한 것
     // 같은데 같은 계정"이 된다 — 그 상태를 만들지 않는 것이 이 단언이다.
@@ -137,7 +138,7 @@ describe('어드민 로그아웃 (SCRUM-353)', () => {
     renderAt('/admins')
 
     await confirmLogout(user)
-    expect(await logoutDialog().findByRole('alert')).toHaveTextContent('로그아웃하지 못했어요')
+    expect(await logoutDialog().findByRole('alert')).toHaveTextContent('로그아웃을 확인하지 못했어요')
 
     await user.click(screen.getByRole('button', { name: '취소' }))
     await user.click(await screen.findByRole('button', { name: '로그아웃' }))

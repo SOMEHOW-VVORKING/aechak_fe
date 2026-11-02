@@ -13,6 +13,14 @@ import { endServerSession } from './auth.session'
  * 세션을 복원해 "로그아웃한 것 같은데 같은 계정"이라는 상태가 되고, 그게 데모에서 가장 헷갈린다.
  * 실패는 그대로 두고 화면이 재시도를 권한다.
  */
+/**
+ * 알려진 한계(이 묶음 범위 밖): 업무 요청의 401로 **진행 중인** refresh가 로그아웃 204 뒤에
+ * 응답하면 공유 클라이언트의 401 인터셉터가 `setAccessToken(newToken)`으로 토큰을 되살린다
+ * (`packages/api/src/client.ts` — refresh Promise는 모듈 스코프라 여기서 취소할 수 없다).
+ * 막으려면 세션 세대 표식이 그 파일에 필요한데, 세 앱이 공유하는 세션·토큰 정책이라 이 묶음에서
+ * 손대지 않았다. 창은 좁다 — 서버가 revoke 전에 refresh를 처리하고 그 응답만 늦게 와야 한다
+ * (revoke 뒤에 닿은 refresh는 401이고, 그 경로는 인터셉터가 토큰을 비운다).
+ */
 export function useLogout() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()

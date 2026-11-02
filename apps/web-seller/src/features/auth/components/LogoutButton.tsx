@@ -9,10 +9,15 @@ import { useLogout } from '../auth.queries'
  * 확인 한 단계를 두는 것은 구매자 앱 설정 홈과 같은 모양이다 — 되돌릴 수 없는 조치는 아니지만
  * 실수로 눌리면 다시 로그인해야 하고, 데모 중에는 그게 흐름이 끊기는 것이다.
  *
- * 문구에 "구매자 앱과 어드민도 함께 로그아웃된다"를 적는 이유는 그것이 실제 동작이기 때문이다.
+ * 문구에 "구매자 앱과 어드민도 영향을 받는다"를 적는 이유는 그것이 실제 동작이기 때문이다.
  * refresh 쿠키는 Domain 없이 api 호스트에 묶여(`Path=/api/v1/auth`) 세 웹앱이 같은 쿠키 하나를
  * 쓰고, 서버 로그아웃은 그 refresh 토큰 자체를 폐기한다(BE `WebAuthController.logout`). 적어
- * 두지 않으면 운영자는 옆 탭의 구매자 앱이 함께 끊긴 것을 장애로 읽는다.
+ * 두지 않으면 운영자는 옆 탭의 구매자 앱이 끊긴 것을 장애로 읽는다.
+ *
+ * 다만 **"다른 앱도 지금 로그아웃된다"고 쓰지 않는다** — 쿠키와 서버 세션만 사라지고, 이미 열려
+ * 있는 다른 탭의 메모리 access 토큰과 로그인 플래그는 이 앱이 건드릴 수 없다. 그 탭은 새로
+ * 고치거나 토큰이 만료되는 시점에 로그인 화면으로 떨어진다. 그래서 "새로 고치면 다시 로그인해야
+ * 한다"까지만 약속한다(지금 끊긴다고 쓰면 거짓이다).
  */
 export function LogoutButton() {
   const [open, setOpen] = useState(false)
@@ -39,15 +44,15 @@ export function LogoutButton() {
         open={open}
         onClose={close}
         title="로그아웃할까요?"
-        description="구매자 앱·셀러센터·어드민이 로그인 쿠키 하나를 함께 써요. 여기서 로그아웃하면 같은 브라우저의 구매자 앱과 어드민도 로그아웃돼요."
+        description="구매자 앱/셀러센터/어드민이 로그인 쿠키 하나를 함께 써요. 여기서 로그아웃하면 그 쿠키가 지워져서, 같은 브라우저의 구매자 앱과 어드민도 새로 고치면 다시 로그인해야 해요."
         confirmLabel="로그아웃"
         cancelLabel="취소"
         onConfirm={() => logout.mutate(undefined)}
         loading={logout.isPending}
       >
         {logout.isError && (
-          <Alert variant="error" title="로그아웃하지 못했어요">
-            서버에 로그아웃을 전하지 못해 아직 로그인 상태예요. 잠시 뒤 다시 시도해 주세요.
+          <Alert variant="error" title="로그아웃을 확인하지 못했어요">
+            이 화면은 아직 로그인 상태예요. 다시 시도해 주세요. 여러 번 눌러도 문제없어요.
           </Alert>
         )}
       </Modal>
