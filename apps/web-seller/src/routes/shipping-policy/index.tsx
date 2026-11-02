@@ -19,6 +19,18 @@ export const Route = createFileRoute('/shipping-policy/')({
   component: ShippingPolicyRoute,
 })
 
+/**
+ * 스위치와 그 스위치가 무효화하는 칸은 한 묶음으로 지킨다.
+ *
+ * 한쪽만 지키면 지킨 입력이 저장에서 버려진다: 반품지 도로명만 고치는 동안 다른 화면이
+ * "출고지와 동일"을 켜면, 체크는 dirty가 아니라 true로 병합되고 저장은 반품지 3필드를
+ * null로 보낸다(서버도 동일 체크가 참이면 소거한다). 무료배송 금액과 운영 스위치도 같다.
+ */
+const DIRTY_GROUPS: (keyof ShippingPolicyFormValue)[][] = [
+  ['returnSameAsOrigin', 'returnZipCode', 'returnRoadAddress', 'returnDetailAddress'],
+  ['freeShipping', 'freeShippingThreshold'],
+]
+
 function ShippingPolicyRoute() {
   const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useShippingPolicy()
   const [form, setForm] = useState<ShippingPolicyFormValue | null>(null)
@@ -47,6 +59,9 @@ function ShippingPolicyRoute() {
   function handleChange(patch: Partial<ShippingPolicyFormValue>) {
     for (const key of Object.keys(patch) as (keyof ShippingPolicyFormValue)[]) {
       dirtyKeysRef.current.add(key)
+      for (const group of DIRTY_GROUPS) {
+        if (group.includes(key)) for (const sibling of group) dirtyKeysRef.current.add(sibling)
+      }
     }
     setForm(prev => (prev ? { ...prev, ...patch } : prev))
     setActionError(null)
@@ -102,8 +117,15 @@ function ShippingPolicyRoute() {
     <div className="p-6">
       <PageHeader
         title="배송 정책"
+        // 재조회 중에는 저장을 막는다 — 스토어 설정이 바꾼 주소가 아직 도착하지 않았는데
+        // 저장하면 전체 덮어쓰기가 그 변경을 되돌린다.
         actions={
-          <Button size="sm" onClick={handleSave} loading={updatePolicy.isPending}>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            loading={updatePolicy.isPending}
+            disabled={isFetching}
+          >
             저장
           </Button>
         }
@@ -116,7 +138,9 @@ function ShippingPolicyRoute() {
       )}
 
       <p className="-mt-2 mb-4 text-body-sm text-text-tertiary">
-        저장하면 입력한 내용으로 전체가 덮어써져요. 출고지 주소는 스토어 설정의 주소와 같은 값이에요.
+        {isFetching
+          ? '최신 값을 다시 불러오는 중이라 저장을 잠시 막았어요. 잠시만 기다려 주세요.'
+          : '저장하면 입력한 내용으로 전체가 덮어써져요. 출고지 주소는 스토어 설정의 주소와 같은 값이에요.'}
       </p>
 
       {/* 저장 중에는 폼을 잠근다 — 성공 콜백이 보낸 본문으로 폼을 되맞추므로, 응답을 기다리는

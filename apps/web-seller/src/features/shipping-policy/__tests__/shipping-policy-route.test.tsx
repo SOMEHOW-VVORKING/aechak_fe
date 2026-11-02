@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { SHIPPING_POLICY_QUERY_KEY } from '@/features/shipping-policy'
 import {
   SELLER_SHIPPING_POLICY_URL,
   currentShippingPolicy,
@@ -227,6 +228,42 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
 
     await screen.findByText('저장했어요.')
     expect(currentShippingPolicy().defaultCourierCode).toBeNull()
+  })
+
+  /**
+   * 스위치가 무효화하는 칸만 지키면 지킨 입력이 저장에서 버려진다. 반품지 도로명만 고치는
+   * 동안 다른 화면이 "출고지와 동일"을 켜면, 체크가 true로 병합되고 저장이 반품지 3필드를
+   * null로 보낸다 — 스위치와 종속 칸을 한 묶음으로 지키는지 본다.
+   */
+  it('[AC-SHIP-ROUTE-015] 반품지를 고치는 중이면 동일 체크도 함께 지킨다', async () => {
+    seedShippingPolicy(
+      makeShippingPolicyWire({ ...SAVED, returnSameAsOrigin: false, returnZipCode: '06236' }),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    renderAt('/shipping-policy', queryClient)
+
+    const returnRoad = await screen.findByLabelText('도로명주소', { selector: '#return-road' })
+    await user.clear(returnRoad)
+    await user.type(returnRoad, '서울 송파구 올림픽로 1')
+
+    // 그 사이 다른 화면이 "출고지와 동일"을 켜서 저장했고, 재조회가 그 값을 들고 온다.
+    seedShippingPolicy(makeShippingPolicyWire({ ...SAVED, returnSameAsOrigin: true }))
+    await queryClient.invalidateQueries({ queryKey: SHIPPING_POLICY_QUERY_KEY })
+
+    // 체크는 내가 고치던 상태(해제)로 남고, 고친 반품지도 남는다.
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: '출고지와 동일' })).not.toBeChecked(),
+    )
+    expect(screen.getByLabelText('도로명주소', { selector: '#return-road' })).toHaveValue(
+      '서울 송파구 올림픽로 1',
+    )
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await screen.findByText('저장했어요.')
+    const saved = currentShippingPolicy()
+    expect(saved.returnSameAsOrigin).toBe(false)
+    expect(saved.returnRoadAddress).toBe('서울 송파구 올림픽로 1')
   })
 
   /**

@@ -132,7 +132,14 @@ export function StoreProfileSection() {
             {SELLER_STATUS_LABEL[store.status] ?? store.status}
           </StatusPill>
         </div>
-        <Button size="sm" onClick={handleSave} loading={updateStore.isPending} disabled={isPaused}>
+        {/* 재조회 중에는 저장을 막는다 — 다른 화면이 바꾼 값이 아직 도착하지 않았는데 저장하면
+            전체 덮어쓰기가 그 변경을 되돌린다(병합 effect는 조회가 끝난 뒤에야 돈다). */}
+        <Button
+          size="sm"
+          onClick={handleSave}
+          loading={updateStore.isPending}
+          disabled={isPaused || isFetching}
+        >
           저장
         </Button>
       </div>
@@ -151,8 +158,9 @@ export function StoreProfileSection() {
 
       <p className="flex items-center gap-1.5 text-body-sm text-text-tertiary">
         <AlertCircle className="size-3.5 flex-none" />
-        저장하면 입력한 내용으로 전체가 덮어써져요. 스토어 대표·배너 이미지는 아직 이 화면에서 바꿀
-        수 없고, 저장해도 지금 올라가 있는 이미지는 그대로 남아요.
+        {isFetching
+          ? '최신 값을 다시 불러오는 중이라 저장을 잠시 막았어요. 잠시만 기다려 주세요.'
+          : '저장하면 입력한 내용으로 전체가 덮어써져요. 스토어 대표·배너 이미지는 아직 이 화면에서 바꿀 수 없고, 저장해도 지금 올라가 있는 이미지는 그대로 남아요.'}
       </p>
 
       {/* 저장 중에는 폼을 잠근다 — 성공 콜백이 보낸 본문으로 폼을 되맞추므로, 응답을 기다리는

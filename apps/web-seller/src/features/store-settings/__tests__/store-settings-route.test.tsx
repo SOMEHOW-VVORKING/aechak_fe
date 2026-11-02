@@ -328,6 +328,39 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
   })
 
+  /**
+   * 재조회가 도는 동안에는 저장을 막는다. 병합은 조회가 끝난 뒤에야 도는데 저장이 열려 있으면,
+   * 다른 화면이 바꾼 값이 도착하기 전에 전체 덮어쓰기가 그 변경을 되돌린다.
+   */
+  it('[AC-STORE-ROUTE-017] 재조회 중에는 저장을 막고 이유를 알린다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderAt('/store-settings', queryClient)
+    const saveButton = await screen.findByRole('button', { name: '저장' })
+    expect(saveButton).toBeEnabled()
+
+    // 응답을 붙잡아 재조회가 도는 구간을 만든다.
+    let release: (() => void) | undefined
+    const pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(SELLER_STORE_URL, async () => {
+        await pending
+        return HttpResponse.json({
+          data: { isSeller: true, applicationStatus: 'APPROVED', store: makeStoreWire() },
+        })
+      }),
+    )
+    void queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeDisabled())
+    expect(screen.getByText(/최신 값을 다시 불러오는 중이라 저장을 잠시 막았어요/)).toBeInTheDocument()
+
+    release?.()
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+  })
+
   /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
   it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
