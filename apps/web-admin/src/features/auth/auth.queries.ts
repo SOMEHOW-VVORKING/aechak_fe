@@ -12,8 +12,7 @@ import { endServerSession } from './auth.session'
  * 실패에서는 **아무것도 비우지 않는다.** access를 비우면 refresh 쿠키가 살아 있는 채로 다음
  * 요청이 세션을 되살려 "로그아웃한 것 같은데 같은 계정"이 되고, 그게 데모에서 가장 헷갈린다.
  * 실패는 그대로 두고 화면이 재시도를 권한다.
- */
-/**
+ *
  * 알려진 한계(이 묶음 범위 밖): 업무 요청의 401로 **진행 중인** refresh가 로그아웃 204 뒤에
  * 응답하면 공유 클라이언트의 401 인터셉터가 `setAccessToken(newToken)`으로 토큰을 되살린다
  * (`packages/api/src/client.ts` — refresh Promise는 모듈 스코프라 여기서 취소할 수 없다).
