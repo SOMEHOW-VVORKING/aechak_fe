@@ -2,12 +2,13 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
 import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
+  PRODUCT_LIKE_URL,
   PRODUCT_OPTIONS_URL,
   PRODUCT_REVIEW_SUMMARY_URL,
   PRODUCT_REVIEWS_URL,
@@ -238,6 +239,82 @@ describe('/products/$productId', () => {
     // 찜이 토글되지 않았다 — 여전히 '찜하기'(미찜) + aria-pressed false, 찜 토스트도 없다.
     expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 공유 버튼은 토스트만 띄우고 클립보드를 부르지 않았다 — 사용자가 복사됐다고 읽고 붙여넣으면
+   * 아무것도 없었다. SNS 프로필 공유와 같은 모양(writeText await + 실패 처리)인지 본다.
+   */
+  it('[AC-PRODUCT-034] 공유는 상품 링크를 실제로 클립보드에 쓰고 토스트를 띄운다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '공유' }))
+
+    expect(await screen.findByText('상품 링크를 복사했어요.')).toBeInTheDocument()
+    expect(await navigator.clipboard.readText()).toBe(
+      `${window.location.origin}/products/p-feeder-5l`,
+    )
+  })
+
+  it('[AC-PRODUCT-035] 클립보드 쓰기가 막히면 복사했다고 하지 않고 실패를 알린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+
+    await user.click(screen.getByRole('button', { name: '공유' }))
+
+    expect(await screen.findByText('링크를 복사하지 못했어요.')).toBeInTheDocument()
+    expect(screen.queryByText('상품 링크를 복사했어요.')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 목업 상품은 서버에 없다. 예전엔 하트를 채우고 "찜했어요."를 띄웠는데 /wishlist는 서버 pool을
+   * 찜 id-set으로 필터해 목업 상품이 절대 나타나지 않았다 — 찜했다고 읽고 목록에서 못 찾았다.
+   * 찜 POST가 나가지 않는다는 사실까지 핸들러 호출 수로 못박는다.
+   */
+  it('[AC-PRODUCT-036] 목업 상품은 찜을 받은 척하지 않고 담기지 않는다고 알린다', async () => {
+    let likeCalls = 0
+    server.use(
+      http.post(PRODUCT_LIKE_URL, () => {
+        likeCalls += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
+
+    expect(
+      await screen.findByText('미리보기 상품이라 찜 목록에 담기지 않아요.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-disabled', 'true')
+    expect(likeCalls).toBe(0)
+  })
+
+  it('[AC-PRODUCT-037] 실 상품 찜은 그대로 서버로 나가고 하트가 채워진다', async () => {
+    let likeCalls = 0
+    server.use(
+      http.post(PRODUCT_LIKE_URL, () => {
+        likeCalls += 1
+        return new HttpResponse(null, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '찜하기' }))
+
+    expect(await screen.findByText('찜했어요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '찜 해제' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(likeCalls).toBe(1))
   })
 
   it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {

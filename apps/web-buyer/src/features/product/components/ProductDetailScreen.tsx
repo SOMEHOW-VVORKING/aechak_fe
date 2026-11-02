@@ -26,6 +26,7 @@ import { formatKRW } from '@/shared/formatKRW'
 import { errorResponse } from '@aechak/api'
 import { CART_MAX_QUANTITY, cartErrorMessage, useAddCartItem } from '@/shared/cart'
 import {
+  findMockProduct,
   hydrateLikedFromDetail,
   SUB_CATEGORIES,
   toggleWishlist,
@@ -117,6 +118,31 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const showToast = (message: string, variant: ToastVariant = 'success') =>
     setToast({ open: true, message, variant })
 
+  // 목업 상품(id가 mock 카탈로그에 있는 상품)은 서버에 없다. toggleWishlist가 서버 호출 없이
+  // 끝나고(shared/catalog의 wishlist.queries), /wishlist는 서버 pool을 찜 id-set으로 필터하므로
+  // 여기서 하트를 채우면 찜 목록에 나타나지 않는 찜이 생기고 새로고침하면 그 하트도 사라진다.
+  const wishUnavailable = findMockProduct(productId) != null
+
+  // SNS 프로필 공유(features/sns)와 같은 모양 — 실제로 클립보드에 쓰고 실패도 알린다.
+  const shareProduct = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/products/${productId}`)
+      showToast('상품 링크를 복사했어요.', 'info')
+    } catch {
+      showToast('링크를 복사하지 못했어요.', 'error')
+    }
+  }
+
+  const toggleWish = () =>
+    requireAuth('wish', () => {
+      if (wishUnavailable) {
+        showToast('미리보기 상품이라 찜 목록에 담기지 않아요.', 'info')
+        return
+      }
+      toggleWishlist(productId)
+      showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
+    })
+
   return (
     <MobileScreen
       header={
@@ -126,7 +152,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             <button
               type="button"
               aria-label="공유"
-              onClick={() => showToast('상품 링크를 복사했어요.', 'info')}
+              onClick={() => void shareProduct()}
               className="flex size-9 items-center justify-center rounded-full text-icon"
             >
               <Share2 className="size-[22px]" />
@@ -139,12 +165,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
           <ActionBar
             wished={wished}
             soldOut={data.isSoldOut}
-            onToggleWish={() =>
-              requireAuth('wish', () => {
-                toggleWishlist(productId)
-                showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
-              })
-            }
+            wishUnavailable={wishUnavailable}
+            onToggleWish={toggleWish}
             onCart={() => requireAuth('cart', () => setSheetOpen(true))}
           />
         ) : undefined
@@ -512,11 +534,14 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
 function ActionBar({
   wished,
   soldOut,
+  wishUnavailable,
   onToggleWish,
   onCart,
 }: {
   wished: boolean
   soldOut?: boolean
+  /** 서버에 없는 목업 상품 — 찜을 받아도 찜 목록에 남지 않아 눌러도 토글하지 않는다. */
+  wishUnavailable?: boolean
   onToggleWish: () => void
   onCart: () => void
 }) {
@@ -525,14 +550,17 @@ function ActionBar({
       className="flex items-center gap-2 border-t border-border-subtle bg-surface-base px-4 pt-2.5"
       style={{ paddingBottom: 'calc(10px + env(safe-area-inset-bottom))' }}
     >
+      {/* disabled가 아니라 aria-disabled인 이유: 이 버튼이 유일한 설명 자리다. 눌러야
+          "미리보기라 담기지 않는다"를 알릴 수 있어 클릭은 살려 두고 상태만 알린다. */}
       <button
         type="button"
         onClick={onToggleWish}
         aria-pressed={wished}
+        aria-disabled={wishUnavailable}
         aria-label={wished ? '찜 해제' : '찜하기'}
         className={[
           'flex size-12 flex-none items-center justify-center rounded-input border border-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
-          wished ? 'text-brand' : 'text-icon',
+          wishUnavailable ? 'text-icon-muted' : wished ? 'text-brand' : 'text-icon',
         ].join(' ')}
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
