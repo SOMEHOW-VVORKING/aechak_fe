@@ -394,6 +394,30 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(screen.queryByText('신청 정보를 불러오지 못했어요')).not.toBeInTheDocument()
   })
 
+  /**
+   * 스토어 조회 재조회 실패도 같다 — 섹션을 갈면 입력이 사라진다. 다만 이쪽은 저장까지 막는다:
+   * 서버 값을 확인하지 못한 채 전체 덮어쓰기로 저장하면 그 사이 배송 정책이 바꾼 주소가
+   * 되돌아간다(주소 3필드가 같은 컬럼이다).
+   */
+  it('[AC-STORE-ROUTE-019] 스토어 재조회가 실패하면 폼은 두고 저장만 막는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    server.use(http.get(SELLER_STORE_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    expect(await screen.findByText(/최신 스토어 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+  })
+
   /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
   it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))

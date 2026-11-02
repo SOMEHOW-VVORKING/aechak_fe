@@ -120,14 +120,15 @@ function ShippingPolicyRoute() {
     <div className="p-6">
       <PageHeader
         title="배송 정책"
-        // 재조회 중에는 저장을 막는다 — 스토어 설정이 바꾼 주소가 아직 도착하지 않았는데
-        // 저장하면 전체 덮어쓰기가 그 변경을 되돌린다.
+        // 재조회 중에도, 재조회가 실패한 뒤에도 저장을 막는다 — 스토어 설정이 바꾼 주소가
+        // 도착하지 않았는데 저장하면 전체 덮어쓰기가 그 변경을 되돌린다(PUT 본문에 출고지가
+        // 항상 실린다).
         actions={
           <Button
             size="sm"
             onClick={handleSave}
             loading={updatePolicy.isPending}
-            disabled={isFetching}
+            disabled={isFetching || isError}
           >
             저장
           </Button>
@@ -138,7 +139,8 @@ function ShippingPolicyRoute() {
       {isError && (
         <Alert variant="warning" className="mb-4">
           <span>
-            최신 배송 정책을 불러오지 못했어요. 보이는 값은 마지막으로 읽은 값이에요.{' '}
+            최신 배송 정책을 불러오지 못했어요. 마지막으로 불러온 값과 작성 중인 입력은 그대로
+            두었지만, 서버 값을 확인하지 못해 저장은 잠시 막았어요.{' '}
             <button
               type="button"
               onClick={() => void refetch()}

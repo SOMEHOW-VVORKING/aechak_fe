@@ -322,10 +322,12 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
     server.use(http.get(SELLER_SHIPPING_POLICY_URL, () => new HttpResponse(null, { status: 500 })))
     await queryClient.invalidateQueries({ queryKey: SHIPPING_POLICY_QUERY_KEY })
 
-    // 실패는 띠로만 알리고, 입력과 폼은 그대로 남는다.
+    // 폼과 입력은 남고, 실패는 띠로 알리고, 저장만 막는다 — 서버 값을 확인하지 못한 채
+    // 저장하면 전체 덮어쓰기가 스토어 설정이 바꾼 주소를 되돌린다.
     expect(await screen.findByText(/최신 배송 정책을 불러오지 못했어요/)).toBeInTheDocument()
     expect(screen.getByLabelText('상세주소', { selector: '#origin-detail' })).toHaveValue('물류 2센터')
     expect(screen.queryByText('배송 정책을 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
   })
 
   it('[AC-SHIP-ROUTE-013] 금액 칸에 소수를 넣어도 원 단위 정수로 저장된다', async () => {

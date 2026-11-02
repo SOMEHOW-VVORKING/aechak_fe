@@ -99,7 +99,10 @@ export function StoreProfileSection() {
 
   // 화면 전체가 이 한 조회에 달려 있다 — 실패를 빈 폼으로 떨구면 저장이 전체 덮어쓰기라
   // 서버에 있는 상호를 지워 버린다. 백지 대신 재시도를 둔다.
-  if (isError) {
+  //
+  // 단 한 번도 읽지 못했을 때만이다. 캐시가 있는데 재조회가 실패했다고 섹션을 갈면 작성 중인
+  // 입력이 사라지고, 다시 마운트되며 서버 값으로 되시드된다 — 그때는 폼을 두고 저장만 막는다.
+  if (isError && store == null) {
     return (
       <EmptyState
         title="스토어 정보를 불러오지 못했어요"
@@ -138,7 +141,7 @@ export function StoreProfileSection() {
           size="sm"
           onClick={handleSave}
           loading={updateStore.isPending}
-          disabled={isPaused || isFetching}
+          disabled={isPaused || isFetching || isError}
         >
           저장
         </Button>
@@ -147,6 +150,24 @@ export function StoreProfileSection() {
       {isPaused && (
         <Alert variant="warning">
           운영 중인 스토어만 설정을 바꿀 수 있어요. 값은 볼 수 있지만 저장은 막혀 있어요.
+        </Alert>
+      )}
+
+      {/* 재조회 실패 — 폼과 입력은 두고 저장만 막는다. 서버 값을 확인하지 못한 채 저장하면
+          전체 덮어쓰기가 그 사이 배송 정책이 바꾼 주소를 되돌린다. */}
+      {isError && (
+        <Alert variant="warning">
+          <span>
+            최신 스토어 정보를 불러오지 못했어요. 마지막으로 불러온 값과 작성 중인 입력은 그대로
+            두었지만, 서버 값을 확인하지 못해 저장은 잠시 막았어요.{' '}
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="underline underline-offset-2"
+            >
+              다시 시도
+            </button>
+          </span>
         </Alert>
       )}
 

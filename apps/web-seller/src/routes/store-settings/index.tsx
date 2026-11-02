@@ -340,7 +340,8 @@ function StoreSettingsRoute() {
       {isError && (
         <Alert variant="warning" className="mb-4">
           <span>
-            최신 신청 정보를 불러오지 못했어요. 보이는 값은 마지막으로 읽은 값이에요.{' '}
+            최신 신청 정보를 불러오지 못했어요. 마지막으로 불러온 정보와 작성 중인 입력은 그대로
+            두었어요.{' '}
             <button
               type="button"
               onClick={() => void refetch()}
