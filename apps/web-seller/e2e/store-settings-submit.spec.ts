@@ -14,7 +14,9 @@ import type { SaveSellerApplicationDraftRequest, SellerApplicationDetail } from 
 // CORS: 8080·8081 모두 withCredentials로 나가므로 정확한 origin + Allow-Credentials가 필요하고,
 // application/json 본문과 PUT은 프리플라이트를 부르므로 OPTIONS 방어가 필수다. 반대로 presigned
 // PUT은 credentials 없는 fetch라 Allow-Credentials를 주지 않는다(실제 S3 버킷 CORS와 같다).
-const ORIGIN = 'http://localhost:5173'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5173'
 const API_ORIGIN = 'http://localhost:8080'
 const SELLER_ORIGIN = 'http://localhost:8081'
 const DOCS_ORIGIN = 'https://docs.e2e.local'

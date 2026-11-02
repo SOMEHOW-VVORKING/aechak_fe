@@ -2108,6 +2108,116 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SellerOptionCombinationChangeResponse"
+  /sellers/me/product-drafts:
+    get:
+      summary: "셀러 상품 임시저장 목록"
+      description: >-
+        셀러센터(seller 모듈) 전용. 최근 저장순이며 페이지네이션이 없다 — 셀러당 보관 상한이
+        10건이라 전건을 한 번에 준다. 마지막 저장으로부터 30일이 지난 초안은 목록에서 빠지고
+        다음 저장 때 지워진다. 응답의 `totalCount`는 `items.length`와 같다.
+      operationId: "getSellerProductDrafts"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftListResponse"
+    post:
+      summary: "셀러 상품 임시저장 생성"
+      description: >-
+        등록 폼을 채우는 중에도 저장되도록 전 필드가 선택이다 — 필수값·가격 범위·옵션 구성 검증은
+        정식 등록(POST /sellers/me/products)만 건다. 남는 검증은 길이·개수 상한뿐이고 위반은
+        400 errorCode 90001이다. 보관 상한 10건을 넘기면 422 errorCode 40401 —
+        덮어쓰기(PUT)는 상한을 보지 않는다.
+        이미지 키는 presigned로 받은 tmp 키를 그대로 보관한다. tmp/는 S3 수명주기로 하루 뒤
+        지워지므로 하루 지난 초안의 이미지 키는 정식 등록에서 404 errorCode 100001이 된다.
+      operationId: "createSellerProductDraft"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductDraftSaveRequest"
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftSaveResponse"
+  /sellers/me/product-drafts/{draftId}:
+    get:
+      summary: "셀러 상품 임시저장 단건 조회"
+      description: >-
+        등록 폼 프리필용. 없는 초안·남의 초안·보관 기간이 지난 초안을 모두 404 errorCode 40400으로
+        묶는다. 요청의 중첩 입력(이미지 키 목록·옵션)은 서버가 해석하지 않고 보낸 모양 그대로
+        돌려주므로, 응답 필드를 그대로 다시 PUT해도 된다.
+      operationId: "getSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "초안 공개 식별자(ULID 26자)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftResponse"
+    put:
+      summary: "셀러 상품 임시저장 덮어쓰기"
+      description: >-
+        폼 내용을 통째로 덮어쓴다 — 보내지 않은 필드는 "유지"가 아니라 "비움"이다. 보관 상한을 보지
+        않으므로 상한에 걸린 셀러도 이어쓰기는 계속 저장된다. 대상이 없으면 404 errorCode 40400.
+      operationId: "updateSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductDraftSaveRequest"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerProductDraftSaveResponse"
+    delete:
+      summary: "셀러 상품 임시저장 삭제"
+      description: >-
+        되돌릴 수 없다. 대상이 없으면 404 errorCode 40400. 정식 등록이 끝난 뒤 이어쓰던 초안을
+        치우는 데도 쓴다(등록 요청에 초안 id를 실을 자리가 없어 두 단계다).
+      operationId: "deleteSellerProductDraft"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "No Content"
   /sellers/me/dashboard/summary:
     get:
       summary: "셀러센터 대시보드 집계"
@@ -5964,6 +6074,213 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SellerProductDetailData"
+    SellerProductDraftOptionGroupInput:
+      type: object
+      required: [values]
+      description: >-
+        초안의 옵션 그룹. 등록 요청(SellerProductOptionGroupInput)과 달리 이름이 비어 있어도 되고
+        값이 0개여도 된다 — 폼을 채우는 중의 모양을 그대로 담는다
+      properties:
+        name:
+          type: string
+          nullable: true
+          maxLength: 100
+        values:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 100
+    SellerProductDraftOptionCombinationInput:
+      type: object
+      required: [optionValues]
+      description: "초안의 옵션 조합. 추가금·재고는 비운 칸이면 null이다"
+      properties:
+        optionValues:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            maxLength: 100
+        additionalPrice:
+          type: integer
+          format: int64
+          nullable: true
+        stockQuantity:
+          type: integer
+          nullable: true
+    SellerProductDraftSaveRequest:
+      type: object
+      description: >-
+        전 필드 선택. 서버는 보낸 것을 그대로 보관하고 등록 시점 검증을 하지 않는다 —
+        길이·개수 상한만 보고 위반은 400 errorCode 90001이다
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+          description: "소분류(depth 3) id. 초안 단계에서는 깊이를 검사하지 않는다"
+        productName:
+          type: string
+          nullable: true
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 16000
+          description: "TEXT 컬럼(utf8mb4 최악 4바이트/자)을 넘기지 않게 글자 수로 끊는다"
+        regularPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountStartAt:
+          type: string
+          nullable: true
+          description: "오프셋 없는 LocalDateTime. 초안은 할인가 없이 기간만 있어도 받는다"
+        discountEndAt:
+          type: string
+          nullable: true
+        thumbnailImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        additionalImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+          description: "등록은 9장까지지만 초안은 20장까지 담는다"
+        detailImageKeys:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 1024
+        optionGroups:
+          type: array
+          nullable: true
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupInput"
+        optionCombinations:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionCombinationInput"
+    SellerProductDraftListItem:
+      type: object
+      required: [draftId, productName, savedAt]
+      properties:
+        draftId:
+          type: string
+          description: "초안 공개 식별자(ULID 26자)"
+        productName:
+          type: string
+          nullable: true
+          description: "아직 상품명을 안 적은 초안은 null"
+        savedAt:
+          type: string
+          description: "마지막 저장 시각(오프셋 없는 LocalDateTime)"
+    SellerProductDraftListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftListItem"
+          description: "최근 저장순"
+        totalCount:
+          type: integer
+    SellerProductDraftListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftListData"
+    SellerProductDraftData:
+      type: object
+      required:
+        [draftId, savedAt, additionalImageKeys, detailImageKeys, optionGroups, optionCombinations]
+      description: >-
+        등록 폼 프리필 응답. 중첩 입력은 요청에서 nullable이었어도 응답은 항상 배열이다(빈 배열)
+      properties:
+        draftId:
+          type: string
+        savedAt:
+          type: string
+        categoryId:
+          type: integer
+          format: int64
+          nullable: true
+        productName:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        regularPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+        discountStartAt:
+          type: string
+          nullable: true
+        discountEndAt:
+          type: string
+          nullable: true
+        thumbnailImageKey:
+          type: string
+          nullable: true
+        additionalImageKeys:
+          type: array
+          items:
+            type: string
+        detailImageKeys:
+          type: array
+          items:
+            type: string
+        optionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionGroupInput"
+        optionCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SellerProductDraftOptionCombinationInput"
+    SellerProductDraftResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftData"
+    SellerProductDraftSaveData:
+      type: object
+      required: [draftId, savedAt]
+      properties:
+        draftId:
+          type: string
+        savedAt:
+          type: string
+          description: "서버가 찍은 저장 시각 — 화면의 '방금 저장' 표시 출처다"
+    SellerProductDraftSaveResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SellerProductDraftSaveData"
     CourierSummary:
       type: object
       required: [courierCode, courierName, trackingFormatPattern]
