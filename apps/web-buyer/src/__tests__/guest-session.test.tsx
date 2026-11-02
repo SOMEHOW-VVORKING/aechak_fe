@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getAccessToken } from '@aechak/api'
 import { getSessionState, resetAuth } from '@/shared/auth'
-import { CATEGORIES_URL, WEB_REFRESH_URL, server } from '@/testing/msw/server'
+import { CART_URL, CATEGORIES_URL, WEB_REFRESH_URL, server } from '@/testing/msw/server'
 import { routeTree } from '../routeTree.gen'
 
 // __root beforeLoad의 세션 한 번 확인(restoreSessionOrGuest)을 라우터째로 검증한다.
@@ -76,12 +76,18 @@ describe('첫 진입 세션 확인', () => {
     expect(refreshCalls).toBe(1)
   })
 
-  it('[AC-GUEST-004] 비회원이면 인증이 필요한 카테고리 조회는 아예 나가지 않는다', async () => {
+  it('[AC-GUEST-004] 비회원이면 마켓에서 회원 전용 조회(카테고리, 장바구니 배지)가 아예 나가지 않는다', async () => {
+    // 한 건이라도 나가면 401 → refresh 실패 → 전역 onAuthExpired로 마켓을 잃는다.
     let categoryCalls = 0
+    let cartCalls = 0
     server.use(
       http.get(CATEGORIES_URL, () => {
         categoryCalls += 1
         return HttpResponse.json({ data: [] })
+      }),
+      http.get(CART_URL, () => {
+        cartCalls += 1
+        return HttpResponse.json({ data: { items: [] } })
       }),
     )
     renderAt('/market')
@@ -89,5 +95,6 @@ describe('첫 진입 세션 확인', () => {
     await screen.findByText('강아지 연어 사료 2kg')
     await waitFor(() => expect(getSessionState()).toBe('guest'))
     expect(categoryCalls).toBe(0)
+    expect(cartCalls).toBe(0)
   })
 })
