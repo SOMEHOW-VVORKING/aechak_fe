@@ -3,11 +3,14 @@
 // (packages/api client.ts)의 메모리 access + refresh 쿠키가 들고 있다 — API 응답을 전역 스토어에
 // 복제하지 않는다는 규약(AGENTS 1-4)과 같은 결이다.
 export { LoginForm } from './components/LoginForm'
+export { LogoutButton } from './components/LogoutButton'
 export {
   WEB_LOGIN_PROVIDERS,
   bootstrapSession,
+  endServerSession,
   loginErrorMessage,
   setupAuthExpiredRedirect,
   socialLoginRedirectUrl,
 } from './auth.session'
 export type { SocialProvider } from './auth.session'
+export { useLogout } from './auth.queries'

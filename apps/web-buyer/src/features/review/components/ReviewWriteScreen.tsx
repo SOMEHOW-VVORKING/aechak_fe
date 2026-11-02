@@ -115,11 +115,12 @@ export function ReviewWriteScreen({
       createdAt: '2026.07.10',
     }
     if (targetOrderItemId == null) return
+    const files = photos.flatMap(p => (p.file ? [p.file] : []))
     createReview.mutate(
-      { review, orderItemId: targetOrderItemId, files: photos.flatMap(p => (p.file ? [p.file] : [])) },
+      { review, orderItemId: targetOrderItemId, files },
       {
         onSuccess: () =>
-          navigate({ to: '/reviews/mine', search: { submitted: true }, replace: true }),
+          navigate({ to: '/reviews/mine', search: { submitted: true, photo: files.length > 0 }, replace: true }),
       },
     )
   }

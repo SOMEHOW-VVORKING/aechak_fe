@@ -1,6 +1,5 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { setAccessToken } from '@aechak/api'
 import {
   resetLikedProducts,
   resetSearchFixtures,
@@ -11,6 +10,7 @@ import {
   server,
 } from './testing/msw/server'
 import { resetWishlistState } from './shared/catalog'
+import { resetAuth } from './shared/auth'
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해하지만 노이즈이고, 예외가 전환 중 리렌더를 유발해 테스트 노드를 detach시키므로
@@ -40,6 +40,8 @@ afterEach(() => {
   // A26 대기 행동(sessionStorage)도 테스트 사이에 이어지지 않게 지운다.
   sessionStorage.clear()
   // access 토큰은 client.ts 모듈 메모리라 테스트 사이에 이어진다. SNS MSW는 Authorization 헤더로 보는 사람을 정한다.
-  setAccessToken(null)
+  // resetAuth가 토큰을 버리고 세션 상태를 확인 전(unknown)으로 되돌린다 — 새 문서 로드와 같은 출발점이라
+  // 회원 세션이 필요한 테스트는 스스로 토큰을 세우게 된다(setAccessToken(null)만으로는 "비회원 확정"이 남는다).
+  resetAuth()
 })
 afterAll(() => server.close())

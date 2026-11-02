@@ -9,7 +9,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // (`shared/serverAvailability`)가 올라간 뒤로 브라우저에서 끝까지 따라갈 수 있다 — 카드가 버튼으로
 // 올라오고, 누르면 단계 축만 실어 목록으로 넘어간다(기간은 싣지 않는다).
 
-const ORIGIN = 'http://localhost:5173'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5173'
 const API_ORIGIN = 'http://localhost:8080'
 const SELLER_ORIGIN = 'http://localhost:8081'
 const CORS = {

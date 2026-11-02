@@ -313,7 +313,9 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
 
 describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토큰 없음)', () => {
   beforeEach(() => {
-    setAccessToken(null)
+    // 새로고침은 메모리 토큰만 날리고 세션 유무는 미지 상태로 남긴다 — setAccessToken(null)은
+    // "세션이 끝났다"는 뜻이라 refresh 확인 자체를 건너뛴다.
+    resetAuth()
   })
 
   it('[AC-SNS01-005] refresh 쿠키가 살아 있으면 세션을 먼저 복원해 관계 필드가 채워진 프로필을 보여준다', async () => {

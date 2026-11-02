@@ -1,4 +1,5 @@
 import { test, expect, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 마켓(카테고리 트리 + 상품 목록) ↔ 실 API 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을
 // 재현한다 — 페이지(5175) → API(8080)가 교차 출처 + withCredentials라 fulfill 응답에도 정확한
@@ -74,6 +75,7 @@ const BY_CATEGORY: Record<string, ReturnType<typeof product>[]> = {
 }
 
 test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
   await page.route('**/api/v1/categories', route => fulfillJson(route, 200, CATEGORIES))
   await page.route('**/api/v1/products?*', route => {
     const category = new URL(route.request().url()).searchParams.get('category') ?? ''

@@ -3,10 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import {
+  SELLER_STORE_URL,
   currentSellerApplication,
+  currentStore,
   makeApplicationWire,
+  makeStoreWire,
   seedSellerApplication,
+  seedStoreSettings,
+  server,
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -116,12 +122,133 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(screen.queryByRole('button', { name: '임시저장' })).not.toBeInTheDocument()
   })
 
-  it('[AC-STORE-ROUTE-005] 승인(APPROVED)은 승인 안내만 보여준다(2-B는 여전히 범위 밖)', async () => {
+  /**
+   * 예전엔 승인 뒤 이 자리가 "스토어 정보를 설정하는 화면은 곧 제공될 예정이에요"라는 빈 화면이었다.
+   * GET/PUT /sellers/me/store가 이미 떠 있었으므로 승인된 셀러가 자기 상호조차 못 보는 거짓이었다.
+   */
+  it('[AC-STORE-ROUTE-005] 승인(APPROVED)은 서버 스토어 값을 폼에 채워 보여준다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'APPROVED', decidedAt: '2026-08-12T10:00:00' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({
+        storeName: '애착상회',
+        brandIntro: '손으로 깎는 원목 급식대만 만들어요.',
+        zipCode: '13529',
+        roadAddress: '경기 성남시 판교역로 2',
+        detailAddress: '3층',
+      }),
+    })
     renderAt('/store-settings')
 
-    expect(await screen.findByText('입점 신청이 승인됐어요')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('애착상회')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('손으로 깎는 원목 급식대만 만들어요.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('경기 성남시 판교역로 2')).toBeInTheDocument()
+    expect(screen.queryByText(/곧 제공될 예정/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '제출하기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-008] 저장은 전체 덮어쓰기로 나가고 빈 칸은 null이 된다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ storeName: '애착상회', brandIntro: '지울 소개', zipCode: '13529' }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '  애착스토어  ')
+    await user.clear(screen.getByDisplayValue('지울 소개'))
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    const saved = currentStore()
+    // 상호 앞뒤 공백은 보내는 쪽에서 떼고, 비운 칸은 ''가 아니라 null로 나간다.
+    expect(saved?.storeName).toBe('애착스토어')
+    expect(saved?.brandIntro).toBeNull()
+    // 건드리지 않은 칸은 읽은 값 그대로 남는다(전체 덮어쓰기라 빼면 지워진다).
+    expect(saved?.zipCode).toBe('13529')
+    // 저장 뒤 폼도 서버가 다듬은 값으로 되맞춰진다.
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-009] 폼에 없는 이미지 키도 그대로 실려 저장이 이미지를 지우지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({
+        profileImageKey: 'sellers/store/p.webp',
+        bannerImageKey: 'sellers/store/b.webp',
+      }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await screen.findByDisplayValue('애착상회')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.profileImageKey).toBe('sellers/store/p.webp')
+    expect(currentStore()?.bannerImageKey).toBe('sellers/store/b.webp')
+  })
+
+  it('[AC-STORE-ROUTE-010] 상호를 비우면 서버를 부르지 않고 화면이 먼저 막는다', async () => {
+    let puts = 0
+    server.use(
+      http.put(SELLER_STORE_URL, () => {
+        puts += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.clear(await screen.findByDisplayValue('애착상회'))
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(
+      await screen.findByText('저장하지 못했어요. 상호(스토어명)를 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(puts).toBe(0)
+  })
+
+  it('[AC-STORE-ROUTE-011] 정지 셀러는 값은 보여주고 저장은 막고 사유를 알린다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ status: 'SUSPENDED' }),
+    })
+    renderAt('/store-settings')
+
+    expect(await screen.findByDisplayValue('애착상회')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+    expect(screen.getByText(/운영 중인 스토어만 설정을 바꿀 수 있어요/)).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-012] 조회가 실패하면 빈 폼 대신 재시도를 준다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    server.use(http.get(SELLER_STORE_URL, () => new HttpResponse(null, { status: 500 })))
+    renderAt('/store-settings')
+
+    // 저장이 전체 덮어쓰기라, 못 읽은 값을 빈 폼으로 보여 주면 저장이 상호를 지운다.
+    expect(await screen.findByText('스토어 정보를 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+  })
+
+  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
+  it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
+    renderAt('/store-settings')
+
+    expect(await screen.findByText(/이 화면에서 결과를 확인해 주세요/)).toBeInTheDocument()
+    expect(screen.queryByText(/알림으로/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/알려드릴게요/)).not.toBeInTheDocument()
   })
 
   it('[AC-STORE-ROUTE-006] 서류를 첨부하면 presigned 업로드 → tmpKey가 임시저장에 실린다', async () => {

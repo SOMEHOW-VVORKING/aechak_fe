@@ -3,9 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, expect, it, vi } from 'vitest'
-import { setOnAuthExpired, type ProductSummaryResponse } from '@aechak/api'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setAccessToken, setOnAuthExpired, type ProductSummaryResponse } from '@aechak/api'
 import { resetWishlist } from '@/shared/catalog'
+import { resetAuth } from '@/shared/auth'
 import { routeTree } from '../../../routeTree.gen'
 import { SEARCH_KEYWORDS_URL, SEARCH_PRODUCTS_URL, server } from '@/testing/msw/server'
 
@@ -44,7 +45,11 @@ function renderAt(path: string) {
 }
 
 describe('/search', () => {
-  it('[AC-SEARCH-015] 게스트 랜딩의 인증 복원 실패는 전역 로그인 이동을 일으키지 않는다', async () => {
+  // 최근·추천 검색어(GET /search/keywords)는 회원 전용이다. 랜딩 자체는 비회원도 열려야 하므로
+  // 회원 전제 케이스는 토큰으로 로그인시키고, 비회원 케이스는 토큰 없이 둔다.
+  beforeEach(() => setAccessToken('member-token'))
+
+  it('[AC-SEARCH-015] 세션이 끊긴 회원의 최근 검색어 401은 전역 로그인 이동을 일으키지 않는다', async () => {
     const onAuthExpired = vi.fn()
     let requested = false
     setOnAuthExpired(onAuthExpired)
@@ -59,6 +64,25 @@ describe('/search', () => {
     await waitFor(() => expect(requested).toBe(true))
     expect(onAuthExpired).not.toHaveBeenCalled()
     setOnAuthExpired(null)
+  })
+
+  it('[AC-SEARCH-018] 비회원은 최근 검색어를 아예 조회하지 않고 로그인 안내를 본다', async () => {
+    resetAuth()
+    let requested = 0
+    server.use(
+      http.get(SEARCH_KEYWORDS_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { recentKeywords: [], recommendedKeywords: [] } })
+      }),
+    )
+
+    renderAt('/search')
+
+    // 저장되지 않는 비회원에게 "여기에 표시돼요"라고 적으면 저장될 것처럼 읽힌다.
+    expect(await screen.findByText('로그인하면 최근 검색어를 저장해 드려요')).toBeInTheDocument()
+    expect(requested).toBe(0)
+    // 비어 있는 추천 섹션은 제목만 남은 빈 칸이라 접는다.
+    expect(screen.queryByText('추천 검색어')).not.toBeInTheDocument()
   })
 
   it('[AC-SEARCH-006] 전체 삭제를 누르면 최근 검색어가 비고 빈 상태가 나타난다', async () => {

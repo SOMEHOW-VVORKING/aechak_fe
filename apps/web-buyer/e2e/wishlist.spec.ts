@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 찜 목록(b3-st-4) ↔ 실 API 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을 재현한다
 // (마켓/검색 spec과 동일한 CORS/프리플라이트 규칙). 서버가 찜 목록에서만 내려주는
@@ -73,6 +74,11 @@ const WITH_BLOCKED = ALL_VIEWABLE.map((p, i) =>
 function likedEnvelope(products: unknown[]) {
   return { data: { products, totalCount: products.length, nextCursor: null, hasNext: false } }
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-WISH-E2E-001] 찜 목록이 서버 응답 그대로 그리드에 뜬다', async ({ page }) => {
   await page.route('**/api/v1/users/me/liked-products*', route =>

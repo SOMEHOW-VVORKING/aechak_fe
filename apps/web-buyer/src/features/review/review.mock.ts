@@ -4,6 +4,7 @@ import { findProduct, placeholderImage } from '@/shared/catalog'
 // 리뷰 화면(b4-st-2 작성 / b4-st-3 목록 / b4-st-6 내 리뷰) 공용 상수·목업·파생 로직.
 
 export const REVIEW_REWARD = 500 // 포토 리뷰 적립금(원)
+export const TEXT_REVIEW_REWARD = 300 // 텍스트 리뷰 적립금(원)
 export const MIN_REVIEW_LENGTH = 10
 export const MAX_REVIEW_LENGTH = 1000
 
