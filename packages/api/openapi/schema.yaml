@@ -2424,6 +2424,51 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /sellers/me/store:
+    get:
+      summary: "셀러 스토어 설정 조회"
+      description: >-
+        셀러센터(seller 모듈) 전용. 대상은 늘 인증 주체의 스토어 1건이라 경로에 식별자가 없다.
+        **셀러가 아닌 계정도 200이다** — 한 화면이 입점 신청과 스토어 운영을 겸하므로
+        isSeller=false·store=null·applicationStatus(신청 이력 없으면 null)로 신청 단계를 그린다.
+        정지·휴점 셀러도 조회는 열려 있다(쓰기만 활성 셀러로 막힌다). 미인증은 401 errorCode 20004.
+        주소 3필드(zipCode·roadAddress·detailAddress)는 배송 정책의 출고지와 같은 컬럼이라
+        두 화면이 같은 값을 본다.
+      operationId: "getSellerStore"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSettingsResponse"
+    put:
+      summary: "셀러 스토어 설정 저장"
+      description: >-
+        **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(이미지를 빼면 제거,
+        주소를 빼면 비워진다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것.
+        자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002,
+        셀러로 등록된 적 없는 계정은 403 errorCode 10004다(조회가 200인 것과 다르다).
+        본문 검증(빈 상호, 상호 100자·브랜드 소개 1000자·이미지 키 1024자·우편번호 10자·
+        도로명·상세주소 255자 초과)은 전부 400 errorCode 90001이다. 상호는 서버가 앞뒤 공백을
+        떼고 저장하는데, 본문 검증을 통과하고도 떼면 비는 공백 문자만의 상호는 도메인이
+        400 errorCode 10006으로 거절한다. 이미지 키는 업로드 승격 전 임시 키를 보내면 서버가
+        승격해 저장하고, 조회로 받은 키를 그대로 돌려보내면 재승격 없이 유지된다. 남의 tmp 키나
+        용도가 다른 키는 403 errorCode 100002·100003이고 그때는 상호도 저장되지 않는다.
+      operationId: "updateSellerStore"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreSettingsUpdateRequest"
+      responses:
+        "204":
+          description: "No Content"
   /sellers/me/reviews:
     get:
       summary: "셀러 리뷰 목록(커서 페이지네이션)"
@@ -6940,6 +6985,116 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+    SellerStatus:
+      type: string
+      enum: [ACTIVE, PAUSED, SUSPENDED, WITHDRAWN, WITHDRAWAL_REQUESTED]
+      description: >-
+        셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 —
+        나머지는 403 errorCode 10002다.
+    TelesalesNoticeStatus:
+      type: string
+      enum: [NOT_REQUIRED, REQUIRED, NOTIFIED, REGISTERED]
+      description: >-
+        통신판매업 신고 안내 상태. 서버가 구매확정 누적으로 올리는 값이고 셀러가 바꿀 수 없다 —
+        REQUIRED 이상이면 신고 대상임을 화면에서 알린다.
+    StoreData:
+      type: object
+      required: [sellerId, status, storeName, confirmedOrderCount, telesalesNoticeStatus]
+      properties:
+        sellerId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/SellerStatus"
+        storeName:
+          type: string
+        brandIntro:
+          type: string
+          nullable: true
+        profileImageUrl:
+          type: string
+          nullable: true
+          description: "조회용 전체 URL. 저장할 때는 이 값이 아니라 profileImageKey를 보낸다"
+        profileImageKey:
+          type: string
+          nullable: true
+        bannerImageUrl:
+          type: string
+          nullable: true
+        bannerImageKey:
+          type: string
+          nullable: true
+        zipCode:
+          type: string
+          nullable: true
+        roadAddress:
+          type: string
+          nullable: true
+        detailAddress:
+          type: string
+          nullable: true
+        confirmedOrderCount:
+          type: integer
+          description: "누적 구매확정 건수 — 통신판매업 신고 안내 판정에 쓰는 서버 계산값"
+        telesalesNoticeStatus:
+          $ref: "#/components/schemas/TelesalesNoticeStatus"
+    StoreSettingsData:
+      type: object
+      required: [isSeller]
+      description: >-
+        아직 셀러가 아니면 store=null이고 applicationStatus로 입점 신청 단계를 그린다
+        (신청 이력조차 없으면 applicationStatus도 null).
+      properties:
+        isSeller:
+          type: boolean
+        applicationStatus:
+          allOf:
+            - $ref: "#/components/schemas/ApplicationStatus"
+          nullable: true
+        store:
+          allOf:
+            - $ref: "#/components/schemas/StoreData"
+          nullable: true
+    StoreSettingsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/StoreSettingsData"
+    StoreSettingsUpdateRequest:
+      type: object
+      required: [storeName]
+      description: >-
+        전체 덮어쓰기 본문. 선택 항목을 빼면 비운 것으로 저장된다 — 부분 수정 용도로 쓰지 말 것.
+        상호만 필수이고 서버가 앞뒤 공백을 떼고 판정한다.
+      properties:
+        storeName:
+          type: string
+          maxLength: 100
+        brandIntro:
+          type: string
+          nullable: true
+          maxLength: 1000
+        profileImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        bannerImageKey:
+          type: string
+          nullable: true
+          maxLength: 1024
+        zipCode:
+          type: string
+          nullable: true
+          maxLength: 10
+        roadAddress:
+          type: string
+          nullable: true
+          maxLength: 255
+        detailAddress:
+          type: string
+          nullable: true
+          maxLength: 255
     SellerOrderStatusFilter:
       type: string
       description: >-

@@ -287,7 +287,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `test-results/pr-c/${name}.png`, animations: 'disabled' })
 }
 
-const REJECT_OPTION_CAPTION = '신청 반려 / 사유 통보 후 재제출 유도'
+const REJECT_OPTION_CAPTION = '신청 반려 / 사유 기록 후 재제출 유도'
 
 test('[AC-ADM-E2E-001] 목록 → 상세 Drawer → 반려 확인 Modal → 목록 반영', async ({ page }) => {
   await stubAdminApi(page)
