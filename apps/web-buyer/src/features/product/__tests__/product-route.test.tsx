@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry } from '@/shared/catalog'
-import { setAccessToken } from '@aechak/api'
+import { setAccessToken, setOnAuthExpired } from '@aechak/api'
 import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
   PRODUCT_LIKE_URL,
@@ -557,8 +557,32 @@ describe('/products/$productId', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('[AC-PRODUCT-027] 비회원 상세는 리뷰 요약 API를 호출하지 않는다', async () => {
-    // 요약 API도 JWT 필수라, 호출하면 401에서 전역 리다이렉트로 상세를 잃는다.
+  it('[AC-PRODUCT-027] 비회원 상세도 리뷰 요약은 조회하고 리뷰 목록은 호출하지 않는다', async () => {
+    // 요약 API는 비회원에게 열렸다(SCRUM-351). 리뷰 목록 API는 여전히 JWT 필수라 나가면 안 된다.
+    let reviewCalls = 0
+    server.use(
+      http.get(PRODUCT_REVIEWS_URL, () => {
+        reviewCalls += 1
+        return HttpResponse.json(
+          { errorCode: 20004, message: '인증이 필요합니다.' },
+          { status: 401 },
+        )
+      }),
+    )
+    serveReviewSummary({ productSummary: PRODUCT_AI_SUMMARY, similarPetSummary: null })
+    logout()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+
+    expect(await screen.findByText('AI 리뷰 요약')).toBeInTheDocument()
+    expect(screen.getByText('리뷰 37건을 분석했어요')).toBeInTheDocument()
+    expect(screen.queryByText(/우리 아이와 비슷한/)).not.toBeInTheDocument()
+    expect(reviewCalls).toBe(0)
+  })
+
+  it('[AC-PRODUCT-031] 비회원 요약 요청이 401이어도 로그인으로 튕기지 않고 실패 한 줄만 보여준다', async () => {
+    // 서버가 열기 전까지 비회원 요청은 401이다. 전역 세션 만료 핸들러가 깨어나면 상세를 잃는다.
+    const onAuthExpired = vi.fn()
+    setOnAuthExpired(onAuthExpired)
     let summaryCalls = 0
     server.use(
       http.get(PRODUCT_REVIEW_SUMMARY_URL, () => {
@@ -570,11 +594,14 @@ describe('/products/$productId', () => {
       }),
     )
     logout()
-    renderAt('/products/' + REAL_PRODUCT_ID)
+    const router = renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('리뷰 128')).toBeInTheDocument()
-    await waitFor(() => expect(summaryCalls).toBe(0))
-    expect(screen.queryByText('AI 리뷰 요약')).not.toBeInTheDocument()
+    expect(await screen.findByText('AI 리뷰 요약을 불러오지 못했어요.')).toBeInTheDocument()
+    expect(summaryCalls).toBeGreaterThan(0)
+    expect(onAuthExpired).not.toHaveBeenCalled()
+    expect(router.state.location.pathname).toBe('/products/' + REAL_PRODUCT_ID)
+    expect(screen.getByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    setOnAuthExpired(null)
   })
 
   it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {

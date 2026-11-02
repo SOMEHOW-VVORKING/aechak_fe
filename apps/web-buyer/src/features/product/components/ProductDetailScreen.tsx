@@ -108,9 +108,12 @@ export function ProductDetailScreen({
   const sessionState = useSessionState()
   const isLoggedIn = sessionState === 'member'
   // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
-  // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
-  const canFetchServerReviews =
-    isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
+  // AI 요약은 비회원도 조회한다(SCRUM-351). 실 상품이고 리뷰가 있을 때만 부른다.
+  const canFetchReviewSummary =
+    data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
+  const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchReviewSummary })
+  // 리뷰 목록 API는 여전히 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
+  const canFetchServerReviews = isLoggedIn && canFetchReviewSummary
   // 미리보기를 못 채운 칸에 적을 사유. 목업 상품처럼 상세가 리뷰를 이미 들고 있으면 필요 없다
   // (previewReviews가 채워진다). 세션 확인이 끝나지 않은 'unknown'에는 로그인 필요라고 적지 않는다 —
   // refresh가 5xx·네트워크로 실패한 회원일 수 있어서, 그렇게 적으면 사실이 아닌 사유를 읽힌다.
@@ -123,8 +126,6 @@ export function ProductDetailScreen({
           ? '리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'
           : null
   const reviewPreview = useProductReviewPreview(productId, { enabled: canFetchServerReviews })
-  // AI 요약도 JWT 필수이고 목업 상품은 서버에 없어 미리보기와 같은 조건으로만 부른다.
-  const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchServerReviews })
   // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
   const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
