@@ -59,6 +59,8 @@ const othersSecretRow = makeProductInquiryRow({
   answer: { content: '확인 후 환불 처리했어요.', answeredAt: '2026-10-31T10:00:00' },
 })
 
+// 상세 라우트를 거치는 대기는 3초를 준다 — 세션 복원·상세 조회·문의 조회가 직렬이라
+// CI 의 느린 러너에서 기본 1초를 넘긴다(결제·리뷰 테스트와 같은 관례).
 describe('상품 상세의 상품 문의 영역', () => {
   beforeEach(() => {
     resetAuth()
@@ -70,7 +72,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     seedProductInquiries([myRow])
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('배터리로도 쓸 수 있나요?')).toBeInTheDocument()
+    expect(await screen.findByText('배터리로도 쓸 수 있나요?', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByText('정전이 걱정돼서요.')).toBeInTheDocument()
     // 머리말 건수는 서버 totalCount다.
     expect(screen.getByText('상품 문의 1')).toBeInTheDocument()
@@ -81,7 +83,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     seedProductInquiries([])
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('아직 등록된 문의가 없어요')).toBeInTheDocument()
+    expect(await screen.findByText('아직 등록된 문의가 없어요', {}, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('[AC-PINQ-003] 남의 비밀글은 자리표시 문자열을 노출하지 않고 잠긴 행으로 보인다', async () => {
@@ -89,7 +91,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     seedProductInquiries([othersSecretRow])
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('작성자와 판매자만 볼 수 있는 문의예요')).toBeInTheDocument()
+    expect(await screen.findByText('작성자와 판매자만 볼 수 있는 문의예요', {}, { timeout: 3000 })).toBeInTheDocument()
     // 서버가 제목·본문 자리에 넣어 내려주는 값이 화면에 그대로 나오면 안 된다.
     expect(screen.queryByText(INQUIRY_SECRET_PLACEHOLDER)).not.toBeInTheDocument()
     // 본문·답변도 가려진다(가려진 행에 답변이 실려 오는 서버는 없지만, 화면이 그걸 그리지 않는지 함께 본다).
@@ -112,7 +114,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     ])
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('내 비밀 문의')).toBeInTheDocument()
+    expect(await screen.findByText('내 비밀 문의', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByText('내 비밀 본문')).toBeInTheDocument()
     expect(screen.queryByText('작성자와 판매자만 볼 수 있는 문의예요')).not.toBeInTheDocument()
   })
@@ -122,7 +124,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     seedProductInquiries([myRow])
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('상품 문의는 로그인하면 볼 수 있어요')).toBeInTheDocument()
+    expect(await screen.findByText('상품 문의는 로그인하면 볼 수 있어요', {}, { timeout: 3000 })).toBeInTheDocument()
     // 401이 나가면 전역 인터셉터가 상세를 로그인으로 밀어낸다 — 호출 자체가 0건이어야 한다.
     expect(productInquiryCallCounts().list).toBe(0)
     // 목록을 못 본 것을 "문의 없음"으로 위장하지 않는다.
@@ -138,7 +140,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     renderAt('/products/' + REAL_PRODUCT_ID)
 
     // 상세 본문은 그대로 남는다.
-    expect(await screen.findByText('리얼 프리미엄 자동 급식기')).toBeInTheDocument()
+    expect(await screen.findByText('리얼 프리미엄 자동 급식기', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(await screen.findByText('상품 문의는 로그인하면 볼 수 있어요')).toBeInTheDocument()
     expect(productInquiryCallCounts().list).toBe(0)
   })
@@ -153,7 +155,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     )
     renderAt('/products/' + REAL_PRODUCT_ID)
 
-    expect(await screen.findByText('지금은 이 상품의 문의를 볼 수 없어요')).toBeInTheDocument()
+    expect(await screen.findByText('지금은 이 상품의 문의를 볼 수 없어요', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.queryByText('아직 등록된 문의가 없어요')).not.toBeInTheDocument()
     // 받지 못한 목록의 건수를 0으로 적지 않는다.
     expect(screen.queryByText('상품 문의 0')).not.toBeInTheDocument()
@@ -164,7 +166,7 @@ describe('상품 상세의 상품 문의 영역', () => {
     seedProductInquiries([])
     const user = userEvent.setup()
     const router = renderAt('/products/' + REAL_PRODUCT_ID)
-    await screen.findByText('상품 문의는 로그인하면 볼 수 있어요')
+    await screen.findByText('상품 문의는 로그인하면 볼 수 있어요', {}, { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '문의하기' }))
 
@@ -184,7 +186,7 @@ describe('/products/$productId/inquiries/new', () => {
     seedProductInquiries([])
     const user = userEvent.setup()
     const router = renderAt(`/products/${REAL_PRODUCT_ID}/inquiries/new`)
-    await screen.findByText('판매자에게 물어보세요')
+    await screen.findByText('판매자에게 물어보세요', {}, { timeout: 3000 })
 
     await user.click(screen.getByText('배송'))
     await user.type(screen.getByLabelText('제목'), '언제 배송되나요?')
@@ -208,7 +210,7 @@ describe('/products/$productId/inquiries/new', () => {
     seedProductInquiries([])
     const user = userEvent.setup()
     renderAt(`/products/${REAL_PRODUCT_ID}/inquiries/new`)
-    await screen.findByText('판매자에게 물어보세요')
+    await screen.findByText('판매자에게 물어보세요', {}, { timeout: 3000 })
 
     await user.click(screen.getByText('기타'))
     await user.type(screen.getByLabelText('제목'), '개인적인 질문')
@@ -225,7 +227,7 @@ describe('/products/$productId/inquiries/new', () => {
     seedProductInquiries([])
     const user = userEvent.setup()
     renderAt(`/products/${REAL_PRODUCT_ID}/inquiries/new`)
-    await screen.findByText('판매자에게 물어보세요')
+    await screen.findByText('판매자에게 물어보세요', {}, { timeout: 3000 })
 
     await user.type(screen.getByLabelText('제목'), '제목만 썼어요')
     await user.type(screen.getByLabelText('문의 내용'), '본문도 썼어요')
@@ -253,7 +255,7 @@ describe('/mypage/product-inquiries', () => {
     ])
     renderAt('/mypage/product-inquiries')
 
-    expect(await screen.findByText('내 비밀 문의')).toBeInTheDocument()
+    expect(await screen.findByText('내 비밀 문의', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByText('내 비밀 본문')).toBeInTheDocument()
     expect(screen.queryByText(INQUIRY_SECRET_PLACEHOLDER)).not.toBeInTheDocument()
   })
@@ -262,14 +264,14 @@ describe('/mypage/product-inquiries', () => {
     seedProductInquiries([])
     renderAt('/mypage/product-inquiries')
 
-    expect(await screen.findByText('아직 등록한 문의가 없어요')).toBeInTheDocument()
+    expect(await screen.findByText('아직 등록한 문의가 없어요', {}, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('[AC-PINQ-022] 철회는 확인을 거친 뒤에만 서버 상태를 바꾼다', async () => {
     seedProductInquiries([myRow])
     const user = userEvent.setup()
     renderAt('/mypage/product-inquiries')
-    await screen.findByText('배터리로도 쓸 수 있나요?')
+    await screen.findByText('배터리로도 쓸 수 있나요?', {}, { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '철회하기' }))
 
@@ -288,7 +290,7 @@ describe('/mypage/product-inquiries', () => {
     seedProductInquiries([myRow])
     const user = userEvent.setup()
     renderAt('/mypage/product-inquiries')
-    await screen.findByText('배터리로도 쓸 수 있나요?')
+    await screen.findByText('배터리로도 쓸 수 있나요?', {}, { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '철회하기' }))
     const dialog = await screen.findByRole('dialog')
@@ -304,7 +306,7 @@ describe('/mypage/product-inquiries', () => {
     const release = holdWithdraw()
     const user = userEvent.setup()
     renderAt('/mypage/product-inquiries')
-    await screen.findByText('배터리로도 쓸 수 있나요?')
+    await screen.findByText('배터리로도 쓸 수 있나요?', {}, { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '철회하기' }))
     const dialog = await screen.findByRole('dialog')
@@ -335,7 +337,7 @@ describe('/mypage/product-inquiries', () => {
       }),
     ])
     renderAt('/mypage/product-inquiries')
-    await screen.findByText('답변 받은 문의')
+    await screen.findByText('답변 받은 문의', {}, { timeout: 3000 })
 
     expect(screen.getByText('네 가능해요.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '철회하기' })).not.toBeInTheDocument()
@@ -346,7 +348,7 @@ describe('/mypage/product-inquiries', () => {
     seedProductInquiries([myRow])
     const user = userEvent.setup()
     renderAt('/mypage/product-inquiries')
-    await screen.findByText('배터리로도 쓸 수 있나요?')
+    await screen.findByText('배터리로도 쓸 수 있나요?', {}, { timeout: 3000 })
     expect(screen.getByText('답변 대기')).toBeInTheDocument()
 
     // 서버 쪽에서만 답변이 달린 상황을 만든다(화면은 아직 RECEIVED를 들고 있다).
