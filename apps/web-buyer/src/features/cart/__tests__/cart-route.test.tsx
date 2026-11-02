@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import { resetCartSelection, setCartItemSelected } from '@/shared/cart'
 import { logout, resetAuth } from '@/shared/auth'
 import {
@@ -16,6 +17,7 @@ import {
   CART_ITEM_URL,
   CART_ITEMS_URL,
   CART_URL,
+  WEB_REFRESH_URL,
   currentCart,
   makeCartRow,
   seedCart,
@@ -98,6 +100,8 @@ describe('/cart', () => {
   beforeEach(() => {
     seedTwoSellers()
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
     resetOrderAttempt()
   })
 
@@ -290,18 +294,40 @@ describe('/cart', () => {
     expect(screen.getAllByText('33,000원').length).toBeGreaterThan(0)
   })
 
-  it('[AC-GATE-002] 비회원이 주문하기를 누르면 게이트가 뜨고 결제로 넘어가지 않는다', async () => {
-    const user = userEvent.setup()
+  it('[AC-GATE-002] 비회원은 장바구니 대신 로그인 안내를 보고 서버를 부르지 않는다', async () => {
+    let requested = 0
+    server.use(
+      http.get(CART_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { items: [] } })
+      }),
+    )
     logout()
     renderAt('/cart')
+
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    expect(requested).toBe(0)
+    expect(screen.queryByText('냥이상점')).not.toBeInTheDocument()
+  })
+
+  it('[AC-GATE-004] 세션 확인이 실패해 회원 여부를 모를 때 주문하기는 결제로 넘기지 않고 게이트를 띄운다', async () => {
+    // refresh 5xx면 세션 유무를 알 수 없어(unknown) 라우트 게이트가 화면을 막지 않는다 —
+    // 그 틈으로 비회원이 결제로 들어가지 않게 화면 안 게이트가 마지막 방어선으로 남아 있다.
+    const user = userEvent.setup()
+    resetAuth()
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 }),
+      ),
+    )
+    const router = renderAt('/cart')
     await screen.findByText('냥이상점')
 
     await user.click(screen.getByRole('button', { name: '주문하기 (1)' }))
 
-    // 게이트가 뜨고, 여전히 장바구니 화면(주문서로 이동하지 않음).
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '주문하기 (1)' })).toBeInTheDocument()
-    expect(screen.queryByText('주문서')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/cart')
   })
 
   it('[AC-GATE-003] 회원이 주문하기를 누르면 결제(주문서) 화면으로 이동한다', async () => {

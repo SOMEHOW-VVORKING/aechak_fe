@@ -120,8 +120,23 @@ function routeToFeatureHost(config: InternalAxiosRequestConfig): void {
 // 새로고침으로 날아가면 아래 401 인터셉터의 refresh가 세션을 복원한다.
 let accessToken: string | null = null
 
+// 이 토큰이 "지금 세션이 있는지"의 정본이다. 소비 앱이 로그인 상태를 별도 플래그로 들고 있으면
+// refresh 성공·세션 만료·로그아웃마다 두 값이 갈린다 — 그래서 변경 시점을 알리는 리스너만 둔다
+// (이 패키지는 React·라우터를 모르므로 스토어를 여기 두지 않는다).
+const accessTokenListeners = new Set<(token: string | null) => void>()
+
+/** access 토큰 변경을 구독한다. 반환 함수로 해지한다. */
+export function subscribeAccessToken(listener: (token: string | null) => void): () => void {
+  accessTokenListeners.add(listener)
+  return () => {
+    accessTokenListeners.delete(listener)
+  }
+}
+
 export function setAccessToken(token: string | null): void {
+  if (accessToken === token) return
   accessToken = token
+  for (const listener of accessTokenListeners) listener(token)
 }
 
 export function getAccessToken(): string | null {

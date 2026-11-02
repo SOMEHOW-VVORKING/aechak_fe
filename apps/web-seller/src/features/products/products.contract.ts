@@ -12,6 +12,8 @@ import type {
   InspectionStatus,
   SaleStatus,
   SellerProductDetailData,
+  SellerProductDraftAutofillData,
+  SellerProductDraftAutofillRequest,
   SellerProductDraftData,
   SellerProductDraftOptionCombinationInput,
   SellerProductDraftOptionGroupInput,
@@ -470,6 +472,84 @@ export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
   return body
 }
 
+// ─── POST /sellers/me/product-drafts/autofill ────────────────────────────────
+// 아무것도 저장하지 않는다. AI가 못 만들어도 200 + state다(OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴
+// 수 있어 열거로 가두지 않고 문자열로 다룬다). 쿨다운(셀러당 20초)만 429/40402다. 초안은 네 필드
+// (카테고리·설명·옵션 그룹·옵션 조합)만 들고 나머지는 늘 null이다 — 비어 있는 사유는 fieldStatus에 있다.
+
+export type ProductDraftAutofillRequest = SellerProductDraftAutofillRequest
+export type ProductDraftAutofillResult = SellerProductDraftAutofillData
+export const AUTOFILL_STATE_OK = 'OK'
+
+export type AutofillFilledField = 'category' | 'description' | 'options'
+
+export const AUTOFILL_FIELD_LABEL: Record<AutofillFilledField, string> = {
+  category: '카테고리',
+  description: '상세 설명',
+  options: '옵션',
+}
+
+/** 초안 요청. 셀러가 이미 쓴 설명·옵션은 lockedFields로 보내 AI가 그 전제로 나머지를 만들게 한다. */
+export function toAutofillRequest(v: ProductFormValues): ProductDraftAutofillRequest {
+  const description = v.description.trim()
+  const optionGroups = v.optionEnabled
+    ? v.optionGroups
+        .filter(g => !isBlank(g.name) && g.values.length > 0)
+        .map(g => ({ name: g.name.trim(), values: g.values }))
+    : []
+  const categoryId = v.categoryIds[2] ?? v.categoryIds[1] ?? v.categoryIds[0]
+  const lockedFields = {
+    ...(description && { description }),
+    ...(optionGroups.length > 0 && { optionGroups }),
+  }
+  return {
+    productName: v.productName.trim(),
+    ...(categoryId != null && { categoryId }),
+    ...(Object.keys(lockedFields).length > 0 && { lockedFields }),
+  }
+}
+
+/**
+ * 초안을 빈 칸에만 얹는다 — 셀러가 이미 쓴 값은 덮지 않는다. 카테고리는 한 단계도 안 고른 상태만,
+ * 옵션은 옵션을 안 켰고 단일 재고도 안 쓴 상태만 빈 칸으로 본다(단일 재고를 썼다면 옵션 없는
+ * 상품으로 정한 것이다). AI 카테고리는 depth 3이 아닐 수 있어 경로만큼만 채운다.
+ */
+export function applyAutofillDraft(
+  v: ProductFormValues,
+  draft: ProductDraftAutofillResult['draft'],
+  tree: CategoryNode[],
+): { values: ProductFormValues; filled: AutofillFilledField[] } {
+  const filled: AutofillFilledField[] = []
+  const next = { ...v }
+  const path = draft.categoryId != null ? findCategoryPath(tree, draft.categoryId) : null
+  if (path && v.categoryIds.every(id => id == null)) {
+    next.categoryIds = [path[0]?.categoryId ?? null, path[1]?.categoryId ?? null, path[2]?.categoryId ?? null]
+    filled.push('category')
+  }
+  const description = draft.description?.trim()
+  if (description && isBlank(v.description)) {
+    next.description = description
+    filled.push('description')
+  }
+  const groups = draft.optionGroups
+    .filter(g => g.values.length > 0)
+    .map(g => ({ name: g.name ?? '', values: g.values }))
+  const optionsEmpty = !v.optionEnabled && v.optionGroups.length === 0 && v.defaultStock === ''
+  if (groups.length > 0 && optionsEmpty) {
+    const rows: CombinationRow[] = draft.optionCombinations.map(c => ({
+      key: combinationKey(c.optionValues),
+      optionValues: c.optionValues,
+      additionalPrice: c.additionalPrice != null ? String(c.additionalPrice) : '0',
+      stockQuantity: c.stockQuantity != null ? String(c.stockQuantity) : '',
+    }))
+    next.optionEnabled = true
+    next.optionGroups = groups
+    next.combinations = buildCombinations(groups, rows)
+    filled.push('options')
+  }
+  return { values: next, filled }
+}
+
 // BE errorCode → FE 문구. 서버 message는 -습니다 격식체라 띄우지 않는다(카피 규칙).
 // 90002(INVALID_CURSOR)는 셀러 상품 API가 보내지 않는다.
 // 인증 계열은 공유 클라이언트가 먼저 전역 처리한다 — 401은 refresh 재시도 뒤에도 실패하면
@@ -493,6 +573,7 @@ const ERROR_MESSAGE: Record<number, string> = {
   40101: '선택한 카테고리를 쓸 수 없어요. 다시 선택해 주세요.',
   40200: '재고는 0 이상으로 입력해 주세요.',
   40201: '추가 금액은 0 이상으로 입력해 주세요.',
+  40402: 'AI 초안은 잠시 뒤 다시 받을 수 있어요.',
   40400: '임시저장한 상품을 찾을 수 없어요. 목록을 새로고침해 주세요.',
   40401: '임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.',
   90000: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',

@@ -103,33 +103,6 @@ async function stubSellerApplication(page: Page) {
   })
 }
 
-/** 승인된 셀러의 스토어 설정 — 승인 뒤 화면이 읽는 실 경로다(GET/PUT /sellers/me/store). */
-async function stubSellerStore(page: Page) {
-  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/store`, route =>
-    fulfillJson(route, 200, {
-      data: {
-        isSeller: true,
-        applicationStatus: 'APPROVED',
-        store: {
-          sellerId: 7,
-          status: 'ACTIVE',
-          storeName: '애착상회',
-          brandIntro: null,
-          profileImageUrl: null,
-          profileImageKey: null,
-          bannerImageUrl: null,
-          bannerImageKey: null,
-          zipCode: null,
-          roadAddress: null,
-          detailAddress: null,
-          confirmedOrderCount: 0,
-          telesalesNoticeStatus: 'NOT_REQUIRED',
-        },
-      },
-    }),
-  )
-}
-
 /** 승인된 셀러 — 가드를 통과해 운영 화면까지 들어가는 쪽을 재현한다. */
 async function stubApprovedApplication(page: Page) {
   await page.route(`${SELLER_ORIGIN}/api/v1/seller-applications`, route =>
@@ -151,6 +124,34 @@ async function stubApprovedApplication(page: Page) {
         decidedAt: '2026-08-14T10:00:00',
         rejectionReason: null,
         documents: [],
+      },
+    }),
+  )
+}
+
+// 승인 뒤의 스토어 설정은 GET /sellers/me/store 를 실서버에서 받아 그린다(SCRUM-355).
+// 이 스텁이 없으면 그 호출이 라우트에 걸리지 않아 화면이 빈 채로 남는다.
+async function stubSellerStore(page: Page) {
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/store`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        isSeller: true,
+        applicationStatus: 'APPROVED',
+        store: {
+          sellerId: 1,
+          status: 'ACTIVE',
+          storeName: '보리펫샵',
+          brandIntro: null,
+          profileImageUrl: null,
+          profileImageKey: null,
+          bannerImageUrl: null,
+          bannerImageKey: null,
+          zipCode: null,
+          roadAddress: null,
+          detailAddress: null,
+          confirmedOrderCount: 0,
+          telesalesNoticeStatus: 'NOT_REQUIRED',
+        },
       },
     }),
   )
@@ -211,11 +212,13 @@ test('[AC-SELLER-E2E-003] 승인된 셀러는 로그인 복귀 뒤 대시보드�
   await expect(page.getByText('신규 주문')).toBeVisible()
   await expect(page).toHaveURL(`${ORIGIN}/`)
 
-  // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 실 스토어 값을 보여준다.
+  // SPA 내비게이션 — 승인 계정이라 스토어 설정은 신청 폼이 아니라 스토어 정보를 보여준다.
+  // 표식을 '승인 완료' pill 이 아니라 상호 칸의 값으로 고른 이유: pill 은 신청 상태만 말하고
+  // 서버에서 받은 스토어를 그렸다는 것을 증명하지 못한다. 칸에 값이 들어와 있으면 GET이 돌았고
+  // 그 응답으로 폼이 시드됐다는 뜻이다.
   await page.getByRole('button', { name: '스토어 설정' }).click()
   await expect(page).toHaveURL(`${ORIGIN}/store-settings`)
-  await expect(page.getByRole('button', { name: '저장' })).toBeVisible()
-  await expect(page.locator('input[value="애착상회"]')).toBeVisible()
+  await expect(page.getByLabel('상호(스토어명)')).toHaveValue('보리펫샵')
 })
 
 test('[AC-SELLER-E2E-002] 세션 없이 스토어 설정 진입(401 → refresh 실패)이면 로그인으로 튕긴다', async ({
