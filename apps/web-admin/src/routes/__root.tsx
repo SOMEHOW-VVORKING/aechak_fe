@@ -20,6 +20,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
+import { LogoutButton } from '@/features/auth'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
@@ -243,6 +244,10 @@ function AdminNavShell({ pathname }: { pathname: string }) {
         groups={groups}
         activeKey={navActiveKey(pathname)}
         onSelect={key => navigate({ to: key })}
+        // 세 웹앱이 refresh 쿠키 하나를 공유해 어드민에 로그아웃이 없으면 데모 중 계정 전환이
+        // 쿠키 수동 삭제 말고는 불가능하다(SCRUM-353). nav 항목이 아니라 footer에 두는 이유는
+        // 목적지가 아니라 세션 조치라서다 — 항목으로 올리면 활성 표시·배지 규칙에 섞인다.
+        footer={<LogoutButton />}
         header={
           <div className="flex items-center gap-3">
             <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-brand-subtle text-brand">

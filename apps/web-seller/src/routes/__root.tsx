@@ -1,6 +1,13 @@
 import { createRootRoute, redirect } from '@tanstack/react-router'
 import { errorResponse, getAccessToken, getSellerApplication, restoreSession } from '@aechak/api'
+import { LogoutButton } from '@/features/auth'
 import { AppShell } from '../shared/components/AppShell'
+
+// 로그아웃 진입점을 셸이 아니라 여기서 끼워 넣는다 — AppShell은 `src/shared/`라 `src/features/`를
+// import할 수 없다(boundaries). 라우트 파일은 그 경계 밖이라 둘을 조립할 수 있는 유일한 자리다.
+function SellerShell() {
+  return <AppShell navFooter={<LogoutButton />} />
+}
 
 // 로그인 플로우는 세션 없이 들어오는 것이 정상이라 가드 밖에 둔다 — AppShell이 SideNav를
 // 빼는 경계와 같다. 여기에 경로를 더할 일이 생기면 pathless layout으로 전환할 것.
@@ -84,5 +91,5 @@ export const Route = createRootRoute({
       throw redirect({ to: '/store-settings', replace: true })
     }
   },
-  component: AppShell,
+  component: SellerShell,
 })
