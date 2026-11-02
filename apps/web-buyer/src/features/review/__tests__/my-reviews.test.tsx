@@ -7,8 +7,9 @@ import { beforeEach, describe, it, expect } from 'vitest'
 import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, USER_ME_URL, server } from '@/testing/msw/server'
-import { getReviews, removeReview, resetReviews } from '@/shared/review'
+import { addReview, getReviews, removeReview, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
+import type { Review } from '@aechak/domain'
 
 // 내 리뷰(GET /users/me/reviews) 실 HTTP 경로. BE MyReviewListResponse 계약 그대로 응답한다
 // (be: boot/api/.../review/response/MyReviewListResponse.kt).
@@ -86,6 +87,20 @@ function clearMockData() {
   for (const review of getReviews()) removeReview(review.id)
 }
 
+// 로컬 스토어가 내 리뷰 탭에 끼지 않는지 보는 테스트가 직접 넣는 리뷰. 스토어에는 시드가 없다.
+const LOCAL_REVIEW: Review = {
+  id: 'rv-local-1',
+  productId: 'p-feeder-5l',
+  orderId: '20260620-0044',
+  author: '나',
+  rating: 5,
+  content: '서버에 없는 로컬 스토어 리뷰예요.',
+  images: [],
+  option: '용량 5L / 화이트',
+  verifiedPurchase: true,
+  createdAt: '2026.06.24',
+}
+
 describe('내 리뷰 서버 연동', () => {
   beforeEach(() => {
     resetReviews()
@@ -111,6 +126,22 @@ describe('내 리뷰 서버 연동', () => {
     await user.click(await screen.findByRole('tab', { name: '작성 완료 1' }))
     expect(await screen.findByText('서버에 저장된 내 리뷰 본문이에요.')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 닭고기 간식')).toBeInTheDocument()
+  })
+
+  it('[AC-MY-REVIEW-010] 로컬 스토어에 리뷰가 있어도 작성 완료 탭의 목록과 개수는 서버만 따른다', async () => {
+    // 리뷰는 서버에만 저장한다(POST /reviews). 스토어를 서버 목록 뒤에 붙이면 서버에 없는 리뷰가
+    // 보이고 탭 개수가 부풀려지는데, 가입 직후 계정이 남의 리뷰를 보던 자리가 여기다.
+    addReview(LOCAL_REVIEW)
+    serveTabs({ written: page([written()], { totalCount: 1 }) })
+    const user = userEvent.setup()
+    renderAt('/reviews/mine')
+
+    // 서버 1건뿐 — 스토어의 1건이 개수에 더해지지 않는다.
+    expect(await screen.findByText('작성 완료 1')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '작성 완료 1' }))
+    expect(await screen.findByText('서버에 저장된 내 리뷰 본문이에요.')).toBeInTheDocument()
+    // 스토어 리뷰 본문은 목록에 없다.
+    expect(screen.queryByText(LOCAL_REVIEW.content)).not.toBeInTheDocument()
   })
 
   it('[AC-MY-REVIEW-009] 작성 완료 카드의 작성자는 GET /users/me 닉네임이다', async () => {

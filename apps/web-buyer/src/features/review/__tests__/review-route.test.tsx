@@ -650,13 +650,13 @@ describe('리뷰 라우트', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
+    // 로컬 스토어 리뷰는 상품 리뷰 목록에만 얹힌다(내 리뷰 탭은 서버 목록만 쓴다).
     addReview(LOCAL_REVIEW)
     const user = userEvent.setup()
-    renderAt('/reviews/mine')
-    await screen.findByText('작성 완료 1')
-    await user.click(screen.getByText('작성 완료 1'))
+    renderAt('/reviews/product/p-feeder-5l')
+    await screen.findByText(LOCAL_REVIEW.content)
 
-    await user.click(screen.getAllByRole('button', { name: '삭제' })[0]!)
+    await user.click(screen.getByRole('button', { name: '삭제' }))
     await user.click(screen.getByRole('button', { name: '삭제하기' }))
 
     expect(await screen.findByText('리뷰를 삭제했어요.')).toBeInTheDocument()
@@ -691,8 +691,8 @@ describe('리뷰 라우트', () => {
     expect(await screen.findByText('상품은 만족하셨나요?')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '리뷰 수정' }))
 
-    // 저장 완료 → 내 리뷰(완료 탭)로 이동.
-    expect(await screen.findByText('작성 완료 1', {}, { timeout: 3000 })).toBeInTheDocument()
+    // 저장 완료 → 내 리뷰(완료 탭)로 이동. 작성 완료 개수는 서버 목록(0건)만 센다.
+    expect(await screen.findByText('작성 완료 0', {}, { timeout: 3000 })).toBeInTheDocument()
 
     // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다.
     router.history.back()
