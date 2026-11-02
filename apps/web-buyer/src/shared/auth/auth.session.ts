@@ -19,6 +19,13 @@ export async function endServerSession(): Promise<void> {
 // 루트 게이트가 세션 확인을 기다리는 상한. axios에 timeout이 없어서 이 상한이 없으면 refresh 한
 // 건이 응답하지 않는 동안 앱 전체가 빈 화면이 된다 — BE가 permitAll로 열어 둔 공개 카탈로그까지
 // 인증 서버 응답을 기다리게 되므로, 기다림을 끊고 먼저 그린다(확인은 백그라운드에서 계속된다).
+//
+// 아는 창(窓): 상한에 걸리면 'unknown'으로 렌더하고, 회원 전용 화면은 'unknown'을 막지 않으므로
+// (조회 실패를 그대로 보이게 하는 기존 판단 — wishlist.tsx 참고) 그 조회가 401을 받아 전역
+// onAuthExpired로 로그인 화면으로 간다. 로그인 안내 대신 로그인 화면이 뜨는 셈이다. 이미 5xx·
+// 네트워크 실패로 'unknown'이 되는 경로가 같은 결과였고, 반대로 'unknown'을 막으면 멀쩡한 회원에게
+// "로그인이 필요해요"라는 거짓을 읽힌다(AC-AUTH-STORE-006·AC-HOME-025가 잠근 자리). 그래서 상한은
+// 공개 화면이 인증 서버에 묶이지 않는 쪽을 고른다 — 이쪽 손실은 안내 문구, 저쪽 손실은 앱 전체다.
 const SESSION_GATE_TIMEOUT_MS = 1500
 
 /**
