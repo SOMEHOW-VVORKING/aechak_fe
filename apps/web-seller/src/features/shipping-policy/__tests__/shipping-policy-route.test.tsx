@@ -306,6 +306,28 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
     expect(currentShippingPolicy().originRoadAddress).toBe('서울 강남구 테헤란로 1')
   })
 
+  /**
+   * 재조회 실패로 화면을 갈아 치우면 작성 중인 입력이 사라진다(다시 마운트되며 서버 값으로
+   * 되시드된다). 이 조회는 staleTime 0이라 창 포커스마다 재조회가 돌아 더 자주 닿는 경로다.
+   */
+  it('[AC-SHIP-ROUTE-016] 재조회가 실패해도 작성 중인 폼을 치우지 않는다', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    renderAt('/shipping-policy', queryClient)
+
+    const detail = await screen.findByLabelText('상세주소', { selector: '#origin-detail' })
+    await user.clear(detail)
+    await user.type(detail, '물류 2센터')
+
+    server.use(http.get(SELLER_SHIPPING_POLICY_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SHIPPING_POLICY_QUERY_KEY })
+
+    // 실패는 띠로만 알리고, 입력과 폼은 그대로 남는다.
+    expect(await screen.findByText(/최신 배송 정책을 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByLabelText('상세주소', { selector: '#origin-detail' })).toHaveValue('물류 2센터')
+    expect(screen.queryByText('배송 정책을 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
   it('[AC-SHIP-ROUTE-013] 금액 칸에 소수를 넣어도 원 단위 정수로 저장된다', async () => {
     const user = userEvent.setup()
     renderAt('/shipping-policy')

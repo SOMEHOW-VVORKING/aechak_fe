@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
+import { SELLER_APPLICATION_QUERY_KEY, SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
 import {
+  SELLER_APPLICATIONS_URL,
   SELLER_STORE_URL,
   currentSellerApplication,
   currentStore,
@@ -366,6 +367,31 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
 
     release?.()
     await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+  })
+
+  /**
+   * 재조회 실패로 화면을 갈아 치우면 작성 중인 입력이 사라진다. 신청 정보는 staleTime 60초라
+   * 창 포커스 한 번으로 재조회가 돌고, 그 조회만 실패해도 승인 뒤 스토어 폼이 언마운트된다 —
+   * 다시 마운트되면 서버 값으로 다시 시드되므로 입력은 되돌아오지 않는다.
+   */
+  it('[AC-STORE-ROUTE-018] 신청 정보 재조회가 실패해도 작성 중인 폼을 치우지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 신청 정보 재조회만 실패한다(스토어 조회는 그대로 성공).
+    server.use(http.get(SELLER_APPLICATIONS_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_APPLICATION_QUERY_KEY })
+
+    // 실패는 띠로만 알리고, 입력과 폼은 그대로 남는다.
+    expect(await screen.findByText(/최신 신청 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('신청 정보를 불러오지 못했어요')).not.toBeInTheDocument()
   })
 
   /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */

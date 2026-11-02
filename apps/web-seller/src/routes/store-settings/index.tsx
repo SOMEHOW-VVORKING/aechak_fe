@@ -258,7 +258,10 @@ function StoreSettingsRoute() {
     )
   }
 
-  if (isError) {
+  // 읽은 적이 없을 때만 화면 전체를 실패로 바꾼다. 캐시가 있는데(재조회 실패) 전체를 갈면
+  // 작성 중인 입력이 사라진다 — 신청 정보는 staleTime 60초라 창 포커스 한 번으로 재조회가
+  // 돌고, 그 조회만 실패해도 승인 뒤 스토어 폼까지 언마운트돼 다시 서버 값으로 시드된다.
+  if (isError && application === undefined) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
@@ -331,6 +334,22 @@ function StoreSettingsRoute() {
       />
       {headerMeta.description && (
         <p className="-mt-4 mb-4 text-body-sm text-text-tertiary">{headerMeta.description}</p>
+      )}
+
+      {/* 재조회 실패 — 화면은 그대로 두고 값이 마지막으로 읽은 것임을 밝힌다. */}
+      {isError && (
+        <Alert variant="warning" className="mb-4">
+          <span>
+            최신 신청 정보를 불러오지 못했어요. 보이는 값은 마지막으로 읽은 값이에요.{' '}
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="underline underline-offset-2"
+            >
+              다시 시도
+            </button>
+          </span>
+        </Alert>
       )}
 
       {status !== 'approved' && status !== 'cancelled' && (

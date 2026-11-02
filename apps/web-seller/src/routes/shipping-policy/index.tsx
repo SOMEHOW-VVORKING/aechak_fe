@@ -100,7 +100,10 @@ function ShippingPolicyRoute() {
 
   // 화면 전체가 이 한 조회에 달려 있다 — 실패를 빈 폼으로 떨구면 저장이 전체 덮어쓰기라
   // 서버에 있는 값을 0원으로 지워 버린다. 백지 대신 재시도를 둔다.
-  if (isError || !data || !form) {
+  //
+  // 단 읽은 적이 없을 때만이다(그때만 data가 없다). 캐시가 있는데 재조회가 실패했다고 화면을
+  // 갈면 작성 중인 입력이 사라지고, 다시 마운트되며 서버 값으로 되시드된다 — 실패는 띠로 알린다.
+  if (!data || !form) {
     return (
       <div className="p-6">
         <PageHeader title="배송 정책" />
@@ -130,6 +133,22 @@ function ShippingPolicyRoute() {
           </Button>
         }
       />
+
+      {/* 재조회 실패 — 화면은 그대로 두고 값이 마지막으로 읽은 것임을 밝힌다. */}
+      {isError && (
+        <Alert variant="warning" className="mb-4">
+          <span>
+            최신 배송 정책을 불러오지 못했어요. 보이는 값은 마지막으로 읽은 값이에요.{' '}
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="underline underline-offset-2"
+            >
+              다시 시도
+            </button>
+          </span>
+        </Alert>
+      )}
 
       {actionError && (
         <Alert variant="error" className="mb-4" onDismiss={() => setActionError(null)}>
