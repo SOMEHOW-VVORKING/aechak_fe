@@ -125,8 +125,9 @@ describe('어드민 nav', () => {
     seedAdminInquiries()
     seedAdminClaims()
     seedAdminReviews()
-    // AC-ADMIN-NAV-006의 대시보드 차례는 `/audit-log`에서 시작하므로 이 시드가 없으면 감사 로그가
-    // 앞 테스트의 모듈 상태를 그대로 읽는다.
+    // 감사 로그·공지도 같은 이유로 끊어 둔다. 두 핸들러는 시드가 없어도 빈 목록으로 답하고 이
+    // 파일은 제목과 이동만 단언하므로 **지금은** 둘을 빼도 깨지지 않는다(실측) — 뒤에 행 내용을
+    // 보는 단언이 생기면 앞 테스트가 남긴 행을 그대로 읽게 되는 자리라 미리 끊는다.
     seedAdminAuditLogs()
     seedAdminNotices()
   })
@@ -243,6 +244,31 @@ describe('어드민 nav', () => {
    */
   const destinationsFor = (labels: readonly string[]) =>
     NAV_DESTINATIONS.filter(([label]) => labels.includes(label))
+
+  /**
+   * 아래 두 `it.each`는 **분류 배열에서 뽑은 목적지만** 돌기 때문에 스스로 자기 적용 범위를
+   * 지키지 못한다. 항목을 두 배열에서 모두 빼면 그 화면의 띠 단언이 조용히 사라진다 — 테스트
+   * 수만 줄고 전부 통과한다(실측: `LIVE_LABELS`에서 한 줄을 빼면 298 → 297로 줄고 실패가 없다).
+   * 그러면 실연동하면서 띠를 걷지 않아도, 예시 화면에서 띠가 빠져도 아무것도 잡지 못한다.
+   *
+   * 실연동 작업은 항목을 한 배열에서 다른 배열로 옮기는 일이라, **옮기다 흘리는 것**이 이 파일의
+   * 실제 실패 모양이다. 그래서 두 배열이 `NAV_DESTINATIONS`를 빠짐없이, 겹치지 않게 덮는지
+   * 여기서 고정한다. `NAV_DESTINATIONS` 자체는 AC-ADMIN-NAV-008이 렌더된 nav와 맞춰 두므로
+   * (그룹마다 항목 수까지 센다) 이 둘을 합치면 nav에 올라온 15항목 전부가 분류를 받는다.
+   */
+  it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동/준비 중 한쪽으로만 분류된다', () => {
+    const classified = [...LIVE_LABELS, ...PENDING_LABELS]
+    const destinations = NAV_DESTINATIONS.map(([label]) => label)
+
+    // 합이 nav 항목 수와 같아야 한다 — 모자라면 그 화면은 띠 단언을 아예 받지 않는다.
+    expect(classified).toHaveLength(destinations.length)
+    // 개수만 맞고 이름이 어긋난 것(옮기면서 라벨을 잘못 적은 것)까지 본다.
+    expect([...classified].sort()).toEqual([...destinations].sort())
+    // 양쪽에 동시에 올라 있으면 "띠가 있어야 한다"와 "없어야 한다"를 함께 요구해 반드시 하나가 거짓이다.
+    expect(LIVE_LABELS.filter(label => (PENDING_LABELS as readonly string[]).includes(label))).toEqual(
+      [],
+    )
+  })
 
   it.each(destinationsFor(PENDING_LABELS))(
     '[AC-ADMIN-NAV-004] 꼬리표가 붙은 %s(%s) 화면은 예시 데이터 띠를 달고 열린다',
