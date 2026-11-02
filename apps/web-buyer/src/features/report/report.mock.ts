@@ -13,7 +13,7 @@ export const PRODUCT_REPORT_REASONS: { value: ProductReportReason; label: string
 export const MAX_REPORT_DETAIL_LENGTH = 300
 
 // 신고 제출 유효성 — 사유는 반드시 선택해야 하고, 상세 내용은 선택 입력이다.
-// (목업이 상세를 "선택"으로 표기하므로 상세 미입력도 제출 가능.)
+// (목업이 상세를 "선택"으로 표기하므로 기타 외 사유는 상세 미입력도 제출 가능. 기타는 서버가 상세를 요구해 화면이 막는다.)
 export function isValidReportReason(reason: ProductReportReason | ''): reason is ProductReportReason {
   return PRODUCT_REPORT_REASONS.some(r => r.value === reason)
 }

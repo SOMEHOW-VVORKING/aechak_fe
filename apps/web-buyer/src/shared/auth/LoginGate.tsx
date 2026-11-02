@@ -21,6 +21,7 @@ export type GateFeature =
   | 'follows'
   | 'block'
   | 'mute'
+  | 'report'
 
 // SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
 const SNS_FEATURES = new Set<GateFeature>(['follow', 'follows', 'block', 'mute'])
@@ -43,6 +44,7 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   follows: '팔로워/팔로잉 목록은 로그인한 회원만 볼 수 있어요.',
   block: '차단은 로그인한 회원만 이용할 수 있어요.',
   mute: '뮤트는 로그인한 회원만 이용할 수 있어요.',
+  report: '신고는 로그인한 회원만 이용할 수 있어요.',
 }
 
 export interface UseLoginGate {

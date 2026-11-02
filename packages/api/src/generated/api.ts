@@ -1383,6 +1383,29 @@ export interface ProductReviewSummaryEnvelope {
   data: ProductReviewSummaryResponse
 }
 
+export type SubmitReportRequestTargetType =
+  (typeof SubmitReportRequestTargetType)[keyof typeof SubmitReportRequestTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SubmitReportRequestTargetType = {
+  PRODUCT: 'PRODUCT',
+  REVIEW: 'REVIEW',
+  USER: 'USER',
+} as const
+
+export interface SubmitReportRequest {
+  targetType: SubmitReportRequestTargetType
+  /** PRODUCT는 상품 productId(ULID), REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id */
+  targetId: string
+  /** PRODUCT는 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER. REVIEW와 USER는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER */
+  reasonCode: string
+  /**
+   * 상세 사유. 상품 신고는 500자까지
+   * @nullable
+   */
+  reasonText?: string | null
+}
+
 export interface CreateReviewRequest {
   /** 리뷰를 작성할 주문 품목 id */
   orderItemId: number
@@ -8593,6 +8616,80 @@ export function useGetProductReviewSummarySuspense<
   query.queryKey = queryOptions.queryKey
 
   return query
+}
+
+/**
+ * 상품, 리뷰, 사용자를 신고한다. targetType에 따라 targetId와 reasonCode를 해석한다. PRODUCT는 상품 productId(ULID)와 사유 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER를 받는다. REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id를 받고 사유는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER다. OTHER는 reasonText가 있어야 한다. 성공은 201이고 바디가 없다.
+ * @summary 신고 접수
+ */
+export const submitReport = (submitReportRequest: SubmitReportRequest, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/reports`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: submitReportRequest,
+    signal,
+  })
+}
+
+export const getSubmitReportMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitReport>>,
+    TError,
+    { data: SubmitReportRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitReport>>,
+  TError,
+  { data: SubmitReportRequest },
+  TContext
+> => {
+  const mutationKey = ['submitReport']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitReport>>,
+    { data: SubmitReportRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return submitReport(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SubmitReportMutationResult = NonNullable<Awaited<ReturnType<typeof submitReport>>>
+export type SubmitReportMutationBody = SubmitReportRequest
+export type SubmitReportMutationError = void
+
+/**
+ * @summary 신고 접수
+ */
+export const useSubmitReport = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof submitReport>>,
+      TError,
+      { data: SubmitReportRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof submitReport>>,
+  TError,
+  { data: SubmitReportRequest },
+  TContext
+> => {
+  const mutationOptions = getSubmitReportMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
 }
 
 /**

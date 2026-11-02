@@ -229,6 +229,18 @@ describe('/products/$productId', () => {
     expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
   })
 
+  it('[AC-PRODUCT-024] 비회원이 상품 신고하기를 누르면 신고 화면 대신 게이트가 뜬다', async () => {
+    // 신고 접수 API는 JWT 필수라, 비회원이 신고 화면에서 제출하면 401 뒤 로그인 화면으로 밀려난다.
+    logout()
+    const user = userEvent.setup()
+    const router = renderAt('/products/p-feeder-5l')
+    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+
+    await user.click(screen.getByText('상품 신고하기'))
+    expect(await screen.findByText('신고는 로그인한 회원만 이용할 수 있어요.', { exact: false })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+  })
+
   it('[AC-PRODUCT-015] 비회원이 하단 찜(하트)을 누르면 게이트가 뜨고 찜 토글이 일어나지 않는다', async () => {
     // 하단 액션바의 찜/장바구니/구매는 모두 requireAuth로 감싸져 있어, 비회원은 실제 동작 대신
     // 로그인 게이트가 먼저 뜬다(AC-014의 전체보기 게이트와 같은 부류, 이쪽은 액션바에 초점).
