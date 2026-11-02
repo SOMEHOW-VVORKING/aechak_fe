@@ -44,9 +44,12 @@ export function AuthRequiredScreen({ feature, embedded = false }: AuthRequiredSc
 
   // 로그인은 페이지 전체를 이동하므로 돌아올 경로를 sessionStorage에 남긴다(A26과 같은 자리).
   // 행동 없이 화면만 다시 열면 되므로 kind는 'open'이다.
+  // search의 resume은 빼면 안 된다 — 로그인 화면 beforeLoad가 resume 없이 들어온 로그인에서
+  // 대기 행동을 지우므로(다른 길로 온 로그인이 예전 행동을 실행하지 않게), 빼면 방금 남긴 복귀
+  // 경로가 바로 지워지고 로그인 뒤 홈으로 간다 — 위 안내가 약속한 복귀가 거짓이 된다.
   const goLogin = () => {
     savePendingAction({ kind: 'open', publicId: '', returnTo: href })
-    void navigate({ to: '/onboarding/login' })
+    void navigate({ to: '/onboarding/login', search: { resume: true } })
   }
 
   const body = (
