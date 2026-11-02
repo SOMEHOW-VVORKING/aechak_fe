@@ -1,1 +1,1 @@
-export { useAiReviewQueueItems } from './ai-review-queue.queries'
+export { AiReviewQueuePage } from './components/AiReviewQueuePage'

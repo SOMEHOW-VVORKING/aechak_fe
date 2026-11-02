@@ -251,7 +251,10 @@ breeds/상품/검색/리뷰가 깔아둔 파이프라인이고, 셀러 상품·�
 
 ### 실 API 연동 — web-buyer 전용 조항 (전 앱 공통 규약은 6절)
 
-- **회원 전용 열람(JWT 필수) 진입점은 `useLoginGate().requireAuth(feature, action)`로 감싸** 비회원 401 강제 이탈을 막는다(로그인 BottomSheet만 열고 action 미실행). `auth.store`의 `loggedIn` 기본값은 `true`(기존 회원 흐름 전제, 새로고침 시 리셋되는 세션 mock).
+- **세션 상태의 정본은 `packages/api`의 access 토큰이다.** `shared/auth/auth.store`는 그 값을 미러링하는 삼상태(`'unknown' | 'member' | 'guest'`)이고 별도 플래그를 들지 않는다 — 들면 refresh 성공·세션 만료·로그아웃마다 두 값이 갈려 "토큰은 없는데 로그인됨"인 거짓 상태가 생긴다(예전 기본값이 `loggedIn = true`여서, BE가 `permitAll`로 열어 둔 게스트 카탈로그에 비회원이 닿지 못하고 로그인으로 튕겼다). access는 메모리에만 있고 refresh 쿠키는 httpOnly라 새로고침 직후에는 회원 여부를 알 수 없다 — 그 미지 상태가 `'unknown'`이고, `__root`의 `beforeLoad`가 `restoreSessionOrGuest()`로 **앱 수명에 한 번** refresh를 쏴 `'member'`/`'guest'`로 확정한다(쿠키가 회전하므로 네비게이션마다 다시 쏘지 말 것. 5xx는 세션 유무를 모르니 `'unknown'`으로 남겨 다음 네비게이션에 미룬다).
+- **비회원에게 열린 화면은 BE `SecurityConfig`의 `permitAll` 목록이 기준이다** — `GET /products`, `/products/*`, `/products/*/options`, `/search/products`, `/sns/users/*`. 즉 마켓·검색·상품 상세·SNS 프로필은 비회원도 끝까지 보여야 한다. 홈(`GET /home`)은 아직 열려 있지 않아 비회원은 로그인으로 보낸다.
+- **회원 전용 액션 진입점은 `useLoginGate().requireAuth(feature, action)`로 감싼다**(로그인 BottomSheet만 열고 action 미실행) — 탐색 중 찜/담기를 누른 순간용이다. **화면 자체가 회원 전용이면** 라우트 컴포넌트에서 `useSessionState() === 'guest'`일 때 `AuthRequiredScreen`을 그린다(찜·장바구니·주문·마이페이지). 둘 다 요청 전에 막는 것이 핵심이다 — 호출하면 401에서 전역 리다이렉트로 화면을 잃는다. `'unknown'`은 막지 않고 화면에 맡긴다(조회 실패를 그대로 보이게).
+- **react-query v5는 `enabled: false`인 쿼리도 `isPending === true`다.** 로그인 여부를 `enabled`로 넘기는 쿼리의 로딩 분기는 `isFetching`으로 쓸 것 — `isPending`으로 쓰면 호출을 막은 비회원에게 스켈레톤이 영구히 남는다(상품 상세 리뷰 미리보기에서 실제로 났다).
 - **실 API 화면은 목업 카탈로그 id를 `findMockProduct`(레지스트리 제외)로 네트워크 전에 걸러 목업을 반환**하고, 실 상품 첫 페이지 404는 목업 폴백이 아니라 `notFound`로(레지스트리에 등록된 실 상품을 가짜 데이터로 위장 금지).
 - 세션 만료 시 전역 콜백은 `logout` + `/onboarding/login` 이동을 맡고, 온보딩 미완(403/20006)은 `setOnOnboardingRequired`가 `/onboarding/terms`로 보낸다. **이 두 핸들러를 등록하는 앱은 web-buyer뿐이다** — 셀러센터는 `setOnAuthExpired`만 걸고(온보딩 화면이 없다) 어드민은 온보딩 개념 자체가 없다. 20006을 "전역이 알아서 처리한다"고 전제한 주석을 다른 앱에 복사하지 말 것.
 - 장바구니 파생 로직(셀러 그룹핑/배송비/소계)은 `shared/cart/cart.queries.ts`(`buildServerCartView`·`sellerShippingFee`)가 서버 `GET /carts` 응답으로 계산한다 — 상품·셀러·배송 정책이 서버 라인에 실려 오므로 카탈로그 조회가 필요 없다. `shared/catalog/cart-view.ts`는 목업 시절 합성 경로로 파일만 보존돼 있다(새 코드에서 쓰지 말 것). 두 shared가 공유하는 순수 키 함수(`cartLineKey`)는 `@aechak/domain`에 둔다(shared→shared 금지 회피).

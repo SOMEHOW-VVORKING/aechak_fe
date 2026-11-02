@@ -19,7 +19,7 @@ export const Route = createFileRoute('/account/')({
  * SCRUM-307에서 **안내만 있던 화면을 예시 데이터로 채웠다**(`UnavailableScreen` → 계정 정보 폼 +
  * 보안 설정 + 접속 기록 + 담당자 목록). 지운 것은 없고, 저장되지 않는다는 사실은 상단
  * `SampleDataNotice` 띠가 말한다. "스토어 설정으로" 안내 버튼은 그대로 남긴다 — 사업자 정보와
- * 제출 서류는 지금도 그 화면에서 **실제로** 저장된다.
+ * 제출 서류, 승인 뒤의 스토어 상호·소개·주소는 지금도 그 화면에서 **실제로** 저장된다.
  *
  * 예시 데이터와 BE가 생겼을 때의 교체 방법은 `features/account/account.mock.ts` 머리에 있다.
  */
@@ -50,8 +50,8 @@ function AccountRoute() {
         replaceWhen={
           <>
             seller 호스트에 <strong>GET /sellers/me/account</strong>와 비밀번호/2단계 인증/접속 기록
-            경로가 생기면 내 계정의 실제 값으로 바뀌어요. 사업자 정보와 제출 서류는 지금도 스토어
-            설정에서 저장돼요.
+            경로가 생기면 내 계정의 실제 값으로 바뀌어요. 사업자 정보와 제출 서류, 스토어 상호·소개·
+            주소는 지금도 스토어 설정에서 저장돼요.
           </>
         }
       />

@@ -20,6 +20,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
+import { LogoutButton } from '@/features/auth'
 import { usePendingApplicationCount } from '@/features/seller-applications'
 
 const iconClass = 'size-full'
@@ -52,12 +53,12 @@ const PENDING_TAG = '준비 중'
 //
 // 꼬리표 유무는 dev 실측으로 갈랐다(2026-10-30, `GET /v3/api-docs`). admin-api-dev에 있는 경로는
 // `/admin/admins`(+`/{userId}`), `/admin/seller-applications` 계열 넷, `/admin/members` 계열
-// 넷(목록·상세·제재·해제), 그리고 이번에 더해진 `/admin/inquiries` 넷(목록·상세·답변·상태 전이),
-// `/admin/claims` 넷(목록·사유 카탈로그·상세·개입), `/admin/reviews` 다섯(목록·상세·블라인드·
-// 해제·삭제)이다. seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·
-// `/inquiries`)가 있어도 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에
-// web-admin은 `sellerOrigin`을 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로
-// 나간다(main.tsx).
+// 넷(목록·상세·제재·해제), `/admin/orders` 계열 넷(목록·지표·상세·발송 독촉, SCRUM-339),
+// 그리고 이번에 더해진 `/admin/inquiries` 넷(목록·상세·답변·상태 전이), `/admin/claims`
+// 넷(목록·사유 카탈로그·상세·개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제)이다.
+// seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
+// 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
+// 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
 const navGroups: NavGroup[] = [
   {
     key: 'operations',
@@ -105,11 +106,11 @@ const navGroups: NavGroup[] = [
         icon: <PackageSearch className={iconClass} />,
         tag: PENDING_TAG,
       },
+      // `/admin/product-inspections` 넷(목록·상세·승인·반려)에 실연동됐다(SCRUM-283) — 꼬리표를 뗐다.
       {
         key: '/products/ai-queue',
         label: 'AI 검수 큐',
         icon: <ScanEye className={iconClass} />,
-        tag: PENDING_TAG,
       },
     ],
   },
@@ -138,14 +139,14 @@ const navGroups: NavGroup[] = [
     key: 'orders-claims',
     label: '주문 / 클레임',
     items: [
-      // 주문 배송 모니터링만 아직 admin 경로가 없다(플랫폼 전체 주문을 보는 조회가 seller·api
-      // 호스트에는 본인 스코프로만 있다). 클레임·리뷰는 `/admin/claims`·`/admin/reviews`가 생겨
-      // 실연동됐다(SCRUM-320·SCRUM-319 / SCRUM-331).
+      // 셋 다 admin 경로에 붙어 꼬리표가 없다 — 주문 배송 모니터링은 `/admin/orders` 계열
+      // 넷(SCRUM-339), 클레임과 리뷰는 `/admin/claims`·`/admin/reviews`(SCRUM-320·SCRUM-319 /
+      // SCRUM-331)다. seller·api 호스트의 닮은 경로는 셀러·구매자 본인 스코프라 운영자가
+      // 플랫폼 전체를 볼 수 없다.
       {
         key: '/orders/monitoring',
         label: '주문 배송 모니터링',
         icon: <Truck className={iconClass} />,
-        tag: PENDING_TAG,
       },
       {
         key: '/claims',
@@ -243,6 +244,10 @@ function AdminNavShell({ pathname }: { pathname: string }) {
         groups={groups}
         activeKey={navActiveKey(pathname)}
         onSelect={key => navigate({ to: key })}
+        // 세 웹앱이 refresh 쿠키 하나를 공유해 어드민에 로그아웃이 없으면 데모 중 계정 전환이
+        // 쿠키 수동 삭제 말고는 불가능하다(SCRUM-353). nav 항목이 아니라 footer에 두는 이유는
+        // 목적지가 아니라 세션 조치라서다 — 항목으로 올리면 활성 표시·배지 규칙에 섞인다.
+        footer={<LogoutButton />}
         header={
           <div className="flex items-center gap-3">
             <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-brand-subtle text-brand">

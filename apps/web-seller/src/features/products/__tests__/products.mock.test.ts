@@ -3,13 +3,10 @@ import type { ProductRegisterRequest, SellerProductSearchParams } from '../produ
 import {
   mockChangeOptionCombination,
   mockChangeSaleStatus,
-  mockDeleteProductDraft,
   mockFetchProductDetail,
-  mockFetchProductDrafts,
   mockFetchProductOptions,
   mockFetchProducts,
   mockRegisterProduct,
-  mockSaveProductDraft,
   mockUpdateProduct,
   mockUploadProductImage,
   resetProductsMock,
@@ -335,22 +332,5 @@ describe('mockUploadProductImage', () => {
     const webp = await mockUploadProductImage(new File(['w'], 'a.webp', { type: 'image/webp' }))
     expect(webp).toMatch(/^tmp\/1\/products\/\w{26}\.webp$/)
     expect(await errorCodeOf(mockUploadProductImage(new File(['g'], 'a.gif', { type: 'image/gif' })))).toBe(100000)
-  })
-})
-
-// 임시저장은 BE에 대응 API가 없는 목업 전용 기능이다 — 운영 화면의 진입점은 막았지만 서버가 생겼을
-// 때 그대로 이어 붙일 수 있게 계약을 여기서 고정한다. 삭제는 BE에 생길 계획이 없어 지웠다.
-describe('목업 전용: 임시저장', () => {
-  it('[AC-SPRD-016] 임시저장은 upsert되고 등록 후 지울 수 있다', async () => {
-    const { productId } = (await mockSaveProductDraft({ productName: '초안' })).data
-    expect((await mockFetchProductDrafts()).data).toHaveLength(3)
-
-    await mockSaveProductDraft({ productName: '초안 2' }, productId)
-    const drafts = (await mockFetchProductDrafts()).data
-    expect(drafts).toHaveLength(3)
-    expect(drafts[0]).toMatchObject({ productId, productName: '초안 2' })
-
-    await mockDeleteProductDraft(productId)
-    expect((await mockFetchProductDrafts()).data.map(d => d.productId)).not.toContain(productId)
   })
 })

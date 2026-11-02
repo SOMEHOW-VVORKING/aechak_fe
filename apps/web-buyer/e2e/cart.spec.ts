@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type { CartEnvelope, CartItemResponse, CartSellerGroupResponse } from '@aechak/api'
 
 // 장바구니(b1-st-3) ↔ /carts 실 API 연동 E2E. 실백엔드 없이 page.route 상태형 스텁으로 서버 계약을
@@ -142,6 +143,11 @@ async function stubCart(page: Page, rows: Row[]): Promise<Recorded> {
   })
   return recorded
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-CART-E2E-001] 셀러 2곳을 그룹으로 그리고 선택 해제 시 배송비·결제예정금액이 다시 계산된다', async ({
   page,

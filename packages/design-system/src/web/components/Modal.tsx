@@ -103,11 +103,11 @@ export function Modal({
         className="relative z-10 w-full max-w-sm rounded-modal bg-surface-raised shadow-modal outline-none animate-modal-in"
       >
         <div className="p-6">
-          <h2 id={titleId} className="text-subheading font-semibold text-text-primary">
+          <h2 id={titleId} className="text-subheading font-semibold text-text-primary break-keep break-words">
             {title}
           </h2>
           {description && (
-            <p className="mt-2 text-body-sm text-text-secondary">{description}</p>
+            <p className="mt-2 text-body-sm text-text-secondary break-keep break-words">{description}</p>
           )}
           {children && <div className="mt-4">{children}</div>}
         </div>

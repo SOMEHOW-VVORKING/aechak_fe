@@ -14,10 +14,6 @@ import {
   type OptionCombinationChangeRequest,
   type OptionCombinationChangeResponse,
   type OptionGroupRequest,
-  type ProductDraft,
-  type ProductDraftRequest,
-  type ProductDraftResponse,
-  type ProductDraftSummary,
   type ProductRegisterRequest,
   type ProductRegisterResponse,
   type ProductUpdateRequest,
@@ -36,7 +32,7 @@ import {
 // 셀러 상품 API(origin/develop SellerProductController)를 메모리에서 흉내 낸다(localStorage 없음, 새로고침 시
 // 시드로 돌아감). 각 함수는 실 fetcher와 같은 `{ data }`(ApiResponse)를 돌려주고, 실패는 AxiosError와 같은
 // 모양(`response.status`, `response.data = { errorCode, message }`)으로 reject한다. 검증 순서/에러 코드/
-// 자동 품절 규칙은 BE 코드를 따른다. 맨 아래 `BE 엔드포인트 없음` 구역만 BE에 대응하는 API가 없다.
+// 자동 품절 규칙은 BE 코드를 따른다. 이 파일은 테스트 전용이다 — 화면 훅은 전부 실 fetcher로 나간다.
 
 // 테스트에선 업로드 → 등록 → 목록 refetch처럼 여러 호출이 이어져 RTL findBy 1초를 넘기지 않게 0.
 const DELAY_MS = import.meta.env.MODE === 'test' ? 0 : 300
@@ -383,7 +379,6 @@ export function resetProductsMock(): void {
   productSeq = 0
   combinationSeq = 0
   products.splice(0, products.length, ...SEEDS.map(seedProduct))
-  drafts.splice(0, drafts.length, ...SEED_DRAFTS())
 }
 
 function findProduct(productId: string): MockProduct {
@@ -742,11 +737,9 @@ export function mockChangeOptionCombination(
   })
 }
 
-// ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 아래 기능은 origin/develop SellerProductController에 대응하는 API가 없다: 임시저장.
-// 운영 화면의 진입점은 막아 두었고(임시저장 버튼·초안 Drawer) 서버가 생겼을 때 그대로 이어 붙일 수
-// 있게 구현과 테스트만 남긴다.
-// 삭제는 보존하지 않고 지웠다 — BE에 DELETE가 없고 판매 중지가 노출 제어를 담당하므로 생길 계획이 없다.
+// 상품 삭제는 보존하지 않고 지웠다 — BE에 DELETE가 없고 판매 중지가 노출 제어를 담당하므로 생길 계획이 없다.
+// 임시저장 목업도 지웠다 — BE에 `/sellers/me/product-drafts`가 생겨 화면이 실서버로 나가고, 테스트는
+// MSW 핸들러(testing/msw/server.ts의 SELLER_PRODUCT_DRAFTS_URL 구역)가 받는다.
 
 /**
  * 목업 BE의 단건 조회 — 화면은 더 이상 쓰지 않는다(실 `GET /sellers/me/products/{productId}`로 교체).
@@ -768,62 +761,6 @@ export function mockFetchProductDetail(productId: string): Promise<ApiResponse<M
       additionalImageKeys: p.additionalImageKeys,
       detailImageKeys: p.detailImageKeys,
     })
-  })
-}
-
-const drafts: ProductDraft[] = [] // 최근 저장이 맨 앞
-
-const SEED_DRAFTS = (): ProductDraft[] => [
-  {
-    productId: '01JMOCKDRAFT00000000000001',
-    savedAt: '2026-10-05T09:30:00',
-    productName: '강아지 하네스 S',
-    categoryId: leafIdOf('강아지 > 산책용품 > 하네스'),
-    regularPrice: 25000,
-  },
-  {
-    productId: '01JMOCKDRAFT00000000000002',
-    savedAt: '2026-10-02T05:10:00',
-    regularPrice: 12000,
-  },
-]
-
-/** 임시저장 목록 — 계약이 POST /sellers/me/products/drafts를 예고만 했고 BE에 없다. */
-export function mockFetchProductDrafts(): Promise<ApiResponse<ProductDraftSummary[]>> {
-  return respond(() =>
-    drafts.map(d => ({ productId: d.productId, productName: d.productName ?? null, savedAt: d.savedAt })),
-  )
-}
-
-export function mockFetchProductDraft(draftId: string): Promise<ApiResponse<ProductDraft>> {
-  return respond(() => {
-    const draft = drafts.find(d => d.productId === draftId)
-    if (!draft) throw notFound()
-    return structuredClone(draft)
-  })
-}
-
-/** 필수 검증 없이 저장한다. draftId가 있으면 그 임시저장을 통째로 덮어쓴다(upsert). */
-export function mockSaveProductDraft(
-  body: ProductDraftRequest,
-  draftId?: string,
-): Promise<ApiResponse<ProductDraftResponse>> {
-  return respond(() => {
-    const index = draftId ? drafts.findIndex(d => d.productId === draftId) : -1
-    const productId = index >= 0 ? draftId! : newUlid()
-    const savedAt = nowLocal()
-    if (index >= 0) drafts.splice(index, 1)
-    drafts.unshift({ ...structuredClone(body), productId, savedAt })
-    return { productId, savedAt }
-  })
-}
-
-/** 등록이 끝난 임시저장을 지운다(등록 요청에는 임시저장 id를 실을 자리가 없다). */
-export function mockDeleteProductDraft(draftId: string): Promise<ApiResponse<null>> {
-  return respond(() => {
-    const index = drafts.findIndex(d => d.productId === draftId)
-    if (index >= 0) drafts.splice(index, 1)
-    return null
   })
 }
 

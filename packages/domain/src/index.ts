@@ -57,10 +57,6 @@ export type {
   ProductReviewActor,
   ProductReviewStatus,
   ProductReviewItem,
-  AiReviewTargetType,
-  AiReviewDetectionStage,
-  AiReviewStatus,
-  AiReviewQueueItem,
   ProductReportReason,
   ProductReport,
 } from './types'

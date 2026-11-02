@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type {
   OrderDeliveryAddressResponse,
   OrderDetailEnvelope,
@@ -304,6 +305,11 @@ const CONFIRMED_DETAIL: OrderDetailEnvelope = {
     purchaseConfirmDueAt: null,
   },
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-ORDER-E2E-001] 주문 목록은 그룹 카드 안에 셀러 주문별 상태 pill을 그리고 세그먼트가 status 필터로 나간다', async ({
   page,

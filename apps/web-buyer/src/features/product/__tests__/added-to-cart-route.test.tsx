@@ -28,6 +28,8 @@ describe('장바구니 담기 확인 바텀시트', () => {
     seedCart()
     resetCartSelection()
     resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
   })
 
   it('[AC-CART-SHEET-001] 담기(POST) 성공 시 확인 시트가 열리고 함께 보면 좋은 상품 섹션이 보인다', async () => {
