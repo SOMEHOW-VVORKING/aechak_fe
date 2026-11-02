@@ -4346,6 +4346,127 @@ export interface NudgeOrderDispatchRequest {
 }
 
 /**
+ * 셀러 답변. 문의당 최대 한 건이고 수정 경로가 없다
+ */
+export interface ProductInquiryAnswer {
+  content: string
+  answeredAt: string
+}
+
+/**
+ * 답변이 없거나 읽을 수 없으면 null
+ * @nullable
+ */
+export type ProductInquiryItemAnswer = ProductInquiryAnswer | null
+
+/**
+ * 상품 상세에 노출되는 문의 한 건. **readable이 false면 title·content는 자리표시 문자열 ("비밀글입니다.")이고 answer는 null이다** — 남의 비밀글이다. 화면은 그 값을 본문으로 그리면 안 된다. authorMasked는 서버가 가린 작성자 표시명이다
+ */
+export interface ProductInquiryItem {
+  /** 문의 공개 식별자(ULID 26자) */
+  inquiryId: string
+  category: ProductInquiryCategory
+  title: string
+  content: string
+  /** 서버가 가린 작성자 표시명 */
+  authorMasked: string
+  askedAt: string
+  /** 작성자가 비밀글로 등록했는지. true여도 내가 읽을 수 있으면 readable이 true다 */
+  secret: boolean
+  /** 본문을 읽을 수 있는지. false면 title·content가 자리표시 값이고 answer가 null */
+  readable: boolean
+  /** 내가 쓴 문의인지 */
+  mine: boolean
+  status: ProductInquiryStatus
+  /**
+   * 답변이 없거나 읽을 수 없으면 null
+   * @nullable
+   */
+  answer: ProductInquiryItemAnswer
+}
+
+export interface ProductInquiryListData {
+  inquiries: ProductInquiryItem[]
+  /** 가려진 비밀글도 세는 전체 건수(행을 지우지 않으므로 목록 길이와 맞는다) */
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface ProductInquiryListResponse {
+  data: ProductInquiryListData
+}
+
+export interface AskProductInquiryRequest {
+  category: ProductInquiryCategory
+  /**
+   * 공백만이면 400 errorCode 120101, 100자 초과는 120102. 서버가 trim한다
+   * @maxLength 100
+   */
+  title: string
+  /**
+   * 공백만이면 400 errorCode 120103, 1000자 초과는 120104. 서버가 trim한다
+   * @maxLength 1000
+   */
+  content: string
+  /** true면 작성자와 그 상품 셀러만 본문을 읽는다. 생략하면 공개글 */
+  secret?: boolean
+}
+
+export interface AskProductInquiryData {
+  inquiryId: string
+  status: ProductInquiryStatus
+  /** 서버가 계산한 답변 기한. 화면이 다시 셈하면 셀러 화면과 어긋난다 */
+  answerDueAt: string
+}
+
+export interface AskProductInquiryResponse {
+  data: AskProductInquiryData
+}
+
+/**
+ * @nullable
+ */
+export type MyProductInquiryItemAnswer = ProductInquiryAnswer | null
+
+/**
+ * 내가 등록한 문의 한 건. 본인 목록이라 비밀글도 본문이 그대로 내려온다
+ */
+export interface MyProductInquiryItem {
+  inquiryId: string
+  /** 상품 공개 식별자. 상품 상세로 돌아가는 진입에 쓴다 */
+  productId: string
+  /** 접수 시점에 복사해 둔 상품명 — 상품이 내려가도 남는다 */
+  productName: string
+  category: ProductInquiryCategory
+  title: string
+  content: string
+  secret: boolean
+  status: ProductInquiryStatus
+  askedAt: string
+  answerDueAt: string
+  /** 답변 대기 중 기한을 넘겼는지. 서버 판정이라 화면이 다시 계산하지 않는다 */
+  overdue: boolean
+  /** @nullable */
+  answer: MyProductInquiryItemAnswer
+}
+
+export interface MyProductInquiryListData {
+  inquiries: MyProductInquiryItem[]
+  totalCount: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+}
+
+export interface MyProductInquiryListResponse {
+  data: MyProductInquiryListData
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -4763,6 +4884,36 @@ export type GetSellerInquiriesParams = {
   page?: number
   /**
    * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetProductInquiriesParams = {
+  /**
+   * 0부터. 음수는 400 errorCode 90001(서버가 보정하지 않는다)
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * 1~100. 범위를 벗어나면 400 errorCode 90001(절삭하지 않는다)
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetMyProductInquiriesParams = {
+  /**
+   * 비우면 철회까지 전부. 빈 값(`?status=`)은 미입력이 아니라 형식 오류(400 errorCode 90001)이므로 키째 빼서 보낼 것
+   */
+  status?: ProductInquiryStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
    * @minimum 1
    * @maximum 100
    */
@@ -19679,6 +19830,613 @@ export const useAnswerSellerInquiry = <TError = void, TContext = unknown>(
   const mutationOptions = getAnswerSellerInquiryMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 상품 상세에 노출되는 문의 목록. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다. **인증이 필요하다(비로그인 401)** — 비밀글을 가릴지는 조회자가 누구냐로 갈려서 서버가 permitAll로 열지 않는다(같은 자리의 리뷰 목록과 같은 기준). 그래서 화면은 비회원에게 목록을 요청하지 말고 로그인 안내를 먼저 띄워야 한다. **남의 비밀글은 행이 남고 내용만 가려진다**: `readable`이 false면 `title`·`content`가 자리표시 문자열("비밀글입니다.")로 바뀌고 `answer`는 null로 내려온다. 문의 건수가 거짓이 되지 않게 행을 지우지 않는 설계라, 화면은 그 자리표시 값을 본문처럼 그리면 안 되고 `readable`을 보고 잠긴 행으로 그려야 한다. 철회(WITHDRAWN)한 문의는 이 목록에 나오지 않는다. 미존재·비노출 상품은 404.
+ * @summary 상품 문의 목록 조회(구매자)
+ */
+export const getProductInquiries = (
+  productId: string,
+  params?: GetProductInquiriesParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ProductInquiryListResponse>({
+    url: `/products/${productId}/inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetProductInquiriesQueryKey = (
+  productId?: string,
+  params?: GetProductInquiriesParams,
+) => {
+  return [`/products/${productId}/inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetProductInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductInquiriesQueryKey(productId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductInquiries>>> = ({ signal }) =>
+    getProductInquiries(productId, params, signal)
+
+  return { queryKey, queryFn, enabled: !!productId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductInquiries>>
+>
+export type GetProductInquiriesQueryError = void
+
+export function useGetProductInquiries<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params: undefined | GetProductInquiriesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getProductInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductInquiries<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProductInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getProductInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductInquiries<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 문의 목록 조회(구매자)
+ */
+
+export function useGetProductInquiries<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductInquiriesQueryOptions(productId, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetProductInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductInquiriesQueryKey(productId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductInquiries>>> = ({ signal }) =>
+    getProductInquiries(productId, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getProductInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProductInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductInquiries>>
+>
+export type GetProductInquiriesSuspenseQueryError = void
+
+export function useGetProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params: undefined | GetProductInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 상품 문의 목록 조회(구매자)
+ */
+
+export function useGetProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getProductInquiries>>,
+  TError = void,
+>(
+  productId: string,
+  params?: GetProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProductInquiriesSuspenseQueryOptions(productId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 구매 이력을 요구하지 않는다 — 구매 전 문의가 이 기능의 본래 용도다. 다만 **자기 상품에는 묻지 못한다**(400 errorCode 120113). `secret`을 주면 작성자와 그 상품 셀러만 본문을 읽고 나머지 조회자에게는 목록에서 가려진다. 제목·본문의 공백 여부와 길이는 요청 DTO가 아니라 도메인이 검증해서 전용 errorCode가 나온다 — 화면 분기는 90001이 아니라 1201xx를 봐야 한다. 응답은 201이고 서버가 계산한 답변 기한(`answerDueAt`, 접수일 다음 영업일부터 2영업일의 끝)을 함께 돌려준다. 화면이 날짜를 다시 셈하면 셀러 화면의 기한과 어긋난다.
+ * @summary 상품 문의 등록
+ */
+export const askProductInquiry = (
+  productId: string,
+  askProductInquiryRequest: AskProductInquiryRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AskProductInquiryResponse>({
+    url: `/products/${productId}/inquiries`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: askProductInquiryRequest,
+    signal,
+  })
+}
+
+export const getAskProductInquiryMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askProductInquiry>>,
+    TError,
+    { productId: string; data: AskProductInquiryRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof askProductInquiry>>,
+  TError,
+  { productId: string; data: AskProductInquiryRequest },
+  TContext
+> => {
+  const mutationKey = ['askProductInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof askProductInquiry>>,
+    { productId: string; data: AskProductInquiryRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return askProductInquiry(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AskProductInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof askProductInquiry>>
+>
+export type AskProductInquiryMutationBody = AskProductInquiryRequest
+export type AskProductInquiryMutationError = void
+
+/**
+ * @summary 상품 문의 등록
+ */
+export const useAskProductInquiry = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof askProductInquiry>>,
+      TError,
+      { productId: string; data: AskProductInquiryRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof askProductInquiry>>,
+  TError,
+  { productId: string; data: AskProductInquiryRequest },
+  TContext
+> => {
+  const mutationOptions = getAskProductInquiryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * **작성자 본인만** 철회한다(남의 문의는 403 errorCode 120107). 되돌릴 수 없고 철회하면 상품 상세 목록과 셀러의 받은 목록에서 모두 빠진다 — 화면은 확인 한 단계를 거쳐야 한다. **답변이 달린 문의는 철회할 수 없다**(409 errorCode 120111) — 셀러가 쓴 글이 사라지면 안 된다는 결정이다. 이미 철회한 문의도 409 errorCode 120110이다. 성공은 204 No Content(빈 바디)다.
+ * @summary 상품 문의 철회
+ */
+export const withdrawProductInquiry = (inquiryId: string) => {
+  return customInstance<void>({ url: `/product-inquiries/${inquiryId}`, method: 'DELETE' })
+}
+
+export const getWithdrawProductInquiryMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof withdrawProductInquiry>>,
+    TError,
+    { inquiryId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof withdrawProductInquiry>>,
+  TError,
+  { inquiryId: string },
+  TContext
+> => {
+  const mutationKey = ['withdrawProductInquiry']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof withdrawProductInquiry>>,
+    { inquiryId: string }
+  > = props => {
+    const { inquiryId } = props ?? {}
+
+    return withdrawProductInquiry(inquiryId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type WithdrawProductInquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof withdrawProductInquiry>>
+>
+
+export type WithdrawProductInquiryMutationError = void
+
+/**
+ * @summary 상품 문의 철회
+ */
+export const useWithdrawProductInquiry = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof withdrawProductInquiry>>,
+      TError,
+      { inquiryId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof withdrawProductInquiry>>,
+  TError,
+  { inquiryId: string },
+  TContext
+> => {
+  const mutationOptions = getWithdrawProductInquiryMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 본인 목록이라 **비밀글도 본문이 그대로 내려온다**(마스킹 없음, readable 필드도 없다). status를 비우면 철회한 문의까지 전부 돌려준다 — 상품 상세 목록과 달리 WITHDRAWN도 포함이다. 오프셋 페이지네이션이고 정렬은 문의 id 내림차순 고정이다. `overdue`는 서버가 저장한 answerDueAt으로 판정한 값이라 화면이 다시 계산하면 안 된다.
+ * @summary 내가 등록한 상품 문의 목록
+ */
+export const getMyProductInquiries = (
+  params?: GetMyProductInquiriesParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<MyProductInquiryListResponse>({
+    url: `/users/me/product-inquiries`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetMyProductInquiriesQueryKey = (params?: GetMyProductInquiriesParams) => {
+  return [`/users/me/product-inquiries`, ...(params ? [params] : [])] as const
+}
+
+export const getGetMyProductInquiriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyProductInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyProductInquiries>>> = ({ signal }) =>
+    getMyProductInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyProductInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyProductInquiriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyProductInquiries>>
+>
+export type GetMyProductInquiriesQueryError = unknown
+
+export function useGetMyProductInquiries<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params: undefined | GetMyProductInquiriesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyProductInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getMyProductInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInquiries<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyProductInquiries>>,
+          TError,
+          Awaited<ReturnType<typeof getMyProductInquiries>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInquiries<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내가 등록한 상품 문의 목록
+ */
+
+export function useGetMyProductInquiries<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyProductInquiriesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetMyProductInquiriesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyProductInquiriesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyProductInquiries>>> = ({ signal }) =>
+    getMyProductInquiries(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getMyProductInquiries>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyProductInquiriesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyProductInquiries>>
+>
+export type GetMyProductInquiriesSuspenseQueryError = unknown
+
+export function useGetMyProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params: undefined | GetMyProductInquiriesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내가 등록한 상품 문의 목록
+ */
+
+export function useGetMyProductInquiriesSuspense<
+  TData = Awaited<ReturnType<typeof getMyProductInquiries>>,
+  TError = unknown,
+>(
+  params?: GetMyProductInquiriesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getMyProductInquiries>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMyProductInquiriesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }
 
 /**

@@ -37,6 +37,7 @@ import { Route as MypageWithdrawRouteImport } from './routes/mypage/withdraw'
 import { Route as MypageVerifyRouteImport } from './routes/mypage/verify'
 import { Route as MypageSnsRelationsRouteImport } from './routes/mypage/sns-relations'
 import { Route as MypageProfileRouteImport } from './routes/mypage/profile'
+import { Route as MypageProductInquiriesRouteImport } from './routes/mypage/product-inquiries'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
 import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
@@ -52,6 +53,7 @@ import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderI
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
 import { Route as SnsUsersPublicIdFollowsRouteImport } from './routes/sns/users/$publicId/follows'
+import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/products/$productId/inquiries/new'
 
 const WishlistRoute = WishlistRouteImport.update({
   id: '/wishlist',
@@ -192,6 +194,11 @@ const MypageProfileRoute = MypageProfileRouteImport.update({
   path: '/mypage/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MypageProductInquiriesRoute = MypageProductInquiriesRouteImport.update({
+  id: '/mypage/product-inquiries',
+  path: '/mypage/product-inquiries',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginCompleteRoute = LoginCompleteRouteImport.update({
   id: '/login/complete',
   path: '/login/complete',
@@ -267,6 +274,12 @@ const SnsUsersPublicIdFollowsRoute = SnsUsersPublicIdFollowsRouteImport.update({
   path: '/sns/users/$publicId/follows',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsProductIdInquiriesNewRoute =
+  ProductsProductIdInquiriesNewRouteImport.update({
+    id: '/products/$productId/inquiries/new',
+    path: '/products/$productId/inquiries/new',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
@@ -279,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -309,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
@@ -322,6 +337,7 @@ export interface FileRoutesByTo {
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -353,6 +369,7 @@ export interface FileRoutesByTo {
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
 }
@@ -368,6 +385,7 @@ export interface FileRoutesById {
   '/_tabs/mypage': typeof TabsMypageRoute
   '/_tabs/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -399,6 +417,7 @@ export interface FileRoutesById {
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
@@ -415,6 +434,7 @@ export interface FileRouteTypes {
     | '/mypage'
     | '/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -445,6 +465,7 @@ export interface FileRouteTypes {
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId/'
   fileRoutesByTo: FileRoutesByTo
@@ -458,6 +479,7 @@ export interface FileRouteTypes {
     | '/mypage'
     | '/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -489,6 +511,7 @@ export interface FileRouteTypes {
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
+    | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId'
   id:
@@ -503,6 +526,7 @@ export interface FileRouteTypes {
     | '/_tabs/mypage'
     | '/_tabs/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -534,6 +558,7 @@ export interface FileRouteTypes {
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId/'
   fileRoutesById: FileRoutesById
@@ -545,6 +570,7 @@ export interface RootRouteChildren {
   CheckoutRoute: typeof CheckoutRoute
   WishlistRoute: typeof WishlistRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
+  MypageProductInquiriesRoute: typeof MypageProductInquiriesRoute
   MypageProfileRoute: typeof MypageProfileRoute
   MypageSnsRelationsRoute: typeof MypageSnsRelationsRoute
   MypageVerifyRoute: typeof MypageVerifyRoute
@@ -575,6 +601,7 @@ export interface RootRouteChildren {
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
+  ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
   SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
 }
@@ -777,6 +804,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypageProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mypage/product-inquiries': {
+      id: '/mypage/product-inquiries'
+      path: '/mypage/product-inquiries'
+      fullPath: '/mypage/product-inquiries'
+      preLoaderRoute: typeof MypageProductInquiriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/complete': {
       id: '/login/complete'
       path: '/login/complete'
@@ -882,6 +916,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SnsUsersPublicIdFollowsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/$productId/inquiries/new': {
+      id: '/products/$productId/inquiries/new'
+      path: '/products/$productId/inquiries/new'
+      fullPath: '/products/$productId/inquiries/new'
+      preLoaderRoute: typeof ProductsProductIdInquiriesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -910,6 +951,7 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRoute: CheckoutRoute,
   WishlistRoute: WishlistRoute,
   LoginCompleteRoute: LoginCompleteRoute,
+  MypageProductInquiriesRoute: MypageProductInquiriesRoute,
   MypageProfileRoute: MypageProfileRoute,
   MypageSnsRelationsRoute: MypageSnsRelationsRoute,
   MypageVerifyRoute: MypageVerifyRoute,
@@ -940,6 +982,7 @@ const rootRouteChildren: RootRouteChildren = {
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
+  ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,
   SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
 }

@@ -69,6 +69,11 @@ describe('/products/$productId', () => {
     // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
     setAccessToken('member-token')
     resetRegistry()
+    // 회원 전제 테스트는 **토큰까지** 있어야 한다. 상세 라우트가 beforeLoad에서 세션을 복원하는데
+    // (SCRUM-340 — 비회원이 회원 전용 조회로 상세를 잃지 않게), 메모리 토큰이 없으면 refresh를
+    // 시도하고 기본 핸들러가 401이라 로그아웃된다. loggedIn만 true이고 토큰이 없는 상태는 실제
+    // 앱의 회원에게 존재하지 않는다. 비회원 전제 테스트는 본문에서 logout()을 부른다.
+    setAccessToken('test-access-token')
   })
 
   it('[AC-PRODUCT-005] 존재하는 상품은 상세를 렌더한다', async () => {

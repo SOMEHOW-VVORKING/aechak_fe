@@ -16,6 +16,7 @@ export type GateFeature =
   | 'write'
   | 'chat'
   | 'review'
+  | 'inquiry'
   | 'follow'
   | 'follows'
   | 'block'
@@ -37,6 +38,7 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   write: '글 작성은 로그인한 회원만 이용할 수 있어요.',
   chat: '채팅은 로그인한 회원만 이용할 수 있어요.',
   review: '리뷰는 로그인한 회원만 볼 수 있어요.',
+  inquiry: '상품 문의는 로그인한 회원만 이용할 수 있어요.',
   follow: '팔로우는 로그인한 회원만 이용할 수 있어요.',
   follows: '팔로워/팔로잉 목록은 로그인한 회원만 볼 수 있어요.',
   block: '차단은 로그인한 회원만 이용할 수 있어요.',

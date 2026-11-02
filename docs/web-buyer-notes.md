@@ -1739,3 +1739,66 @@ BE가 AI 서버(SCRUM-310)의 장단점 집계로 만든 요약을 상품 상세
 - 회귀: `features/product/__tests__/product-route.test.tsx`(`[AC-PRODUCT-024~030]` 두 요약, 사유 한 줄, 둘 다
   null, 비회원 미호출, 사유 전부와 모르는 값, 실패 안내, 비슷한 아이 요약만), E2E `e2e/product-detail.spec.ts`
   (`[AC-PRODUCT-E2E-004]` 봉투째 읽어 카드 렌더). 상세로 들어가는 `home`·`reviews` spec에도 요약 스텁을 더했다.
+
+### 구매자 상품 문의 신설 — 네 경로 실연동 (SCRUM-340, 2026-10-31)
+
+10/29 에 셀러 '고객 문의'(SCRUM-316)가 실연동됐는데 **문의를 만들 클라이언트가 없어 그 목록이
+영구히 비어 있었다.** 구매자 절반이 없던 것이고, 이 배치가 그걸 채운다. 붙인 경로는 넷
+(`POST`·`GET /products/{id}/inquiries`, `DELETE /product-inquiries/{id}`,
+`GET /users/me/product-inquiries`)이고 전부 `api` 모듈이다.
+
+- **고객센터 1:1 문의(`features/inquiry`, `POST /inquiries`)와 도메인이 다르다.** 저쪽은 구매자가
+  운영자에게 묻고, 이쪽은 구매자가 셀러에게 묻는다. 에러코드 구간도 1200xx / 1201xx 로 갈려 있다.
+  새 feature 는 `features/product-inquiry`이고 두 폴더를 합치지 말 것.
+- **목록도 JWT 필수다**(비로그인 401 errorCode 20004). 비밀글을 가릴지가 조회자에 달려 있어 서버가
+  permitAll 로 열지 않았다 — 리뷰 목록과 같은 이유다. 그래서 상세의 문의 영역은 `useIsLoggedIn()`을
+  `enabled`로 넘겨 **비회원에게는 호출 자체를 하지 않고** 로그인 안내 카드만 그린다(401 이 나가면
+  전역 인터셉터가 상세를 로그인으로 밀어낸다). 비회원 화면에 건수를 적지 않는 이유도 같다 —
+  "목록을 못 봤다"를 0 건으로 적으면 "질문이 없는 상품"이 된다.
+- **남의 비밀글은 행이 남고 내용만 가려진다.** 서버가 `readable=false`와 함께 `title`·`content`를
+  `"비밀글입니다."`로, `answer`를 null 로 바꿔 내린다(`ProductInquiryItemResult.from`). 화면은
+  **그 자리표시 값을 본문으로 그리지 않고** `readable`을 보고 잠긴 행을 그린다 — 그대로 그리면
+  사용자가 "작성자가 저 문장을 썼다"고 읽는다. 행을 지우지도 않는다(서버 `totalCount`가 가려진
+  글까지 세므로 머리말 숫자와 카드 수가 어긋난다). 내 문의 목록은 본인 것이라 마스킹이 없다.
+- **철회는 되돌릴 수 없고, 공용 `Modal`은 `loading`과 무관하게 ESC·스크림에서 `onClose`를 부른다.**
+  DS 는 4개 앱 공용이라 고치지 않고 **호출부에서** `onClose`를 `isPending` 가드로 감싼다
+  (`MyProductInquiriesScreen`). 안 막으면 비가역 요청이 떠 있는데 화면은 아무 일도 없던 것처럼
+  보인다. 철회 중에는 다른 행의 철회 버튼도 함께 잠근다.
+- **철회가 거절되면 성공과 똑같이 목록을 다시 받는다**(`onSettled`, codex 교차검증에서 잡혔다).
+  철회가 거절되는 사유는 전부 "화면이 들고 있는 행이 낡았다"는 뜻이다 — 답변이 달렸고(409
+  120111), 이미 철회됐고(409 120110), 사라졌고(404), 내 것이 아니다(403). 성공에만 무효화하면
+  사유 토스트가 3초 뒤 사라진 자리에 **'답변 대기' pill 과 철회하기 버튼이 그대로 남아** 서버가
+  방금 알려준 것과 반대되는 상태를 읽고, 다시 눌러도 같은 409 를 받는다. 회귀는 `[AC-PINQ-026]`이
+  토스트만이 아니라 **'답변 완료'로 바뀌고 철회 버튼이 사라지는 것까지** 단언해서 잡는다.
+- **답변 기한(`answerDueAt`)과 기한 지남(`overdue`)은 서버 판정값**이라 화면이 날짜를 다시 빼지
+  않는다 — 셀러 화면의 지표와 어긋난다.
+- **로그인 가드를 라우트에 다는 기준은 "permitAll 화면인가"다.** 완전 회원 전용 화면
+  (`/mypage/product-inquiries`·`/orders`·`/reviews/mine`·`/wishlist`·`/mypage/sns-relations`)은
+  가드를 달지 않고 401 → refresh 실패 → 전역 로그인 이동에 맡긴다 — 비회원을 로그인으로 보내는
+  것이 **옳은 도착지**이고 잃을 화면이 없다. 가드(`useIsLoggedIn` + `beforeLoad`)가 필요한 쪽은
+  **permitAll 인데 회원 전용 조회를 섞는** 화면이다(상품 상세·SNS 프로필·검색·카탈로그) — 거기서는
+  401 이 볼 권리가 있던 화면을 빼앗는다. 두 부류를 섞어 가드를 일괄로 달면 비회원에게 영구
+  스켈레톤을 그리게 된다(`enabled:false`인 쿼리는 `isPending`이 계속 true 라 `isLoading`에
+  `enabled`를 곱해야 한다 — `useProductInquiries`가 그렇게 한다).
+- **feature 간 import 가 금지라 상세 화면이 문의 영역을 직접 부를 수 없다.** `ProductDetailScreen`에
+  `inquirySlot?: ReactNode`를 두고 `routes/products/$productId/index.tsx`가 조립해 내려 준다.
+  구분선도 슬롯이 직접 그린다 — 목업 카탈로그 상품(`p-*`)에서는 영역 전체를 접으므로(서버에 없는
+  상품이라 등록할 곳도, 받을 목록도 없다) 선만 남으면 안 된다.
+- **`useIsLoggedIn()`은 "토큰이 있다"가 아니다 — 이게 dev 배포에서 터졌다.** `auth.store`의
+  `loggedIn` 기본값이 `true`인 세션 mock 이라, 새로고침이나 공유 링크로 들어온 **진짜 비회원도
+  로그인한 것으로 읽힌다.** 그 상태로 회원 전용 조회를 보내면 401 → refresh 실패 → 전역
+  리다이렉트로 **보고 있던 상세를 통째로 잃는다.** permitAll 화면에서 회원 전용 조회를 섞는
+  자리는 라우트 `beforeLoad`에 `restoreSessionOrGuest()`를 달아 **비회원인지 먼저 확정**해야
+  한다(`routes/products/$productId/index.tsx`, SNS 프로필 라우트가 같은 수단을 쓴다). MSW 테스트는
+  `setAccessToken`으로 토큰을 세워 두면 초록이라 **이 결함을 잡지 못한다** — 실제로 17건이 전부
+  초록인 채로 dev 에서 터졌다. 회귀는 `[AC-PINQ-008]`(토큰 없이 진입)이 잡는다.
+  같은 이유로 **회원 전제 테스트는 `loggedIn`만 true로 두지 말고 토큰까지 세운다** — 토큰 없는
+  로그인 상태는 실제 앱의 회원에게 존재하지 않고, 그 상태로 통과하던 상세 테스트 14건이 세션
+  복원을 켜자 한꺼번에 빨개졌다.
+- 회귀: `features/product-inquiry/__tests__/product-inquiry-route.test.tsx`
+  (`[AC-PINQ-001~008]` 목록·빈 상태·마스킹·내 비밀글·비회원 무호출·게이트·상품 404·토큰 없는 진입,
+  `[AC-PINQ-010~012]` 등록·비밀글 플래그·유형 필수, `[AC-PINQ-020~026]` 내 목록·철회 확인·취소·
+  요청 중 ESC/스크림 잠금·답변 뒤 철회 불가·거절 안내). MSW 는 `testing/msw/product-inquiry.ts`가
+  상태형으로 들고 **마스킹 규칙까지 서버와 같게 흉내 낸다** — 여기서 가리지 않으면 화면이 마스킹을
+  존중하는지 확인할 수 없다. E2E `e2e/product-detail.spec.ts`가 빈 상태를 함께 잡는다(스텁을 빼면
+  로컬 8080 에 BE 가 떠 있을 때 401 → refresh 실패로 상세 단언이 깨진다 — 리뷰 미리보기와 같은 함정).

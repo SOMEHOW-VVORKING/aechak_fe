@@ -6,6 +6,7 @@ import {
   seedCart,
   seedOrderGroups,
   seedPaymentState,
+  seedProductInquiries,
   seedSns,
   server,
 } from './testing/msw/server'
@@ -37,6 +38,8 @@ afterEach(() => {
   seedOrderGroups()
   seedPaymentState()
   seedSns()
+  // 상품 문의도 등록·철회가 메모리 행을 바꾸는 상태형이라 테스트 사이에 이어지면 안 된다.
+  seedProductInquiries()
   // A26 대기 행동(sessionStorage)도 테스트 사이에 이어지지 않게 지운다.
   sessionStorage.clear()
   // access 토큰은 client.ts 모듈 메모리라 테스트 사이에 이어진다. SNS MSW는 Authorization 헤더로 보는 사람을 정한다.

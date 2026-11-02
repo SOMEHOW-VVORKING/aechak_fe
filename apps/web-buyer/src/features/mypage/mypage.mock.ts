@@ -19,6 +19,7 @@ export const MYPAGE_MENU_GROUPS: MyPageMenuGroup[] = [
       { key: 'orders', label: '주문 내역' },
       { key: 'wishlist', label: '찜 목록' },
       { key: 'reviews', label: '상품 리뷰' },
+      { key: 'product-inquiries', label: '내 상품 문의' },
       { key: 'addresses', label: '배송지 주소록' },
     ],
   },
