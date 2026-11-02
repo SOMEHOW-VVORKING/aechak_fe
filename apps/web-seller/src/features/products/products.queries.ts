@@ -1,5 +1,6 @@
 import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  autofillSellerProductDraft,
   changeSellerProductOptionCombination,
   changeSellerProductSaleStatus,
   getCategories,
@@ -13,6 +14,7 @@ import {
 import type {
   OptionCombinationChangeRequest,
   SellerProductListResponse,
+  ProductDraftAutofillRequest,
   ProductDraftRequest,
   ProductRegisterRequest,
   ProductUpdateRequest,
@@ -180,6 +182,15 @@ export const useRegisterProduct = () =>
     const response = await registerSellerProduct(body)
     if (draftId) await mockDeleteProductDraft(draftId)
     return response
+  })
+
+/**
+ * AI 초안 받기. 아무것도 저장하지 않으므로 목록 무효화가 없다. AI 실패(UNAVAILABLE 등)도 200 + state로
+ * 오고 쿨다운만 429/40402로 reject된다 — 둘을 가르는 것은 화면 몫이다.
+ */
+export const useProductDraftAutofill = () =>
+  useMutation({
+    mutationFn: (body: ProductDraftAutofillRequest) => autofillSellerProductDraft(body).then(r => r.data),
   })
 
 // ─── BE 엔드포인트 없음(목업 전용) — products.mock.ts의 같은 구역과 짝 ─────────────

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { Check } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import {
   Button,
   DataTable,
@@ -16,18 +16,23 @@ import {
 } from '@aechak/design-system/web'
 import { FieldError } from '@/shared/components/Field'
 import {
+  AUTOFILL_FIELD_LABEL,
+  AUTOFILL_STATE_OK,
+  applyAutofillDraft,
   discountRate,
   fieldDomId,
   MAX_ADDITIONAL_IMAGES,
   MAX_DETAIL_IMAGES,
   productErrorMessage,
+  toAutofillRequest,
   validateProductForm,
+  type AutofillFilledField,
   type CategoryNode,
   type ImageSlot,
   type ProductFormValues,
   type SellerOptionCombination,
 } from '../products.contract'
-import { useProductOptions } from '../products.queries'
+import { useProductDraftAutofill, useProductOptions } from '../products.queries'
 import {
   isWithinProductImageSizeLimit,
   OVERSIZED_PRODUCT_IMAGE_MESSAGE,
@@ -72,6 +77,7 @@ function sectionOf(key: string): number {
 }
 
 const sectionDomId = (step: number) => `product-section-${step}`
+const AI_FILLED_TEXT = 'AI가 채웠어요. 내용을 확인하고 고쳐 주세요.'
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
 const toOptions = (nodes: CategoryNode[] | undefined) =>
   (nodes ?? []).map(n => ({ value: String(n.categoryId), label: n.name }))
@@ -92,6 +98,16 @@ export function ProductEditor({
   const [tooltipKey, setTooltipKey] = useState<string | null>(null)
   const [imageErrors, setImageErrors] = useState<Partial<Record<ImageFieldKey, string>>>({})
   const [uploading, setUploading] = useState(false)
+
+  // AI 초안(등록에서만). 채운 자리에 표시를 붙이고, 셀러가 그 칸을 고치면 표시를 뗀다.
+  const autofill = useProductDraftAutofill()
+  const [aiFilled, setAiFilled] = useState<ReadonlySet<AutofillFilledField>>(new Set())
+  const [autofillNotice, setAutofillNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  // 응답이 올 때의 폼을 본다 — 기다리는 사이 셀러가 쓴 값도 덮지 않는다(폼을 잠그지 않는다).
+  const valuesRef = useRef(values)
+  useEffect(() => {
+    valuesRef.current = values
+  }, [values])
 
   // 이 화면이 만든 미리보기 objectURL만 모은다(프리필 슬롯은 서버 URL이라 제외). 언마운트 때 전부 해제.
   const objectUrls = useRef(new Set<string>())
@@ -115,6 +131,39 @@ export function ProductEditor({
   function update(patch: Partial<ProductFormValues>) {
     setValues(prev => ({ ...prev, ...patch }))
     setTooltipKey(null)
+    if (aiFilled.size === 0) return
+    const touched: AutofillFilledField[] = []
+    if ('description' in patch) touched.push('description')
+    if ('categoryIds' in patch) touched.push('category')
+    if ('optionGroups' in patch || 'optionEnabled' in patch) touched.push('options')
+    if (touched.length > 0) setAiFilled(prev => new Set([...prev].filter(f => !touched.includes(f))))
+  }
+
+  function handleAutofill() {
+    setAutofillNotice(null)
+    autofill.mutate(toAutofillRequest(valuesRef.current), {
+      onSuccess: result => {
+        const notice = result.sellerNotice?.trim()
+        // 실패도 200 + state로 온다 — OK가 아니면 폼을 그대로 두고 직접 작성으로 안내한다.
+        if (result.state !== AUTOFILL_STATE_OK) {
+          setAutofillNotice({
+            ok: false,
+            text: ['지금은 AI 초안을 받을 수 없어요. 직접 작성해 주세요.', notice].filter(Boolean).join(' '),
+          })
+          return
+        }
+        const { filled } = applyAutofillDraft(valuesRef.current, result.draft, categories)
+        setValues(prev => applyAutofillDraft(prev, result.draft, categories).values)
+        setAiFilled(prev => new Set([...prev, ...filled]))
+        const summary =
+          filled.length > 0
+            ? `AI가 ${filled.map(f => AUTOFILL_FIELD_LABEL[f]).join('/')}에 초안을 채웠어요. 확인하고 고쳐 주세요.`
+            : '채울 빈 칸이 없어 그대로 두었어요.'
+        setAutofillNotice({ ok: true, text: [summary, notice].filter(Boolean).join(' ') })
+      },
+      // 쿨다운(429/40402)과 그 밖의 거절은 productErrorMessage가 문구를 맡는다.
+      onError: error => setAutofillNotice({ ok: false, text: productErrorMessage(error) }),
+    })
   }
 
   const [largeId, middleId, leafId] = values.categoryIds
@@ -307,6 +356,33 @@ export function ProductEditor({
                 onChange={e => update({ productName: e.target.value })}
               />
             </FieldAnchor>
+            {mode === 'create' && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+                    loading={autofill.isPending}
+                    disabled={values.productName.trim() === ''}
+                    onClick={handleAutofill}
+                  >
+                    AI 초안 받기
+                  </Button>
+                  <span className="text-caption text-text-tertiary">
+                    상품명으로 카테고리/상세 설명/옵션 초안을 받아요. 이미 쓴 칸은 그대로 둬요.
+                  </span>
+                </div>
+                {autofillNotice &&
+                  (autofillNotice.ok ? (
+                    <p role="status" className="text-caption text-text-secondary">
+                      {autofillNotice.text}
+                    </p>
+                  ) : (
+                    <FieldError>{autofillNotice.text}</FieldError>
+                  ))}
+              </div>
+            )}
           </Section>
 
           <Section step={2} invalid={invalidSections.has(2)}>
@@ -340,6 +416,7 @@ export function ProductEditor({
                 />
               </div>
             </FieldAnchor>
+            {aiFilled.has('category') && <p className="text-caption text-text-accent">{AI_FILLED_TEXT}</p>}
           </Section>
 
           <Section step={3} invalid={invalidSections.has(3)}>
@@ -438,12 +515,14 @@ export function ProductEditor({
             <Textarea
               label="상세 설명"
               rows={5}
+              helperText={aiFilled.has('description') ? AI_FILLED_TEXT : undefined}
               value={values.description}
               onChange={description => update({ description })}
             />
           </Section>
 
           <Section step={5} invalid={invalidSections.has(5)}>
+            {aiFilled.has('options') && <p className="text-caption text-text-accent">{AI_FILLED_TEXT}</p>}
             {productId ? (
               <OptionStockReadOnly productId={productId} />
             ) : (
