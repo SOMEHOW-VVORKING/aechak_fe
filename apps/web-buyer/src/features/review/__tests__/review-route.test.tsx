@@ -694,9 +694,11 @@ describe('리뷰 라우트', () => {
     // 저장 완료 → 내 리뷰(완료 탭)로 이동. 작성 완료 개수는 서버 목록(0건)만 센다.
     expect(await screen.findByText('작성 완료 0', {}, { timeout: 3000 })).toBeInTheDocument()
 
-    // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다.
+    // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다. 탭 라벨만
+    // 기다리면 화면이 언마운트되는 시점에 기대게 되니 도착 주소를 직접 단언한다.
     router.history.back()
-    expect(await screen.findByText('작성 대기 0')).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.href).toBe('/reviews/mine'))
     expect(screen.queryByText('상품은 만족하셨나요?')).not.toBeInTheDocument()
+    expect(screen.getByText('작성 대기 0')).toBeInTheDocument()
   })
 })
