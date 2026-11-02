@@ -710,7 +710,7 @@ function terminalStateError(row: AdminMemberWire): Response | null {
 // ─── 주문 배송 모니터링 (admin 호스트 /admin/orders) ───────────────────────────
 // BE AdminOrderMonitoringController + AdminOrderMonitoringService + AdminOrderDispatchNudgeService의
 // 가드와 집계 기준을 미러한다. 기준이 계약의 일부라서(결제대기 제외, 지연 판정은 서버가 쥔다,
-// 결제액만 취소를 뺀다, 독촉은 발송 전 상태 + 쿨다운) FE가 틀리면 이 스텁에서 드러난다.
+// 주문 금액만 취소를 뺀다, 독촉은 발송 전 상태 + 쿨다운) FE가 틀리면 이 스텁에서 드러난다.
 
 export type WireOrderStatus =
   | 'PENDING_PAYMENT'
@@ -1001,8 +1001,9 @@ const orderHandlers = [
         awaitingDispatchCount: monitored.filter(row => AWAITING_DISPATCH.includes(row.status)).length,
         shippingCount: monitored.filter(row => row.status === 'SHIPPING').length,
         delayedCount: monitored.filter(row => row.delayReason != null).length,
-        // 결제액만 모수가 다르다 — 취소 주문이 빠진다(건수 카드 셋과 어긋나는 것이 정상이다).
-        totalPaymentAmount: monitored
+        // 금액만 모수가 다르다 — 취소 주문이 빠진다(건수 카드 셋과 어긋나는 것이 정상이다).
+        // 필드명은 서버와 같아야 한다 — 어긋나면 화면이 undefined 를 포맷하다 떨어진다.
+        totalOrderAmount: monitored
           .filter(row => row.status !== 'CANCELLED')
           .reduce((sum, row) => sum + row.payableAmount, 0),
       },
