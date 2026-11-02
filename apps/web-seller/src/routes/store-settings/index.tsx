@@ -19,6 +19,7 @@ import {
   DOCUMENT_LABEL,
   DocumentSection,
   REQUIRED_DOCUMENTS,
+  StoreProfileSection,
   StoreSettingsForm,
   emptyFormValue,
   formValueFrom,
@@ -309,19 +310,13 @@ function StoreSettingsRoute() {
           description:
             '제출해주신 서류를 확인하고 있어요. 보통 1~2영업일 걸려요. 따로 알림이 가지 않으니 이 화면에서 결과를 확인해 주세요.',
         }
-      : status === 'approved'
+      : status === 'cancelled'
         ? {
-            icon: <CheckCircle2 className="size-6" />,
-            title: '입점 신청이 승인됐어요',
-            description: '스토어 정보를 설정하는 화면은 곧 제공될 예정이에요.',
+            icon: <Ban className="size-6" />,
+            title: '취소된 신청이에요',
+            description: '새로 입점을 원하시면 고객센터로 문의해 주세요.',
           }
-        : status === 'cancelled'
-          ? {
-              icon: <Ban className="size-6" />,
-              title: '취소된 신청이에요',
-              description: '새로 입점을 원하시면 고객센터로 문의해 주세요.',
-            }
-          : null
+        : null
 
   return (
     <div className="p-6">
@@ -369,6 +364,10 @@ function StoreSettingsRoute() {
           description={holdingNotice.description}
         />
       )}
+
+      {/* 승인 뒤에는 같은 화면이 스토어 운영 설정이 된다(GET·PUT /sellers/me/store).
+          조회·저장을 이 섹션이 소유하므로 라우트는 신청 단계만 들고 있는다. */}
+      {status === 'approved' && <StoreProfileSection />}
 
       {isFormStage && (
         <>

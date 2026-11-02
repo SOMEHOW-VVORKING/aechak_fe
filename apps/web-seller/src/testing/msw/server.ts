@@ -24,6 +24,7 @@ export const SELLER_PRODUCT_DRAFTS_URL = `${sellerBase}/sellers/me/product-draft
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
 export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-policy`
+export const SELLER_STORE_URL = `${sellerBase}/sellers/me/store`
 export const SELLER_SETTLEMENTS_URL = `${sellerBase}/sellers/me/settlements`
 export const SELLER_SETTLEMENT_MONTHS_URL = `${sellerBase}/sellers/me/settlements/months`
 export const SELLER_DASHBOARD_SUMMARY_URL = `${sellerBase}/sellers/me/dashboard/summary`
@@ -2545,6 +2546,113 @@ const reviewsHandlers = [
   }),
 ]
 
+// BE StoreSettingsResponse 모양의 서버 상태(GET·PUT /sellers/me/store).
+export interface StoreWire {
+  sellerId: number
+  status: 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'WITHDRAWN' | 'WITHDRAWAL_REQUESTED'
+  storeName: string
+  brandIntro: string | null
+  profileImageUrl: string | null
+  profileImageKey: string | null
+  bannerImageUrl: string | null
+  bannerImageKey: string | null
+  zipCode: string | null
+  roadAddress: string | null
+  detailAddress: string | null
+  confirmedOrderCount: number
+  telesalesNoticeStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'NOTIFIED' | 'REGISTERED'
+}
+
+export interface StoreSettingsWire {
+  isSeller: boolean
+  applicationStatus: SellerApplicationWire['status'] | null
+  store: StoreWire | null
+}
+
+export const DEFAULT_STORE: StoreWire = {
+  sellerId: 7,
+  status: 'ACTIVE',
+  storeName: '애착상회',
+  brandIntro: null,
+  profileImageUrl: null,
+  profileImageKey: null,
+  bannerImageUrl: null,
+  bannerImageKey: null,
+  zipCode: null,
+  roadAddress: null,
+  detailAddress: null,
+  confirmedOrderCount: 0,
+  telesalesNoticeStatus: 'NOT_REQUIRED',
+}
+
+const DEFAULT_STORE_SETTINGS: StoreSettingsWire = {
+  isSeller: true,
+  applicationStatus: 'APPROVED',
+  store: DEFAULT_STORE,
+}
+
+let storeSettings: StoreSettingsWire = { ...DEFAULT_STORE_SETTINGS, store: { ...DEFAULT_STORE } }
+
+export function makeStoreWire(patch: Partial<StoreWire> = {}): StoreWire {
+  return { ...DEFAULT_STORE, ...patch }
+}
+
+/** 인자 없이 부르면 승인된 활성 셀러 기본값으로 되돌린다. */
+export function seedStoreSettings(state: StoreSettingsWire = DEFAULT_STORE_SETTINGS): void {
+  storeSettings = { ...state, store: state.store ? { ...state.store } : null }
+}
+
+/** 핸들러가 저장한 현재 스토어 — 테스트가 PUT 본문 반영을 단언할 때 읽는다. */
+export function currentStore(): StoreWire | null {
+  return storeSettings.store ? { ...storeSettings.store } : null
+}
+
+interface StoreUpdateBody {
+  storeName: string
+  brandIntro?: string | null
+  profileImageKey?: string | null
+  bannerImageKey?: string | null
+  zipCode?: string | null
+  roadAddress?: string | null
+  detailAddress?: string | null
+}
+
+const storeHandlers = [
+  // 셀러가 아닌 계정도 200이다 — 한 화면이 입점 신청과 스토어 운영을 겸한다.
+  http.get(SELLER_STORE_URL, () => HttpResponse.json({ data: { ...storeSettings } })),
+  http.put(SELLER_STORE_URL, async ({ request }) => {
+    const body = (await request.json()) as StoreUpdateBody
+    const store = storeSettings.store
+    // 자격 게이트가 본문 검증보다 앞선다(BE: 승격 전에 getActive).
+    if (!store) return errorAt(403, 10004, '셀러로 등록되지 않은 계정입니다.')
+    if (store.status !== 'ACTIVE') return errorAt(403, 10002, '활성 상태의 셀러만 이용할 수 있습니다.')
+    // Bean Validation 미러 — 빈 상호와 길이 초과는 전부 90001이다(10006이 아니다).
+    const tooLong =
+      body.storeName.length > 100 ||
+      (body.brandIntro?.length ?? 0) > 1000 ||
+      (body.zipCode?.length ?? 0) > 10 ||
+      (body.roadAddress?.length ?? 0) > 255 ||
+      (body.detailAddress?.length ?? 0) > 255
+    if (body.storeName.trim().length === 0 || tooLong) {
+      return errorAt(400, 90001, '요청 본문이 올바르지 않습니다.')
+    }
+    storeSettings = {
+      ...storeSettings,
+      store: {
+        ...store,
+        storeName: body.storeName.trim(),
+        brandIntro: body.brandIntro ?? null,
+        profileImageKey: body.profileImageKey ?? null,
+        bannerImageKey: body.bannerImageKey ?? null,
+        zipCode: body.zipCode ?? null,
+        roadAddress: body.roadAddress ?? null,
+        detailAddress: body.detailAddress ?? null,
+      },
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
@@ -2553,6 +2661,7 @@ export const handlers = [
   ...sellerOrderHandlers,
   ...claimHandlers,
   ...shippingPolicyHandlers,
+  ...storeHandlers,
   ...settlementHandlers,
   ...dashboardHandlers,
   ...inquiryHandlers,

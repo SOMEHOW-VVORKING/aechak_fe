@@ -6,6 +6,7 @@ import {
   SELLER_ORIGIN,
   makeApplicationWire,
   seedSellerApplication,
+  seedStoreSettings,
   server,
 } from './testing/msw/server'
 
@@ -62,5 +63,6 @@ afterAll(() => server.close())
 beforeEach(() => {
   setAccessToken('seller-test-token')
   seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+  seedStoreSettings()
 })
 afterEach(() => setAccessToken(null))

@@ -2494,6 +2494,125 @@ export interface ShippingPolicyUpdateRequest {
 }
 
 /**
+ * 셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 — 나머지는 403 errorCode 10002다.
+ */
+export type SellerStatus = (typeof SellerStatus)[keyof typeof SellerStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerStatus = {
+  ACTIVE: 'ACTIVE',
+  PAUSED: 'PAUSED',
+  SUSPENDED: 'SUSPENDED',
+  WITHDRAWN: 'WITHDRAWN',
+  WITHDRAWAL_REQUESTED: 'WITHDRAWAL_REQUESTED',
+} as const
+
+/**
+ * 통신판매업 신고 안내 상태. 서버가 구매확정 누적으로 올리는 값이고 셀러가 바꿀 수 없다 — REQUIRED 이상이면 신고 대상임을 화면에서 알린다.
+ */
+export type TelesalesNoticeStatus =
+  (typeof TelesalesNoticeStatus)[keyof typeof TelesalesNoticeStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TelesalesNoticeStatus = {
+  NOT_REQUIRED: 'NOT_REQUIRED',
+  REQUIRED: 'REQUIRED',
+  NOTIFIED: 'NOTIFIED',
+  REGISTERED: 'REGISTERED',
+} as const
+
+export interface StoreData {
+  sellerId: number
+  status: SellerStatus
+  storeName: string
+  /** @nullable */
+  brandIntro?: string | null
+  /**
+   * 조회용 전체 URL. 저장할 때는 이 값이 아니라 profileImageKey를 보낸다
+   * @nullable
+   */
+  profileImageUrl?: string | null
+  /** @nullable */
+  profileImageKey?: string | null
+  /** @nullable */
+  bannerImageUrl?: string | null
+  /** @nullable */
+  bannerImageKey?: string | null
+  /** @nullable */
+  zipCode?: string | null
+  /** @nullable */
+  roadAddress?: string | null
+  /** @nullable */
+  detailAddress?: string | null
+  /** 누적 구매확정 건수 — 통신판매업 신고 안내 판정에 쓰는 서버 계산값 */
+  confirmedOrderCount: number
+  telesalesNoticeStatus: TelesalesNoticeStatus
+}
+
+/**
+ * @nullable
+ */
+export type StoreSettingsDataApplicationStatus = ApplicationStatus | null
+
+/**
+ * @nullable
+ */
+export type StoreSettingsDataStore = StoreData | null
+
+/**
+ * 아직 셀러가 아니면 store=null이고 applicationStatus로 입점 신청 단계를 그린다 (신청 이력조차 없으면 applicationStatus도 null).
+ */
+export interface StoreSettingsData {
+  isSeller: boolean
+  /** @nullable */
+  applicationStatus?: StoreSettingsDataApplicationStatus
+  /** @nullable */
+  store?: StoreSettingsDataStore
+}
+
+export interface StoreSettingsResponse {
+  data: StoreSettingsData
+}
+
+/**
+ * 전체 덮어쓰기 본문. 선택 항목을 빼면 비운 것으로 저장된다 — 부분 수정 용도로 쓰지 말 것. 상호만 필수이고 서버가 앞뒤 공백을 떼고 판정한다.
+ */
+export interface StoreSettingsUpdateRequest {
+  /** @maxLength 100 */
+  storeName: string
+  /**
+   * @maxLength 1000
+   * @nullable
+   */
+  brandIntro?: string | null
+  /**
+   * @maxLength 1024
+   * @nullable
+   */
+  profileImageKey?: string | null
+  /**
+   * @maxLength 1024
+   * @nullable
+   */
+  bannerImageKey?: string | null
+  /**
+   * @maxLength 10
+   * @nullable
+   */
+  zipCode?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  roadAddress?: string | null
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  detailAddress?: string | null
+}
+
+/**
  * 셀러 주문 목록 세그먼트(be SellerOrderStatusFilter). OrderStatus enum 이름이 아니라 세그먼트 어휘이고 하나가 상태 여러 개를 묶는다 — all = PENDING_PAYMENT를 뺀 전부 (결제 전 주문이 테이블에 남는 모델이라 셀러에게 미결제 건을 보이지 않는다), new = PAID, awaiting-dispatch = PREPARING·DISPATCH_PENDING, shipping = SHIPPING, delivered = DELIVERED·PURCHASE_CONFIRMED, cancelled = CANCELLED
  */
 export type SellerOrderStatusFilter =
@@ -17480,6 +17599,273 @@ export const useUpdateSellerShippingPolicy = <TError = unknown, TContext = unkno
   TContext
 > => {
   const mutationOptions = getUpdateSellerShippingPolicyMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 셀러센터(seller 모듈) 전용. 대상은 늘 인증 주체의 스토어 1건이라 경로에 식별자가 없다. **셀러가 아닌 계정도 200이다** — 한 화면이 입점 신청과 스토어 운영을 겸하므로 isSeller=false·store=null·applicationStatus(신청 이력 없으면 null)로 신청 단계를 그린다. 정지·휴점 셀러도 조회는 열려 있다(쓰기만 활성 셀러로 막힌다). 미인증은 401 errorCode 20004. 주소 3필드(zipCode·roadAddress·detailAddress)는 배송 정책의 출고지와 같은 컬럼이라 두 화면이 같은 값을 본다.
+ * @summary 셀러 스토어 설정 조회
+ */
+export const getSellerStore = (signal?: AbortSignal) => {
+  return customInstance<StoreSettingsResponse>({ url: `/sellers/me/store`, method: 'GET', signal })
+}
+
+export const getGetSellerStoreQueryKey = () => {
+  return [`/sellers/me/store`] as const
+}
+
+export const getGetSellerStoreQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>>
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerStoreQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerStore>>> = ({ signal }) =>
+    getSellerStore(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerStore>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerStoreQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerStore>>>
+export type GetSellerStoreQueryError = unknown
+
+export function useGetSellerStore<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerStore>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerStore>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerStore<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerStore>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerStore>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerStore<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 스토어 설정 조회
+ */
+
+export function useGetSellerStore<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerStoreQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerStoreSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>
+  >
+}) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerStoreQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerStore>>> = ({ signal }) =>
+    getSellerStore(signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerStore>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerStoreSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerStore>>
+>
+export type GetSellerStoreSuspenseQueryError = unknown
+
+export function useGetSellerStoreSuspense<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerStoreSuspense<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerStoreSuspense<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러 스토어 설정 조회
+ */
+
+export function useGetSellerStoreSuspense<
+  TData = Awaited<ReturnType<typeof getSellerStore>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerStore>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerStoreSuspenseQueryOptions(options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(이미지를 빼면 제거, 주소를 빼면 비워진다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것. 자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002, 셀러로 등록된 적 없는 계정은 403 errorCode 10004다(조회가 200인 것과 다르다). 본문 검증(빈 상호, 상호 100자·브랜드 소개 1000자·이미지 키 1024자·우편번호 10자· 도로명·상세주소 255자 초과)은 전부 400 errorCode 90001이다. 상호는 서버가 앞뒤 공백을 떼고 저장하는데, 본문 검증을 통과하고도 떼면 비는 공백 문자만의 상호는 도메인이 400 errorCode 10006으로 거절한다. 이미지 키는 업로드 승격 전 임시 키를 보내면 서버가 승격해 저장하고, 조회로 받은 키를 그대로 돌려보내면 재승격 없이 유지된다. 남의 tmp 키나 용도가 다른 키는 403 errorCode 100002·100003이고 그때는 상호도 저장되지 않는다.
+ * @summary 셀러 스토어 설정 저장
+ */
+export const updateSellerStore = (storeSettingsUpdateRequest: StoreSettingsUpdateRequest) => {
+  return customInstance<void>({
+    url: `/sellers/me/store`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: storeSettingsUpdateRequest,
+  })
+}
+
+export const getUpdateSellerStoreMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSellerStore>>,
+    TError,
+    { data: StoreSettingsUpdateRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSellerStore>>,
+  TError,
+  { data: StoreSettingsUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSellerStore']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSellerStore>>,
+    { data: StoreSettingsUpdateRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return updateSellerStore(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSellerStoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSellerStore>>
+>
+export type UpdateSellerStoreMutationBody = StoreSettingsUpdateRequest
+export type UpdateSellerStoreMutationError = unknown
+
+/**
+ * @summary 셀러 스토어 설정 저장
+ */
+export const useUpdateSellerStore = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSellerStore>>,
+      TError,
+      { data: StoreSettingsUpdateRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSellerStore>>,
+  TError,
+  { data: StoreSettingsUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSellerStoreMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
