@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  customInstance,
   errorResponse,
   getProductDetail,
   getProductOptions,
-  getProductReviewSummary,
   getProductReviews,
+  type ProductReviewSummaryEnvelope,
   type ProductReviewSummaryResponse,
 } from '@aechak/api'
 import { findMockProduct, registerProducts } from '@/shared/catalog'
@@ -91,13 +92,23 @@ export function useProductReviewPreview(id: string, options: { enabled: boolean 
   })
 }
 
-// 리뷰 AI 요약. 리뷰 목록 API처럼 JWT 필수라 호출부가 미리보기와 같은 조건을 enabled로 넘긴다.
+// 리뷰 AI 요약. 비회원도 조회한다(SCRUM-351) — 목업 상품 제외는 호출부가 enabled로 넘긴다.
+// 서버가 아직 열기 전이거나 세션이 만료된 401은 전역 로그인 이동을 억제하고 쿼리 실패로만 남긴다
+// (화면이 "불러오지 못했어요" 한 줄로 받는다). 상세 자체는 permitAll이라 상세를 잃으면 안 된다.
 // 응답이 조회자의 대표 펫 체급에 따라 달라서 펫이 바뀌면 shared/pet이 이 키 전체를 지우고,
 // 리뷰를 쓰거나 지우면 review feature가 그 상품 키를 무효화한다. 키를 바꾸면 두 곳도 함께 바꾼다.
 export function useProductReviewSummary(id: string, options: { enabled: boolean }) {
   return useQuery<ProductReviewSummaryResponse>({
     queryKey: ['review-summary', id],
     enabled: options.enabled && id !== '',
-    queryFn: async ({ signal }) => (await getProductReviewSummary(id, signal)).data,
+    queryFn: async ({ signal }) => {
+      const res = await customInstance<ProductReviewSummaryEnvelope>({
+        url: `/products/${id}/review-summary`,
+        method: 'GET',
+        signal,
+        suppressAuthExpiredRedirect: true,
+      })
+      return res.data
+    },
   })
 }
