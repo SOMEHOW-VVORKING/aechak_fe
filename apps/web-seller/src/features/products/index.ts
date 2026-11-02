@@ -42,6 +42,7 @@ export {
   type WireInspectionStatus,
   type WireSaleStatus,
 } from './products.contract'
+export { InspectionDrawer } from './components/InspectionDrawer'
 export { DraftListDrawer, draftLabel } from './components/DraftListDrawer'
 export { InventoryDrawer } from './components/InventoryDrawer'
 export { ProductEditor } from './components/ProductEditor'

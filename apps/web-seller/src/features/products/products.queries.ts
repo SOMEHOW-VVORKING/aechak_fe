@@ -5,6 +5,7 @@ import {
   createSellerProductDraft,
   deleteSellerProductDraft,
   getCategories,
+  getMyProductInspection,
   getSellerProductDetail,
   getSellerProductDraft,
   getSellerProductDrafts,
@@ -13,6 +14,7 @@ import {
   registerSellerProduct,
   updateSellerProduct,
   updateSellerProductDraft,
+  type InspectionProgressStep,
   type SellerAssignableSaleStatus,
 } from '@aechak/api'
 import type {
@@ -122,6 +124,22 @@ function useProductsMutation<TVariables, TData>(mutationFn: (variables: TVariabl
     onSuccess: () => queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY }),
   })
 }
+
+export const INSPECTION_POLL_MS = 5_000
+
+/** AI가 보는 동안만 다시 조회한다. 보통 1분 안에 끝나지만 관리자 확인은 몇 시간이 걸릴 수 있다. */
+export function isInspectionInProgress(step: InspectionProgressStep | undefined): boolean {
+  return step === 'REQUESTED' || step === 'AI_REVIEWING'
+}
+
+export const useProductInspection = (productId: string | null | undefined) =>
+  useQuery({
+    queryKey: [...PRODUCTS_QUERY_KEY, 'inspection', productId],
+    queryFn: productId
+      ? ({ signal }) => getMyProductInspection(productId, signal).then(r => r.data)
+      : skipToken,
+    refetchInterval: query => (isInspectionInProgress(query.state.data?.progressStep) ? INSPECTION_POLL_MS : false),
+  })
 
 /** 수정 폼 프리필. 단건 조회가 현재 열려 있는 이미지 키만 주므로 응답을 그대로 되돌려 보내도 된다. */
 export const useProductDetail = (productId: string | null | undefined) =>

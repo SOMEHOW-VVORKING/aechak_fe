@@ -21,6 +21,7 @@ export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
 export const ADMIN_APPLICATION_REJECT_URL = `${ADMIN_APPLICATION_DETAIL_URL}/reject`
+export const ADMIN_PRODUCT_INSPECTIONS_URL = `${adminBase}/admin/product-inspections`
 export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
 export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
 export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`

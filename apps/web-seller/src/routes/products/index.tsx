@@ -20,10 +20,11 @@ import { useToast } from '@/shared/hooks/useToast'
 import {
   DraftListDrawer,
   INSPECTION_STATUS_LABEL,
-  draftLabel,
+  InspectionDrawer,
   InventoryDrawer,
   KEYWORD_MAX,
   SALE_STATUS_LABEL,
+  draftLabel,
   productErrorMessage,
   productImageUrl,
   useChangeSaleStatus,
@@ -167,6 +168,7 @@ function ProductsRoute() {
 
   const [suspendTarget, setSuspendTarget] = useState<SellerProductSummary | null>(null)
   const [inventoryProductId, setInventoryProductId] = useState<string | null>(null)
+  const [inspectionProductId, setInspectionProductId] = useState<string | null>(null)
   const [draftsOpen, setDraftsOpen] = useState(false)
   const [draftDeleteTarget, setDraftDeleteTarget] = useState<ProductDraftSummary | null>(null)
   // 초안 수는 머리말 배지의 출처다. 처음 조회가 실패하면 수를 지어내지 않는다 — "임시저장 0"은 거짓이다.
@@ -322,10 +324,18 @@ function ProductsRoute() {
       key: 'inspectionStatus',
       label: '검수 상태',
       align: 'center',
+      // 승인된 상품도 수정하면 다시 검수를 받으므로 상태와 상관없이 모든 행에서 진행 Drawer를 연다.
       render: p => (
-        <StatusPill variant={INSPECTION_STATUS_VARIANT[p.inspectionStatus]}>
-          {INSPECTION_STATUS_LABEL[p.inspectionStatus]}
-        </StatusPill>
+        <button
+          type="button"
+          aria-label={`${p.name} 검수 진행 보기`}
+          className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          onClick={() => setInspectionProductId(p.productId)}
+        >
+          <StatusPill variant={INSPECTION_STATUS_VARIANT[p.inspectionStatus]}>
+            {INSPECTION_STATUS_LABEL[p.inspectionStatus]}
+          </StatusPill>
+        </button>
       ),
     },
     {
@@ -546,6 +556,12 @@ function ProductsRoute() {
         productId={inventoryProductId}
         onClose={() => setInventoryProductId(null)}
         onSaved={message => toast.show(message)}
+      />
+
+      <InspectionDrawer
+        productId={inspectionProductId}
+        onClose={() => setInspectionProductId(null)}
+        onEdit={productId => navigate({ to: '/products/$productId/edit', params: { productId } })}
       />
 
       {/* 삭제가 마지막 초안을 지워도 Drawer는 닫지 않는다 — 빈 상태를 보여 주고 셀러가 닫는다. */}

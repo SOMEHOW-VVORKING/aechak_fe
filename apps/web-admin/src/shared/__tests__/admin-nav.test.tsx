@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
 import {
   ADMIN_APPLICATIONS_URL,
+  ADMIN_PRODUCT_INSPECTIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
   seedAdminOrders,
@@ -44,6 +45,7 @@ const LIVE_LABELS = [
   '셀러 입점 심사',
   '관리자 관리',
   '일반 회원 관리',
+  'AI 검수 큐',
   '주문 배송 모니터링',
 ] as const
 
@@ -55,7 +57,6 @@ const PENDING_LABELS = [
   '대시보드',
   '셀러 관리',
   '상품 검수 관리',
-  'AI 검수 큐',
   '신고 제재 관리',
   '서비스 문의 관리',
   '취소/반품/교환',
@@ -104,6 +105,10 @@ describe('어드민 nav', () => {
   beforeEach(() => {
     // 심사 대기 0건 → 입점 심사 항목에 숫자 배지가 붙지 않는 상태가 기본값이다.
     seedAdminApplications()
+    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회한다 — 빈 큐로 받아 준다.
+    server.use(
+      http.get(ADMIN_PRODUCT_INSPECTIONS_URL, () => HttpResponse.json({ data: { items: [], totalCount: 0 } })),
+    )
     // 주문 배송 모니터링은 실연동이라 이 화면을 열면 목록·지표 조회가 나간다.
     seedAdminOrders()
   })

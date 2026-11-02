@@ -104,11 +104,11 @@ const navGroups: NavGroup[] = [
         icon: <PackageSearch className={iconClass} />,
         tag: PENDING_TAG,
       },
+      // `/admin/product-inspections` 넷(목록·상세·승인·반려)에 실연동됐다(SCRUM-283) — 꼬리표를 뗐다.
       {
         key: '/products/ai-queue',
         label: 'AI 검수 큐',
         icon: <ScanEye className={iconClass} />,
-        tag: PENDING_TAG,
       },
     ],
   },
