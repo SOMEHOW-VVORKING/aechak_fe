@@ -1,11 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
-import { http, HttpResponse } from 'msw'
+import { HttpResponse, delay, http } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getAccessToken } from '@aechak/api'
-import { getSessionState, resetAuth } from '@/shared/auth'
+import { getSessionState, peekPendingAction, resetAuth } from '@/shared/auth'
 import { CART_URL, CATEGORIES_URL, WEB_REFRESH_URL, server } from '@/testing/msw/server'
 import { routeTree } from '../routeTree.gen'
 
@@ -141,5 +141,55 @@ describe('첫 진입 세션 확인', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
     expect(refreshCalls).toBe(2)
+  })
+
+  it('[AC-GUEST-007] 회원 전용 화면에서 로그인하면 안내가 약속한 그 화면으로 돌아온다', async () => {
+    // 안내는 "보던 화면으로 돌아와 이어서 볼 수 있어요"라고 적혀 있다 — 복귀가 실제로 일어나지
+    // 않으면 사용자가 거짓을 읽고 로그인 뒤 홈에 떨어진다. 로그인 화면 beforeLoad는 resume 없이
+    // 들어온 로그인에서 대기 행동을 지우므로, 그 표식이 빠지면 여기서 끊긴다.
+    const user = userEvent.setup()
+    const router = renderAt('/cart')
+    await screen.findByText('로그인이 필요해요')
+
+    await user.click(screen.getByRole('button', { name: '로그인 / 회원가입' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/onboarding/login'))
+    expect(peekPendingAction()?.returnTo).toBe('/cart')
+
+    // 로그인 화면은 페이지 전체를 이동하므로 화면을 내리고, 쿠키가 생긴 상태로 복귀 라우트를 새로 연다.
+    cleanup()
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 } }),
+      ),
+    )
+    const after = renderAt('/login/complete?status=ACTIVE')
+
+    await waitFor(() => expect(after.state.location.pathname).toBe('/cart'))
+  })
+
+  // 이 파일의 마지막 테스트여야 한다 — refresh 응답을 늦추면 client.ts의 공유 refreshPromise가
+  // 그만큼 떠 있고, 뒤에 오는 테스트가 그 요청에 합류해 버린다.
+  it('[AC-GUEST-008] 세션 확인이 응답하지 않아도 공개 카탈로그는 그려진다', async () => {
+    // axios에 timeout이 없다. 루트 게이트가 응답을 끝까지 기다리면 인증 서버 한 건이 멈춘 동안
+    // BE가 permitAll로 열어 둔 마켓까지 빈 화면이 된다(라우터에 pending 컴포넌트가 없어 안내도 없다).
+    let productCalls = 0
+    server.use(
+      http.post(WEB_REFRESH_URL, async () => {
+        await delay(5000)
+        return HttpResponse.json({ errorCode: 20002, message: '유효하지 않은 토큰' }, { status: 401 })
+      }),
+    )
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname.endsWith('/products')) productCalls += 1
+    })
+
+    renderAt('/market')
+
+    expect(await screen.findByText('강아지 연어 사료 2kg', undefined, { timeout: 4000 })).toBeInTheDocument()
+    // 아직 확정되지 않았으므로 회원 전용 조회는 나가지 않은 채다(비회원 취급).
+    expect(getSessionState()).toBe('unknown')
+    expect(productCalls).toBeGreaterThan(0)
+    server.events.removeAllListeners()
   })
 })
