@@ -1,4 +1,5 @@
 import { test, expect, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
 const API_ORIGIN = 'http://localhost:8080'
@@ -65,6 +66,11 @@ const EMPTY_REVIEWS = {
 }
 // 리뷰 AI 요약도 같은 이유(JWT 필수)로 스텁한다.
 const NO_AI_SUMMARY = { data: { productSummary: null, similarPetSummary: null } }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 총액에 반영된다', async ({ page }) => {
   await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))

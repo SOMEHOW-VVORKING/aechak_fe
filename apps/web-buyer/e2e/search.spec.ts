@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 검색 입력·최근검색어(b3-st-2) + 결과·필터(b3-st-3) ↔ 실 API 연동 E2E. 실백엔드 없이 page.route
 // 스텁으로 서버 계약을 재현한다(마켓 spec과 동일한 CORS/프리플라이트 규칙 — 페이지 5175 → API 8080이
@@ -119,6 +120,7 @@ function stubProducts(route: Route) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
   // 결과 화면의 카테고리 필터가 조회하는 /categories(로그인 사용자 전용). 결과 화면 진입 시 항상 발사된다.
   await page.route('**/api/v1/categories', route => fulfillJson(route, 200, CATEGORIES))
 })

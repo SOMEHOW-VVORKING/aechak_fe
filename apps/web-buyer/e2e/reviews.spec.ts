@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type { ReviewItemResponse } from '@aechak/api'
 
 // 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
@@ -101,6 +102,11 @@ async function stubReviews(page: Page, opts: number | StubOptions = 100) {
     return route.fulfill({ status: 200, headers: CORS, json: reviewsBody(url, pageSize) })
   })
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-REVIEW-E2E-001] 실 상품 리뷰 요약(평균)과 목록을 렌더한다', async ({ page }) => {
   await stubReviews(page, 100)
