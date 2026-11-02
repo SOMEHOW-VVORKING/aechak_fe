@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { SHIPPING_POLICY_QUERY_KEY } from '@/features/shipping-policy'
 import {
   SELLER_SHIPPING_POLICY_URL,
   currentShippingPolicy,
@@ -14,12 +15,18 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+// 실제 앱(main.tsx)의 쿼리 기본값 — staleTime 60초. 재진입 경로는 이 값으로 재현해야 한다.
+// 기본값 0으로 재진입을 테스트하면 언마운트 뒤 재조회가 언제나 돌아, 캐시가 폼을 확정하는
+// 결함이 있어도 통과한다.
+const PROD_QUERY_DEFAULTS = {
+  defaultOptions: { queries: { retry: false, staleTime: 1000 * 60 } },
+}
+
+function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -228,6 +235,99 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
 
     await screen.findByText('저장했어요.')
     expect(currentShippingPolicy().defaultCourierCode).toBeNull()
+  })
+
+  /**
+   * 스위치가 무효화하는 칸만 지키면 지킨 입력이 저장에서 버려진다. 반품지 도로명만 고치는
+   * 동안 다른 화면이 "출고지와 동일"을 켜면, 체크가 true로 병합되고 저장이 반품지 3필드를
+   * null로 보낸다 — 스위치와 종속 칸을 한 묶음으로 지키는지 본다.
+   */
+  it('[AC-SHIP-ROUTE-015] 반품지를 고치는 중이면 동일 체크도 함께 지킨다', async () => {
+    seedShippingPolicy(
+      makeShippingPolicyWire({ ...SAVED, returnSameAsOrigin: false, returnZipCode: '06236' }),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    renderAt('/shipping-policy', queryClient)
+
+    const returnRoad = await screen.findByLabelText('도로명주소', { selector: '#return-road' })
+    await user.clear(returnRoad)
+    await user.type(returnRoad, '서울 송파구 올림픽로 1')
+
+    // 그 사이 다른 화면이 "출고지와 동일"을 켜서 저장했고, 재조회가 그 값을 들고 온다.
+    seedShippingPolicy(makeShippingPolicyWire({ ...SAVED, returnSameAsOrigin: true }))
+    await queryClient.invalidateQueries({ queryKey: SHIPPING_POLICY_QUERY_KEY })
+
+    // 체크는 내가 고치던 상태(해제)로 남고, 고친 반품지도 남는다.
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: '출고지와 동일' })).not.toBeChecked(),
+    )
+    expect(screen.getByLabelText('도로명주소', { selector: '#return-road' })).toHaveValue(
+      '서울 송파구 올림픽로 1',
+    )
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await screen.findByText('저장했어요.')
+    const saved = currentShippingPolicy()
+    expect(saved.returnSameAsOrigin).toBe(false)
+    expect(saved.returnRoadAddress).toBe('서울 송파구 올림픽로 1')
+  })
+
+  /**
+   * 출고지 3필드는 스토어 설정의 주소와 **같은 서버 컬럼**이다. 재진입 때 캐시된 옛 출고지로
+   * 폼을 확정하면, 전체 덮어쓰기 저장이 그 사이 스토어 설정에서 바꾼 주소를 되돌린다.
+   * 같은 QueryClient 로 두 번 렌더해 캐시가 남은 재진입을 재현한다.
+   */
+  it('[AC-SHIP-ROUTE-014] 재진입 때 캐시된 옛 출고지로 저장하지 않는다', async () => {
+    // 반품지가 출고지와 동일이라 같은 값을 가진 입력이 둘이다 — 출고지 칸을 id로 집는다.
+    const originRoad = () => document.getElementById('origin-road') as HTMLInputElement | null
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const first = renderAt('/shipping-policy', queryClient)
+    await waitFor(() => expect(originRoad()).toHaveValue('서울 마포구 와우산로 00'))
+    first.unmount()
+
+    // 그 사이 스토어 설정이 같은 주소 컬럼을 바꿨다.
+    seedShippingPolicy(
+      makeShippingPolicyWire({ ...SAVED, originRoadAddress: '서울 강남구 테헤란로 1' }),
+    )
+    const user = userEvent.setup()
+    renderAt('/shipping-policy', queryClient)
+
+    await waitFor(() => expect(originRoad()).toHaveValue('서울 강남구 테헤란로 1'))
+
+    // 배송비만 고쳐 저장해도 출고지가 옛 값으로 되돌아가지 않는다.
+    const amounts = screen.getAllByRole('textbox', { name: '값' })
+    await user.clear(amounts[0]!)
+    await user.type(amounts[0]!, '4000')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentShippingPolicy().baseShippingFee).toBe(4000)
+    expect(currentShippingPolicy().originRoadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /**
+   * 재조회 실패로 화면을 갈아 치우면 작성 중인 입력이 사라진다(다시 마운트되며 서버 값으로
+   * 되시드된다). 이 조회는 staleTime 0이라 창 포커스마다 재조회가 돌아 더 자주 닿는 경로다.
+   */
+  it('[AC-SHIP-ROUTE-016] 재조회가 실패해도 작성 중인 폼을 치우지 않는다', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    renderAt('/shipping-policy', queryClient)
+
+    const detail = await screen.findByLabelText('상세주소', { selector: '#origin-detail' })
+    await user.clear(detail)
+    await user.type(detail, '물류 2센터')
+
+    server.use(http.get(SELLER_SHIPPING_POLICY_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SHIPPING_POLICY_QUERY_KEY })
+
+    // 폼과 입력은 남고, 실패는 띠로 알리고, 저장만 막는다 — 서버 값을 확인하지 못한 채
+    // 저장하면 전체 덮어쓰기가 스토어 설정이 바꾼 주소를 되돌린다.
+    expect(await screen.findByText(/최신 배송 정책을 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByLabelText('상세주소', { selector: '#origin-detail' })).toHaveValue('물류 2센터')
+    expect(screen.queryByText('배송 정책을 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
   })
 
   it('[AC-SHIP-ROUTE-013] 금액 칸에 소수를 넣어도 원 단위 정수로 저장된다', async () => {

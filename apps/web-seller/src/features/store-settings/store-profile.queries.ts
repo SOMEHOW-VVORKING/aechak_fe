@@ -14,11 +14,19 @@ import { appliedStore } from './store-profile.contract'
 
 export const SELLER_STORE_QUERY_KEY = ['store-settings', 'store'] as const
 
-/** 셀러가 아닌 계정도 200(isSeller=false·store=null)이라 "없음" 분기에 404 정규화가 필요 없다. */
+/**
+ * 셀러가 아닌 계정도 200(isSeller=false·store=null)이라 "없음" 분기에 404 정규화가 필요 없다.
+ *
+ * `staleTime`을 0으로 둔다(main.tsx 기본값 60초를 덮는다). 주소 3필드는 배송 정책의 출고지와
+ * 같은 서버 컬럼이라, 60초 안에 두 화면을 오가면 재조회가 아예 일어나지 않아 캐시된 옛 주소가
+ * 폼을 확정하고 전체 덮어쓰기 저장이 방금 바꾼 주소를 되돌린다 — 재진입 병합도 저장 차단도
+ * 재조회가 있을 때만 도는 가드다.
+ */
 export function useSellerStore() {
   return useQuery({
     queryKey: SELLER_STORE_QUERY_KEY,
     queryFn: ({ signal }) => getSellerStore(signal).then(response => response.data),
+    staleTime: 0,
   })
 }
 

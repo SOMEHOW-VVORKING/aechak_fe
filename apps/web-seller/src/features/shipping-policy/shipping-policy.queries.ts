@@ -14,11 +14,18 @@ import { appliedPolicy } from './shipping-policy.contract'
 
 export const SHIPPING_POLICY_QUERY_KEY = ['shipping-policy'] as const
 
-/** 저장한 적 없는 셀러도 컬럼 기본값을 받으므로 "정책 없음" 상태가 없다 — 404 정규화가 필요 없다. */
+/**
+ * 저장한 적 없는 셀러도 컬럼 기본값을 받으므로 "정책 없음" 상태가 없다 — 404 정규화가 필요 없다.
+ *
+ * `staleTime`을 0으로 둔다(main.tsx 기본값 60초를 덮는다). 출고지 3필드는 스토어 설정의 주소와
+ * 같은 서버 컬럼이라, 60초 안에 두 화면을 오가면 재조회가 아예 일어나지 않아 캐시된 옛 출고지가
+ * 폼을 확정하고 전체 덮어쓰기 저장이 방금 바꾼 주소를 되돌린다.
+ */
 export function useShippingPolicy() {
   return useQuery({
     queryKey: SHIPPING_POLICY_QUERY_KEY,
     queryFn: ({ signal }) => getSellerShippingPolicy(signal).then(response => response.data),
+    staleTime: 0,
   })
 }
 

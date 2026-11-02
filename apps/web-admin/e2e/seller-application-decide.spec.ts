@@ -334,6 +334,8 @@ test('[AC-ADM-E2E-020] 승인은 본문 없는 approve 한 번으로 끝나고 �
   const modal = page.getByRole('dialog').filter({ hasText: '입점을 승인할까요?' })
   await expect(modal).toBeVisible()
   await expect(modal.getByText(/승인 즉시 셀러 어드민이 활성화되고/)).toBeVisible()
+  // 통지 경로가 없어 승인 뒤 메일도 알림도 나가지 않는다 — 모달이 그 사실과 운영자 할 일을 말한다.
+  await expect(modal.getByText(/승인 사실은 따로 알려 주세요/)).toBeVisible()
   // 확인 전에는 요청이 나가지 않는다.
   expect(recorded.decisions).toEqual([])
   await shot(page, 'admin-02-approve-confirm')

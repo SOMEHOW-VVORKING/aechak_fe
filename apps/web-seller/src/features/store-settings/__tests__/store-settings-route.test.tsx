@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { SELLER_APPLICATION_QUERY_KEY, SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
 import {
+  SELLER_APPLICATIONS_URL,
   SELLER_STORE_URL,
   currentSellerApplication,
   currentStore,
@@ -16,12 +18,18 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+// 실제 앱(main.tsx)의 쿼리 기본값 — staleTime 60초. 재진입 경로는 이 값으로 재현해야 한다.
+// 기본값 0으로 재진입을 테스트하면 언마운트 뒤 재조회가 언제나 돌아, 캐시가 폼을 확정하는
+// 결함이 있어도 통과한다.
+const PROD_QUERY_DEFAULTS = {
+  defaultOptions: { queries: { retry: false, staleTime: 1000 * 60 } },
+}
+
+function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -239,6 +247,175 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     // 저장이 전체 덮어쓰기라, 못 읽은 값을 빈 폼으로 보여 주면 저장이 상호를 지운다.
     expect(await screen.findByText('스토어 정보를 불러오지 못했어요')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-014] 승인인데 서버에 스토어가 없으면 읽기 실패와 다른 문구를 보여준다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({ isSeller: false, applicationStatus: 'APPROVED', store: null })
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('스토어가 아직 열리지 않았어요')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 주소 3필드는 배송 정책의 출고지와 **같은 컬럼**이다. 재진입 때 캐시된 옛 주소로 폼을
+   * 확정하면, 저장이 전체 덮어쓰기라 그 사이 배송 정책에서 바꾼 출고지가 되돌아간다.
+   * 같은 QueryClient 로 두 번 렌더해 캐시가 남은 재진입을 재현한다.
+   */
+  it('[AC-STORE-ROUTE-015] 재진입 때 캐시된 옛 주소로 저장하지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const first = renderAt('/store-settings', queryClient)
+    await screen.findByDisplayValue('경기 성남시 판교역로 2')
+    first.unmount()
+
+    // 그 사이 다른 화면(배송 정책)이 같은 주소 컬럼을 바꿨다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    // 캐시된 옛 주소가 아니라 다시 읽은 값이 폼에 들어가야 한다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('경기 성남시 판교역로 2')).not.toBeInTheDocument()
+
+    // 상호만 바꿔 저장해도 주소가 옛 값으로 되돌아가지 않는다.
+    const nameInput = screen.getByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /**
+   * 입력 중에 도착한 새 응답은 **건드린 칸만** 비켜 가야 한다. 폼 전체를 지키면, 상호만 고치는
+   * 동안 다른 화면(배송 정책)이 바꾼 주소가 버려지고 전체 덮어쓰기 저장이 옛 주소를 되돌린다.
+   * 상호를 고친 뒤 무효화로 재조회를 일으켜 "입력 중 새 응답 도착"을 만든다.
+   */
+  it('[AC-STORE-ROUTE-016] 입력 중에 도착한 새 주소는 버리지 않고 건드린 칸만 지킨다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 그 사이 다른 화면이 같은 주소 컬럼을 바꿨고, 재조회가 새 값을 들고 온다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    // 건드리지 않은 주소는 새 값으로 맞춰지고, 건드린 상호는 입력이 남는다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.storeName).toBe('애착스토어')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /**
+   * 재조회가 도는 동안에는 저장을 막는다. 병합은 조회가 끝난 뒤에야 도는데 저장이 열려 있으면,
+   * 다른 화면이 바꾼 값이 도착하기 전에 전체 덮어쓰기가 그 변경을 되돌린다.
+   */
+  it('[AC-STORE-ROUTE-017] 재조회 중에는 저장을 막고 이유를 알린다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderAt('/store-settings', queryClient)
+    const saveButton = await screen.findByRole('button', { name: '저장' })
+    expect(saveButton).toBeEnabled()
+
+    // 응답을 붙잡아 재조회가 도는 구간을 만든다.
+    let release: (() => void) | undefined
+    const pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(SELLER_STORE_URL, async () => {
+        await pending
+        return HttpResponse.json({
+          data: { isSeller: true, applicationStatus: 'APPROVED', store: makeStoreWire() },
+        })
+      }),
+    )
+    void queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeDisabled())
+    expect(screen.getByText(/최신 값을 다시 불러오는 중이라 저장을 잠시 막았어요/)).toBeInTheDocument()
+
+    release?.()
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+  })
+
+  /**
+   * 재조회 실패로 화면을 갈아 치우면 작성 중인 입력이 사라진다. 신청 정보는 staleTime 60초라
+   * 창 포커스 한 번으로 재조회가 돌고, 그 조회만 실패해도 승인 뒤 스토어 폼이 언마운트된다 —
+   * 다시 마운트되면 서버 값으로 다시 시드되므로 입력은 되돌아오지 않는다.
+   */
+  it('[AC-STORE-ROUTE-018] 신청 정보 재조회가 실패해도 작성 중인 폼을 치우지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 신청 정보 재조회만 실패한다(스토어 조회는 그대로 성공).
+    server.use(http.get(SELLER_APPLICATIONS_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_APPLICATION_QUERY_KEY })
+
+    // 실패는 띠로만 알리고, 입력과 폼은 그대로 남는다.
+    expect(await screen.findByText(/최신 신청 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('신청 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 스토어 조회 재조회 실패도 같다 — 섹션을 갈면 입력이 사라진다. 다만 이쪽은 저장까지 막는다:
+   * 서버 값을 확인하지 못한 채 전체 덮어쓰기로 저장하면 그 사이 배송 정책이 바꾼 주소가
+   * 되돌아간다(주소 3필드가 같은 컬럼이다).
+   */
+  it('[AC-STORE-ROUTE-019] 스토어 재조회가 실패하면 폼은 두고 저장만 막는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    server.use(http.get(SELLER_STORE_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    expect(await screen.findByText(/최신 스토어 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
   })
 
   /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */

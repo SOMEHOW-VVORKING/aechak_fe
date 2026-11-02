@@ -2627,7 +2627,7 @@ export const SellerStatus = {
 } as const
 
 /**
- * 통신판매업 신고 안내 상태. 서버가 구매확정 누적으로 올리는 값이고 셀러가 바꿀 수 없다 — REQUIRED 이상이면 신고 대상임을 화면에서 알린다.
+ * 통신판매업 신고 안내 상태. 셀러가 바꿀 수 없는 서버 값이다. **지금은 올리는 코드가 없어 늘 NOT_REQUIRED다** — 컬럼과 응답 필드만 있고 전이 경로(누적 판정·안내 발송)가 아직 없으므로, 화면은 이 값으로 안내를 만들지 말 것.
  */
 export type TelesalesNoticeStatus =
   (typeof TelesalesNoticeStatus)[keyof typeof TelesalesNoticeStatus]
@@ -2663,7 +2663,7 @@ export interface StoreData {
   roadAddress?: string | null
   /** @nullable */
   detailAddress?: string | null
-  /** 누적 구매확정 건수 — 통신판매업 신고 안내 판정에 쓰는 서버 계산값 */
+  /** 누적 구매확정 건수. 저장소 원자 UPDATE로만 증가하는 서버 값인데 **지금은 증가시키는 코드가 없어 늘 0이다** — 구매확정이 이 값을 올리게 되면 그때 화면에 쓸 것. */
   confirmedOrderCount: number
   telesalesNoticeStatus: TelesalesNoticeStatus
 }
@@ -18988,7 +18988,7 @@ export function useGetSellerStoreSuspense<
 }
 
 /**
- * **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(이미지를 빼면 제거, 주소를 빼면 비워진다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것. 자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002, 셀러로 등록된 적 없는 계정은 403 errorCode 10004다(조회가 200인 것과 다르다). 본문 검증(빈 상호, 상호 100자·브랜드 소개 1000자·이미지 키 1024자·우편번호 10자· 도로명·상세주소 255자 초과)은 전부 400 errorCode 90001이다. 상호는 서버가 앞뒤 공백을 떼고 저장하는데, 본문 검증을 통과하고도 떼면 비는 공백 문자만의 상호는 도메인이 400 errorCode 10006으로 거절한다. 이미지 키는 업로드 승격 전 임시 키를 보내면 서버가 승격해 저장하고, 조회로 받은 키를 그대로 돌려보내면 재승격 없이 유지된다. 남의 tmp 키나 용도가 다른 키는 403 errorCode 100002·100003이고 그때는 상호도 저장되지 않는다.
+ * **전체 덮어쓰기** — 바디에서 뺀 선택 항목은 비운 것으로 본다(이미지를 빼면 제거, 주소를 빼면 비워진다). 성공은 204이고 응답 바디가 없다 — 저장 결과가 필요하면 다시 조회할 것. 자격 게이트는 **활성 셀러만**이라 정지·휴점·탈퇴신청 셀러는 403 errorCode 10002, 셀러로 등록된 적 없는 계정은 403 errorCode 10004다(조회가 200인 것과 다르다). 본문 검증(빈 상호, 상호 100자·브랜드 소개 1000자·이미지 키 1024자·우편번호 10자· 도로명·상세주소 255자 초과)은 전부 400 errorCode 90001이다. 상호는 서버가 앞뒤 공백을 떼고 저장하는데, 본문 검증을 통과하고도 떼면 비는 공백 문자만의 상호는 도메인이 400 errorCode 10006으로 거절한다. 이미지 키는 업로드 승격 전 임시 키를 보내면 서버가 승격해 저장하고, 조회로 받은 키를 그대로 돌려보내면 재승격 없이 유지된다. 남의 tmp 키는 403 errorCode 100002, 발급 용도가 다른 키는 400 errorCode 100003이고(상태가 다르다), 둘 중 하나라도 걸리면 상호도 저장되지 않는다.
  * @summary 셀러 스토어 설정 저장
  */
 export const updateSellerStore = (storeSettingsUpdateRequest: StoreSettingsUpdateRequest) => {
