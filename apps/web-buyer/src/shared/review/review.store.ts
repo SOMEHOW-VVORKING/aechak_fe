@@ -6,35 +6,9 @@ import type { Review } from '@aechak/domain'
 // "작성 대기"(b4-st-6)는 배송완료/구매확정 주문 상품 중 이 스토어에 리뷰가 없는 것으로 파생한다.
 // 찜/장바구니/주문과 동일하게 클라이언트 목업 상태라 useSyncExternalStore로 구현했다.
 
-// 시드 리뷰 2건 — 내 리뷰 "작성 완료" 탭이 비지 않게, 또 이 상품의 b4-st-3 목록에
-// 사용자 리뷰가 얹히는 걸 시연하기 위해 둔다. orderId는 주문 스토어에 없는 과거 주문이라
-// "작성 대기" 파생에는 영향을 주지 않는다(작성 대기는 현재 주문 스토어의 배송완료 건에서만 계산).
-const SEED_REVIEWS: Review[] = [
-  {
-    id: 'rv-seed-1',
-    productId: 'p-feeder-5l',
-    orderId: '20260620-0044',
-    author: '나',
-    rating: 5,
-    content: '급식 시간이 정확하고 앱 알림이 편해요. 우리 집 고양이가 잘 적응했어요. 재구매 의사 있어요.',
-    images: [],
-    option: '용량 5L / 화이트',
-    verifiedPurchase: true,
-    createdAt: '2026.06.24',
-  },
-  {
-    id: 'rv-seed-2',
-    productId: 'p-churu',
-    orderId: '20260622-0051',
-    author: '나',
-    rating: 4,
-    content: '아이가 좋아해서 간식으로 자주 줘요. 양도 넉넉하고 배송도 빨랐어요.',
-    images: [],
-    option: '참치맛 / 40개입',
-    verifiedPurchase: true,
-    createdAt: '2026.06.25',
-  },
-]
+// 시드는 두지 않는다. 내 리뷰와 상품 리뷰 목록의 원본은 서버라, 시드가 있으면 실데이터 사이에
+// 가짜 리뷰가 섞여 보인다.
+const SEED_REVIEWS: Review[] = []
 
 let reviews: readonly Review[] = SEED_REVIEWS
 const listeners = new Set<() => void>()
