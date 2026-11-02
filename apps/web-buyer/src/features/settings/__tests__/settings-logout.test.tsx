@@ -31,7 +31,11 @@ async function confirmLogout(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('/settings 로그아웃 — 서버 세션 종료 배선', () => {
-  beforeEach(() => resetAuth())
+  beforeEach(() => {
+    resetAuth()
+    // 회원 세션(메모리 access 보유)이 전제인 화면이다 — 토큰이 세션의 정본이라 이걸로 로그인시킨다.
+    setAccessToken('member-token')
+  })
   afterEach(() => setAccessToken(null))
 
   it('[AC-LOGOUT-003] 확인 시 서버 로그아웃 → 토큰 파기 → 로컬 로그아웃 + 홈 가드가 로그인으로 보냄', async () => {

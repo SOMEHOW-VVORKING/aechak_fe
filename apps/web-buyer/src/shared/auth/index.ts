@@ -11,6 +11,8 @@ export {
 } from './auth.store'
 export type { SessionState } from './auth.store'
 export { endServerSession, restoreSessionOrGuest } from './auth.session'
+export { AuthRequiredScreen } from './AuthRequiredScreen'
+export type { AuthRequiredFeature, AuthRequiredScreenProps } from './AuthRequiredScreen'
 export { LoginGate, useLoginGate } from './LoginGate'
 export type { GateFeature, GateResume, LoginGateProps, UseLoginGate } from './LoginGate'
 export {
