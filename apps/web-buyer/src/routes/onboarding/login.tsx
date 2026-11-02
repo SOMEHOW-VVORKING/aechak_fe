@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Alert, Button, MobileScreen } from '@aechak/design-system/web'
 import {
   WEB_LOGIN_PROVIDERS,
@@ -54,6 +54,7 @@ function SocialLoginRoute() {
   const { error } = Route.useSearch()
   const [alertDismissed, setAlertDismissed] = useState(false)
   const [redirecting, setRedirecting] = useState<SocialProvider | null>(null)
+  const navigate = useNavigate()
 
   // 로그인은 API 호출이 아니라 페이지 이동으로 시작한다 — 서버가 provider 인가 화면으로 302시키고,
   // 완료되면 /login/complete로 되돌아온다(성공 여부는 그 라우트가 판정).
@@ -110,6 +111,18 @@ function SocialLoginRoute() {
               </Button>
             )
           })}
+          {/* 로그인하지 않고 카탈로그로 가는 유일한 입구다 — `/`는 비회원을 이 화면으로 보내고
+              `/market`은 BE가 permitAll로 열어 두었는데, 여기에 버튼이 없으면 비회원은 주소를
+              직접 쳐야 그 화면에 닿는다. 문구는 AuthRequiredScreen과 같게 맞춘다. */}
+          <Button
+            variant="ghost"
+            size="lg"
+            fullWidth
+            disabled={redirecting !== null}
+            onClick={() => void navigate({ to: '/market' })}
+          >
+            상품 둘러보기
+          </Button>
           <p className="mt-1 text-center text-caption text-text-tertiary">
             시작하면 <span className="font-medium text-text-primary">이용약관</span> 및{' '}
             <span className="font-medium text-text-primary">개인정보처리방침</span>에 동의하게

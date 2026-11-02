@@ -49,7 +49,7 @@ export const FAQ_ITEMS: FaqItem[] = [
     category: 'account',
     question: '로그인이 안 돼요.',
     answer:
-      '애착은 소셜 로그인(카카오/구글/Apple)만 지원해요. 처음 가입할 때 사용한 소셜 계정으로 다시 로그인해 주세요.',
+      '애착은 카카오 로그인만 지원해요. 처음 가입할 때 사용한 카카오 계정으로 다시 로그인해 주세요.',
   },
   {
     id: 'faq-withdraw',
