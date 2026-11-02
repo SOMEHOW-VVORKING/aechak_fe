@@ -1,9 +1,11 @@
-import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, it, expect } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { beforeEach, describe, it, expect } from 'vitest'
+import type { AdminProductInspectionSummary } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
+import { ADMIN_PRODUCT_INSPECTIONS_URL, seedAdminApplications, server } from '@/testing/msw/server'
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -18,25 +20,32 @@ function renderAt(path: string) {
   )
 }
 
-// admin 모듈에 AI 검수 큐 API가 없다. 2026-10-18에는 진입을 막았는데 운영자가 기능의 모양조차
-// 볼 수 없어 되돌렸다(SCRUM-308) — 예시 데이터로 열고 띠로 밝힌다.
-describe('/products/ai-queue', () => {
-  it('[AC-AI-QUEUE-003] 직접 진입하면 예시 큐 목록과 탐지 사유가 보인다', async () => {
-    renderAt('/products/ai-queue')
+const SUMMARY: AdminProductInspectionSummary = {
+  productId: '01JQUEUEPRODUCT00000000001',
+  productName: '연어 건사료 2kg',
+  sellerName: '애착상회',
+  status: 'PENDING_REVIEW',
+  latestJudgment: 'FLAG',
+  blindedAt: '2026-10-22T10:00:40',
+}
 
-    expect(await screen.findByRole('button', { name: 'A-2931' })).toBeInTheDocument()
-    // 탐지 사유가 빠지면 운영자가 왜 숨겨졌는지 알 수 없다.
-    // 필터 Select의 <option>에 같은 글자가 있어 전역에서 찾으면 목록이 비어도 통과한다.
-    expect(within(screen.getByRole('table')).getByText('금지 콘텐츠')).toBeInTheDocument()
+// 라우트가 실서버 화면(AiReviewQueuePage)을 직접 그린다. 화면 동작은 ai-review-queue-page.test.tsx가 본다.
+describe('/products/ai-queue', () => {
+  beforeEach(() => {
+    // 셸이 nav 배지를 채우려 심사 대기 수를 조회한다 — 핸들러가 없으면 MSW가 테스트를 깨뜨린다.
+    seedAdminApplications()
+    server.use(
+      http.get(ADMIN_PRODUCT_INSPECTIONS_URL, () =>
+        HttpResponse.json({ data: { items: [SUMMARY], totalCount: 1 } }),
+      ),
+    )
   })
 
-  it('[AC-AI-QUEUE-004] 행을 누르면 상세 드로어가 열리고 결정 옵션이 보인다', async () => {
-    const user = userEvent.setup()
+  it('[AC-AI-QUEUE-003] 직접 진입하면 서버 큐 목록이 열리고 예시 데이터 띠가 없다', async () => {
     renderAt('/products/ai-queue')
 
-    await user.click(await screen.findByRole('button', { name: 'A-2931' }))
-
-    expect(await screen.findByRole('dialog', { name: 'AI 검수 상세' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '제출' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'AI 검수 큐' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '연어 건사료 2kg' })).toBeInTheDocument()
+    expect(screen.queryByText('예시 데이터예요')).not.toBeInTheDocument()
   })
 })

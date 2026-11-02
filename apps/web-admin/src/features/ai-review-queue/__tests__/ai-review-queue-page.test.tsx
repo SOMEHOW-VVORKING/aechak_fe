@@ -1,0 +1,149 @@
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { API_PATH_PREFIX, type AdminProductInspectionDetail, type AdminProductInspectionSummary } from '@aechak/api'
+import { ADMIN_ORIGIN, server } from '@/testing/msw/server'
+import { AiReviewQueuePage } from '../components/AiReviewQueuePage'
+
+// 운영 진입 스위치가 꺼져 있어 라우트가 아니라 페이지를 직접 그린다. 요청은 MSW가 admin 호스트에서 받는다.
+const QUEUE_URL = `${ADMIN_ORIGIN}${API_PATH_PREFIX}/admin/product-inspections`
+const PRODUCT_ID = '01JQUEUEPRODUCT00000000001'
+
+const SUMMARY: AdminProductInspectionSummary = {
+  productId: PRODUCT_ID,
+  productName: '연어 건사료 2kg',
+  sellerName: '애착상회',
+  status: 'PENDING_REVIEW',
+  latestJudgment: 'FLAG',
+  blindedAt: '2026-10-22T10:00:40',
+}
+
+function detailWire(overrides: Partial<AdminProductInspectionDetail> = {}): AdminProductInspectionDetail {
+  return {
+    productId: PRODUCT_ID,
+    productName: '연어 건사료 2kg',
+    sellerName: '애착상회',
+    categoryNames: ['강아지', '사료', '건사료'],
+    description: '관절염 치료에 효과가 있습니다.',
+    representativeImageUrl: null,
+    optionNames: ['맛', '연어'],
+    inspectionStatus: 'PENDING',
+    awaitingAdminReview: true,
+    processingState: 'SETTLED',
+    judgment: 'FLAG',
+    reasonCode: 'MEDICAL_CLAIM',
+    reasonSummary: '관절염 치료에 효과',
+    sellerNotice: '치료 효능 표현을 고쳐 주세요.',
+    requestedAt: '2026-10-22T10:00:00',
+    settledAt: '2026-10-22T10:00:40',
+    rejections: [],
+    ...overrides,
+  }
+}
+
+let lastListQuery: string | null = null
+let lastRejectBody: unknown = null
+
+function serveQueue(detail: AdminProductInspectionDetail = detailWire()) {
+  server.use(
+    http.get(QUEUE_URL, ({ request }) => {
+      lastListQuery = new URL(request.url).search
+      return HttpResponse.json({ data: { items: [SUMMARY], totalCount: 1 } })
+    }),
+    http.get(`${QUEUE_URL}/:productId`, () => HttpResponse.json({ data: detail })),
+    http.post(`${QUEUE_URL}/:productId/approve`, () => new HttpResponse(null, { status: 204 })),
+    http.post(`${QUEUE_URL}/:productId/reject`, async ({ request }) => {
+      lastRejectBody = await request.json()
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+}
+
+function renderPage() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AiReviewQueuePage />
+    </QueryClientProvider>,
+  )
+}
+
+async function openDetail() {
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: '연어 건사료 2kg' }))
+  await screen.findByText('관절염 치료에 효과')
+  return user
+}
+
+async function confirmIn(user: ReturnType<typeof userEvent.setup>, heading: string, label: string) {
+  const modal = (await screen.findByRole('heading', { name: heading })).closest('[role="dialog"]') as HTMLElement
+  await user.click(within(modal).getByRole('button', { name: label }))
+}
+
+describe('AI 검수 큐 (SCRUM-283)', () => {
+  beforeEach(() => {
+    lastListQuery = null
+    lastRejectBody = null
+  })
+
+  it('[AC-AI-QUEUE-010] 검토 대기 목록을 최근 판정과 함께 보여 주고 상태 필터를 서버 파라미터로 보낸다', async () => {
+    serveQueue()
+    renderPage()
+
+    const row = (await screen.findByRole('button', { name: '연어 건사료 2kg' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('애착상회')).toBeInTheDocument()
+    expect(within(row).getByText('문제 발견')).toBeInTheDocument()
+    expect(within(row).getByText('검토 대기')).toBeInTheDocument()
+    expect(lastListQuery).toContain('status=PENDING_REVIEW')
+  })
+
+  it('[AC-AI-QUEUE-011] 반려하면 적은 사유를 그대로 보내고 완료 안내를 띄운다', async () => {
+    serveQueue()
+    renderPage()
+    const user = await openDetail()
+
+    await user.click(screen.getByText('반려 확정 / 셀러에게 사유 전달'))
+    expect(screen.getByRole('button', { name: '제출' })).toBeDisabled()
+    await user.type(screen.getByPlaceholderText('셀러가 무엇을 고쳐야 하는지 적어 주세요.'), '효능 표현을 빼 주세요.')
+    await user.click(screen.getByRole('button', { name: '제출' }))
+    await confirmIn(user, '상품을 반려할까요?', '반려')
+
+    expect(await screen.findByText('상품을 반려했어요.')).toBeInTheDocument()
+    expect(lastRejectBody).toEqual({ reason: '효능 표현을 빼 주세요.' })
+  })
+
+  it('[AC-AI-QUEUE-012] 승인이 409면 이미 처리된 상품이라고 알리고 상세를 닫는다', async () => {
+    serveQueue()
+    server.use(
+      http.post(`${QUEUE_URL}/:productId/approve`, () =>
+        HttpResponse.json({ errorCode: 40500, message: '관리자 확인을 기다리는 상품 검수가 없습니다.' }, { status: 409 }),
+      ),
+    )
+    renderPage()
+    const user = await openDetail()
+
+    await user.click(screen.getByRole('button', { name: '제출' }))
+    await confirmIn(user, '상품을 승인할까요?', '승인')
+
+    expect(await screen.findByText(/이미 처리된 상품이에요/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('관절염 치료에 효과')).not.toBeInTheDocument())
+  })
+
+  it('[AC-AI-QUEUE-013] 열린 검토가 없는 상품은 결정 없이 반려 이력만 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        awaitingAdminReview: false,
+        inspectionStatus: 'REJECTED',
+        rejections: [{ reason: '효능 표현을 빼 주세요.', rejectedAt: '2026-10-21T09:00:00' }],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    expect(screen.getByText('효능 표현을 빼 주세요.')).toBeInTheDocument()
+    expect(screen.getByText('처리할 검토가 없어요.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '제출' })).not.toBeInTheDocument()
+  })
+})

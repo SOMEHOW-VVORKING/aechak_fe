@@ -14,6 +14,10 @@ import type {
   SellerProductDetailData,
   SellerProductDraftAutofillData,
   SellerProductDraftAutofillRequest,
+  SellerProductDraftData,
+  SellerProductDraftOptionCombinationInput,
+  SellerProductDraftOptionGroupInput,
+  SellerProductDraftSaveRequest,
   SellerProductOptionCombinationInput,
   SellerProductOptionGroupInput,
   SellerProductRegisterRequest,
@@ -124,34 +128,37 @@ export const DEFAULT_PAGE_SIZE = 20
 // purpose=PRODUCT는 png/jpeg/webp만(그 외 400/100000). 받은 url에 같은 Content-Type으로 PUT(10분 유효)하고
 // key(`tmp/{userId}/products/{ULID}.{ext}`)를 등록/수정 본문에 싣는다. 서버 크기 제한은 없다.
 // 등록/수정은 tmp 키를 `products/{같은 파일명}`으로 복사한다(같은 tmp 키 → 같은 저장 키). tmp/는 S3 수명주기로
-// 1일 뒤 지워지므로, 하루 지난 tmp 키를 보내면 404/100001이다. 임시저장(BE 없음)이 tmp 키를 들고 있는 것도
-// 같은 제약을 받는다 — 임시저장 API를 정할 때 이미지 키 보존 방식을 함께 정한다.
+// 1일 뒤 지워지므로, 하루 지난 tmp 키를 보내면 404/100001이다. 임시저장도 승격 전 tmp 키를 그대로
+// 보관하므로 같은 제약을 받는다 — 하루 지난 초안으로 등록하면 이미지만 404/100001로 떨어진다.
 
 export const PRODUCT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
-// ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 임시저장은 BE에 아직 없다. products.mock.ts의 같은 이름 구역과 짝이다.
+// ─── /sellers/me/product-drafts (목록·단건·생성·덮어쓰기·삭제) ──────────────────
+// 전 필드가 선택이다 — 폼을 채우는 중에도 저장되어야 하므로 필수값·가격 범위·옵션 구성 검증은
+// 정식 등록만 건다. 남은 검증은 길이·개수 상한이고 위반은 400 errorCode 90001이다.
+// PUT은 통째로 덮어쓴다 — 보내지 않은 필드는 "유지"가 아니라 "비움"이다(BE ProductDraft.overwrite).
+// 보관은 셀러당 10건이고 마지막 저장으로부터 30일이다. 상한 초과는 422 errorCode 40401이지만
+// 덮어쓰기는 상한을 보지 않으므로 이어쓰기는 상한에 걸려도 계속 저장된다. 없는 초안·남의 초안·
+// 기간이 지난 초안은 전부 404 errorCode 40400으로 묶여 구별되지 않는다.
+// 이미지 키는 승격 전 tmp 키라 그대로 정식 등록 요청에 실을 수 있지만 tmp/는 S3 수명주기로 하루 뒤
+// 지워진다 — 하루 지난 초안으로 등록하면 404 errorCode 100001이다.
 
-/** 임시저장은 미완성 조합도 담는다. 비운 칸만 빠진다. */
-export type DraftOptionCombination = Pick<OptionCombinationRequest, 'optionValues'> &
-  Partial<Omit<OptionCombinationRequest, 'optionValues'>>
+/** 초안의 옵션 그룹. 등록 요청과 달리 이름이 비어 있어도, 값이 0개여도 된다. */
+export type DraftOptionGroup = SellerProductDraftOptionGroupInput
+/** 초안은 미완성 조합도 담는다. 비운 칸은 null이다. */
+export type DraftOptionCombination = SellerProductDraftOptionCombinationInput
 
-export type ProductDraftRequest = Partial<Omit<ProductRegisterRequest, 'optionCombinations'>> & {
-  optionCombinations?: DraftOptionCombination[]
-}
+export type ProductDraftRequest = SellerProductDraftSaveRequest
 
-export interface ProductDraftResponse {
-  productId: string
-  savedAt: string
-}
+/** 등록 폼 프리필 — BE ProductDraftResponse 1:1. */
+export type ProductDraft = SellerProductDraftData
 
-export type ProductDraft = ProductDraftRequest & ProductDraftResponse
-
-export interface ProductDraftSummary {
-  productId: string
-  productName: string | null
-  savedAt: string
-}
+export type {
+  /** 저장 응답. `savedAt`은 서버가 찍은 시각이라 "방금 저장"의 출처다. */
+  SellerProductDraftSaveData as ProductDraftSaveResponse,
+  /** Drawer 한 행. */
+  SellerProductDraftListItem as ProductDraftSummary,
+} from '@aechak/api'
 
 // ─── 화면 매핑 ────────────────────────────────────────────────────────────────
 
@@ -290,7 +297,11 @@ export function toFormValues(
 ): ProductFormValues {
   const path = src.categoryId != null ? findCategoryPath(tree, src.categoryId) : null
   const draft = src as ProductDraft
-  const groups = draft.optionGroups ?? []
+  // 초안의 그룹명은 nullable(빈 이름으로 저장할 수 있다)이고 폼은 문자열만 다룬다.
+  const groups: OptionGroupRequest[] = (draft.optionGroups ?? []).map(g => ({
+    name: g.name ?? '',
+    values: g.values,
+  }))
   const combinations = draft.optionCombinations ?? []
   const optionEnabled = groups.length > 0
   const defaultCombination = combinations.find(c => c.optionValues.length === 0)
@@ -324,7 +335,11 @@ export function toFormValues(
     optionGroups: groups,
     // 임시저장은 아무 값도 없는 행을 빼고 저장하므로 그룹으로 다시 펼쳐 빠진 행을 채운다.
     combinations: optionEnabled ? buildCombinations(groups, sourceRows) : [],
-    defaultStock: !optionEnabled && defaultCombination ? String(defaultCombination.stockQuantity) : '',
+    // 초안의 재고는 null일 수 있다 — String(null)이 'null'로 새면 폼이 거짓을 보여 준다.
+    defaultStock:
+      !optionEnabled && defaultCombination?.stockQuantity != null
+        ? String(defaultCombination.stockQuantity)
+        : '',
   }
 }
 
@@ -415,7 +430,10 @@ export function toRegisterRequest(v: ProductFormValues): ProductRegisterRequest 
 // 입력이 digitsOnly로 정규화돼 있어 빈 칸과 숫자만 구분하면 된다.
 const parseDigits = (value: string): number | undefined => (value === '' ? undefined : Number(value))
 
-/** 임시저장(목업 전용) — 필수 검증 없이 비운 칸만 뺀다. */
+/**
+ * 임시저장 요청 — 필수 검증 없이 비운 칸만 뺀다. PUT이 통째로 덮어쓰므로 "빼는 것"이 곧 "비우는 것"이고,
+ * 그래서 폼을 지운 뒤 다시 저장하면 서버 값도 지워진다(의도된 동작).
+ */
 export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
   const body: ProductDraftRequest = {}
   if (!isBlank(v.productName)) body.productName = v.productName.trim()
@@ -556,6 +574,8 @@ const ERROR_MESSAGE: Record<number, string> = {
   40200: '재고는 0 이상으로 입력해 주세요.',
   40201: '추가 금액은 0 이상으로 입력해 주세요.',
   40402: 'AI 초안은 잠시 뒤 다시 받을 수 있어요.',
+  40400: '임시저장한 상품을 찾을 수 없어요. 목록을 새로고침해 주세요.',
+  40401: '임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.',
   90000: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   90001: '입력한 내용을 다시 확인해 주세요.',
   90003: '다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해 주세요.',
@@ -566,7 +586,22 @@ const ERROR_MESSAGE: Record<number, string> = {
 }
 
 // axios 타입을 안 끌어오려고 duck-typing(store-settings 관례). 에러 본문은 `{ errorCode, message }`.
+const errorCodeOf = (error: unknown): number | undefined =>
+  (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+
 export function productErrorMessage(error: unknown): string {
-  const code = (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+  const code = errorCodeOf(error)
   return (code !== undefined && ERROR_MESSAGE[code]) || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
+}
+
+/** BE ProductErrorCode.PRODUCT_DRAFT_NOT_FOUND — 없는 초안·남의 초안·30일 지난 초안이 전부 이 코드다. */
+const PRODUCT_DRAFT_NOT_FOUND = 40400
+
+/**
+ * "그 초안이 없다"와 "초안을 못 읽었다"를 가른다. 둘을 한 문구로 묶으면 서버가 500을 돌려준 순간
+ * 화면이 "찾을 수 없어요"라는 거짓을 말하고, 셀러가 남아 있는 초안을 버리고 새로 쓴다.
+ * 코드가 40400일 때만 "없다"로 단정하고, 코드 없는 404·500·네트워크 실패는 "못 읽었다"로 남긴다.
+ */
+export function isProductDraftMissing(error: unknown): boolean {
+  return errorCodeOf(error) === PRODUCT_DRAFT_NOT_FOUND
 }
