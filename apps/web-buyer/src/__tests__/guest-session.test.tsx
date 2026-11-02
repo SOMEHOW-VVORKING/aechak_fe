@@ -168,6 +168,21 @@ describe('첫 진입 세션 확인', () => {
     await waitFor(() => expect(after.state.location.pathname).toBe('/cart'))
   })
 
+  it('[AC-GUEST-009] 비회원이 기본 주소로 들어오면 로그인 화면에서 마켓으로 갈 수 있다', async () => {
+    // `/`는 회원 전용(GET /home 401)이라 비회원을 로그인으로 보낸다. 그런데 로그인 화면에
+    // 카탈로그로 가는 버튼이 없으면 비회원은 주소를 직접 쳐야 마켓에 닿는다 — BE가 permitAll로
+    // 열어 둔 화면에 입구가 없는 것이라, AC-GUEST-001이 지키는 접근이 실제로는 쓸 수 없다.
+    const user = userEvent.setup()
+    const router = renderAt('/')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/onboarding/login'))
+
+    await user.click(screen.getByRole('button', { name: '상품 둘러보기' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/market'))
+    expect(await screen.findByText('강아지 연어 사료 2kg')).toBeInTheDocument()
+  })
+
   // 이 파일의 마지막 테스트여야 한다 — refresh 응답을 늦추면 client.ts의 공유 refreshPromise가
   // 그만큼 떠 있고, 뒤에 오는 테스트가 그 요청에 합류해 버린다.
   it('[AC-GUEST-008] 세션 확인이 응답하지 않아도 공개 카탈로그는 그려진다', async () => {
