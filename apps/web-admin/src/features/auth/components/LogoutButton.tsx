@@ -24,7 +24,11 @@ export function LogoutButton() {
   const logout = useLogout()
 
   // 닫을 때 실패 상태를 지운다 — 남겨 두면 다시 열었을 때 방금 실패한 것처럼 보인다.
+  // 전송 중에는 닫지 않는다(어드민 발송 독촉 Modal과 같은 처리) — 스크림·Escape·취소가 닫아도
+  // 요청은 계속 날아가는데 `reset()`이 진행 중 mutation에서 옵저버를 떼어, 실패해도 안내가 뜰
+  // 자리가 없고 다시 열면 확인 버튼이 되살아나 두 번째 요청이 나간다.
   const close = () => {
+    if (logout.isPending) return
     setOpen(false)
     logout.reset()
   }
