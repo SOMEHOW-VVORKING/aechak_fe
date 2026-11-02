@@ -17,6 +17,13 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
+// 실제 앱(main.tsx)의 쿼리 기본값 — staleTime 60초. 재진입 경로는 이 값으로 재현해야 한다.
+// 기본값 0으로 재진입을 테스트하면 언마운트 뒤 재조회가 언제나 돌아, 캐시가 폼을 확정하는
+// 결함이 있어도 통과한다.
+const PROD_QUERY_DEFAULTS = {
+  defaultOptions: { queries: { retry: false, staleTime: 1000 * 60 } },
+}
+
 function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
@@ -262,7 +269,7 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
       applicationStatus: 'APPROVED',
       store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
     })
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
     const first = renderAt('/store-settings', queryClient)
     await screen.findByDisplayValue('경기 성남시 판교역로 2')
     first.unmount()

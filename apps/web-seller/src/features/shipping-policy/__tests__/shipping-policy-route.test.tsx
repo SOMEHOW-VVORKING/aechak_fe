@@ -15,6 +15,13 @@ import {
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
+// 실제 앱(main.tsx)의 쿼리 기본값 — staleTime 60초. 재진입 경로는 이 값으로 재현해야 한다.
+// 기본값 0으로 재진입을 테스트하면 언마운트 뒤 재조회가 언제나 돌아, 캐시가 폼을 확정하는
+// 결함이 있어도 통과한다.
+const PROD_QUERY_DEFAULTS = {
+  defaultOptions: { queries: { retry: false, staleTime: 1000 * 60 } },
+}
+
 function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
@@ -274,7 +281,7 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
   it('[AC-SHIP-ROUTE-014] 재진입 때 캐시된 옛 출고지로 저장하지 않는다', async () => {
     // 반품지가 출고지와 동일이라 같은 값을 가진 입력이 둘이다 — 출고지 칸을 id로 집는다.
     const originRoad = () => document.getElementById('origin-road') as HTMLInputElement | null
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
     const first = renderAt('/shipping-policy', queryClient)
     await waitFor(() => expect(originRoad()).toHaveValue('서울 마포구 와우산로 00'))
     first.unmount()
