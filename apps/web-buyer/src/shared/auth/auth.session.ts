@@ -1,5 +1,5 @@
-import { axiosInstance, errorResponse, getAccessToken, restoreSession, setAccessToken } from '@aechak/api'
-import { getIsLoggedIn, logout } from './auth.store'
+import { axiosInstance, errorResponse, restoreSession, setAccessToken } from '@aechak/api'
+import { getSessionState, login, logout } from './auth.store'
 
 // 서버 세션 종료(POST /auth/web/logout) — 설정 홈 로그아웃의 서버 배선(SCRUM-92).
 // 서버 계약: permitAll + refresh 쿠키 기반이라 Authorization이 필요 없고, 쿠키가 없거나 이미
@@ -16,15 +16,25 @@ export async function endServerSession(): Promise<void> {
   }
 }
 
-// 비로그인도 열리는 라우트(SNS 프로필 등)의 세션 확인. access는 메모리에만 있어 새로고침이나 공유 링크로 들어오면
-// 비어 있고, 토큰 선택 API는 401 없이 비로그인 응답을 주므로 인터셉터의 refresh도 돌지 않는다. 그래서 요청 전에
-// refresh 쿠키로 세션을 먼저 복원한다. 쿠키가 없으면(401) 로그인 화면으로 보내지 않고 비로그인으로 이어 간다.
-// 네트워크/5xx는 세션 유무를 모르니 그대로 둔다(_tabs/index.tsx와 같은 판단).
+/**
+ * 세션을 한 번 확인해 'unknown'을 'member' 또는 'guest'로 확정한다. 모든 라우트가 렌더 전에
+ * 이것을 거친다(__root beforeLoad).
+ *
+ * access는 메모리에만 있어 새로고침이나 공유 링크로 들어오면 비어 있고, refresh 쿠키는 httpOnly라
+ * JS가 읽을 수 없다. 그래서 refresh를 한 번 쏴 보는 것만이 회원 여부를 아는 방법이다. 쿠키가
+ * 없으면(401) 로그인 화면으로 보내지 않고 비회원으로 확정해 게스트 카탈로그를 그대로 보여준다.
+ * 네트워크/5xx는 세션 유무를 모르니 'unknown'으로 남겨 다음 네비게이션에서 다시 확인한다.
+ *
+ * 확정된 뒤에는 요청을 보내지 않는다 — refresh 쿠키는 호출마다 회전하므로 불필요한 재확인이
+ * 멀쩡한 세션을 흔든다. 동시 호출은 client.ts의 공유 refreshPromise가 한 번으로 합친다.
+ */
 export async function restoreSessionOrGuest(): Promise<void> {
-  if (!getIsLoggedIn() || getAccessToken()) return
+  if (getSessionState() !== 'unknown') return
   try {
     await restoreSession()
+    login()
   } catch (error) {
+    // refresh 401(쿠키 없음/만료 20002, 재사용 20003) = 세션 없음 → 비회원 확정.
     if (errorResponse(error)?.status === 401) logout()
   }
 }

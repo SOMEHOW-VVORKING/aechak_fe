@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { getAccessToken, setAccessToken } from '@aechak/api'
 import { resetRegistry } from '@/shared/catalog'
-import { getIsLoggedIn, logout, resetAuth } from '@/shared/auth'
+import { getIsLoggedIn, getSessionState, logout, resetAuth } from '@/shared/auth'
 import {
   HOME_URL,
   PRODUCT_FIXTURES,
@@ -151,7 +151,9 @@ describe('/ (홈 GET /home 실연동)', () => {
   })
 
   it('[AC-HOME-023] access 없이 진입하고 refresh가 401이면 /home 없이 로그인 화면으로 보낸다', async () => {
-    setAccessToken(null)
+    // 새로고침으로 메모리 access만 날아간 상태 — 세션 유무를 아직 모르는 첫 진입이다.
+    // setAccessToken(null)은 "세션이 끝났다"는 뜻이라 refresh 확인 자체를 건너뛴다.
+    resetAuth()
     const calls = countHomeCalls()
     const router = renderAt('/')
 
@@ -162,7 +164,7 @@ describe('/ (홈 GET /home 실연동)', () => {
   })
 
   it('[AC-HOME-024] access 없이 진입해도 refresh 쿠키가 살아 있으면 세션을 복원하고 홈을 보여준다', async () => {
-    setAccessToken(null)
+    resetAuth()
     let refreshCalls = 0
     server.use(
       http.post(WEB_REFRESH_URL, () => {
@@ -179,7 +181,7 @@ describe('/ (홈 GET /home 실연동)', () => {
   })
 
   it('[AC-HOME-025] refresh가 네트워크/서버 오류면 로그인으로 보내지 않고 화면에 맡긴다', async () => {
-    setAccessToken(null)
+    resetAuth()
     server.use(
       http.post(WEB_REFRESH_URL, () =>
         HttpResponse.json({ errorCode: 90000, message: 'server error' }, { status: 500 }),
@@ -189,7 +191,9 @@ describe('/ (홈 GET /home 실연동)', () => {
 
     expect(await screen.findByText('이런 상품은 어때요?')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/')
-    expect(getIsLoggedIn()).toBe(true)
+    // 5xx는 세션 유무를 알려주지 않는다 — 비회원으로 확정하지 않고 확인 전으로 남겨
+    // 다음 네비게이션에서 다시 확인한다(회원을 로그인 화면으로 쫓아내지 않는 근거).
+    expect(getSessionState()).toBe('unknown')
   })
 
   it('[AC-HOME-013] 추천 카드를 누르면 실 상품 상세로 이동한다', async () => {
