@@ -20,6 +20,7 @@ const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
 export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
 export const SELLER_PRODUCTS_URL = `${sellerBase}/sellers/me/products`
+export const SELLER_PRODUCT_DRAFTS_URL = `${sellerBase}/sellers/me/product-drafts`
 export const SELLER_COURIERS_URL = `${sellerBase}/sellers/couriers`
 export const SELLER_ORDERS_URL = `${sellerBase}/sellers/me/orders`
 export const SELLER_SHIPPING_POLICY_URL = `${sellerBase}/sellers/me/shipping-policy`
@@ -640,9 +641,169 @@ const sellerProductHandlers = [
       },
     })
   }),
-  // 카테고리 트리 — api 호스트다(셀러 모듈에는 이 컨트롤러가 없다). 목업 임시저장 시드와 id가 같아야
-  // 프리필이 맞으므로 products.mock의 트리를 그대로 쓴다.
+  // 카테고리 트리 — api 호스트다(셀러 모듈에는 이 컨트롤러가 없다). 초안 프리필이 categoryId로
+  // 소분류를 되살리므로 테스트 시드와 id가 같아야 한다 — products.mock의 트리를 그대로 쓴다.
   http.get(CATEGORIES_URL, () => HttpResponse.json({ data: MOCK_CATEGORY_TREE })),
+]
+
+// ─── 셀러 상품 임시저장 (seller 호스트 /sellers/me/product-drafts) ────────────
+// BE SellerProductDraftController/ProductDraftService를 비춘다 — 저장은 upsert가 아니라 POST(생성)와
+// PUT(통째 덮어쓰기)로 갈리고, 생성만 보관 상한 10건을 본다(422/40401). 없는 초안·남의 초안은 전부
+// 404/40400이다. payload(이미지 키 목록·옵션)는 서버가 해석하지 않고 받은 모양 그대로 돌려준다.
+
+export interface SellerProductDraftWire {
+  draftId: string
+  savedAt: string
+  categoryId: number | null
+  productName: string | null
+  description: string | null
+  regularPrice: number | null
+  discountPrice: number | null
+  discountStartAt: string | null
+  discountEndAt: string | null
+  thumbnailImageKey: string | null
+  additionalImageKeys: string[]
+  detailImageKeys: string[]
+  optionGroups: { name?: string | null; values: string[] }[]
+  optionCombinations: { optionValues: string[]; additionalPrice?: number | null; stockQuantity?: number | null }[]
+}
+
+/** BE MAX_PRODUCT_DRAFTS. 생성만 이 상한을 본다. */
+export const MAX_PRODUCT_DRAFTS = 10
+
+let productDrafts: SellerProductDraftWire[] = []
+let draftIdSeq = 0
+let draftSavedAtSeq = 0
+
+export function makeSellerProductDraftWire(
+  overrides: Partial<SellerProductDraftWire> = {},
+): SellerProductDraftWire {
+  draftIdSeq += 1
+  return {
+    draftId: `01JMSWDRAFT${String(draftIdSeq).padStart(15, '0')}`,
+    savedAt: '2026-10-05T09:30:00',
+    categoryId: null,
+    productName: null,
+    description: null,
+    regularPrice: null,
+    discountPrice: null,
+    discountStartAt: null,
+    discountEndAt: null,
+    thumbnailImageKey: null,
+    additionalImageKeys: [],
+    detailImageKeys: [],
+    optionGroups: [],
+    optionCombinations: [],
+    ...overrides,
+  }
+}
+
+/** 최근 저장순(BE findAllLive)으로 세운다 — 준 순서가 그대로 목록 순서다. */
+export function seedSellerProductDrafts(rows: SellerProductDraftWire[] = []): void {
+  productDrafts = rows.map(row => ({ ...row }))
+  draftSavedAtSeq = 0
+}
+
+/** 핸들러가 반영한 현재 초안 목록 — 테스트가 저장·삭제 결과를 읽는 창구다. */
+export function currentSellerProductDrafts(): SellerProductDraftWire[] {
+  return productDrafts.map(row => ({ ...row }))
+}
+
+const draftNotFound = () =>
+  HttpResponse.json({ errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' }, { status: 404 })
+
+interface ProductDraftSaveBody {
+  categoryId?: number | null
+  productName?: string | null
+  description?: string | null
+  regularPrice?: number | null
+  discountPrice?: number | null
+  discountStartAt?: string | null
+  discountEndAt?: string | null
+  thumbnailImageKey?: string | null
+  additionalImageKeys?: string[] | null
+  detailImageKeys?: string[] | null
+  optionGroups?: SellerProductDraftWire['optionGroups'] | null
+  optionCombinations?: SellerProductDraftWire['optionCombinations'] | null
+}
+
+/** 저장 때마다 시각이 움직여야 "방금 저장"이 참이다 — 초 단위로 하나씩 올린다. */
+const nextSavedAt = () => {
+  draftSavedAtSeq += 1
+  return `2026-10-20T10:${String(draftSavedAtSeq).padStart(2, '0')}:00`
+}
+
+/** 보내지 않은 필드는 "유지"가 아니라 "비움"이다(BE ProductDraft.overwrite). */
+function draftFrom(draftId: string, body: ProductDraftSaveBody, savedAt: string): SellerProductDraftWire {
+  return {
+    draftId,
+    savedAt,
+    categoryId: body.categoryId ?? null,
+    productName: body.productName ?? null,
+    description: body.description ?? null,
+    regularPrice: body.regularPrice ?? null,
+    discountPrice: body.discountPrice ?? null,
+    discountStartAt: body.discountStartAt ?? null,
+    discountEndAt: body.discountEndAt ?? null,
+    thumbnailImageKey: body.thumbnailImageKey ?? null,
+    additionalImageKeys: body.additionalImageKeys ?? [],
+    detailImageKeys: body.detailImageKeys ?? [],
+    optionGroups: body.optionGroups ?? [],
+    optionCombinations: body.optionCombinations ?? [],
+  }
+}
+
+const productDraftHandlers = [
+  http.get(SELLER_PRODUCT_DRAFTS_URL, () =>
+    HttpResponse.json({
+      data: {
+        items: productDrafts.map(d => ({
+          draftId: d.draftId,
+          productName: d.productName,
+          savedAt: d.savedAt,
+        })),
+        totalCount: productDrafts.length,
+      },
+    }),
+  ),
+  // 생성 — 201. 상한을 넘기면 422/40401이고 목록은 그대로다.
+  http.post(SELLER_PRODUCT_DRAFTS_URL, async ({ request }) => {
+    if (productDrafts.length >= MAX_PRODUCT_DRAFTS) {
+      return errorAt(422, 40401, '임시저장은 최대 10개까지 보관할 수 있습니다.')
+    }
+    const body = (await request.json()) as ProductDraftSaveBody
+    draftIdSeq += 1
+    const created = draftFrom(
+      `01JMSWDRAFT${String(draftIdSeq).padStart(15, '0')}`,
+      body,
+      nextSavedAt(),
+    )
+    productDrafts = [created, ...productDrafts]
+    return HttpResponse.json(
+      { data: { draftId: created.draftId, savedAt: created.savedAt } },
+      { status: 201 },
+    )
+  }),
+  http.get(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, ({ params }) => {
+    const draft = productDrafts.find(d => d.draftId === params['draftId'])
+    if (!draft) return draftNotFound()
+    return HttpResponse.json({ data: { ...draft } })
+  }),
+  // 덮어쓰기 — 상한을 보지 않는다. 저장순이 바뀌므로 목록 맨 앞으로 올라온다.
+  http.put(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, async ({ params, request }) => {
+    const draftId = params['draftId'] as string
+    if (!productDrafts.some(d => d.draftId === draftId)) return draftNotFound()
+    const body = (await request.json()) as ProductDraftSaveBody
+    const saved = draftFrom(draftId, body, nextSavedAt())
+    productDrafts = [saved, ...productDrafts.filter(d => d.draftId !== draftId)]
+    return HttpResponse.json({ data: { draftId, savedAt: saved.savedAt } })
+  }),
+  http.delete(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, ({ params }) => {
+    const draftId = params['draftId'] as string
+    if (!productDrafts.some(d => d.draftId === draftId)) return draftNotFound()
+    productDrafts = productDrafts.filter(d => d.draftId !== draftId)
+    return new HttpResponse(null, { status: 204 })
+  }),
 ]
 
 // ─── 택배사 마스터 (seller 호스트 /sellers/couriers) ──────────────────────────
@@ -2387,6 +2548,7 @@ const reviewsHandlers = [
 export const handlers = [
   ...sellerApplicationHandlers,
   ...sellerProductHandlers,
+  ...productDraftHandlers,
   ...courierHandlers,
   ...sellerOrderHandlers,
   ...claimHandlers,

@@ -6,7 +6,7 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { beforeEach, describe, it, expect } from 'vitest'
 import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
-import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, server } from '@/testing/msw/server'
+import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, USER_ME_URL, server } from '@/testing/msw/server'
 import { getReviews, removeReview, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
 
@@ -92,7 +92,7 @@ describe('내 리뷰 서버 연동', () => {
     resetAccount()
   })
 
-  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 작성 대기는 서버 항목만, 작성 완료는 로컬 시드 리뷰를 더한다', async () => {
+  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 작성 대기와 작성 완료 모두 서버 항목만 보여준다', async () => {
     const calls = serveTabs({
       unreviewed: page([unreviewed()], { totalCount: 1 }),
       written: page([written()], { totalCount: 1 }),
@@ -100,17 +100,43 @@ describe('내 리뷰 서버 연동', () => {
     const user = userEvent.setup()
     renderAt('/reviews/mine')
 
-    // 작성 대기는 서버 1(목업 주문 스토어 폐기로 로컬 파생 없음), 작성 완료는 서버 1 + 로컬 시드 리뷰 2.
+    // 작성 대기는 서버 1(목업 주문 스토어 폐기로 로컬 파생 없음), 작성 완료도 서버 1(로컬 시드 리뷰 없음).
     expect(await screen.findByText('작성 대기 1')).toBeInTheDocument()
-    expect(await screen.findByText('작성 완료 3')).toBeInTheDocument()
+    expect(await screen.findByText('작성 완료 1')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 연어 사료')).toBeInTheDocument()
     expect(screen.getByText('구매확정 09.20 / 10.20까지 작성')).toBeInTheDocument()
     expect(calls.map(c => c.get('tab')).sort()).toEqual(['unreviewed', 'written'])
     expect(calls.every(c => c.get('size') === '20' && !c.has('cursor'))).toBe(true)
 
-    await user.click(await screen.findByRole('tab', { name: '작성 완료 3' }))
+    await user.click(await screen.findByRole('tab', { name: '작성 완료 1' }))
     expect(await screen.findByText('서버에 저장된 내 리뷰 본문이에요.')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 닭고기 간식')).toBeInTheDocument()
+  })
+
+  it('[AC-MY-REVIEW-009] 작성 완료 카드의 작성자는 GET /users/me 닉네임이다', async () => {
+    serveTabs({ written: page([written()], { totalCount: 1 }) })
+    server.use(
+      http.get(USER_ME_URL, () =>
+        HttpResponse.json({
+          data: {
+            status: 'ACTIVE',
+            nickname: '연어러버',
+            profileImageUrl: null,
+            profileImageKey: null,
+            bio: null,
+            email: null,
+            phoneNumber: null,
+            isPhoneVerified: true,
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/reviews/mine')
+    await user.click(await screen.findByRole('tab', { name: '작성 완료 1' }))
+
+    expect(await screen.findByText('연어러버')).toBeInTheDocument()
+    expect(screen.queryByText('코코집사')).not.toBeInTheDocument()
   })
 
   it('[AC-MY-REVIEW-002] 서버와 목업 모두 비면 탭마다 빈 안내를 보여준다', async () => {

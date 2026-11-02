@@ -172,7 +172,13 @@ function useInvalidatePets() {
   const queryClient = useQueryClient()
   // 반환해서 react-query가 refetch까지 기다리게 한다. isPending이 갱신 전 구간을 덮어
   // 목록이 아직 옛 상태인 동안 같은 버튼을 다시 누르는 걸 막는다.
-  return () => queryClient.invalidateQueries({ queryKey: PETS_QUERY_KEY })
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: PETS_QUERY_KEY }),
+      // 상품 리뷰 AI 요약은 대표 펫 체급에 따라 달라진다(features/product useProductReviewSummary의 키).
+      // 무효화만 하면 상품으로 돌아왔을 때 이전 체급 요약을 먼저 그리므로 아예 지운다.
+      queryClient.removeQueries({ queryKey: ['review-summary'] }),
+    ])
 }
 
 export function useRegisterPet() {

@@ -1,5 +1,8 @@
 import { test, expect, type Route } from '@playwright/test'
 
+// 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
+const API_ORIGIN = 'http://localhost:8080'
+
 // 상품 상세 + 옵션 ↔ 실 API 연동 E2E. 실백엔드 없이 page.route 스텁으로 재현한다(마켓 spec과 동일한
 // CORS/프리플라이트 규칙). 옵션 조합 추가금이 시트 총액에 반영되는지까지 검증한다.
 
@@ -60,9 +63,12 @@ const OPTIONS = {
 const EMPTY_REVIEWS = {
   data: { summary: null, reviews: [], totalCount: 0, nextCursor: null, hasNext: false },
 }
+// 리뷰 AI 요약도 같은 이유(JWT 필수)로 스텁한다.
+const NO_AI_SUMMARY = { data: { productSummary: null, similarPetSummary: null } }
 
 test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 총액에 반영된다', async ({ page }) => {
   await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
+  await page.route(`${API_ORIGIN}/api/v1/products/${REAL_ID}/review-summary`, route => fulfillJson(route, 200, NO_AI_SUMMARY))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 
@@ -75,8 +81,35 @@ test('[AC-PRODUCT-E2E-001] 실 ULID 상세를 렌더하고 옵션 추가금이 �
   await expect(page.getByText('69,000원')).toBeVisible()
 })
 
+test('[AC-PRODUCT-E2E-004] 리뷰 AI 요약 응답을 봉투째 읽어 카드를 그린다', async ({ page }) => {
+  const aiSummary = {
+    data: {
+      productSummary: {
+        analyzedReviewCount: 37,
+        pros: [{ aspectCode: 'PALATABILITY', headline: '잘 먹는다는 평이 많아요.', mentionCount: 21, quotes: ['그릇을 싹 비웠어요.'] }],
+        cons: [],
+        consAbsenceReason: 'BELOW_MENTION_THRESHOLD',
+        generatedAt: '2026-10-28T12:00:00',
+      },
+      similarPetSummary: null,
+    },
+  }
+  await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
+  await page.route(`${API_ORIGIN}/api/v1/products/${REAL_ID}/review-summary`, route => fulfillJson(route, 200, aiSummary))
+  await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
+  await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
+
+  await page.goto(`/products/${REAL_ID}`)
+
+  await expect(page.getByRole('heading', { name: 'AI 리뷰 요약' })).toBeVisible()
+  await expect(page.getByText('잘 먹는다는 평이 많아요.')).toBeVisible()
+  await expect(page.getByText('리뷰 21건')).toBeVisible()
+  await expect(page.getByText('여러 명이 공통으로 말한 아쉬운 점은 아직 없어요.')).toBeVisible()
+})
+
 test('[AC-PRODUCT-E2E-003] 옵션 시트 수량 조절이 총액/재고 경계에 반영되고 옵션 변경 시 리셋된다', async ({ page }) => {
   await page.route(`**/api/v1/products/${REAL_ID}/reviews*`, route => fulfillJson(route, 200, EMPTY_REVIEWS))
+  await page.route(`${API_ORIGIN}/api/v1/products/${REAL_ID}/review-summary`, route => fulfillJson(route, 200, NO_AI_SUMMARY))
   await page.route(`**/api/v1/products/${REAL_ID}/options`, route => fulfillJson(route, 200, OPTIONS))
   await page.route(`**/api/v1/products/${REAL_ID}`, route => fulfillJson(route, 200, DETAIL))
 

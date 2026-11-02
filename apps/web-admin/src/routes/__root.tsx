@@ -51,8 +51,9 @@ const PENDING_TAG = '준비 중'
 // `/admins`가 대신한다).
 //
 // 꼬리표 유무는 2026-10-26 dev 실측으로 갈랐다. admin-api-dev에 있는 경로는
-// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷, 그리고 뒤에 더해진
-// `/admin/members` 계열 넷(목록·상세·제재·해제)이다. seller·api
+// `/admin/admins`(+`/{userId}`)와 `/admin/seller-applications` 계열 넷, 뒤에 더해진
+// `/admin/members` 계열 넷(목록·상세·제재·해제), 그리고 `/admin/orders` 계열 넷(목록·지표·
+// 상세·발송 독촉, SCRUM-321)이다. seller·api
 // 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도 셀러·구매자
 // 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을 설정하지
 // 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -136,13 +137,13 @@ const navGroups: NavGroup[] = [
     key: 'orders-claims',
     label: '주문 / 클레임',
     items: [
-      // 주문·클레임·리뷰는 seller 호스트(셀러 본인 스코프)와 api 호스트(구매자 본인 스코프)에만
-      // 있다. 플랫폼 전체를 보는 운영자용 경로는 admin 모듈에 아직 없다.
+      // 주문 배송 모니터링은 `/admin/orders` 계열 넷이 생겨 꼬리표 없이 실연동이다(SCRUM-339).
+      // 클레임·리뷰는 아직 seller 호스트(셀러 본인 스코프)와 api 호스트(구매자 본인 스코프)에만
+      // 있어 플랫폼 전체를 보는 운영자용 경로가 admin 모듈에 없다.
       {
         key: '/orders/monitoring',
         label: '주문 배송 모니터링',
         icon: <Truck className={iconClass} />,
-        tag: PENDING_TAG,
       },
       {
         key: '/claims',

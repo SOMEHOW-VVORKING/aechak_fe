@@ -233,23 +233,29 @@ test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에�
   // 가입일이다 — '승격일'로 적으면 가입 시각을 승격 시각으로 위장한다.
   await expect(page.getByRole('columnheader', { name: '가입일' })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: '승격일' })).toHaveCount(0)
-  // 승격 직후 재로그인이 필요하다는 안내는 계약의 일부다.
-  await expect(page.getByText(/다시 로그인해야 관리자 권한이 반영돼요/)).toBeVisible()
+  // 권한 변경이 다음 토큰 갱신에 반영된다는 안내는 계약의 일부다(재로그인은 필요 없다).
+  await expect(page.getByText(/권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요/)).toBeVisible()
   // 자기 행은 서버 isSelf로 표시되고 권한 해제가 잠긴다(403/30014).
   await expect(page.getByRole('button', { name: '현재 운영자 관리자 권한 해제' })).toBeDisabled()
   await shot(page, '02-roster')
 
   await page.getByLabel('승격할 사용자 ID').fill('45')
   await page.getByRole('button', { name: '관리자로 승격' }).click()
-  await expect(page.getByText('관리자로 승격했어요. 그 계정은 다시 로그인해야 권한이 반영돼요.')).toBeVisible()
+  await expect(
+    page.getByText('관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.'),
+  ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '승격대상' })).toBeVisible()
 
   await page.getByRole('button', { name: '김운영 관리자 권한 해제' }).click()
   const modal = page.getByRole('dialog')
-  await expect(modal).toContainText('이미 발급된 토큰은 만료될 때까지 관리자로 통과해요.')
+  await expect(modal).toContainText('access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.')
   await shot(page, '03-demote-confirm')
   await modal.getByRole('button', { name: '권한 해제' }).click()
-  await expect(page.getByText('관리자 권한을 해제했어요.')).toBeVisible()
+  await expect(
+    page.getByText(
+      '관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.',
+    ),
+  ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '김운영' })).toHaveCount(0)
 
   // 업무 요청은 콜백에서 받은 access를 Bearer로 달고 나간다 — 스텁이 토큰을 검사하므로 세션 수령이

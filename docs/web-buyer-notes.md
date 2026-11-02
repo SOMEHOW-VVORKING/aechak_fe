@@ -1719,3 +1719,23 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   취소 품목 제외·상품 이동·확정 후 재조회 실패), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
   확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007/008]`, 캡처
   `test-results/pr-c/orders-07~11`).
+
+### 상품 상세 리뷰 AI 요약 카드 초안 — GET /products/{productId}/review-summary 연동 (SCRUM-299, 2026-10-28)
+
+BE가 AI 서버(SCRUM-310)의 장단점 집계로 만든 요약을 상품 상세 별점 카드 아래에 그린다. **시안이 없어 기존
+`Card`와 텍스트 토큰으로 만든 초안이고, 문구는 `ReviewAiSummary.tsx` 맨 위 `COPY`·`CONS_ABSENCE_NOTE`·
+`WEIGHT_BAND_LABEL`에 모아 두었다.** 시안이 나오면 이 파일만 고치면 된다.
+
+- **요청 조건은 리뷰 미리보기와 같다(`canFetchServerReviews`).** 요약 API도 JWT 필수라 비회원이나 목업 상품에서
+  부르면 401 전역 리다이렉트로 상세를 잃는다. 비회원이 주소로 바로 들어오면 로그인 기본값이 true라 둘 다
+  나가는 문제는 미리보기에 원래 있던 것이고, 상품 상세 라우트의 세션 복원을 고쳐야 풀린다.
+- **아쉬운 점이 비어도 칸을 숨기지 않는다.** `consAbsenceReason`마다 한 줄 안내를 두고 모르는 값은 일반 안내로
+  받는다. 숨기면 반복된 단점이 있는데 문장만 없는 상품(`NARRATION_MISSING`)이 단점 없는 상품처럼 보인다.
+- **`mentionCount`는 사람 수가 아니라 리뷰 수라 `리뷰 N건`으로 쓴다.** 한 사람이 리뷰를 여러 건 쓸 수 있다.
+- **캐시 키는 `['review-summary', productId]`다.** 응답이 조회자 대표 펫 체급에 따라 달라서 `shared/pet`이 펫
+  mutation 뒤에 이 접두를 통째로 지우고(`removeQueries`, 무효화만 하면 이전 체급 요약을 먼저 그린다), 리뷰를
+  쓰거나 지우면 `invalidateReviewCaches`가 그 상품 키를 무효화한다.
+- 로딩 중에는 그리지 않고, 실패하면 요약이 없는 것과 구분되게 한 줄로 알린다(6절 7항).
+- 회귀: `features/product/__tests__/product-route.test.tsx`(`[AC-PRODUCT-024~030]` 두 요약, 사유 한 줄, 둘 다
+  null, 비회원 미호출, 사유 전부와 모르는 값, 실패 안내, 비슷한 아이 요약만), E2E `e2e/product-detail.spec.ts`
+  (`[AC-PRODUCT-E2E-004]` 봉투째 읽어 카드 렌더). 상세로 들어가는 `home`·`reviews` spec에도 요약 스텁을 더했다.
