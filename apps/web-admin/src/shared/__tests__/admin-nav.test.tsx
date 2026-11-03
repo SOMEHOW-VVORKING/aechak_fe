@@ -15,6 +15,7 @@ import {
   seedAdminInquiries,
   seedAdminNotices,
   seedAdminOrders,
+  seedAdminReports,
   seedAdminReviews,
   server,
 } from '@/testing/msw/server'
@@ -48,7 +49,8 @@ const normalizePath = (pathname: string) =>
  * `/admin/inquiries` 넷·`/admin/claims` 넷·`/admin/reviews` 다섯이 확인돼 서비스 문의·클레임·
  * 리뷰도 실연동이 됐다(SCRUM-331). 2026-11-03에는 `GET /admin/audit-logs` 하나가 확인돼 어드민
  * 액션 로그가 실연동이 됐고(SCRUM-318), `/admin/notices` 여섯(목록·초안 생성·상세·수정·게시·내림)이
- * 확인돼 알림/공지 관리도 실연동이 됐다(SCRUM-332).
+ * 확인돼 알림/공지 관리도 실연동이 됐다(SCRUM-332). `/admin/reports` 셋(목록·상세·처리)이 확인돼
+ * 신고 제재 관리도 실연동이 됐다(SCRUM-241).
  * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
 const LIVE_LABELS = [
@@ -62,6 +64,7 @@ const LIVE_LABELS = [
   '리뷰 관리',
   '알림/공지 관리',
   '어드민 액션 로그',
+  '신고 제재 관리',
 ] as const
 
 /**
@@ -72,7 +75,6 @@ const PENDING_LABELS = [
   '대시보드',
   '셀러 관리',
   '상품 검수 관리',
-  '신고 제재 관리',
   '채팅 CS 모니터링',
 ] as const
 
@@ -130,6 +132,7 @@ describe('어드민 nav', () => {
     // 보는 단언이 생기면 앞 테스트가 남긴 행을 그대로 읽게 되는 자리라 미리 끊는다.
     seedAdminAuditLogs()
     seedAdminNotices()
+    seedAdminReports()
   })
 
   it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {

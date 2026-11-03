@@ -6,6 +6,7 @@ import { noticeHandlers } from './notices.handlers'
 import { inquiryHandlers } from './inquiries.handlers'
 import { claimHandlers } from './claims.handlers'
 import { reviewHandlers } from './reviews.handlers'
+import { reportHandlers } from './reports.handlers'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-seller의 src/testing/msw 관례를
 // web-admin에 이식했다. 모듈 모킹 대신 네트워크 레벨에서 가로채 실제 HTTP 경로(URL·봉투·에러
@@ -16,6 +17,16 @@ import { reviewHandlers } from './reviews.handlers'
 // 받아 주어, 실제 배포에서만 드러나는 호스트 오배치를 테스트가 놓친다. 두 상수는 test-setup.ts의
 // configureApiHosts 인자와 같은 값이어야 한다(admin 로컬 포트는 seller와 겹치지 않는 8082).
 export { ADMIN_ORIGIN, API_ORIGIN } from './base'
+export {
+  ADMIN_REPORTS_URL,
+  ADMIN_REPORT_DECISION_URL,
+  ADMIN_REPORT_DETAIL_URL,
+  currentAdminReport,
+  lastAdminReportSanction,
+  makeAdminReportWire,
+  seedAdminReports,
+  type AdminReportWire,
+} from './reports.handlers'
 export {
   ADMIN_AUDIT_LOGS_URL,
   makeAdminAuditLogWire,
@@ -1140,5 +1151,7 @@ export const handlers = [
   ...auditLogHandlers,
   // 공지 핸들러도 시드 없이 빈 목록으로 답한다 — `/notices`가 nav 테스트에서 열린다.
   ...noticeHandlers,
+  // 신고 핸들러도 같은 이유로 시드 없이 빈 목록으로 답한다 — `/reports`가 nav 테스트에서 열린다.
+  ...reportHandlers,
 ]
 export const server = setupServer(...handlers)

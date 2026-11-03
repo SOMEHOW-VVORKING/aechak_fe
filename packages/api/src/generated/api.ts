@@ -5438,6 +5438,236 @@ export interface SaveNoticeRequest {
 }
 
 /**
+ * 신고 대상의 종류(be ReportTargetType). 신고 행이 어느 표에서 왔는지를 가리고 **상세·조치 경로의 첫 세그먼트**다 — 세 신고 표가 각자 AUTO_INCREMENT라 번호만으로는 행을 가릴 수 없다. 비공개 전환(HIDE_TARGET)은 REVIEW에서만 받는다 (be hasHidableTarget — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다)
+ */
+export type ReportTargetType = (typeof ReportTargetType)[keyof typeof ReportTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReportTargetType = {
+  PRODUCT: 'PRODUCT',
+  REVIEW: 'REVIEW',
+  USER: 'USER',
+} as const
+
+/**
+ * 어드민이 보는 신고 처리 상태. 구매자 접수 측 ReportStatus(RECEIVED·FORWARDED·RESOLVED· DISMISSED)와 **다른 열거**라 어드민 응답에는 이 셋만 온다. 미처리 신고가 전부 RECEIVED라 라벨 표에서 빠지면 대부분의 행이 라벨을 잃는다
+ */
+export type ReportHandlingStatus = (typeof ReportHandlingStatus)[keyof typeof ReportHandlingStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReportHandlingStatus = {
+  RECEIVED: 'RECEIVED',
+  DISMISSED: 'DISMISSED',
+  SANCTIONED: 'SANCTIONED',
+} as const
+
+/**
+ * **접수** 사유 — 신고한 사람이 고른 값이다. 대상 종류별 어휘라 허용값이 갈린다 (PRODUCT=FALSE_AD·INFO_ERROR·ILLEGAL·INAPPROPRIATE·OTHER, REVIEW·USER=FRAUD·ABUSE·SPAM·INAPPROPRIATE·OTHER)이고 여덟은 그 **합집합**이라 한 대상에서 다 쓰지 않는다. 처리 사유(ReportDecisionReason)와 FALSE_AD·ABUSE·ILLEGAL 셋이 겹쳐, 한 라벨 표로 다루면 섞어 써도 라벨이 나와 조용히 틀린다
+ */
+export type ReportReasonCode = (typeof ReportReasonCode)[keyof typeof ReportReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReportReasonCode = {
+  ABUSE: 'ABUSE',
+  FALSE_AD: 'FALSE_AD',
+  FRAUD: 'FRAUD',
+  ILLEGAL: 'ILLEGAL',
+  INAPPROPRIATE: 'INAPPROPRIATE',
+  INFO_ERROR: 'INFO_ERROR',
+  OTHER: 'OTHER',
+  SPAM: 'SPAM',
+} as const
+
+/**
+ * 운영자의 처리 결정. HIDE_TARGET은 리뷰 신고에만 보낼 수 있고(아니면 400 errorCode 140002) SANCTION_ACCOUNT일 때만 `sanction`을 함께 보낸다
+ */
+export type ReportDecisionType = (typeof ReportDecisionType)[keyof typeof ReportDecisionType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReportDecisionType = {
+  DISMISS: 'DISMISS',
+  HIDE_TARGET: 'HIDE_TARGET',
+  SANCTION_ACCOUNT: 'SANCTION_ACCOUNT',
+} as const
+
+/**
+ * **처리** 사유 — 운영자가 고르는 값이고 접수 사유(ReportReasonCode)와 다른 어휘다. NOT_CONFIRMED·FALSE_REPORT는 "대상에게 위반이 없었다"는 판정이라 제재와 함께 보낼 수 없다(400 errorCode 140003·140004) — 화면이 조합을 미리 막는다
+ */
+export type ReportDecisionReason = (typeof ReportDecisionReason)[keyof typeof ReportDecisionReason]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReportDecisionReason = {
+  FALSE_AD: 'FALSE_AD',
+  ABUSE: 'ABUSE',
+  EXTERNAL_TRADE: 'EXTERNAL_TRADE',
+  ILLEGAL: 'ILLEGAL',
+  FALSE_REPORT: 'FALSE_REPORT',
+  NOT_CONFIRMED: 'NOT_CONFIRMED',
+} as const
+
+/**
+ * 미처리 신고는 null이다
+ * @nullable
+ */
+export type AdminReportSummaryDecision = ReportDecisionType | null
+
+/**
+ * @nullable
+ */
+export type AdminReportSummaryDecisionReasonCode = ReportDecisionReason | null
+
+/**
+ * 목록·상세의 신고 한 건. `targetKey`와 `targetName`이 **따로** 와서 화면이 복합 문자열을 조립할 필요가 없다 — targetKey는 대상을 다시 여는 식별자(상품은 ULID, 리뷰·사용자는 내부 번호)고 targetName은 상품명·리뷰 본문이다
+ */
+export interface AdminReportSummary {
+  targetType: ReportTargetType
+  reportId: number
+  /** 상품은 공개 식별자(ULID), 리뷰와 사용자는 내부 id다 — 종류마다 뜻이 다르다 */
+  targetKey: string
+  /**
+   * 상품명·리뷰 본문. **사용자 신고에는 없다**(닉네임이 그 자리를 대신한다)
+   * @nullable
+   */
+  targetName: string | null
+  /** 제재가 걸리는 계정 — 신고자가 아니라 신고 대상자다 */
+  targetOwnerUserId: number
+  /**
+   * 탈퇴·삭제된 계정은 비어 온다
+   * @nullable
+   */
+  targetOwnerNickname: string | null
+  reasonCode: ReportReasonCode
+  /** 같은 대상에 쌓인 누적 신고 수 — 서버가 세 준다 */
+  reportCount: number
+  /** 오프셋 없는 LocalDateTime(KST 벽시계). 목록 정렬 기준이다 */
+  reportedAt: string
+  status: ReportHandlingStatus
+  /**
+   * 미처리 신고는 null이다
+   * @nullable
+   */
+  decision: AdminReportSummaryDecision
+  /** @nullable */
+  decisionReasonCode: AdminReportSummaryDecisionReasonCode
+  /** @nullable */
+  decidedAt: string | null
+}
+
+export interface AdminReportListData {
+  items: AdminReportSummary[]
+  /**
+   * 현재 필터 기준 전체 수. 커서 페이지에도 실리는지 스펙에 없어 화면은 첫 페이지에서만 읽는다 — 어느 쪽이어도 맞는 꼴이다
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  /** 화면은 이 값으로 `더 보기`를 열지 않는다 — placeholder 구간에는 본문이 이전 조건의 페이지라, 본문 값을 읽으면 버튼이 옛 커서를 요구한다 */
+  hasNext: boolean
+}
+
+export interface AdminReportListResponse {
+  data: AdminReportListData
+}
+
+/**
+ * 같은 대상에 쌓인 신고 한 건. 사유는 **접수** 어휘다
+ */
+export interface ReportHistoryEntry {
+  reportId: number
+  reasonCode: ReportReasonCode
+  /**
+   * 신고자가 적은 상세. 고르기만 한 신고는 비어 온다
+   * @nullable
+   */
+  reasonText: string | null
+  reportedAt: string
+  status: ReportHandlingStatus
+}
+
+/**
+ * 이미 내려진 결정. `noticeToOwner`는 **저장되어 이 응답으로 다시 읽히는 값**이고 발송 경로가 아니다 — 플랫폼에 알림 발송 경로가 없다(공지와 같은 자리)
+ */
+export interface ReportDecisionDetail {
+  decision: ReportDecisionType
+  reasonCode: ReportDecisionReason
+  /** @nullable */
+  reasonDetail: string | null
+  /** @nullable */
+  noticeToOwner: string | null
+  /** @nullable */
+  internalMemo: string | null
+  targetOwnerUserId: number
+  /** 내부 번호만 와서 화면이 이름을 말할 수 없다 — 누가 했는지는 액션 로그가 가진다 */
+  actedByAdminId: number
+  decidedAt: string
+}
+
+/**
+ * 미처리 신고는 null이다
+ * @nullable
+ */
+export type AdminReportDetailDataDecision = ReportDecisionDetail | null
+
+export interface AdminReportDetailData {
+  report: AdminReportSummary
+  /** 신고한 사람의 내부 번호. **제재 대상이 아니다**(제재는 targetOwnerUserId에 걸린다) */
+  reporterId: number
+  /**
+   * 가장 최근 신고의 상세 내용. 고르기만 한 신고는 비어 온다
+   * @nullable
+   */
+  reasonText: string | null
+  history: ReportHistoryEntry[]
+  /**
+   * 미처리 신고는 null이다
+   * @nullable
+   */
+  decision: AdminReportDetailDataDecision
+}
+
+export interface AdminReportDetailResponse {
+  data: AdminReportDetailData
+}
+
+/**
+ * 제재 내용. `decision`이 SANCTION_ACCOUNT일 때만 보낸다. 조치·사유 어휘는 회원 제재 (`/admin/members/{userId}/sanctions`)와 같은 열거이고, 그 경로의 판정이 그대로 걸리는 것으로 보아 **RELEASE는 보내지 않고**(해제는 회원 제재 해제 경로다) `durationDays`는 SUSPEND에만 싣는다
+ */
+export interface ReportSanctionRequest {
+  action: SanctionAction
+  reasonCode: SanctionReasonCode
+  /**
+   * reasonCode=OTHER면 필수(회원 제재 경로의 400/30800과 같은 판정)
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /**
+   * SUSPEND에만 보낸다 — 스펙상 필수가 아니지만 기간 없는 SUSPEND는 회원 제재 경로가 400/30801로 끊는다
+   * @minimum 1
+   * @maximum 365
+   */
+  durationDays?: number
+}
+
+/**
+ * 신고 처리 요청. **`noticeToOwner`는 신고 대상자에게 쓰는 안내이고 신고자에게 가는 통보가 아니다** — 신고자 통보 경로는 서버에 없다. 저장되어 상세 응답으로 다시 읽히는 값이라 화면이 "안내를 보냅니다"로 적으면 거짓이 된다
+ */
+export interface DecideReportRequest {
+  decision: ReportDecisionType
+  reasonCode: ReportDecisionReason
+  /** @maxLength 500 */
+  reasonDetail?: string
+  /**
+   * 신고 **대상자**에게 쓰는 안내. 발송 경로가 없어 기록으로만 남는다
+   * @maxLength 300
+   */
+  noticeToOwner?: string
+  /** @maxLength 300 */
+  internalMemo?: string
+  sanction?: ReportSanctionRequest
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -6137,6 +6367,27 @@ export type GetAdminOrderMetricsParams = {
    * 주문일 상한(포함), YYYY-MM-DD
    */
   orderedTo?: string
+}
+
+export type GetAdminReportsParams = {
+  /**
+   * 미선택은 키째 빼서 보낼 것
+   */
+  targetType?: ReportTargetType
+  status?: ReportHandlingStatus
+  /**
+   * 접수일 하한(ISO date). 커서로 과거까지 넘길 수 있어 화면은 쓰지 않는다
+   */
+  reportedFrom?: string
+  /**
+   * 접수일 상한(ISO date). 커서로 과거까지 넘길 수 있어 화면은 쓰지 않는다
+   */
+  reportedTo?: string
+  /**
+   * 직전 응답의 nextCursor. **조건이 바뀐 채 재사용하면 400 errorCode 90002**라 커서를 버리고 처음부터 받아야 한다
+   */
+  cursor?: string
+  size?: number
 }
 
 /**
@@ -27686,6 +27937,537 @@ export const useNudgeAdminOrderDispatch = <TError = unknown, TContext = unknown>
   TContext
 > => {
   const mutationOptions = getNudgeAdminOrderDispatchMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 접수된 신고의 어드민 목록. 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(미인증은 401 errorCode 20004, 권한 없음은 403 errorCode 20011). 커서 페이징이고 접수 역순이다. **조건을 바꾼 채 옛 커서를 보내면 400 errorCode 90002로 끊는다** — 필터를 쿼리 키에 넣어 조건이 바뀌는 순간 커서 사슬이 새로 시작해야 한다. `targetType`·`status`·`size`의 형식 오류는 서버가 보정한다(400이 아니다). **`reasonCode`로 거르는 파라미터는 없다** — 옵션을 깔면 동작하지 않는 필터가 된다. 응답의 `reasonCode`(접수 사유)와 `decisionReasonCode`(처리 사유)는 **다른 어휘**다.
+ * @summary 어드민 신고 목록
+ */
+export const getAdminReports = (params?: GetAdminReportsParams, signal?: AbortSignal) => {
+  return customInstance<AdminReportListResponse>({
+    url: `/admin/reports`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminReportsQueryKey = (params?: GetAdminReportsParams) => {
+  return [`/admin/reports`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminReportsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReportsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReports>>> = ({ signal }) =>
+    getAdminReports(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReports>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReportsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminReports>>>
+export type GetAdminReportsQueryError = unknown
+
+export function useGetAdminReports<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminReportsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReports>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReports>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReports<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReports>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReports>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReports<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 신고 목록
+ */
+
+export function useGetAdminReports<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReportsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminReportsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReportsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReports>>> = ({ signal }) =>
+    getAdminReports(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReports>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReportsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReports>>
+>
+export type GetAdminReportsSuspenseQueryError = unknown
+
+export function useGetAdminReportsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminReportsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 신고 목록
+ */
+
+export function useGetAdminReportsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReports>>,
+  TError = unknown,
+>(
+  params?: GetAdminReportsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReports>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReportsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 신고 내용과 대상, 같은 대상의 누적 신고 이력, 이미 내려진 결정. 처리가 끝난 신고도 기록과 함께 돌려준다. **경로의 첫 세그먼트가 `targetType`이다** — 세 신고 표가 각자 AUTO_INCREMENT라 번호만으로는 행을 가릴 수 없다. 목록 행의 `targetType`을 쥐고 경로를 조립해야 한다. `reporterId`·`reasonText`·`history`·`decision`은 **상세에만 있다**. 404 errorCode 140000 — 없는 신고.
+ * @summary 어드민 신고 상세
+ */
+export const getAdminReportDetail = (
+  targetType: ReportTargetType,
+  reportId: number,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminReportDetailResponse>({
+    url: `/admin/reports/${targetType}/${reportId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminReportDetailQueryKey = (
+  targetType?: ReportTargetType,
+  reportId?: number,
+) => {
+  return [`/admin/reports/${targetType}/${reportId}`] as const
+}
+
+export const getGetAdminReportDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReportDetailQueryKey(targetType, reportId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReportDetail>>> = ({ signal }) =>
+    getAdminReportDetail(targetType, reportId, signal)
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(targetType && reportId),
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+}
+
+export type GetAdminReportDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReportDetail>>
+>
+export type GetAdminReportDetailQueryError = unknown
+
+export function useGetAdminReportDetail<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReportDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReportDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportDetail<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminReportDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminReportDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportDetail<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 신고 상세
+ */
+
+export function useGetAdminReportDetail<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReportDetailQueryOptions(targetType, reportId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminReportDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminReportDetailQueryKey(targetType, reportId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReportDetail>>> = ({ signal }) =>
+    getAdminReportDetail(targetType, reportId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminReportDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminReportDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminReportDetail>>
+>
+export type GetAdminReportDetailSuspenseQueryError = unknown
+
+export function useGetAdminReportDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminReportDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 신고 상세
+ */
+
+export function useGetAdminReportDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminReportDetail>>,
+  TError = unknown,
+>(
+  targetType: ReportTargetType,
+  reportId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminReportDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminReportDetailSuspenseQueryOptions(targetType, reportId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 결정 기록 한 행을 남기고 비노출·제재는 기존 경로에 위임한다. 성공은 204 No Content다. **멱등이 아니라 거절이다**: 이미 처리된 신고에 또 보내면 409 errorCode 140001이라, 처리가 끝난 행에 제출 버튼을 남기면 운영자가 못 쓰는 버튼을 누른다. 400 errorCode 140002 — 리뷰가 아닌 대상에 HIDE_TARGET(사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다). 400 errorCode 140003·140004 — 결정과 제재 입력이 어긋남(제재 필수·금지). 어느 코드가 어느 쪽인지는 확인하지 못해 화면은 두 코드를 한 문구로 다룬다. 404 errorCode 140000 — 없는 신고.
+ * @summary 어드민 신고 처리
+ */
+export const decideAdminReport = (
+  targetType: ReportTargetType,
+  reportId: number,
+  decideReportRequest: DecideReportRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/reports/${targetType}/${reportId}/decision`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: decideReportRequest,
+    signal,
+  })
+}
+
+export const getDecideAdminReportMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof decideAdminReport>>,
+    TError,
+    { targetType: ReportTargetType; reportId: number; data: DecideReportRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof decideAdminReport>>,
+  TError,
+  { targetType: ReportTargetType; reportId: number; data: DecideReportRequest },
+  TContext
+> => {
+  const mutationKey = ['decideAdminReport']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof decideAdminReport>>,
+    { targetType: ReportTargetType; reportId: number; data: DecideReportRequest }
+  > = props => {
+    const { targetType, reportId, data } = props ?? {}
+
+    return decideAdminReport(targetType, reportId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DecideAdminReportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof decideAdminReport>>
+>
+export type DecideAdminReportMutationBody = DecideReportRequest
+export type DecideAdminReportMutationError = unknown
+
+/**
+ * @summary 어드민 신고 처리
+ */
+export const useDecideAdminReport = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof decideAdminReport>>,
+      TError,
+      { targetType: ReportTargetType; reportId: number; data: DecideReportRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof decideAdminReport>>,
+  TError,
+  { targetType: ReportTargetType; reportId: number; data: DecideReportRequest },
+  TContext
+> => {
+  const mutationOptions = getDecideAdminReportMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
