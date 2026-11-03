@@ -242,6 +242,14 @@ describe('어드민 대시보드 지표', () => {
     expect(metricCard('답변 대기 문의')).toHaveTextContent('—')
     expect(metricCard('진행 중 클레임')).toHaveTextContent('—')
     expect(metricCard('오늘 거래액')).toHaveTextContent('—')
+    // 이 칸만 `useMetricValue`가 아니라 `usePendingApplicationCount`가 채운다(nav 배지와 queryKey를
+    // 공유해야 해서 자기 코드를 들고 있다) — 같은 판정을 **이 칸에서도** 단언한다. 그 훅의 실패
+    // 판정(`if (query.isError) return null` + `?? null`)을 `?? 0`만 남기게 되돌리면 이 칸이
+    // `0건`을 그리는데, 그걸 잡던 단언은 nav **배지**를 보는 AC-ADMIN-NAV-007 하나뿐이었다
+    // (실측: 이 줄 없이 그 되돌림을 넣으면 이 파일 10건이 전부 통과하고 nav 파일만 깨졌다).
+    // 배지는 0을 아예 그리지 않아 배지만 고쳐도 카드는 거짓을 그대로 그린다.
+    expect(metricCard('셀러 입점 심사 대기')).toHaveTextContent('—')
+    expect(metricCard('셀러 입점 심사 대기')).not.toHaveTextContent('0건')
     // 줄표만 있으면 운영자는 "0"인지 "못 받았는지"를 모른다 — 띠가 사유를 적는다.
     expect(screen.getByRole('alert')).toHaveTextContent('권한이 없거나 조회가 실패')
     // 할 일 줄도 같은 판정을 쓴다(0건으로 접히면 목록이 "할 일 없음"으로 보인다).
