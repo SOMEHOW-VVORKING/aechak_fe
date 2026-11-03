@@ -10,8 +10,10 @@ import {
   ADMIN_PRODUCT_INSPECTIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
+  seedAdminAuditLogs,
   seedAdminClaims,
   seedAdminInquiries,
+  seedAdminNotices,
   seedAdminOrders,
   seedAdminReviews,
   server,
@@ -44,7 +46,9 @@ const normalizePath = (pathname: string) =>
  * `/admin/orders` 계열 넷(목록·지표·상세·발송 독촉)이 더해져 주문 배송 모니터링이,
  * `/admin/product-inspections` 넷이 더해져 AI 검수 큐가 실연동이 됐다. 2026-10-30 실측에서는
  * `/admin/inquiries` 넷·`/admin/claims` 넷·`/admin/reviews` 다섯이 확인돼 서비스 문의·클레임·
- * 리뷰도 실연동이 됐다(SCRUM-331).
+ * 리뷰도 실연동이 됐다(SCRUM-331). 2026-11-03에는 `GET /admin/audit-logs` 하나가 확인돼 어드민
+ * 액션 로그가 실연동이 됐고(SCRUM-318), `/admin/notices` 여섯(목록·초안 생성·상세·수정·게시·내림)이
+ * 확인돼 알림/공지 관리도 실연동이 됐다(SCRUM-332).
  * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
 const LIVE_LABELS = [
@@ -56,6 +60,8 @@ const LIVE_LABELS = [
   '서비스 문의 관리',
   '취소/반품/교환',
   '리뷰 관리',
+  '알림/공지 관리',
+  '어드민 액션 로그',
 ] as const
 
 /**
@@ -68,8 +74,6 @@ const PENDING_LABELS = [
   '상품 검수 관리',
   '신고 제재 관리',
   '채팅 CS 모니터링',
-  '알림/공지 관리',
-  '어드민 액션 로그',
 ] as const
 
 /** 꼬리표 글자는 버튼 접근명 끝에 붙는다 — 어느 항목에 붙었는지까지 이름으로 확인할 수 있다. */
@@ -121,6 +125,11 @@ describe('어드민 nav', () => {
     seedAdminInquiries()
     seedAdminClaims()
     seedAdminReviews()
+    // 감사 로그·공지도 같은 이유로 끊어 둔다. 두 핸들러는 시드가 없어도 빈 목록으로 답하고 이
+    // 파일은 제목과 이동만 단언하므로 **지금은** 둘을 빼도 깨지지 않는다(실측) — 뒤에 행 내용을
+    // 보는 단언이 생기면 앞 테스트가 남긴 행을 그대로 읽게 되는 자리라 미리 끊는다.
+    seedAdminAuditLogs()
+    seedAdminNotices()
   })
 
   it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
@@ -227,7 +236,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 7항목의 목적지에는 띠가 **있어야** 하고, 실연동 8항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 5항목의 목적지에는 띠가 **있어야** 하고, 실연동 10항목에는 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).
@@ -235,6 +244,31 @@ describe('어드민 nav', () => {
    */
   const destinationsFor = (labels: readonly string[]) =>
     NAV_DESTINATIONS.filter(([label]) => labels.includes(label))
+
+  /**
+   * 아래 두 `it.each`는 **분류 배열에서 뽑은 목적지만** 돌기 때문에 스스로 자기 적용 범위를
+   * 지키지 못한다. 항목을 두 배열에서 모두 빼면 그 화면의 띠 단언이 조용히 사라진다 — 테스트
+   * 수만 줄고 전부 통과한다(실측: `LIVE_LABELS`에서 한 줄을 빼면 298 → 297로 줄고 실패가 없다).
+   * 그러면 실연동하면서 띠를 걷지 않아도, 예시 화면에서 띠가 빠져도 아무것도 잡지 못한다.
+   *
+   * 실연동 작업은 항목을 한 배열에서 다른 배열로 옮기는 일이라, **옮기다 흘리는 것**이 이 파일의
+   * 실제 실패 모양이다. 그래서 두 배열이 `NAV_DESTINATIONS`를 빠짐없이, 겹치지 않게 덮는지
+   * 여기서 고정한다. `NAV_DESTINATIONS` 자체는 AC-ADMIN-NAV-008이 렌더된 nav와 맞춰 두므로
+   * (그룹마다 항목 수까지 센다) 이 둘을 합치면 nav에 올라온 15항목 전부가 분류를 받는다.
+   */
+  it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동/준비 중 한쪽으로만 분류된다', () => {
+    const classified = [...LIVE_LABELS, ...PENDING_LABELS]
+    const destinations = NAV_DESTINATIONS.map(([label]) => label)
+
+    // 합이 nav 항목 수와 같아야 한다 — 모자라면 그 화면은 띠 단언을 아예 받지 않는다.
+    expect(classified).toHaveLength(destinations.length)
+    // 개수만 맞고 이름이 어긋난 것(옮기면서 라벨을 잘못 적은 것)까지 본다.
+    expect([...classified].sort()).toEqual([...destinations].sort())
+    // 양쪽에 동시에 올라 있으면 "띠가 있어야 한다"와 "없어야 한다"를 함께 요구해 반드시 하나가 거짓이다.
+    expect(LIVE_LABELS.filter(label => (PENDING_LABELS as readonly string[]).includes(label))).toEqual(
+      [],
+    )
+  })
 
   it.each(destinationsFor(PENDING_LABELS))(
     '[AC-ADMIN-NAV-004] 꼬리표가 붙은 %s(%s) 화면은 예시 데이터 띠를 달고 열린다',

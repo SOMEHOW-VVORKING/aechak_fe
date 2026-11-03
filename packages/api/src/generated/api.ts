@@ -5184,6 +5184,260 @@ export interface MyProductInquiryListResponse {
 }
 
 /**
+ * 감사되는 운영 액션 17종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'· '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
+ */
+export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAuditAction]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminAuditAction = {
+  SELLER_APPLICATION_APPROVED: 'SELLER_APPLICATION_APPROVED',
+  SELLER_APPLICATION_REJECTED: 'SELLER_APPLICATION_REJECTED',
+  ADMIN_PROMOTED: 'ADMIN_PROMOTED',
+  ADMIN_DEMOTED: 'ADMIN_DEMOTED',
+  PRODUCT_INSPECTION_APPROVED: 'PRODUCT_INSPECTION_APPROVED',
+  PRODUCT_INSPECTION_REJECTED: 'PRODUCT_INSPECTION_REJECTED',
+  CLAIM_INTERVENED: 'CLAIM_INTERVENED',
+  MEMBER_SANCTIONED: 'MEMBER_SANCTIONED',
+  MEMBER_SANCTION_RELEASED: 'MEMBER_SANCTION_RELEASED',
+  INQUIRY_ANSWERED: 'INQUIRY_ANSWERED',
+  REVIEW_BLINDED: 'REVIEW_BLINDED',
+  REVIEW_UNBLINDED: 'REVIEW_UNBLINDED',
+  REVIEW_DELETED: 'REVIEW_DELETED',
+  ORDER_DISPATCH_NUDGED: 'ORDER_DISPATCH_NUDGED',
+  NOTICE_UPDATED: 'NOTICE_UPDATED',
+  NOTICE_PUBLISHED: 'NOTICE_PUBLISHED',
+  NOTICE_UNPUBLISHED: 'NOTICE_UNPUBLISHED',
+} as const
+
+/**
+ * 액션이 가리킨 대상의 종류 9종(be AdminAuditTargetType). 종류마다 targetId의 뜻이 다르다 — 앞의 다섯은 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자
+ */
+export type AdminAuditTargetType = (typeof AdminAuditTargetType)[keyof typeof AdminAuditTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminAuditTargetType = {
+  SELLER_APPLICATION: 'SELLER_APPLICATION',
+  ADMIN_USER: 'ADMIN_USER',
+  MEMBER: 'MEMBER',
+  PRODUCT: 'PRODUCT',
+  CLAIM: 'CLAIM',
+  INQUIRY: 'INQUIRY',
+  REVIEW: 'REVIEW',
+  ORDER: 'ORDER',
+  NOTICE: 'NOTICE',
+} as const
+
+/**
+ * 액션의 성공 여부. 대문자 2값뿐이다
+ */
+export type AdminAuditResult = (typeof AdminAuditResult)[keyof typeof AdminAuditResult]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminAuditResult = {
+  SUCCESS: 'SUCCESS',
+  FAILURE: 'FAILURE',
+} as const
+
+/**
+ * 행위자의 권한 등급. **직무 구분이 아니다** — 목 시절 화면이 캡션으로 쓰던 '운영 매니저'· '심사 담당'·'CS 담당' 같은 조직 체계는 서버에 없다
+ */
+export type AdminAuditActorRole = (typeof AdminAuditActorRole)[keyof typeof AdminAuditActorRole]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminAuditActorRole = {
+  GENERAL: 'GENERAL',
+  ADMIN: 'ADMIN',
+} as const
+
+/**
+ * 감사 기록 한 줄. springdoc 출력에는 required가 한 필드도 없어 그대로 옮기면 16필드가 전부 옵셔널이 된다 — 실제로 빌 수 있는 자리만 nullable로 적고 나머지를 required로 올렸다
+ */
+export interface AdminAuditLogEntry {
+  id: string
+  /** 오프셋 없는 LocalDateTime(KST 벽시계). Jackson은 초·나노가 0이면 초를 생략하므로 (`2026-10-26T20:31`) 자리 자르기로 초를 뽑으면 그 행만 짧아진다 */
+  actedAt: string
+  /** 행위자 공개 식별자. actorPublicId 필터에 그대로 쓸 수 있는 값이다 */
+  actorPublicId: string
+  /**
+   * 탈퇴·삭제된 계정은 비어 온다
+   * @nullable
+   */
+  actorNickname: string | null
+  actorRole: AdminAuditActorRole
+  action: AdminAuditAction
+  /** 서버가 만든 한글 라벨. 열에는 이 값을 그대로 쓴다 */
+  actionLabel: string
+  targetType: AdminAuditTargetType
+  /** 서버가 만든 한글 라벨. 열에는 이 값을 그대로 쓴다 */
+  targetTypeLabel: string
+  /** 종류마다 뜻이 다른 식별자(내부 번호 5종 / 공개 문자열 4종). 접두 코드는 서버가 붙이지 않는다 */
+  targetId: string
+  /**
+   * 대상의 이름. 삭제된 대상은 비어 온다
+   * @nullable
+   */
+  targetLabel: string | null
+  /**
+   * 운영자가 처리할 때 입력한 사유 메모. **설명 산문이 아니다** — 사유 입력이 없는 행위는 비어 오고, 실패 원인은 httpStatus에 있다
+   * @nullable
+   */
+  reason: string | null
+  result: AdminAuditResult
+  /** 그 액션이 받은 HTTP 상태. 실패 행이 왜 실패했는지가 여기에만 남는다 */
+  httpStatus: number
+  /** 요청 추적 식별자 — 장애 조사 때 서버 로그와 맞춰 보는 값이다 */
+  requestId: string
+  /**
+   * 기록되지 않은 행은 비어 온다 — 빈 칸으로 그리면 '값을 못 받았다'와 구별되지 않는다
+   * @nullable
+   */
+  clientIp: string | null
+}
+
+export interface AdminAuditLogListData {
+  items: AdminAuditLogEntry[]
+  /**
+   * 현재 필터 기준 전체 수. 커서를 보낸 요청에도 실리는지 스펙에 없어 화면은 첫 페이지에서만 읽는다(어느 쪽이어도 맞다)
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  /** 화면은 이 값으로 `더 보기`를 열지 않는다 — placeholder 구간에는 본문이 이전 조건의 페이지라, 본문 값을 읽으면 버튼이 옛 커서를 요구한다 */
+  hasNext: boolean
+  /**
+   * 감사 기록을 모으기 시작한 시각(오프셋 없는 LocalDateTime). 이 화면이 가장 크게 거짓말할 자리라 빈 목록에도 화면에 남아야 한다 — 감사 로그에서 '없다'와 '그 전은 기록이 없다'는 전혀 다른 사실이다
+   * @nullable
+   */
+  recordingSince: string | null
+}
+
+export interface AdminAuditLogListResponse {
+  data: AdminAuditLogListData
+}
+
+/**
+ * 공지 게시 상태 3값(be NoticeStatus). **SCHEDULED가 없다** — 시각이 되면 상태를 옮겨 줄 배치가 없어 일부러 두지 않았다. 목 시절 화면의 '게시 예약'·'종료'는 이 열거에 없으므로 필터 옵션으로 두면 영구히 0건이다
+ */
+export type NoticeStatus = (typeof NoticeStatus)[keyof typeof NoticeStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const NoticeStatus = {
+  DRAFT: 'DRAFT',
+  PUBLISHED: 'PUBLISHED',
+  UNPUBLISHED: 'UNPUBLISHED',
+} as const
+
+/**
+ * 공지를 보는 집단. ALL은 '전체 회원 대상 공지'라는 **실제 값**이고 필터 미선택이 아니다
+ */
+export type NoticeAudience = (typeof NoticeAudience)[keyof typeof NoticeAudience]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const NoticeAudience = {
+  ALL: 'ALL',
+  BUYER: 'BUYER',
+  SELLER: 'SELLER',
+} as const
+
+/**
+ * 공지 분류 5값(be NoticeCategory). SETTLEMENT(정산)는 셀러 정산 안내가 바로 그것이라 실제로 온다 — FE 라벨 표에서 빠지면 그 한 건이 목록 전체를 날린다
+ */
+export type NoticeCategory = (typeof NoticeCategory)[keyof typeof NoticeCategory]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const NoticeCategory = {
+  SERVICE: 'SERVICE',
+  MAINTENANCE: 'MAINTENANCE',
+  POLICY: 'POLICY',
+  EVENT: 'EVENT',
+  SETTLEMENT: 'SETTLEMENT',
+} as const
+
+/**
+ * 목록 한 행. **content와 internalMemo가 없다** — 편집 폼을 이 행으로 열면 빈 본문이 되므로 상세를 따로 조회해야 한다. springdoc 출력에 required가 한 필드도 없어 그대로 옮기면 여덟이 전부 옵셔널이 되므로, 실제로 빌 수 있는 publishedAt만 nullable로 적었다
+ */
+export interface AdminNoticeSummary {
+  /** 공지 공개 식별자(ULID 26자). 모든 경로가 이 값으로 지목한다 */
+  noticeId: string
+  title: string
+  category: NoticeCategory
+  audience: NoticeAudience
+  status: NoticeStatus
+  /** 독자 목록 상단 고정 여부 */
+  pinned: boolean
+  /**
+   * 오프셋 없는 LocalDateTime(KST 벽시계). 한 번도 게시되지 않은 초안은 null이고, 내린 공지는 **지워지지 않고 남는다**. 초안 행의 기준 시각은 createdAt이어야 서버 정렬(createdAt 내림차순 고정)과 눈에 보이는 순서가 맞는다
+   * @nullable
+   */
+  publishedAt: string | null
+  /** 오프셋 없는 LocalDateTime. 목록 정렬 기준이고 비지 않는다 */
+  createdAt: string
+}
+
+export interface AdminNoticeListData {
+  items: AdminNoticeSummary[]
+  /**
+   * 현재 필터 기준 전체 수. **첫 페이지만 채워지고 cursor를 보낸 페이지는 null이다** — 첫 페이지 값을 붙들어 두면 스크롤에 따라 낡은 숫자를 가리킨다
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  /** 화면은 이 값으로 `더 보기`를 열지 않는다 — placeholder 구간에는 본문이 이전 조건의 페이지라, 본문 값을 읽으면 버튼이 옛 커서를 요구한다 */
+  hasNext: boolean
+}
+
+export interface AdminNoticeListResponse {
+  data: AdminNoticeListData
+}
+
+/**
+ * 상세·생성·수정·게시·내림이 모두 돌려주는 같은 모양. **발송 관련 필드(푸시 여부·도달 수)가 없다** — 플랫폼에 발송 경로가 없어 자리를 만들면 "보냈다"고 읽히는 계약이 된다. createdByAdminId·lastModifiedByAdminId는 내부 번호만 와서 화면이 이름을 말할 수 없으므로 쓰지 않는다(누가 무엇을 했는지는 어드민 액션 로그가 가진다)
+ */
+export interface AdminNoticeDetailData {
+  noticeId: string
+  title: string
+  /** 공지 본문. 빈 값으로 PUT을 보내면 400이다 */
+  content: string
+  category: NoticeCategory
+  audience: NoticeAudience
+  status: NoticeStatus
+  pinned: boolean
+  /**
+   * 오프셋 없는 LocalDateTime. 초안은 null, 내린 공지는 남는다
+   * @nullable
+   */
+  publishedAt: string | null
+  /**
+   * 내부 공유용 메모. 입력하지 않은 공지는 비어 온다
+   * @nullable
+   */
+  internalMemo: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminNoticeDetailResponse {
+  data: AdminNoticeDetailData
+}
+
+/**
+ * 생성(POST)과 수정(PUT)이 받는 같은 전체 객체. 부분 갱신이 아니라 갈아쓰기라 바꾸지 않는 필드도 되실어 보내야 한다. **status는 받지 않는다** — 상태는 publish·unpublish만 바꾼다
+ */
+export interface SaveNoticeRequest {
+  /** @maxLength 200 */
+  title: string
+  /** @maxLength 2000 */
+  content: string
+  category: NoticeCategory
+  audience: NoticeAudience
+  pinned: boolean
+  /** @maxLength 300 */
+  internalMemo?: string
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -5745,6 +5999,57 @@ export type GetAdminReviewsParams = {
   /**
    * @minimum 1
    * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminAuditLogsParams = {
+  /**
+   * 행위자 공개 식별자. 어느 API도 관리자의 publicId를 주지 않아(`/admin/admins`에 그 필드가 없고 publicId를 주는 회원 목록에는 관리자가 없다) 화면에 선택 UI를 두지 않는다
+   */
+  actorPublicId?: string
+  targetType?: AdminAuditTargetType
+  action?: AdminAuditAction
+  result?: AdminAuditResult
+  /**
+   * 오프셋 없는 LocalDateTime. 커서로 과거까지 넘길 수 있어 화면은 쓰지 않는다
+   */
+  from?: string
+  /**
+   * 오프셋 없는 LocalDateTime. 커서로 과거까지 넘길 수 있어 화면은 쓰지 않는다
+   */
+  to?: string
+  /**
+   * 부분일치 검색어. **무엇을 매칭하는지 서버 스펙에 설명이 없다** — 확정 전에는 화면이 범위를 주장하지 않는다. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 직전 응답의 nextCursor. 필터가 바뀌면 재사용 금지(옛 앵커에서 이어 읽어 섞인 목록이 된다)
+   */
+  cursor?: string
+  /**
+   * 범위가 서버 스펙에 없다 — 화면은 기본값만 보낸다
+   */
+  size?: number
+}
+
+export type GetAdminNoticesParams = {
+  status?: NoticeStatus
+  /**
+   * ALL은 '대상이 ALL인 공지만'이다 — 미선택은 키째 빼서 보낼 것
+   */
+  audience?: NoticeAudience
+  category?: NoticeCategory
+  /**
+   * **제목 부분일치만** 본다(내용·내부 메모는 보지 않는다). 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * 직전 응답의 nextCursor. **커서에 필터 조건이 실리지 않아 서버가 끊어 주지 않는다** — 필터가 바뀐 채 재사용하면 엉뚱한 앵커에서 이어 읽어 섞인 목록이 되고 그것을 막는 것은 FE뿐이다. 망가진 커서만 400 errorCode 90002다
+   */
+  cursor?: string
+  /**
+   * 1~100으로 절삭된다(범위를 벗어나도 400이 아니다)
    */
   size?: number
 }
@@ -24448,6 +24753,954 @@ export const useUnblindAdminReview = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getUnblindAdminReviewMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 운영자가 수행한 운영 액션의 감사 기록. 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011). 커서 페이징이고 최신순이다. **`recordingSince` 이전 구간은 기록 자체가 없다** — 빈 목록을 "그 일이 없었다"로 읽으면 안 되므로 응답이 그 시각을 함께 준다. `targetId`의 뜻은 `targetType`마다 다르다 — SELLER_APPLICATION·ADMIN_USER·MEMBER· INQUIRY·REVIEW는 내부 int64 번호를 문자열로 담고, PRODUCT·CLAIM은 공개 식별자(ULID), ORDER는 주문번호, NOTICE는 공지 식별자다. 서버가 접두 코드를 붙이지 않는다. `actionLabel`·`targetTypeLabel`은 서버가 만든 한글 라벨이라 **열에는 그 값을 그대로 쓴다** (FE 표로 덮으면 서버가 enum을 늘린 날 빈 칸이 된다). 필터 옵션은 데이터가 오기 전에 있어야 해서 그 라벨로 만들 수 없고, FE가 enum 라벨 표를 따로 소유한다. 감사 로그 전용 errorCode는 스펙에 없다 — 화면은 errorCode를 발명하지 않고 status로만 가른다.
+ * @summary 어드민 액션 로그 목록
+ */
+export const getAdminAuditLogs = (params?: GetAdminAuditLogsParams, signal?: AbortSignal) => {
+  return customInstance<AdminAuditLogListResponse>({
+    url: `/admin/audit-logs`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminAuditLogsQueryKey = (params?: GetAdminAuditLogsParams) => {
+  return [`/admin/audit-logs`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminAuditLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminAuditLogsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminAuditLogs>>> = ({ signal }) =>
+    getAdminAuditLogs(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminAuditLogs>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminAuditLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminAuditLogs>>
+>
+export type GetAdminAuditLogsQueryError = unknown
+
+export function useGetAdminAuditLogs<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminAuditLogsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminAuditLogs>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminAuditLogs>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminAuditLogs<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminAuditLogs>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminAuditLogs>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminAuditLogs<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 액션 로그 목록
+ */
+
+export function useGetAdminAuditLogs<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminAuditLogsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminAuditLogsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminAuditLogsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminAuditLogs>>> = ({ signal }) =>
+    getAdminAuditLogs(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminAuditLogs>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminAuditLogsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminAuditLogs>>
+>
+export type GetAdminAuditLogsSuspenseQueryError = unknown
+
+export function useGetAdminAuditLogsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminAuditLogsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminAuditLogsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminAuditLogsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 액션 로그 목록
+ */
+
+export function useGetAdminAuditLogsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminAuditLogs>>,
+  TError = unknown,
+>(
+  params?: GetAdminAuditLogsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminAuditLogs>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminAuditLogsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 운영 공지의 어드민 목록. 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(미인증은 401 errorCode 20004, 권한 없음은 403 errorCode 20011). 커서 페이징이고 정렬은 `createdAt` 내림차순 **고정**이다 — 게시 시각으로 정렬하지 않으므로 화면이 `publishedAt`만 보여 주면 눈에 보이는 순서와 어긋난다. **`totalCount`는 첫 페이지에만 실리고 cursor를 보낸 페이지에서는 null이다.** `audience=ALL`은 "미선택"이 아니라 **대상이 ALL인 공지만**이다(서버가 등가 비교한다) — 화면의 "전체 대상"은 실제 값이므로 미선택 센티넬을 `'all'`로 두면 두 뜻이 겹친다. 발송 관련 필드(푸시 여부·도달 수)는 응답에 없다. 플랫폼에 발송 경로 자체가 없어 자리를 만들면 "보냈다"고 읽히는 계약이 된다.
+ * @summary 어드민 공지 목록
+ */
+export const getAdminNotices = (params?: GetAdminNoticesParams, signal?: AbortSignal) => {
+  return customInstance<AdminNoticeListResponse>({
+    url: `/admin/notices`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminNoticesQueryKey = (params?: GetAdminNoticesParams) => {
+  return [`/admin/notices`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminNoticesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminNotices>>> = ({ signal }) =>
+    getAdminNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminNoticesQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminNotices>>>
+export type GetAdminNoticesQueryError = unknown
+
+export function useGetAdminNotices<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminNoticesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNotices<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNotices<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 공지 목록
+ */
+
+export function useGetAdminNotices<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminNoticesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminNoticesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminNotices>>> = ({ signal }) =>
+    getAdminNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminNoticesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminNotices>>
+>
+export type GetAdminNoticesSuspenseQueryError = unknown
+
+export function useGetAdminNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminNoticesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 공지 목록
+ */
+
+export function useGetAdminNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNotices>>,
+  TError = unknown,
+>(
+  params?: GetAdminNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminNoticesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 공지를 DRAFT로 만든다 — 생성만으로는 노출되지 않고 게시는 별 경로다. **성공은 201 Created**이고 본문은 상세와 같은 모양이다(springdoc 출력의 200은 기본값이고 컨트롤러가 HttpStatus.CREATED를 돌려준다). `category`·`audience`·`pinned`·`title`·`content`가 필수라 분류를 고르지 않으면 초안을 만들 수 없다 — 화면에 분류 입력이 없으면 이 경로를 쓸 수 없다. 400 errorCode 150001~150005 — 제목·내용 누락과 제목 200자·내용 2000자·메모 300자 초과.
+ * @summary 어드민 공지 초안 생성
+ */
+export const createAdminNotice = (saveNoticeRequest: SaveNoticeRequest, signal?: AbortSignal) => {
+  return customInstance<AdminNoticeDetailResponse>({
+    url: `/admin/notices`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: saveNoticeRequest,
+    signal,
+  })
+}
+
+export const getCreateAdminNoticeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminNotice>>,
+    TError,
+    { data: SaveNoticeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAdminNotice>>,
+  TError,
+  { data: SaveNoticeRequest },
+  TContext
+> => {
+  const mutationKey = ['createAdminNotice']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAdminNotice>>,
+    { data: SaveNoticeRequest }
+  > = props => {
+    const { data } = props ?? {}
+
+    return createAdminNotice(data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateAdminNoticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAdminNotice>>
+>
+export type CreateAdminNoticeMutationBody = SaveNoticeRequest
+export type CreateAdminNoticeMutationError = unknown
+
+/**
+ * @summary 어드민 공지 초안 생성
+ */
+export const useCreateAdminNotice = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createAdminNotice>>,
+      TError,
+      { data: SaveNoticeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createAdminNotice>>,
+  TError,
+  { data: SaveNoticeRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateAdminNoticeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * `content`·`internalMemo`는 **상세에만 있다** — 목록 summary에 없으므로 목록 행만으로 편집 폼을 열면 빈 본문이 뜨고, 그대로 저장하면 빈 내용으로 PUT이 나가 공지 본문이 지워지거나 400이다. 편집 입구는 이 경로를 따로 조회해야 한다. 404 errorCode 150000 — 없는 공지.
+ * @summary 어드민 공지 상세
+ */
+export const getAdminNoticeDetail = (noticeId: string, signal?: AbortSignal) => {
+  return customInstance<AdminNoticeDetailResponse>({
+    url: `/admin/notices/${noticeId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminNoticeDetailQueryKey = (noticeId?: string) => {
+  return [`/admin/notices/${noticeId}`] as const
+}
+
+export const getGetAdminNoticeDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminNoticeDetailQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminNoticeDetail>>> = ({ signal }) =>
+    getAdminNoticeDetail(noticeId, signal)
+
+  return { queryKey, queryFn, enabled: !!noticeId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminNoticeDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminNoticeDetail>>
+>
+export type GetAdminNoticeDetailQueryError = unknown
+
+export function useGetAdminNoticeDetail<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminNoticeDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticeDetail<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminNoticeDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticeDetail<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 공지 상세
+ */
+
+export function useGetAdminNoticeDetail<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminNoticeDetailQueryOptions(noticeId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminNoticeDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminNoticeDetailQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminNoticeDetail>>> = ({ signal }) =>
+    getAdminNoticeDetail(noticeId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminNoticeDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminNoticeDetail>>
+>
+export type GetAdminNoticeDetailSuspenseQueryError = unknown
+
+export function useGetAdminNoticeDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticeDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminNoticeDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 공지 상세
+ */
+
+export function useGetAdminNoticeDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminNoticeDetail>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminNoticeDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminNoticeDetailSuspenseQueryOptions(noticeId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 내용을 갈아 쓴다. **상태는 바뀌지 않는다** — 게시 중 공지를 수정해도 게시 중이고, 초안을 수정해도 초안이다. 그래서 "고치고 게시하기"는 이 경로와 publish를 **순서대로 두 번** 부르는 흐름이고, 둘을 한 토스트로 묶으면 PUT 성공 뒤 publish가 실패한 구간에서 어느 쪽이 들어갔는지 운영자가 알 수 없다. 본문은 생성과 같은 전체 객체라 바꾸지 않는 필드도 되실어 보내야 한다. 400 errorCode 150001~150005 — 제목·내용 누락과 제목 200자·내용 2000자·메모 300자 초과. 404 errorCode 150000 — 없는 공지.
+ * @summary 어드민 공지 수정
+ */
+export const updateAdminNotice = (noticeId: string, saveNoticeRequest: SaveNoticeRequest) => {
+  return customInstance<AdminNoticeDetailResponse>({
+    url: `/admin/notices/${noticeId}`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: saveNoticeRequest,
+  })
+}
+
+export const getUpdateAdminNoticeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminNotice>>,
+    TError,
+    { noticeId: string; data: SaveNoticeRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminNotice>>,
+  TError,
+  { noticeId: string; data: SaveNoticeRequest },
+  TContext
+> => {
+  const mutationKey = ['updateAdminNotice']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminNotice>>,
+    { noticeId: string; data: SaveNoticeRequest }
+  > = props => {
+    const { noticeId, data } = props ?? {}
+
+    return updateAdminNotice(noticeId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateAdminNoticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminNotice>>
+>
+export type UpdateAdminNoticeMutationBody = SaveNoticeRequest
+export type UpdateAdminNoticeMutationError = unknown
+
+/**
+ * @summary 어드민 공지 수정
+ */
+export const useUpdateAdminNotice = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateAdminNotice>>,
+      TError,
+      { noticeId: string; data: SaveNoticeRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminNotice>>,
+  TError,
+  { noticeId: string; data: SaveNoticeRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateAdminNoticeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * status를 PUBLISHED로, publishedAt을 지금으로 바꾼다. **발송은 하지 않는다** — 플랫폼에 푸시·알림 발송 경로가 없다. 요청 본문이 없다. **멱등이 아니라 거절이다**: 이미 게시 중인 공지에 또 보내면 409 errorCode 150006이다 (재게시를 허용하면 publishedAt이 갱신돼 독자 목록 맨 위로 튀어오른다). 게시 중 행에 게시 버튼을 남기면 운영자가 못 쓰는 버튼을 누르게 된다. DRAFT와 UNPUBLISHED에서만 받는다. 404 errorCode 150000 — 없는 공지.
+ * @summary 어드민 공지 게시
+ */
+export const publishAdminNotice = (noticeId: string, signal?: AbortSignal) => {
+  return customInstance<AdminNoticeDetailResponse>({
+    url: `/admin/notices/${noticeId}/publish`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getPublishAdminNoticeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof publishAdminNotice>>,
+    TError,
+    { noticeId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof publishAdminNotice>>,
+  TError,
+  { noticeId: string },
+  TContext
+> => {
+  const mutationKey = ['publishAdminNotice']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof publishAdminNotice>>,
+    { noticeId: string }
+  > = props => {
+    const { noticeId } = props ?? {}
+
+    return publishAdminNotice(noticeId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type PublishAdminNoticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof publishAdminNotice>>
+>
+
+export type PublishAdminNoticeMutationError = unknown
+
+/**
+ * @summary 어드민 공지 게시
+ */
+export const usePublishAdminNotice = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof publishAdminNotice>>,
+      TError,
+      { noticeId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof publishAdminNotice>>,
+  TError,
+  { noticeId: string },
+  TContext
+> => {
+  const mutationOptions = getPublishAdminNoticeMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 게시 중 공지를 UNPUBLISHED로 되돌려 노출에서 뺀다. 잘못 올린 공지를 되돌리는 유일한 경로다(DELETE 경로가 없다). `publishedAt`은 **지우지 않는다** — 언제 노출됐는지는 사실로 남는다. 요청 본문이 없다. 게시 중이 아닌 공지를 내리면 409 errorCode 150007이다. 404 errorCode 150000 — 없는 공지.
+ * @summary 어드민 공지 내림
+ */
+export const unpublishAdminNotice = (noticeId: string, signal?: AbortSignal) => {
+  return customInstance<AdminNoticeDetailResponse>({
+    url: `/admin/notices/${noticeId}/unpublish`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getUnpublishAdminNoticeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpublishAdminNotice>>,
+    TError,
+    { noticeId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unpublishAdminNotice>>,
+  TError,
+  { noticeId: string },
+  TContext
+> => {
+  const mutationKey = ['unpublishAdminNotice']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unpublishAdminNotice>>,
+    { noticeId: string }
+  > = props => {
+    const { noticeId } = props ?? {}
+
+    return unpublishAdminNotice(noticeId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnpublishAdminNoticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unpublishAdminNotice>>
+>
+
+export type UnpublishAdminNoticeMutationError = unknown
+
+/**
+ * @summary 어드민 공지 내림
+ */
+export const useUnpublishAdminNotice = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unpublishAdminNotice>>,
+      TError,
+      { noticeId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unpublishAdminNotice>>,
+  TError,
+  { noticeId: string },
+  TContext
+> => {
+  const mutationOptions = getUnpublishAdminNoticeMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
