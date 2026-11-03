@@ -211,6 +211,9 @@ describe('어드민 대시보드 지표', () => {
     expect(sent).toContain(`orderedFrom=${TODAY}`)
     expect(sent).toContain(`orderedTo=${TODAY}`)
     expect(TODAY).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // 쿼리 키에 날짜 파라미터 객체를 매 렌더 새로 만들어 싣는다 — react-query가 키를 구조로
+    // 해싱하지 않는다면 그 자리가 렌더마다 재조회하는 자리다.
+    expect(requests.filter(entry => entry.includes(`${ADMIN_ORDER_METRICS_URL}?`))).toHaveLength(1)
   })
 
   it('[AC-ADMIN-DASH-004] 조회가 실패하면 0이 아니라 줄표와 사유를 보여준다', async () => {
