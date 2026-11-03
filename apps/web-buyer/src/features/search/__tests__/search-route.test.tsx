@@ -258,6 +258,36 @@ describe('/search/results', () => {
     expect(screen.getByRole('button', { name: '찜하기' })).toBeInTheDocument()
   })
 
+  it('[AC-SEARCH-019] 무결과 추천어는 하드코딩 칩이 아니라 서버 추천 검색어다', async () => {
+    // 하드코딩 칩(강아지 의류·우비·방한 패딩·하네스)은 걸리는 상품이 없어 눌러도 같은 무결과로
+    // 돌아왔다. 서버 추천어만 쓰고, 누르면 그 검색어로 실제 재검색이 돈다.
+    const user = userEvent.setup()
+    setAccessToken('member-token')
+    renderAt('/search/results?q=존재하지않는상품zz')
+
+    await screen.findByText(/검색 결과가 없어요/)
+    expect(await screen.findByRole('button', { name: '여름 쿨매트' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '강아지 의류' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '하네스' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '여름 쿨매트' }))
+    expect(await screen.findByText('여름 쿨매트 젤 방석 L')).toBeInTheDocument()
+  })
+
+  it('[AC-SEARCH-020] 서버 추천어가 없으면 추천 섹션을 접는다', async () => {
+    // 비회원은 추천어 경로가 회원 전용이라 비고, 제목만 남은 빈 칸이 되면 안 된다.
+    resetAuth()
+    server.use(
+      http.get(SEARCH_KEYWORDS_URL, () =>
+        HttpResponse.json({ data: { recentKeywords: [], recommendedKeywords: [] } }),
+      ),
+    )
+    renderAt('/search/results?q=존재하지않는상품zz')
+
+    await screen.findByText(/검색 결과가 없어요/)
+    expect(screen.queryByText('이런 검색어는 어때요?')).not.toBeInTheDocument()
+  })
+
   it('[AC-SEARCH-009] 가격 칩은 전체 필터 시트가 아니라 가격대 전용 시트를 열고 프리셋이 결과에 반영된다', async () => {
     const user = userEvent.setup()
     renderAt('/search/results?q=급식기')

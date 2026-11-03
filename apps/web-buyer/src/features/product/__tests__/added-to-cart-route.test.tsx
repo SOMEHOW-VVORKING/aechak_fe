@@ -32,7 +32,7 @@ describe('장바구니 담기 확인 바텀시트', () => {
     setAccessToken('member-token')
   })
 
-  it('[AC-CART-SHEET-001] 담기(POST) 성공 시 확인 시트가 열리고 함께 보면 좋은 상품 섹션이 보인다', async () => {
+  it('[AC-CART-SHEET-001] 담기(POST) 성공 시 확인 시트가 열리고 담은 라인 요약이 보인다', async () => {
     const user = userEvent.setup()
     renderAt(`/products/${REAL_PRODUCT_ID}`)
     await screen.findByText('리얼 프리미엄 자동 급식기')
@@ -44,10 +44,12 @@ describe('장바구니 담기 확인 바텀시트', () => {
     // 하단 중앙 토스트는 뜨지 않는다.
     expect(screen.queryByText('장바구니에 담았어요.')).not.toBeInTheDocument()
 
-    // 확인 시트가 열리고 단일 "함께 보면 좋은 상품" 섹션이 보인다(추천 탭 없음).
-    expect(await screen.findByRole('heading', { name: '함께 보면 좋은 상품' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(screen.getByText('앱 연동 자동 급식기 6L 듀얼 호퍼')).toBeInTheDocument()
+    // 확인 시트가 열린다.
+    expect(await screen.findByRole('button', { name: '장바구니 보기' })).toBeInTheDocument()
+    // 추천 섹션은 없다 — 서버에 추천 경로가 없어 목업 6개를 깔고 서버에 없는 상세로 보냈던 자리다.
+    expect(screen.queryByRole('heading', { name: '함께 보면 좋은 상품' })).not.toBeInTheDocument()
+    expect(screen.queryByText('앱 연동 자동 급식기 6L 듀얼 호퍼')).not.toBeInTheDocument()
+    expect(screen.queryByText('원목 캣타워 3단 대형')).not.toBeInTheDocument()
 
     // 서버 장바구니에 실제로 담겼다(기본형 조합 1개).
     await waitFor(() => {
@@ -154,7 +156,7 @@ describe('장바구니 담기 확인 바텀시트', () => {
     await user.click(await screen.findByRole('button', { name: '장바구니 담기' }))
 
     expect(await screen.findByText('재고가 부족해요')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '함께 보면 좋은 상품' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '장바구니 보기' })).not.toBeInTheDocument()
     expect(currentCart()[0]?.quantity).toBe(10)
   })
 
@@ -170,7 +172,7 @@ describe('장바구니 담기 확인 바텀시트', () => {
     expect(
       await screen.findByText('지금은 이 상품을 장바구니에 담을 수 없어요.'),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '함께 보면 좋은 상품' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '장바구니 보기' })).not.toBeInTheDocument()
     expect(currentCart()).toHaveLength(0)
   })
 })
@@ -201,7 +203,7 @@ describe('담기 뒤 홈 배지 갱신', () => {
     await screen.findByText('리얼 프리미엄 자동 급식기')
     await user.click(screen.getByRole('button', { name: '장바구니' }))
     await user.click(await screen.findByRole('button', { name: '장바구니 담기' }))
-    await screen.findByRole('heading', { name: '함께 보면 좋은 상품' })
+    await screen.findByRole('button', { name: '장바구니 보기' })
 
     await router.navigate({ to: '/' })
 

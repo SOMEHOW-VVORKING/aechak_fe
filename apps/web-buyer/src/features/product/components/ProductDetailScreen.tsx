@@ -45,8 +45,6 @@ import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } fro
 import { AddedToCartSheet } from './AddedToCartSheet'
 import { ReviewAiSummary } from './ReviewAiSummary'
 
-// 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
-// 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
 // 담기(POST)는 서버가 이미 담긴 같은 옵션 수량과 합쳐 상한(99)을 판정한다 — 시트의 수량은 상한 안이므로
 // 90001은 합산 초과라 그 취지로 안내한다. 나머지는 장바구니 공용 문구.
 function addCartErrorMessage(error: unknown): string {
@@ -55,12 +53,16 @@ function addCartErrorMessage(error: unknown): string {
     : cartErrorMessage(error)
 }
 
+// 옵션 선택 항목을 정한다. 실 옵션 응답(useProductOptions)이 있으면 그것이 정본이라 조합 0건도
+// 0건 그대로 넘긴다 — 시트가 판매 준비 안 된 상품으로 떨어뜨린다. 실 응답이 없을 때(목업 상품의
+// 404 폴백, 아직 조회 전)만 목업 상세 옵션으로 채우고, 그래도 비면 기본 구성 하나로 둔다.
 function buildOptionChoices(
   raw: ProductOptionsView | null | undefined,
   detail: ProductDetail | null | undefined,
 ): OptionChoice[] {
-  const source = raw ?? (detail ? mockOptionsFromDetail(detail) : null)
-  if (source && source.choices.length > 0) return source.choices
+  if (raw != null) return raw.choices
+  const mock = detail ? mockOptionsFromDetail(detail) : null
+  if (mock && mock.choices.length > 0) return mock.choices
   return [
     {
       key: '기본 구성',
@@ -419,6 +421,7 @@ export function ProductDetailScreen({
           onClose={() => setSheetOpen(false)}
           onAddToCart={(choice, qty) => {
             // 장바구니는 서버 소유라 옵션 조합 id가 필수 — 목업 폴백 상품(실 옵션 없음)은 담을 수 없다.
+            // 실 상품의 조합 0건은 여기까지 오지 않는다(시트가 담기 버튼을 그리지 않는다).
             if (choice.optionCombinationId == null) {
               setSheetOpen(false)
               showToast('지금은 이 상품을 장바구니에 담을 수 없어요.', 'error')
@@ -430,7 +433,7 @@ export function ProductDetailScreen({
                 onSuccess: res => {
                   setSheetOpen(false)
                   setAddedCartItemId(res.cartItemId)
-                  // 토스트 대신 확인 바텀시트로 담긴 사실 + 추천 상품을 보여준다(액션바 가림 방지).
+                  // 토스트 대신 확인 바텀시트로 담긴 사실을 보여준다(액션바 가림 방지).
                   setAddedSheetOpen(true)
                 },
                 // 실패 시 시트를 열어둔다 — 수량/옵션을 바로 고쳐 다시 담을 수 있게(재고 부족 등).
@@ -658,6 +661,18 @@ function OptionSheet({
           <Button variant="secondary" size="md" onClick={onRetry}>
             다시 시도
           </Button>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  // 실 옵션 응답의 조합이 0건이면 판매할 수 있는 옵션이 없는 상품이다. '기본 구성'을 지어내면
+  // 수량 스테퍼·합계·담기가 모두 활성이라 담기를 눌러야 비로소 막히고, 왜 안 되는지 읽을 데가 없다.
+  if (choices.length === 0) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="옵션 선택">
+        <div role="status" className="py-10 text-center text-body-sm text-text-secondary">
+          아직 판매 준비가 안 된 상품이에요
         </div>
       </BottomSheet>
     )

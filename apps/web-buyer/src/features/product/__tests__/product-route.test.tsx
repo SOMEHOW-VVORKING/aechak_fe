@@ -172,6 +172,43 @@ describe('/products/$productId', () => {
     expect(screen.queryByRole('button', { name: '바로 구매' })).not.toBeInTheDocument()
   })
 
+  it('[AC-PRODUCT-038] 실 상품의 옵션 조합이 0건이면 기본 구성을 지어내지 않고 담기를 막는다', async () => {
+    // 실 옵션 응답(200)에 조합이 없는 상품 — dev 상품이 전부 이 상태다. '기본 구성'을 지어내면
+    // 수량·합계·담기가 다 활성이라 담기를 눌러야 비로소 막히고 사용자는 사유를 못 읽는다.
+    server.use(
+      http.get(PRODUCT_OPTIONS_URL, ({ params }) =>
+        params.productId === REAL_PRODUCT_ID
+          ? HttpResponse.json({ data: { ...REAL_PRODUCT_OPTIONS, optionCombinations: [] } })
+          : new HttpResponse(null, { status: 404 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText('리얼 프리미엄 자동 급식기')
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+
+    expect(await screen.findByText('아직 판매 준비가 안 된 상품이에요')).toBeInTheDocument()
+    expect(screen.queryByText('기본 구성')).not.toBeInTheDocument()
+    // 담기 버튼·수량 스테퍼가 아예 없다(눌러야 막히는 자리를 만들지 않는다).
+    expect(screen.queryByRole('button', { name: '장바구니 담기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '값' })).not.toBeInTheDocument()
+    expect(currentCart()).toHaveLength(0)
+  })
+
+  it('[AC-PRODUCT-039] 목업 폴백 상품은 그대로 기본 구성으로 담기 UI를 받는다', async () => {
+    // 목업 상품(p-*)은 서버에 없어 조합이 없는 것이 정상이고 옵션은 목업 상세가 준다 —
+    // 실 상품 0건과 같은 경로로 묶어 담기를 막으면 목업 진입점이 전부 죽는다.
+    const user = userEvent.setup()
+    renderAt('/products/p-coolmat')
+    await screen.findByRole('button', { name: '장바구니' })
+
+    await user.click(screen.getByRole('button', { name: '장바구니' }))
+
+    expect(await screen.findByRole('button', { name: '장바구니 담기' })).toBeInTheDocument()
+    expect(screen.queryByText('아직 판매 준비가 안 된 상품이에요')).not.toBeInTheDocument()
+  })
+
   it('[AC-PRODUCT-006] 알 수 없는 productId는 not-found 상태를 렌더한다', async () => {
     renderAt('/products/does-not-exist')
     expect(await screen.findByText('상품을 찾을 수 없어요')).toBeInTheDocument()

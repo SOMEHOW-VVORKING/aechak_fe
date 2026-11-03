@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { FAQ_CATEGORIES, FAQ_ITEMS, GUIDELINE_REVISION, filterFaq, type FaqItem } from '../settings.mock'
+import {
+  DATA_DELETION_IMMEDIATE,
+  DATA_RETENTION_ROWS,
+  FAQ_CATEGORIES,
+  FAQ_ITEMS,
+  GUIDELINE_REVISION,
+  filterFaq,
+  type FaqItem,
+} from '../settings.mock'
 
 describe('settings.mock — FAQ 필터', () => {
   it('[AC-SETTINGS-001] 카테고리 all + 빈 검색어는 전체 항목을 반환한다', () => {
@@ -60,5 +68,28 @@ describe('settings.mock — 로그인 안내', () => {
     expect(faq?.answer).toContain('카카오')
     expect(faq?.answer).not.toContain('구글')
     expect(faq?.answer).not.toContain('Apple')
+  })
+})
+
+describe('settings.mock — 계정 및 데이터 삭제 안내', () => {
+  // 쿠폰·채팅·댓글·최근 본 상품은 화면도 API도 없다(BE 도메인 자체가 없거나 경로가 없다).
+  // 처리 방침을 적으면 그 기능이 있고 데이터가 쌓인다고 읽힌다.
+  const ABSENT = ['쿠폰', '채팅', '댓글', '최근 본']
+
+  it('[AC-SETTINGS-009] 삭제 안내는 앱에 없는 기능의 처리 방침을 적지 않는다', () => {
+    const copy = [...DATA_DELETION_IMMEDIATE, ...DATA_RETENTION_ROWS.map(row => row.label)].join(
+      '\n',
+    )
+    for (const absent of ABSENT) expect(copy, `언급: ${absent}`).not.toContain(absent)
+  })
+
+  it('[AC-SETTINGS-010] 실연동된 적립금·팔로우·리뷰는 안내에 남아 있다', () => {
+    // 적립금은 BE 적립 정책과 잔액 조회가, 팔로우는 SNS 경로가 실제로 있다 — 함께 걷어내면 반대로
+    // 지워지는 데이터를 안내하지 않는 것이 된다.
+    const copy = [...DATA_DELETION_IMMEDIATE, ...DATA_RETENTION_ROWS.map(row => row.label)].join(
+      '\n',
+    )
+    for (const present of ['적립금', '팔로우', '찜', '리뷰', '문의', '거래/결제'])
+      expect(copy, `누락: ${present}`).toContain(present)
   })
 })
