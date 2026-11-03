@@ -2,6 +2,7 @@ export {
   useAdminReportDetail,
   useAdminReports,
   useDecideReport,
+  useReceivedReportCount,
   DEFAULT_PAGE_SIZE,
   REPORTS_QUERY_KEY,
   type ReportDecideInput,

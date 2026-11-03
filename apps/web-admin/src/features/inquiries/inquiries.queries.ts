@@ -15,6 +15,7 @@ import {
   type AdminInquiryListData,
   type GetAdminInquiriesParams,
 } from '@aechak/api'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   statusToWire,
   toInquiryDetailView,
@@ -106,6 +107,22 @@ export function useAdminInquiries(params: InquiryListParams): InquiryListResult 
       void query.fetchNextPage()
     },
   }
+}
+
+/**
+ * 답변 대기(`RECEIVED`) 문의 건수. 대시보드 첫 화면의 칸과 할 일 줄이 쓴다.
+ *
+ * **`미답변` 전체가 아니라 `답변 대기`다.** 서버 상태는 넷(RECEIVED·IN_PROGRESS·ON_HOLD·DONE)이고
+ * 답변이 달린 것은 DONE뿐이라, 답변이 없는 문의는 앞의 셋 전부다. 그런데 목록 경로의 `status`는
+ * **값 하나만** 받아 "DONE이 아닌 것"을 한 번에 셀 수 없다 — 그래서 RECEIVED만 세고 칸 라벨도
+ * 목록 화면과 같은 어휘(`답변 대기`)로 적는다. `미답변`으로 적으면 확인 중·보류가 빠진 수를
+ * 운영자가 미답변 전부로 읽는다.
+ */
+export function useReceivedInquiryCount(): number | null {
+  const params: GetAdminInquiriesParams = { status: statusToWire('received'), size: 1 }
+  return useMetricValue([...INQUIRIES_QUERY_KEY, 'received-count'], signal =>
+    getAdminInquiries(params, signal).then(response => response.data.totalCount),
+  )
 }
 
 export interface InquiryDetailResult {

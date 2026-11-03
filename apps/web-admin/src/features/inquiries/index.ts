@@ -1,6 +1,7 @@
 export {
   useAdminInquiries,
   useAdminInquiryDetail,
+  useReceivedInquiryCount,
   useWriteInquiry,
   DEFAULT_PAGE_SIZE,
   INQUIRIES_QUERY_KEY,

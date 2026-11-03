@@ -32,12 +32,21 @@ export const MOCK_WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바
 interface MockDataNoticeProps {
   /** 화면별로 덧붙이는 한 줄(어느 BE 경로가 생기면 실연동되는지 등). 없으면 기본 문구만. */
   children?: ReactNode
+  /**
+   * 기본 본문을 대신할 문구. **칸 일부만 예시인 화면에만 쓴다**(대시보드).
+   *
+   * 기본 문구는 화면 전체가 예시라는 전제로 "서버와 연결되어 있지 않아요"라고 말하는데, 지표
+   * 여섯 칸이 실 집계인 대시보드에서 그대로 쓰면 띠가 실데이터를 예시라고 말하게 된다 —
+   * 규약 10이 막으려는 "거꾸로 속이는" 쪽이다. 문구를 갈아 끼울 때도 **저장되지 않는다는 말은
+   * 남겨야 한다**(규약의 핵심이고 두 테스트가 그 문장을 본다).
+   */
+  body?: ReactNode
 }
 
-export function MockDataNotice({ children }: MockDataNoticeProps) {
+export function MockDataNotice({ children, body }: MockDataNoticeProps) {
   return (
     <Alert variant="warning" title={MOCK_NOTICE_TITLE} className="mb-5">
-      <p>{MOCK_NOTICE_BODY}</p>
+      <p>{body ?? MOCK_NOTICE_BODY}</p>
       {children && <p className="mt-1 text-caption">{children}</p>}
     </Alert>
   )

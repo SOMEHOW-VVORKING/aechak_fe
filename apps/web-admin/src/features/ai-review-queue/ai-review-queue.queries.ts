@@ -4,9 +4,11 @@ import {
   getAdminProductInspectionDetail,
   getAdminProductInspections,
   rejectAdminProductInspection,
+  ReviewQueueStatus,
   type AdminProductInspectionListData,
   type GetAdminProductInspectionsParams,
 } from '@aechak/api'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   toAiReviewDetail,
   toAiReviewRow,
@@ -55,6 +57,24 @@ export function useAiReviewQueue(params: AiReviewListParams) {
     isError: query.isError,
     error: query.error,
   }
+}
+
+/**
+ * 관리자 확인을 기다리는 검수 건수. 대시보드 첫 화면의 `검수 대기 상품` 칸과 할 일 줄이 쓴다.
+ *
+ * `size=1`로 받고 `totalCount`만 읽는다 — 목록 길이로 세면 늘 1이다. 이 화면의 기본 탭과 같은
+ * 모수(`PENDING_REVIEW`)이지만 **키를 따로 쓴다**: 목록 키에는 page·size가 실려 있어 거기 끼면
+ * 화면이 1건짜리 페이지를 그리게 된다.
+ */
+export function usePendingInspectionCount(): number | null {
+  const params: GetAdminProductInspectionsParams = {
+    status: ReviewQueueStatus.PENDING_REVIEW,
+    page: 0,
+    size: 1,
+  }
+  return useMetricValue([...AI_REVIEW_QUEUE_QUERY_KEY, 'pending-count'], signal =>
+    getAdminProductInspections(params, signal).then(response => response.data.totalCount),
+  )
 }
 
 export function useAiReviewDetail(productId: string | null) {

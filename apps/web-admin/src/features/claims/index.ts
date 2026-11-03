@@ -3,6 +3,7 @@ export {
   useAdminClaims,
   useInterveneClaim,
   useInterventionReasons,
+  useOpenClaimCount,
   ADMIN_CLAIMS_QUERY_KEY,
   type AdminClaimDetailResult,
   type AdminClaimListResult,

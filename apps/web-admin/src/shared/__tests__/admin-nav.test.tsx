@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
 import {
   ADMIN_APPLICATIONS_URL,
-  ADMIN_PRODUCT_INSPECTIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
   seedAdminAuditLogs,
@@ -15,6 +14,7 @@ import {
   seedAdminInquiries,
   seedAdminNotices,
   seedAdminOrders,
+  seedAdminProductInspections,
   seedAdminReports,
   seedAdminReviews,
   server,
@@ -117,10 +117,8 @@ describe('어드민 nav', () => {
   beforeEach(() => {
     // 심사 대기 0건 → 입점 심사 항목에 숫자 배지가 붙지 않는 상태가 기본값이다.
     seedAdminApplications()
-    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회한다 — 빈 큐로 받아 준다.
-    server.use(
-      http.get(ADMIN_PRODUCT_INSPECTIONS_URL, () => HttpResponse.json({ data: { items: [], totalCount: 0 } })),
-    )
+    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회하고, 대시보드도 검수 대기 수를 받아 온다.
+    seedAdminProductInspections()
     // 주문 배송 모니터링은 실연동이라 이 화면을 열면 목록·지표 조회가 나간다.
     seedAdminOrders()
     // 실연동 화면도 nav 테스트에서 열린다 — 빈 목록으로 시드해 테스트 사이 상태를 끊는다.

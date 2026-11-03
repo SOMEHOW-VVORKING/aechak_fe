@@ -212,8 +212,9 @@ describe('어드민 예시 데이터 화면', () => {
     expect(screen.getByText('오늘 주문')).toBeInTheDocument()
     expect(screen.getByText('최근 7일 거래액')).toBeInTheDocument()
     expect(screen.getByText('확인이 필요한 일')).toBeInTheDocument()
-    // 심사 대기 수만 실 API 값이라 예시 지표와 구별되게 표시된다.
-    expect(screen.getByText('실데이터')).toBeInTheDocument()
+    // 지표 여덟 칸 중 둘만 예시로 남아 꼬리표를 달고 나머지는 실 집계다(SCRUM-313) — 어느 칸이
+    // 어느 쪽인지와 실패 표기는 `features/dashboard/__tests__`가 칸 이름으로 고정한다.
+    expect(screen.getAllByText('예시').length).toBeGreaterThan(0)
   })
 
   it.each(WRITE_FLOWS.map(flow => [flow.screen, flow] as const))(
