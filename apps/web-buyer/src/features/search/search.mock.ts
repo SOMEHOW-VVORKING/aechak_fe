@@ -40,7 +40,6 @@ export const DEFAULT_FILTERS: SearchFilters = {
   category: null,
 }
 
-
 // 활성 필터 수(필터바 "필터 N" 배지) — 기본값에서 벗어난 항목 수.
 // 품절 제외는 기본 on이므로 off로 바꾼 것도 "적용된 필터"로 카운트한다.
 export function activeFilterCount(filters: SearchFilters): number {

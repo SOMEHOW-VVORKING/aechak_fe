@@ -433,7 +433,7 @@ export function ProductDetailScreen({
                 onSuccess: res => {
                   setSheetOpen(false)
                   setAddedCartItemId(res.cartItemId)
-                  // 토스트 대신 확인 바텀시트로 담긴 사실 + 추천 상품을 보여준다(액션바 가림 방지).
+                  // 토스트 대신 확인 바텀시트로 담긴 사실을 보여준다(액션바 가림 방지).
                   setAddedSheetOpen(true)
                 },
                 // 실패 시 시트를 열어둔다 — 수량/옵션을 바로 고쳐 다시 담을 수 있게(재고 부족 등).
