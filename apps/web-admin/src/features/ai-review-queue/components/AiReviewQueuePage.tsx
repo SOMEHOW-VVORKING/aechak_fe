@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Image, Sparkles } from 'lucide-react'
-import { Alert, Button, DataTable, Drawer, FilterBar, Modal, Textarea, Toast } from '@aechak/design-system/web'
+import { Alert, Button, Checkbox, DataTable, Drawer, FilterBar, Modal, Textarea, Toast } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
 import { ActorTag } from '@/shared/components/ActorTag'
 import { DecisionRadioGroup } from '@/shared/components/DecisionRadioGroup'
@@ -15,6 +15,8 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
 import {
+  APPEAL_FILTER_LABEL,
+  APPEAL_PILL_META,
   JUDGMENT_META,
   QUEUE_STATUS_FILTER_VALUES,
   QUEUE_STATUS_META,
@@ -75,6 +77,13 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewRowView) => void): Column<
       render: row => <StatusMetaPill meta={JUDGMENT_META[row.judgment]} />,
     },
     {
+      // 필터를 끈 목록에서 이의 행을 가리는 유일한 자리다 — 없으면 운영자가 전체를 훑어야 한다.
+      key: 'appealedAt',
+      label: '이의',
+      align: 'center',
+      render: row => (row.appealedAt ? <StatusMetaPill meta={APPEAL_PILL_META} /> : <span>—</span>),
+    },
+    {
       key: 'blindedAt',
       label: '판정 시각',
       align: 'right',
@@ -93,9 +102,11 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewRowView) => void): Column<
 // 결정 뒤 재조회로 행이 현재 필터에서 빠져도 Drawer가 갑자기 닫히지 않게 하려는 것이다(입점 심사와 같은 구성).
 export function AiReviewQueuePage() {
   const [statusFilter, setStatusFilter] = useState<QueueStatus | typeof ALL>('PENDING_REVIEW')
+  const [appealedOnly, setAppealedOnly] = useState(false)
   const [page, setPage] = useState(0)
   const { rows, totalCount, isLoading, isError, error } = useAiReviewQueue({
     status: statusFilter === ALL ? null : statusFilter,
+    appealedOnly,
     page,
   })
 
@@ -171,6 +182,19 @@ export function AiReviewQueuePage() {
           value={statusFilter}
           onChange={next => {
             setStatusFilter(next as QueueStatus | typeof ALL)
+            setPage(0)
+          }}
+        />
+        {/*
+          상태 Select의 옵션으로 합치지 않는다 — 서버가 status와 appealed를 따로 받아
+          '검토 대기 + 이의제기된 것'으로 함께 좁힐 수 있고, 한 Select에 섞으면 그 조합을 고를 수 없다.
+          좁힐 때 페이지는 처음으로 되돌린다(3페이지에서 켜면 결과가 없는 페이지가 열린다).
+        */}
+        <Checkbox
+          checked={appealedOnly}
+          label={APPEAL_FILTER_LABEL}
+          onChange={next => {
+            setAppealedOnly(next)
             setPage(0)
           }}
         />
@@ -267,6 +291,16 @@ export function AiReviewQueuePage() {
                 ]}
               />
             </DrawerSummaryCard>
+
+            {/* AI 판정 바로 아래에 둔다 — 운영자가 재검토하는 이유가 이것이고, 상품 본문보다 먼저 읽어야 한다. */}
+            {detail.appeal && (
+              <Alert variant="warning" title="셀러가 이의를 제기했어요">
+                <div className="flex flex-col gap-1">
+                  <span className="tabular-nums">{detail.appeal.at}</span>
+                  <span>{detail.appeal.reason ?? '적어 둔 사유가 없어요.'}</span>
+                </div>
+              </Alert>
+            )}
 
             <DetailField label="대표 이미지">
               {detail.representativeImageUrl ? (

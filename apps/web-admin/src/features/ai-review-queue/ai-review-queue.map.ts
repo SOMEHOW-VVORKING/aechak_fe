@@ -32,6 +32,10 @@ export const QUEUE_STATUS_FILTER_VALUES: QueueStatus[] = ['PENDING_REVIEW', 'APP
 
 export const REJECT_REASON_MAX_LENGTH = 500
 
+/** 이의제기 필터 라벨. 체크박스 라벨과 테이블 pill이 같은 말을 써야 운영자가 같은 것으로 읽는다. */
+export const APPEAL_FILTER_LABEL = '이의제기된 것만 보기'
+export const APPEAL_PILL_META = { label: '이의 제기', variant: 'warning' } as const
+
 export interface AiReviewRowView {
   productId: string
   productName: string
@@ -39,6 +43,8 @@ export interface AiReviewRowView {
   status: QueueStatus
   judgment: Judgment | 'IN_PROGRESS'
   blindedAt: string
+  /** 셀러가 이의를 제기한 시각. null이면 제기가 없다 — 전체 목록에서 이의 행을 가리는 유일한 신호다. */
+  appealedAt: string | null
 }
 
 export interface AiReviewDetailView {
@@ -55,6 +61,8 @@ export interface AiReviewDetailView {
   sellerNotice: string | null
   settledAt: string
   rejections: { label: string; date: string }[]
+  /** 셀러 이의. 제기가 없으면 null이고 화면은 그 자리를 그리지 않는다. */
+  appeal: { at: string; reason: string | null } | null
 }
 
 export function formatWireDateTime(value: string | null | undefined): string {
@@ -72,6 +80,7 @@ export function toAiReviewRow(summary: AdminProductInspectionSummary): AiReviewR
     status: summary.status,
     judgment: summary.latestJudgment ?? 'IN_PROGRESS',
     blindedAt: formatWireDateTime(summary.blindedAt),
+    appealedAt: summary.appealedAt ?? null,
   }
 }
 
@@ -95,6 +104,8 @@ export function toAiReviewDetail(detail: AdminProductInspectionDetail): AiReview
       label: rejection.reason,
       date: formatWireDateTime(rejection.rejectedAt),
     })),
+    // 사유는 셀러가 비워서 보낼 수도 있는 값이라(계약상 nullable) 있을 때만 그린다.
+    appeal: detail.appealedAt ? { at: formatWireDateTime(detail.appealedAt), reason: detail.appealReason ?? null } : null,
   }
 }
 

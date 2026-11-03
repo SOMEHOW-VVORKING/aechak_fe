@@ -146,4 +146,61 @@ describe('AI 검수 큐 (SCRUM-283)', () => {
     expect(screen.getByText('처리할 검토가 없어요.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '제출' })).not.toBeInTheDocument()
   })
+
+  // ─── 이의제기 재검토 (SCRUM-287) ──────────────────────────────────────────
+  // 셀러가 반려에 이의를 제기하면 운영자가 그것만 걸러 다시 본다. 필터가 서버로 나가지 않으면
+  // 목록은 그대로인데 운영자는 좁혀졌다고 믿는다(동작 안 하는 필터).
+
+  it('[AC-AI-QUEUE-014] 이의제기된 것만 보기를 켜면 appealed=true로 나가고, 끄면 파라미터를 보내지 않는다', async () => {
+    serveQueue()
+    renderPage()
+    await screen.findByRole('button', { name: '연어 건사료 2kg' })
+    // 끈 상태에서는 보내지 않는다 — false의 뜻을 확인하지 못해 전체 조회가 줄어들 위험이 있다.
+    expect(lastListQuery).not.toContain('appealed')
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('checkbox', { name: '이의제기된 것만 보기' }))
+
+    await waitFor(() => expect(lastListQuery).toContain('appealed=true'))
+  })
+
+  it('[AC-AI-QUEUE-015] 이의가 제기된 행은 목록에서 구별되고 상세가 셀러 이의 사유를 보여 준다', async () => {
+    server.use(
+      http.get(QUEUE_URL, () =>
+        HttpResponse.json({
+          data: { items: [{ ...SUMMARY, appealedAt: '2026-10-23T09:12:00' }], totalCount: 1 },
+        }),
+      ),
+      http.get(`${QUEUE_URL}/:productId`, () =>
+        HttpResponse.json({
+          data: detailWire({
+            appealedAt: '2026-10-23T09:12:00',
+            appealReason: '치료 효능이 아니라 성분 설명이에요.',
+          }),
+        }),
+      ),
+    )
+    renderPage()
+
+    const row = (await screen.findByRole('button', { name: '연어 건사료 2kg' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('이의 제기')).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '연어 건사료 2kg' }))
+
+    expect(await screen.findByText('셀러가 이의를 제기했어요')).toBeInTheDocument()
+    expect(screen.getByText('치료 효능이 아니라 성분 설명이에요.')).toBeInTheDocument()
+    expect(screen.getByText('2026-10-23 09:12')).toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-016] 이의가 없는 행에는 제기 표시를 그리지 않는다', async () => {
+    serveQueue()
+    renderPage()
+
+    const row = (await screen.findByRole('button', { name: '연어 건사료 2kg' })).closest('tr') as HTMLElement
+    expect(within(row).queryByText('이의 제기')).not.toBeInTheDocument()
+
+    await openDetail()
+    expect(screen.queryByText('셀러가 이의를 제기했어요')).not.toBeInTheDocument()
+  })
 })

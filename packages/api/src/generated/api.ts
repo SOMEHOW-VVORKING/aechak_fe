@@ -4608,6 +4608,18 @@ export interface SellerProductInspection {
    * @nullable
    */
   rejectReason?: string | null
+  /**
+   * 이의를 제기한 시각. null이면 제기한 적이 없다
+   * @nullable
+   */
+  appealedAt?: string | null
+  /**
+   * 셀러가 적은 이의 사유. 어드민 검토 상세로 그대로 간다
+   * @nullable
+   */
+  appealReason?: string | null
+  /** **뜻을 확인하지 못했다.** 이름만으로는 "이의가 해소됐다"로도 "이의 표시가 지워졌다"로도 읽히고 dev 스펙에 설명이 없다(BE 쪽에 OpenAppealState라는 이름이 있어 "열린 이의가 닫혔다"로 추정되지만 추정이다). 화면 문구·분기에 쓰지 말 것 — 틀린 쪽으로 읽으면 셀러가 제기하지도 않은 결과를 읽는다. */
+  appealCleared?: boolean
   /** @nullable */
   requestedAt?: string | null
   /** @nullable */
@@ -4641,6 +4653,11 @@ export interface AdminProductInspectionSummary {
   latestJudgment: AdminProductInspectionSummaryLatestJudgment
   /** 이 행을 열었거나 다시 연 판정의 시각 */
   blindedAt: string
+  /**
+   * 셀러가 이의를 제기한 시각. null이면 제기가 없다
+   * @nullable
+   */
+  appealedAt?: string | null
 }
 
 export interface AdminProductInspectionDetailResponse {
@@ -4672,6 +4689,16 @@ export interface AdminProductInspectionDetail {
   inspectionStatus: InspectionStatus
   /** 열린 검토 행이 있는가. false면 승인·반려가 409 errorCode 40500 */
   awaitingAdminReview: boolean
+  /**
+   * 셀러가 이의를 제기한 시각. null이면 제기가 없다
+   * @nullable
+   */
+  appealedAt?: string | null
+  /**
+   * 셀러가 적은 이의 사유. 운영자가 재검토할 때 읽는 본문
+   * @nullable
+   */
+  appealReason?: string | null
   /** @nullable */
   processingState: AdminProductInspectionDetailProcessingState
   /** @nullable */
@@ -5667,6 +5694,15 @@ export interface DecideReportRequest {
   sanction?: ReportSanctionRequest
 }
 
+export interface ProductInspectionAppealRequest {
+  /**
+   * 이의 사유. 스펙상 null도 받지만 운영자가 재검토할 근거가 사라지므로 화면은 비워서 보내지 않는다
+   * @maxLength 500
+   * @nullable
+   */
+  reason?: string | null
+}
+
 /**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
@@ -6305,6 +6341,10 @@ export type GetAdminProductInspectionsParams = {
    * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
    */
   status?: ReviewQueueStatus
+  /**
+   * true면 셀러가 이의를 제기한 상품만 본다. **false의 뜻은 확인하지 못했다** — dev 스펙이 기본값 false만 적고 설명이 없다. 끄는 쪽은 파라미터를 보내지 말 것 (기본값과 같은 요청이고, false가 "이의 없는 것만"이면 전체 조회가 조용히 줄어든다).
+   */
+  appealed?: boolean
   /**
    * @minimum 0
    */
@@ -28468,6 +28508,89 @@ export const useDecideAdminReport = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getDecideAdminReportMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 반려된 상품을 고치지 않고 관리자 재검토를 요청한다. 응답은 검수 조회와 같은 모양이고 appealedAt·appealReason이 채워져 돌아온다 — 화면은 그것으로 제기 이력을 그린다. **재제기·대상 상태의 거절 계약은 dev 스펙에 없다**(springdoc 자동 문서라 200만 적혀 있다). 확인하지 못한 거절을 추측해 문구로 적지 말 것 — 화면은 이미 제기한 상품의 입구를 닫고, 그래도 실패하면 공용 문구를 띄운 뒤 조회를 다시 한다.
+ * @summary 내 상품 검수 반려에 이의 제기
+ */
+export const appealMyProductInspection = (
+  productId: string,
+  productInspectionAppealRequest: ProductInspectionAppealRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SellerProductInspectionResponse>({
+    url: `/sellers/me/products/${productId}/inspection/appeals`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: productInspectionAppealRequest,
+    signal,
+  })
+}
+
+export const getAppealMyProductInspectionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof appealMyProductInspection>>,
+    TError,
+    { productId: string; data: ProductInspectionAppealRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof appealMyProductInspection>>,
+  TError,
+  { productId: string; data: ProductInspectionAppealRequest },
+  TContext
+> => {
+  const mutationKey = ['appealMyProductInspection']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof appealMyProductInspection>>,
+    { productId: string; data: ProductInspectionAppealRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return appealMyProductInspection(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type AppealMyProductInspectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof appealMyProductInspection>>
+>
+export type AppealMyProductInspectionMutationBody = ProductInspectionAppealRequest
+export type AppealMyProductInspectionMutationError = unknown
+
+/**
+ * @summary 내 상품 검수 반려에 이의 제기
+ */
+export const useAppealMyProductInspection = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof appealMyProductInspection>>,
+      TError,
+      { productId: string; data: ProductInspectionAppealRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof appealMyProductInspection>>,
+  TError,
+  { productId: string; data: ProductInspectionAppealRequest },
+  TContext
+> => {
+  const mutationOptions = getAppealMyProductInspectionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }

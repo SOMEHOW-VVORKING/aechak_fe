@@ -1,8 +1,14 @@
+import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Drawer, Skeleton, Timeline, type TimelineStep } from '@aechak/design-system/web'
+import { Alert, Button, Drawer, Skeleton, Textarea, Timeline, type TimelineStep } from '@aechak/design-system/web'
 import type { InspectionProgressStep, SellerProductInspection } from '@aechak/api'
-import { productErrorMessage } from '../products.contract'
-import { PRODUCTS_QUERY_KEY, useProductInspection } from '../products.queries'
+import {
+  APPEAL_REASON_MAX_LENGTH,
+  canAppealInspection,
+  formatInspectionDateTime,
+  productErrorMessage,
+} from '../products.contract'
+import { PRODUCTS_QUERY_KEY, useAppealProductInspection, useProductInspection } from '../products.queries'
 
 interface InspectionDrawerProps {
   productId: string | null
@@ -77,6 +83,8 @@ export function InspectionDrawer({ productId, onClose, onEdit }: InspectionDrawe
         <div className="flex flex-col gap-6">
           <Timeline steps={toTimeline(data)} />
           <InspectionDetail inspection={data} onEdit={() => onEdit(productId)} />
+          {/* 조회가 실패한 동안에는 제기를 막는다 — 낡은 값으로 보내면 이미 끝난 반려에 이의가 간다(규약 7). */}
+          <AppealPanel productId={productId} inspection={data} blocked={inspection.isError} />
         </div>
       )}
     </Drawer>
@@ -136,4 +144,63 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
     case 'APPROVED':
       return <p className="text-body-sm text-text-secondary">검수를 통과했어요.</p>
   }
+}
+
+/**
+ * 반려에 이의를 제기하는 자리. `InspectionDetail`의 progressStep 분기 밖에 두는 이유는, 관리자가
+ * 반려한 상품을 고쳐 AI를 통과한 상품(progressStep=ADMIN_REVIEWING, inspectionStatus=REJECTED)도
+ * 이의 대상인데 그 분기에서는 "관리자가 다시 확인 중"만 그리기 때문이다.
+ *
+ * 제기 이력이 있으면 입구 대신 제기한 시각과 사유를 보여 준다. 서버가 재제기를 어떻게 거절하는지
+ * 확인하지 못해 막는 쪽으로 둔 것이고(`canAppealInspection`), 제기한 내용을 되읽을 자리가 없으면
+ * 셀러는 자기가 무엇을 보냈는지 모른다.
+ */
+function AppealPanel({
+  productId,
+  inspection,
+  blocked,
+}: {
+  productId: string
+  inspection: SellerProductInspection
+  blocked: boolean
+}) {
+  const [reason, setReason] = useState('')
+  const appeal = useAppealProductInspection()
+
+  // 입구를 내줄지는 `canAppealInspection` 한 곳이 정한다 — 여기서 `appealedAt`을 또 보면 판정이
+  // 두 군데로 갈려, 한쪽을 고쳐도 다른 쪽이 가려 테스트가 통과한다.
+  if (!canAppealInspection(inspection)) {
+    if (inspection.appealedAt == null) return null
+    return (
+      <Alert variant="info" title={`${formatInspectionDateTime(inspection.appealedAt)}에 이의를 제기했어요`}>
+        {inspection.appealReason ?? '적어 둔 사유가 없어요.'}
+      </Alert>
+    )
+  }
+
+  const trimmed = reason.trim()
+  return (
+    <div className="flex flex-col gap-3">
+      {appeal.isError && <Alert variant="error">{productErrorMessage(appeal.error)}</Alert>}
+      <Textarea
+        label="이의 제기 사유"
+        value={reason}
+        onChange={setReason}
+        maxLength={APPEAL_REASON_MAX_LENGTH}
+        rows={3}
+        placeholder="반려 사유에 동의하지 않는 이유를 적어 주세요."
+        helperText="보낸 뒤에는 고칠 수 없어요."
+      />
+      {/* 사유 없는 이의는 관리자가 재검토할 근거가 없다 — 서버는 null도 받지만 화면이 비워서 보내지 않는다. */}
+      <Button
+        variant="secondary"
+        className="self-start"
+        loading={appeal.isPending}
+        disabled={blocked || trimmed.length === 0}
+        onClick={() => appeal.mutate({ productId, reason: trimmed })}
+      >
+        이의 제기
+      </Button>
+    </div>
+  )
 }

@@ -24,11 +24,22 @@ export const DEFAULT_PAGE_SIZE = 20
 export interface AiReviewListParams {
   /** null이면 status 파라미터 자체를 보내지 않는다(전체 조회). */
   status: QueueStatus | null
+  /** 켜면 이의제기된 상품만 받는다. */
+  appealedOnly: boolean
   page: number
 }
 
-function listParams({ status, page }: AiReviewListParams): GetAdminProductInspectionsParams {
-  return { ...(status ? { status } : {}), page, size: DEFAULT_PAGE_SIZE }
+/**
+ * 끄면 `appealed` 자체를 보내지 않는다. 서버 기본값이 false라 같은 요청이고, **false의 뜻을
+ * 확인하지 못했기 때문이다** — false가 "이의 없는 것만"이면 전체 조회가 조용히 줄어든다.
+ */
+function listParams({ status, appealedOnly, page }: AiReviewListParams): GetAdminProductInspectionsParams {
+  return {
+    ...(status ? { status } : {}),
+    ...(appealedOnly ? { appealed: true } : {}),
+    page,
+    size: DEFAULT_PAGE_SIZE,
+  }
 }
 
 export function useAiReviewQueue(params: AiReviewListParams) {
