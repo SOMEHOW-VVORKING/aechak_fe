@@ -54,10 +54,12 @@ describe('셀러센터 SideNav', () => {
     '배송 정책',
     '정산/매출',
     '스토어 설정',
+    // SCRUM-332에서 공지 조회 두 경로(`/sellers/me/notices`)가 생겨 꼬리표를 떼었다.
+    '알림/공지',
   ] as const
 
   /** BE가 없어 "준비 중" 꼬리표가 붙는 항목 — 꼬리표가 버튼 안에 있어 접근명 끝에 붙는다. */
-  const PENDING_ITEMS = ['혜택/쿠폰/할인', '알림/공지', '계정/보안'] as const
+  const PENDING_ITEMS = ['혜택/쿠폰/할인', '계정/보안'] as const
 
   const pendingName = (label: string) => `${label} 준비 중`
   const navButtonName = (label: string) =>
@@ -129,7 +131,7 @@ describe('셀러센터 SideNav', () => {
   // SCRUM-301이 라우트를 신설해 다섯 항목이 nav로 돌아왔다(그전에는 404로 가는 죽은 nav라 빠져
   // 있었다). 꼬리표는 BE가 없는 항목에만 붙어야 한다 — 양쪽을 다 단언해야 꼬리표가 통째로 빠지거나
   // 실연동 항목에 잘못 붙은 것을 잡는다.
-  it('[AC-SELLER-NAV-003] "준비 중" 꼬리표는 BE 없는 네 항목에만 붙는다', async () => {
+  it('[AC-SELLER-NAV-003] "준비 중" 꼬리표는 BE 없는 두 항목에만 붙는다', async () => {
     renderAt('/products')
 
     expect(await screen.findByRole('button', { name: '상품 관리' })).toBeInTheDocument()
@@ -160,6 +162,7 @@ describe('셀러센터 SideNav', () => {
     ['/shipping-policy', '배송 정책'],
     ['/products', '상품 관리'],
     ['/inquiries', '고객 문의'],
+    ['/notices', '알림/공지'],
   ])('[AC-SELLER-NAV-004] %s 직접 진입이 그 화면을 열고 "준비 중" 안내로 빠지지 않는다', async (path, heading) => {
     renderAt(path)
 

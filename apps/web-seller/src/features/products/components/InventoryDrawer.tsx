@@ -97,10 +97,14 @@ export function InventoryDrawer({ productId, onClose, onSaved }: InventoryDrawer
           </div>
         </Alert>
       )}
+      {/* 새로고침을 권하지 않는다 — 기존 상품에 옵션 조합을 **더하는 경로가 서버에 없어서**
+          (`PATCH /{productId}/options/{combinationId}`는 있는 조합만 고치고, `PUT /{productId}`는
+          "옵션과 재고는 이 요청으로 바뀌지 않음"이다) 몇 번 눌러도 조합이 생기지 않는다. 운영자는
+          그 사이에 화면이 깨졌다고 판단한다. 사실만 적는다. */}
       {data && data.optionCombinations.length === 0 && (
         <EmptyState
-          title="등록된 옵션이 없어요"
-          description="옵션 없이 등록한 상품도 기본 조합 한 줄이 생겨요. 목록을 새로고침해 주세요."
+          title="조정할 재고가 없어요"
+          description="이 상품에는 판매 옵션 조합이 없어요. 기존 상품에 조합을 더하는 경로가 아직 없어서 새로고침해도 생기지 않아요."
         />
       )}
       {data && data.optionCombinations.length > 0 && (

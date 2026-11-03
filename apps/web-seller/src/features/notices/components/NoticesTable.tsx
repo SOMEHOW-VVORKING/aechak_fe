@@ -1,45 +1,39 @@
 import { DataTable, StatusPill, type Column } from '@aechak/design-system/web'
 import { TwoLineCell } from '@/shared/components/TableCells'
-import {
-  NOTICE_CATEGORY_LABEL,
-  NOTICE_CATEGORY_VARIANT,
-  type SampleNotice,
-} from '../notices.mock'
+import { formatNoticeDateTime, noticeCategoryMeta, type NoticeSummary } from '../notices.contract'
 
 interface NoticesTableProps {
-  notices: SampleNotice[]
-  onOpen: (noticePublicId: string) => void
+  notices: NoticeSummary[]
+  loading?: boolean
+  emptyLabel?: string
+  onOpen: (noticeId: string) => void
 }
 
-export function NoticesTable({ notices, onOpen }: NoticesTableProps) {
-  const columns: Column<SampleNotice>[] = [
+export function NoticesTable({ notices, loading, emptyLabel, onOpen }: NoticesTableProps) {
+  const columns: Column<NoticeSummary>[] = [
     {
       key: 'category',
       label: '분류',
       // 보조텍스트 없는 StatusPill 단독 컬럼은 center(AGENTS 4절).
       align: 'center',
-      render: notice => (
-        <StatusPill variant={NOTICE_CATEGORY_VARIANT[notice.category]}>
-          {NOTICE_CATEGORY_LABEL[notice.category]}
-        </StatusPill>
-      ),
+      render: notice => {
+        // 구조분해라 표에 없는 분류가 오면 여기서 터진다 — `noticeCategoryMeta`가 그 자리를 막는다.
+        const { label, variant } = noticeCategoryMeta(notice.category)
+        return <StatusPill variant={variant}>{label}</StatusPill>
+      },
     },
     {
       key: 'title',
-      label: '제목 / 보낸 곳',
+      label: '제목 / 내용 미리보기',
       render: notice => (
         <TwoLineCell
           primary={
             <span className="flex items-center gap-1.5">
-              {/* 안 읽음은 점이 아니라 글자로 — 색만으로 상태를 말하지 않는다(규약 10). */}
-              {!notice.read && (
-                <StatusPill variant="info" size="sm">
-                  안 읽음
-                </StatusPill>
-              )}
-              {notice.importance === 'IMPORTANT' && (
+              {/* 서버 정렬의 첫 키가 pinned이라 고정 공지가 늘 맨 위다 — 게시 시각만 보여 주면
+                  눈에 보이는 순서와 어긋난다. 색이 아니라 글자로 말한다(규약 10). */}
+              {notice.pinned && (
                 <StatusPill variant="warning" size="sm">
-                  중요
+                  고정
                 </StatusPill>
               )}
               <span className="max-w-[360px] truncate" title={notice.title}>
@@ -47,15 +41,18 @@ export function NoticesTable({ notices, onOpen }: NoticesTableProps) {
               </span>
             </span>
           }
-          secondary={notice.sender}
+          // 앞 100자뿐이라 전문이 아니다 — 행을 눌러 상세를 불러야 전문이 온다.
+          secondary={<span className="line-clamp-1">{notice.contentPreview}</span>}
         />
       ),
     },
     {
-      key: 'sentAt',
-      label: '받은 날짜',
+      key: 'publishedAt',
+      label: '게시 시각',
       align: 'right',
-      render: notice => <span className="tabular-nums">{notice.sentAt}</span>,
+      render: notice => (
+        <span className="tabular-nums">{formatNoticeDateTime(notice.publishedAt)}</span>
+      ),
     },
   ]
 
@@ -63,9 +60,10 @@ export function NoticesTable({ notices, onOpen }: NoticesTableProps) {
     <DataTable
       columns={columns}
       rows={notices}
-      rowKey={notice => notice.noticePublicId}
-      onRowClick={notice => onOpen(notice.noticePublicId)}
-      emptyLabel="조건에 맞는 공지가 없어요."
+      rowKey={notice => notice.noticeId}
+      onRowClick={notice => onOpen(notice.noticeId)}
+      loading={loading}
+      emptyLabel={emptyLabel ?? '조건에 맞는 공지가 없어요.'}
     />
   )
 }
