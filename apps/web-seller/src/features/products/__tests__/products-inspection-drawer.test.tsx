@@ -50,6 +50,18 @@ function serveInspection(wire: SellerProductInspection) {
   )
 }
 
+let lastAppealBody: unknown = null
+
+/** 제기 응답은 조회와 같은 모양이다 — 화면은 이 응답만으로 제기 이력으로 바뀌어야 한다. */
+function serveAppeal(wire: SellerProductInspection) {
+  server.use(
+    http.post(`${SELLER_PRODUCTS_URL}/:productId/inspection/appeals`, async ({ request }) => {
+      lastAppealBody = await request.json()
+      return HttpResponse.json({ data: wire })
+    }),
+  )
+}
+
 async function openDrawer() {
   const user = userEvent.setup()
   const row = (await screen.findByText(PRODUCT.name)).closest('tr') as HTMLElement
@@ -59,6 +71,7 @@ async function openDrawer() {
 
 describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
   beforeEach(() => {
+    lastAppealBody = null
     seedSellerProducts([{ product: PRODUCT }])
   })
 
@@ -114,5 +127,110 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     expect(isInspectionInProgress('ADMIN_REVIEWING')).toBe(false)
     expect(isInspectionInProgress('APPROVED')).toBe(false)
     expect(isInspectionInProgress(undefined)).toBe(false)
+  })
+
+  // ─── 이의 제기 (SCRUM-287) ────────────────────────────────────────────────
+  // 반려 → 셀러 이의 → 어드민 재검토 체인의 첫 칸이다. 제기할 이의가 없는 상품에 입구를 내주면
+  // 셀러가 눌러 보고 거절당하고, 이미 제기한 상품에 또 내주면 뜻을 알 수 없는 실패를 받는다.
+
+  it('[AC-SPRD-080] 검수를 통과한 상품에는 이의 제기 입구가 없다', async () => {
+    serveInspection(
+      inspectionWire({
+        inspectionStatus: 'APPROVED',
+        progressStep: 'APPROVED',
+        judgment: 'PASS',
+        reasonCode: null,
+        reasonSummary: null,
+        sellerNotice: null,
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('검수를 통과했어요.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '이의 제기' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('이의 제기 사유')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-081] 관리자 확인을 기다리는 반려 상품에도 이의 제기 입구를 내준다', async () => {
+    // progressStep은 ADMIN_REVIEWING으로 앞서 가지만 inspectionStatus는 아직 REJECTED다 —
+    // progressStep만 보면 이 상품의 입구가 사라진다.
+    serveInspection(
+      inspectionWire({
+        inspectionStatus: 'REJECTED',
+        progressStep: 'ADMIN_REVIEWING',
+        judgment: 'PASS',
+        reasonCode: null,
+        reasonSummary: null,
+        sellerNotice: null,
+        rejectReason: '효능 표현을 빼고 다시 등록해 주세요.',
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('관리자가 다시 확인하고 있어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '이의 제기' })).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-082] 사유를 적어야 보낼 수 있고, 보내면 사유를 그대로 보내고 제기 이력으로 바뀐다', async () => {
+    serveInspection(inspectionWire({}))
+    serveAppeal(
+      inspectionWire({ appealedAt: '2026-10-23T09:12:00', appealReason: '치료 효능이 아니라 성분 설명이에요.' }),
+    )
+    renderAt('/products')
+
+    const user = await openDrawer()
+
+    const submit = await screen.findByRole('button', { name: '이의 제기' })
+    expect(submit, '사유 없는 이의는 관리자가 재검토할 근거가 없다').toBeDisabled()
+
+    await user.type(screen.getByLabelText('이의 제기 사유'), '치료 효능이 아니라 성분 설명이에요.')
+    await user.click(screen.getByRole('button', { name: '이의 제기' }))
+
+    // 제기 응답이 조회와 같은 모양이라 다시 읽지 않고도 이력이 그려진다.
+    expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
+    expect(lastAppealBody).toEqual({ reason: '치료 효능이 아니라 성분 설명이에요.' })
+    expect(screen.queryByRole('button', { name: '이의 제기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-083] 이미 제기한 상품은 입구 대신 제기한 시각과 사유를 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({ appealedAt: '2026-10-23T09:12:00', appealReason: '치료 효능이 아니라 성분 설명이에요.' }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
+    expect(screen.getByText('치료 효능이 아니라 성분 설명이에요.')).toBeInTheDocument()
+    // 서버가 재제기를 어떻게 거절하는지 확인하지 못했다 — 열어 두면 셀러가 알 수 없는 실패를 받는다.
+    expect(screen.queryByRole('button', { name: '이의 제기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-084] 제기가 실패하고 검수를 다시 읽지도 못하면 이의 제기를 잠근다', async () => {
+    // 제기 실패는 검수를 다시 읽어 확인한다 — 다른 탭에서 먼저 보냈다면 재조회가 이력을 들고 온다.
+    // 그 재조회까지 실패하면 화면에는 직전 값만 남고, 그 낡은 반려로 다시 보내게 두면 안 된다(규약 7).
+    serveInspection(inspectionWire({}))
+    renderAt('/products')
+
+    const user = await openDrawer()
+    await user.type(await screen.findByLabelText('이의 제기 사유'), '성분 설명이에요.')
+    const submit = screen.getByRole('button', { name: '이의 제기' })
+    expect(submit).toBeEnabled()
+
+    // 첫 조회가 끝난 뒤에 끊는다 — 처음부터 끊으면 Drawer에 그릴 값 자체가 없어 입구가 나오지 않는다.
+    const serverError = () => HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 })
+    server.use(
+      http.post(`${SELLER_PRODUCTS_URL}/:productId/inspection/appeals`, serverError),
+      http.get(`${SELLER_PRODUCTS_URL}/:productId/inspection`, serverError),
+    )
+    await user.click(submit)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '이의 제기' })).toBeDisabled())
+    // 반려 내용은 지우지 않는다 — 마지막으로 본 것은 정보다.
+    expect(screen.getByText('관절염 치료에 효과')).toBeInTheDocument()
   })
 })

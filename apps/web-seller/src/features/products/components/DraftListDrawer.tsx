@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, Trash2 } from 'lucide-react'
 import { Alert, Button, Drawer, EmptyState, ListItem } from '@aechak/design-system/web'
-import type { ProductDraftSummary } from '../products.contract'
+import { formatLocalDateTime, type ProductDraftSummary } from '../products.contract'
 
 interface DraftListDrawerProps {
   open: boolean
@@ -21,8 +21,6 @@ interface DraftListDrawerProps {
   onRequestDelete: (draft: ProductDraftSummary) => void
 }
 
-// savedAt은 BE LocalDateTime 관례(오프셋 없는 KST)라 Date로 바꾸지 않고 자리만 맞춘다.
-const formatSavedAt = (localDateTime: string) => localDateTime.slice(0, 16).replace('T', ' ').replaceAll('-', '.')
 
 /** 상품명을 아직 안 적은 초안도 빈 줄이 되지 않게 — 목록과 확인 문구가 같은 이름을 써야 한다. */
 export const draftLabel = (draft: ProductDraftSummary) => draft.productName || '이름 없는 상품'
@@ -61,7 +59,7 @@ export function DraftListDrawer({
             <ListItem
               key={draft.draftId}
               title={draftLabel(draft)}
-              subtitle={`${formatSavedAt(draft.savedAt)} 저장`}
+              subtitle={`${formatLocalDateTime(draft.savedAt)} 저장`}
               trailing={
                 <>
                   <Button

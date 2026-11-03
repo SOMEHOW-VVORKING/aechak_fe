@@ -57,7 +57,8 @@ const PENDING_TAG = '준비 중'
 // `/admin/inquiries` 넷(목록·상세·답변·상태 전이), `/admin/claims` 넷(목록·사유 카탈로그·상세·
 // 개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제), 그리고 이번에 확인된
 // `GET /admin/audit-logs` 하나(어드민 액션 로그, SCRUM-318)와 `/admin/notices` 여섯(알림/공지
-// 관리, SCRUM-332 — 목록·초안 생성·상세·수정·게시·내림)이다.
+// 관리, SCRUM-332 — 목록·초안 생성·상세·수정·게시·내림), `/admin/reports` 셋(신고 제재 관리,
+// SCRUM-241 — 목록·상세·처리)이다.
 // seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
 // 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
 // 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -120,13 +121,12 @@ const navGroups: NavGroup[] = [
     key: 'reports-inquiries',
     label: '신고 / 문의',
     items: [
-      // 신고 **접수**(구매자)는 열린 PR #100(SCRUM-231)에 있다. 운영자용 제재 조회·처리는
-      // 그 PR에도 없어, 머지돼도 이 화면이 바로 열리지는 않는다.
+      // `/admin/reports` 셋(목록·상세·처리)이 생겨 실연동됐다(SCRUM-241) — 꼬리표를 떼고 화면의
+      // 띠도 걷었다. 신고 **접수**(구매자)는 api 호스트의 `/reports`이고 그쪽은 본인 접수 경로다.
       {
         key: '/reports',
         label: '신고 제재 관리',
         icon: <Flag className={iconClass} />,
-        tag: PENDING_TAG,
       },
       // `/admin/inquiries` 넷(목록·상세·답변·상태 전이)이 생겨 실연동됐다 — 꼬리표를 떼고 화면의
       // 띠도 걷었다(SCRUM-314 / SCRUM-331). api 호스트의 `/inquiries`는 구매자 본인 접수 경로다.

@@ -18,6 +18,7 @@ import type {
   SellerProductDraftOptionCombinationInput,
   SellerProductDraftOptionGroupInput,
   SellerProductDraftSaveRequest,
+  SellerProductInspection,
   SellerProductOptionCombinationInput,
   SellerProductOptionGroupInput,
   SellerProductRegisterRequest,
@@ -159,6 +160,41 @@ export type {
   /** Drawer 한 행. */
   SellerProductDraftListItem as ProductDraftSummary,
 } from '@aechak/api'
+
+// ─── POST /sellers/me/products/{productId}/inspection/appeals ───────────────
+// 반려를 고치지 않고 관리자 재검토를 요청한다. 응답이 검수 조회와 같은 모양이라 제기 직후 조회
+// 캐시에 그대로 넣을 수 있다(products.queries의 `useAppealProductInspection`).
+// **거절 계약은 dev 스펙에 없다** — springdoc 자동 문서라 200만 적혀 있어 재제기·대상 상태의
+// errorCode를 확인하지 못했다. 지어내지 말고 공용 문구(`productErrorMessage`)로 떨어뜨린다.
+// 수정 경로도 없다(POST 하나뿐) — 한 번 보낸 사유를 고칠 방법이 계약에 없다.
+
+/** BE ProductInspectionAppealRequest.reason의 상한. */
+export const APPEAL_REASON_MAX_LENGTH = 500
+
+/**
+ * 이의 제기 입구를 내줄 것인가.
+ *
+ * 반려된 상품만 대상이다 — 통과·대기 중인 상품에 버튼을 내주면 제기할 이의가 없는 셀러가
+ * 누르고 서버에 거절당한다. `inspectionStatus`와 `progressStep`을 둘 다 보는 이유는, 관리자가
+ * 반려한 상품을 고쳐 AI를 통과하면 `progressStep`만 ADMIN_REVIEWING으로 앞서 가고
+ * `inspectionStatus`는 REJECTED로 남기 때문이다(그 상품도 아직 반려라 이의 대상이다).
+ *
+ * 제기 이력이 있으면 닫는다. 서버가 재제기를 어떻게 거절하는지 확인하지 못해(스펙에 에러 코드가
+ * 없다) 열어 두면 셀러가 눌러 보고 뜻을 알 수 없는 실패를 받는다.
+ * `appealCleared`는 뜻을 확인하지 못해 판정에 넣지 않는다(생성물 주석 참고).
+ */
+export function canAppealInspection(inspection: SellerProductInspection): boolean {
+  const rejected = inspection.inspectionStatus === 'REJECTED' || inspection.progressStep === 'REJECTED'
+  return rejected && inspection.appealedAt == null
+}
+
+/**
+ * BE LocalDateTime(오프셋 없는 KST 벽시계) 표기. Date로 바꾸지 않고 자리만 맞춘다 — Date로 파싱하면
+ * 런타임 타임존에 따라 날짜가 하루 밀린다. 분까지만 보여 준다(초는 운영에 쓰이지 않는다).
+ */
+export function formatLocalDateTime(value: string): string {
+  return value.slice(0, 16).replace('T', ' ').replaceAll('-', '.')
+}
 
 // ─── 화면 매핑 ────────────────────────────────────────────────────────────────
 

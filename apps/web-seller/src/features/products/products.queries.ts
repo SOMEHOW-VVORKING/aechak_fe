@@ -1,5 +1,6 @@
 import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  appealMyProductInspection,
   autofillSellerProductDraft,
   changeSellerProductOptionCombination,
   changeSellerProductSaleStatus,
@@ -142,6 +143,26 @@ export const useProductInspection = (productId: string | null | undefined) =>
       : skipToken,
     refetchInterval: query => (isInspectionInProgress(query.state.data?.progressStep) ? INSPECTION_POLL_MS : false),
   })
+
+/**
+ * 반려에 이의 제기. 응답이 검수 조회와 같은 모양이라 그대로 조회 캐시에 넣는다 — 다시 조회하지
+ * 않고도 화면이 제기 이력으로 바뀐다. 목록은 검수 상태가 그대로이므로 무효화하지 않는다.
+ *
+ * 실패하면 그 자리에서 검수를 다시 읽는다. 다른 탭에서 먼저 제기해 거절된 경우라면 재조회가
+ * 제기 이력을 들고 와 화면이 "아직 안 보냈다"는 거짓을 그리지 않는다(거절 계약을 확인하지 못해
+ * errorCode로는 그 둘을 가를 수 없다).
+ */
+export const useAppealProductInspection = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ productId, reason }: { productId: string; reason: string }) =>
+      appealMyProductInspection(productId, { reason }).then(r => r.data),
+    onSuccess: (inspection, { productId }) =>
+      queryClient.setQueryData([...PRODUCTS_QUERY_KEY, 'inspection', productId], inspection),
+    onError: (_error, { productId }) =>
+      queryClient.invalidateQueries({ queryKey: [...PRODUCTS_QUERY_KEY, 'inspection', productId] }),
+  })
+}
 
 /** 수정 폼 프리필. 단건 조회가 현재 열려 있는 이미지 키만 주므로 응답을 그대로 되돌려 보내도 된다. */
 export const useProductDetail = (productId: string | null | undefined) =>
