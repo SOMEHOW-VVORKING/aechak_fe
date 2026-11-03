@@ -13,13 +13,16 @@ import { savePendingAction } from './pending-action'
 // 앱바와 뒤로가기는 shared/components·shared/useSafeBack을 쓰지 않고 여기서 직접 그린다 —
 // shared → shared 교차 import가 금지라서다(AGENTS.md 1-1).
 
-export type AuthRequiredFeature = 'wish' | 'cart' | 'order' | 'mypage'
+export type AuthRequiredFeature = 'wish' | 'cart' | 'order' | 'mypage' | 'notice'
 
 const FEATURE_COPY: Record<AuthRequiredFeature, { title: string; description: string }> = {
   wish: { title: '찜', description: '찜한 상품은 로그인한 회원만 볼 수 있어요.' },
   cart: { title: '장바구니', description: '장바구니는 로그인한 회원만 볼 수 있어요.' },
   order: { title: '주문 내역', description: '주문 내역은 로그인한 회원만 볼 수 있어요.' },
   mypage: { title: '마이페이지', description: '내 정보는 로그인한 회원만 볼 수 있어요.' },
+  // 공지는 내 정보가 아니지만 BE가 `/notices`를 permitAll 목록에 넣지 않아 회원 전용이다 —
+  // 사유를 '내 정보'라고 적으면 거짓이라 경로가 회원 전용이라는 사실만 말한다.
+  notice: { title: '공지사항', description: '공지사항은 로그인한 회원만 볼 수 있어요.' },
 }
 
 export interface AuthRequiredScreenProps {

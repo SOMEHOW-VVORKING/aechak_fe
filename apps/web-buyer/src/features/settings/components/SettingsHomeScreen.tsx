@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 // NOTE: '알림 설정' 그룹을 숨기면서 Bell 아이콘 import도 함께 주석 처리(되살릴 때 같이 복원).
-import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, ShieldCheck, Smartphone, Users } from 'lucide-react'
+import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, Megaphone, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -46,6 +46,13 @@ export function SettingsHomeScreen() {
         */}
 
         <SettingsGroup label="고객지원">
+          {/* 공지사항(SCRUM-332). 어드민이 게시한 공지가 구매자에게 내려오는데 어느 화면에서도
+              갈 수 없었다 — 입구가 없으면 운영자가 올린 공지를 구매자는 영구히 못 본다. */}
+          <SettingsNavRow
+            icon={<Megaphone className="size-5" />}
+            label="공지사항"
+            onClick={() => navigate({ to: '/settings/notices' })}
+          />
           <SettingsNavRow
             icon={<HelpCircle className="size-5" />}
             label="자주 묻는 질문"
