@@ -286,17 +286,31 @@ describe('어드민 대시보드 지표', () => {
     expect(await screen.findByRole('heading', { name: '서비스 문의 관리' })).toBeInTheDocument()
   })
 
-  it('[AC-ADMIN-DASH-007] 검수 대기 칸은 그 수를 보여주는 AI 검수 큐로 보낸다', async () => {
-    const user = userEvent.setup()
-    const { router } = renderDashboard()
+  /**
+   * '검수 대기 상품'의 진입점은 **둘**이다 — 지표 칸과 할 일 줄. 한쪽만 누르면 다른 쪽이
+   * 목데이터 화면(`/products/review`)을 가리키게 돌아가도 아무것도 깨지지 않는다(실측: 할 일
+   * 줄의 `to`만 그 경로로 되돌려도 이 파일 전체가 통과했다). 그 화면은 nav 입구가 없어
+   * (SCRUM-313) 대시보드가 거기로 가는 유일한 통로다.
+   */
+  const INSPECTION_ENTRIES = [
+    ['지표 칸', () => metricCard('검수 대기 상품')],
+    ['할 일 줄', () => todoRow('검수 대기 상품')],
+  ] as const satisfies readonly (readonly [string, () => HTMLElement])[]
 
-    await waitFor(() => expect(metricCard('검수 대기 상품')).toHaveTextContent('3건'))
-    // 준비 중 화면(`/products/review`)으로 보내면 운영자가 예시 12행이 깔린 가짜 목록에 떨어진다.
-    await user.click(metricCard('검수 대기 상품'))
+  it.each(INSPECTION_ENTRIES)(
+    '[AC-ADMIN-DASH-007] 검수 대기 %s은 그 수를 보여주는 AI 검수 큐로 보낸다',
+    async (_entry, open) => {
+      const user = userEvent.setup()
+      const { router } = renderDashboard()
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/products/ai-queue'))
-    expect(await screen.findByRole('heading', { name: 'AI 검수 큐' })).toBeInTheDocument()
-  })
+      await waitFor(() => expect(metricCard('검수 대기 상품')).toHaveTextContent('3건'))
+      // 준비 중 화면(`/products/review`)으로 보내면 운영자가 예시 12행이 깔린 가짜 목록에 떨어진다.
+      await user.click(open())
+
+      await waitFor(() => expect(router.state.location.pathname).toBe('/products/ai-queue'))
+      expect(await screen.findByRole('heading', { name: 'AI 검수 큐' })).toBeInTheDocument()
+    },
+  )
 
   it('[AC-ADMIN-DASH-008] 집계 경로가 없는 칸만 예시 꼬리표를 유지한다', async () => {
     renderDashboard()
