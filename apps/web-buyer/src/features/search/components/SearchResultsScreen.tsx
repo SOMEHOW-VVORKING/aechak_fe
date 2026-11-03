@@ -16,13 +16,12 @@ import { FilterChip } from '@/shared/components/FilterChip'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate, useIsLoggedIn } from '@/shared/auth'
-import { useSearchCategories, useSearchResults } from '../search.queries'
+import { useSearchCategories, useSearchLanding, useSearchResults } from '../search.queries'
 import {
   DEFAULT_FILTERS,
   RESULT_SORT_LABELS,
   RESULT_SORTS,
   activeFilterCount,
-  FALLBACK_SUGGESTIONS,
   type ResultSort,
   type SearchFilters,
 } from '../search.mock'
@@ -77,6 +76,13 @@ export function SearchResultsScreen({ query }: { query: string }) {
     isFetchingNextPage,
     isFetchNextPageError,
   } = useSearchResults(query, filters, sort)
+
+  // 무결과 추천어는 서버 추천 검색어(GET /search/keywords)만 쓴다. 하드코딩 칩은 그 넷에 걸리는
+  // 상품이 없어 눌러도 같은 무결과로 돌아왔다 — "다른 검색어가 있다"는 거짓 약속이다. 회원 전용
+  // 경로라 비회원·무응답이면 섹션을 접는다(검색 랜딩의 추천 섹션과 같은 처리).
+  const noResults = data != null && data.products.length === 0
+  const landing = useSearchLanding(isLoggedIn && noResults)
+  const suggested = landing.data?.suggestedKeywords ?? []
 
   const goProduct = (product: CatalogProduct) =>
     navigate({ to: '/products/$productId', params: { productId: product.id } })
@@ -230,16 +236,22 @@ export function SearchResultsScreen({ query }: { query: string }) {
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col gap-2.5">
-                <span className="text-label font-semibold text-text-secondary">
-                  이런 검색어는 어때요?
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {FALLBACK_SUGGESTIONS.map(keyword => (
-                    <KeywordChip key={keyword} keyword={keyword} onClick={() => research(keyword)} />
-                  ))}
+              {suggested.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  <span className="text-label font-semibold text-text-secondary">
+                    이런 검색어는 어때요?
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {suggested.map(keyword => (
+                      <KeywordChip
+                        key={keyword}
+                        keyword={keyword}
+                        onClick={() => research(keyword)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <ProductGrid
