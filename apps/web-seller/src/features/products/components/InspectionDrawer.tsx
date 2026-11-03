@@ -5,7 +5,7 @@ import type { InspectionProgressStep, SellerProductInspection } from '@aechak/ap
 import {
   APPEAL_REASON_MAX_LENGTH,
   canAppealInspection,
-  formatInspectionDateTime,
+  formatLocalDateTime,
   productErrorMessage,
 } from '../products.contract'
 import { PRODUCTS_QUERY_KEY, useAppealProductInspection, useProductInspection } from '../products.queries'
@@ -172,7 +172,7 @@ function AppealPanel({
   if (!canAppealInspection(inspection)) {
     if (inspection.appealedAt == null) return null
     return (
-      <Alert variant="info" title={`${formatInspectionDateTime(inspection.appealedAt)}에 이의를 제기했어요`}>
+      <Alert variant="info" title={`${formatLocalDateTime(inspection.appealedAt)}에 이의를 제기했어요`}>
         {inspection.appealReason ?? '적어 둔 사유가 없어요.'}
       </Alert>
     )

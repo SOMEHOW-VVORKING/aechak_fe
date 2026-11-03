@@ -188,8 +188,11 @@ export function canAppealInspection(inspection: SellerProductInspection): boolea
   return rejected && inspection.appealedAt == null
 }
 
-/** 검수 시각 표기. BE LocalDateTime(오프셋 없음)이라 Date로 바꾸지 않고 자리만 맞춘다. */
-export function formatInspectionDateTime(value: string): string {
+/**
+ * BE LocalDateTime(오프셋 없는 KST 벽시계) 표기. Date로 바꾸지 않고 자리만 맞춘다 — Date로 파싱하면
+ * 런타임 타임존에 따라 날짜가 하루 밀린다. 분까지만 보여 준다(초는 운영에 쓰이지 않는다).
+ */
+export function formatLocalDateTime(value: string): string {
   return value.slice(0, 16).replace('T', ' ').replaceAll('-', '.')
 }
 
