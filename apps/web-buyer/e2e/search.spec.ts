@@ -89,11 +89,11 @@ function product(productId: string, name: string, price: number) {
   }
 }
 
-// 무결과(3-C) 화면의 대체 검색어(SearchResultsScreen의 FALLBACK_SUGGESTIONS) 중 하나. 이 칩을 눌러
-// 재검색이 검색창을 동기화하고 새 결과를 부르는지(3-C → 3-A) 검증한다.
-const FALLBACK_QUERY = '하네스'
+// 무결과(3-C) 화면의 추천 검색어는 서버 추천어(RECOMMENDED_KEYWORDS)에서 온다. 그중 결과가 걸리는
+// 것 하나를 골라, 칩을 눌러 재검색이 검색창을 동기화하고 새 결과를 부르는지(3-C → 3-A) 검증한다.
+const SUGGESTED_QUERY = '대용량 사료'
 
-// keyword로 결과 유무를 가른다 — '사료' 또는 재검색용 대체 검색어는 결과 있음(3-A), 그 외는 빈 결과(3-C).
+// keyword로 결과 유무를 가른다 — '사료'(추천어 재검색 포함)는 결과 있음(3-A), 그 외는 빈 결과(3-C).
 const SEARCH_HITS = [
   product('p-search-1', '강아지 연어 사료 2kg', 28000),
   product('p-search-2', '고양이 그레인프리 사료 5kg', 42000),
@@ -112,7 +112,7 @@ function stubProducts(route: Route) {
   const params = new URL(route.request().url()).searchParams
   const keyword = params.get('keyword') ?? ''
   const category = params.get('category')
-  let hits = keyword.includes('사료') || keyword.includes(FALLBACK_QUERY) ? SEARCH_HITS : []
+  let hits = keyword.includes('사료') ? SEARCH_HITS : []
   if (category) hits = hits.filter(p => CATEGORY_OF[p.productId] === Number(category))
   return fulfillJson(route, 200, {
     data: { products: hits, totalCount: hits.length, nextCursor: null, hasNext: false },
@@ -168,18 +168,22 @@ test('[AC-SEARCH-E2E-002] 결과 그리드(3-A)·필터 시트(3-B)와 카테고
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
 })
 
-test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 대체 검색어를 보여준다', async ({ page }) => {
+test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 추천 검색어를 보여준다', async ({ page }) => {
   await page.route('**/api/v1/search/products*', stubProducts)
+  // 추천 칩의 출처 — 무결과일 때 결과 화면이 /search/keywords를 조회한다(하드코딩 칩을 걷어낸 자리).
+  await page.route('**/api/v1/search/keywords', route =>
+    fulfillJson(route, 200, keywordsEnvelope(RECENT_KEYWORDS)),
+  )
 
   await page.goto('/search/results?q=없는키워드')
   await expect(page.getByText('검색 결과가 없어요')).toBeVisible()
   await expect(page.getByText('이런 검색어는 어때요?')).toBeVisible()
   await shot(page, `${SHOTS}/05-no-results.png`)
 
-  // 대체 검색어 칩(하네스)을 눌러 같은 라우트로 재검색하면, 검색창이 새 키워드로 동기화되고(3-C의
+  // 추천 검색어 칩을 눌러 같은 라우트로 재검색하면, 검색창이 새 키워드로 동기화되고(3-C의
   // useEffect(setDraftQuery,[query])) 결과가 다시 로드된다(3-C → 3-A).
-  await page.getByRole('button', { name: FALLBACK_QUERY }).click()
-  await expect(page.getByPlaceholder('상품, 브랜드 검색')).toHaveValue(FALLBACK_QUERY)
+  await page.getByRole('button', { name: SUGGESTED_QUERY }).click()
+  await expect(page.getByPlaceholder('상품, 브랜드 검색')).toHaveValue(SUGGESTED_QUERY)
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await shot(page, `${SHOTS}/06-research.png`)
 })
