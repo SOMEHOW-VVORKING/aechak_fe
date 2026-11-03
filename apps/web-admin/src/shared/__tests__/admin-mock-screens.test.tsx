@@ -75,6 +75,12 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
 
 /**
  * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 4화면.
+ *
+ * 넷 중 '상품 검수 관리'(`/products/review`)만 **nav 입구가 없다**(SCRUM-313 — 같은 '검수'
+ * 그룹에 실연동 'AI 검수 큐'가 있어 운영자가 이름이 맞는 가짜 쪽을 먼저 눌렀다). 입구가 없어도
+ * URL로는 닿으므로 띠와 쓰기 차단은 그대로 필요하고, nav에 없는 탓에 `admin-nav.test.tsx`의
+ * 분류(AC-ADMIN-NAV-004)에서 빠져 **이 파일이 그 화면의 유일한 띠 가드다** — SCREENS·WRITE_FLOWS에서
+ * 빼면 띠가 사라져도 아무것도 깨지지 않는다.
  * (일반 회원 관리는 `/admin/members` 넷, 주문 배송 모니터링은 `/admin/orders` 넷, AI 검수 큐는
  *  `/admin/product-inspections` 넷이 생겨 빠졌고, 서비스 문의·클레임·리뷰는 2026-10-30 실측에서
  *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다. 어드민 액션 로그는

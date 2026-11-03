@@ -9,7 +9,6 @@ import {
   LifeBuoy,
   Megaphone,
   MessagesSquare,
-  PackageSearch,
   RotateCcw,
   ScanEye,
   ScrollText,
@@ -47,7 +46,8 @@ const APPLICATIONS_NAV_KEY = '/sellers/applications'
 const PENDING_TAG = '준비 중'
 
 // nav 구성은 SCRUM-238 차단 이전(26e4b89^)의 5그룹을 되살린 것이고, 그 뒤 생긴 `/admins`를
-// 운영 관리 그룹에 더해 15항목이다(차단 이전 nav의 "확장 예정" 6항목 — 홈 배너·카테고리·정산·
+// 운영 관리 그룹에 더해 15항목이 됐고, 목데이터 '상품 검수 관리'의 입구를 내려(아래 '검수' 그룹)
+// 지금은 14항목이다(차단 이전 nav의 "확장 예정" 6항목 — 홈 배너·카테고리·정산·
 // 어드민 계정 권한·고급 통계·세금 신고 — 은 복원 대상이 아니고, 그중 어드민 계정 권한 관리는
 // `/admins`가 대신한다).
 //
@@ -101,15 +101,15 @@ const navGroups: NavGroup[] = [
     key: 'review',
     label: '검수',
     items: [
-      // 검수 두 항목의 BE는 열린 PR에 있다(머지되면 꼬리표를 뗀다) — #149(SCRUM-282 관리자
-      // 확인 큐)가 본체고 #153~#157(SCRUM-284~288)이 판정 계약·지표·이의 제기를 얹는다.
-      {
-        key: '/products/review',
-        label: '상품 검수 관리',
-        icon: <PackageSearch className={iconClass} />,
-        tag: PENDING_TAG,
-      },
       // `/admin/product-inspections` 넷(목록·상세·승인·반려)에 실연동됐다(SCRUM-283) — 꼬리표를 뗐다.
+      //
+      // 목데이터 화면 `/products/review`('상품 검수 관리')는 **입구만 내렸다**(SCRUM-313). 규약 10이
+      // "nav 항목은 빼지 말고 꼬리표를 달라"고 한 것은 그 기능의 통로가 그 항목뿐일 때이고, 여기는
+      // 같은 그룹에 실연동 항목이 있었다 — 운영자는 이름이 맞는 '상품 검수 관리'를 먼저 눌러 저장되지
+      // 않는 화면에서 검수를 처리했다고 믿었고, 실제로 동작하는 검수는 바로 아래 항목이었다.
+      // 라우트와 화면의 띠는 그대로 둔다(URL로는 닿고, 그때 띠가 없으면 실데이터로 읽는다).
+      // 검수 BE 스택(#149 SCRUM-282 + #153~#157 SCRUM-284~288)이 머지되면 그 화면을 실연동하고
+      // 항목을 되올린다.
       {
         key: '/products/ai-queue',
         label: 'AI 검수 큐',
