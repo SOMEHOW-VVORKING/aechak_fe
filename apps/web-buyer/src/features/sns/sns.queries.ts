@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
   type QueryKey,
 } from '@tanstack/react-query'
 import {
@@ -25,10 +26,14 @@ import {
   getSnsPost,
   getSnsProfile,
   muteUser,
+  repostSnsPost,
+  saveSnsPost,
   searchSnsHashtags,
   unblockUser,
   unfollowUser,
   unmuteUser,
+  unrepostSnsPost,
+  unsaveSnsPost,
   updateSnsPost,
   type SnsFeedItemResult,
   type SnsFeedPageResult,
@@ -57,6 +62,7 @@ export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
+export type SnsReactionKind = 'repost' | 'save'
 
 /**
  * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
@@ -73,8 +79,10 @@ export const SNS_POST_UNAVAILABLE = 130400
 export const SNS_POST_NOT_MINE = 130401
 /** 없거나 이미 쓴 tmp key. 작성 화면을 연 채 버킷 수명 규칙(expire-tmp)이 tmp 원본을 지웠을 때도 온다 */
 export const SNS_UPLOAD_NOT_FOUND = 100001
-/** 빈도 제한(429). SNS-T19부터 온다(A27) */
-export const SNS_RATE_LIMITED = 90006
+/** 본인 원글 리포스트(SNS-03 초안). 리포스트 버튼은 본인 글에서 잠겨 있어 다시 실행한 요청에서만 온다 */
+export const SNS_REPOST_OWN_POST = 130600
+/** 이용 제한(RESTRICTED) 계정의 SNS 쓰기(UserStatusFilter) */
+export const SNS_ACCOUNT_RESTRICTED = 20013
 /** 잘못되거나 만료된 커서(인기 피드 31분, Redis 장애 포함). 그 목록을 첫 페이지부터 다시 연다(sns.yaml SNS-03 FE 3) */
 export const SNS_INVALID_CURSOR = 90002
 
@@ -203,10 +211,16 @@ const POST_ERROR_COPY: Record<number, string> = {
   130500: '해시태그는 한글, 영문, 숫자, 밑줄만 쓸 수 있어요',
   130501: '해시태그는 30자 이하로 써 주세요',
   130502: '쓸 수 없는 단어가 든 해시태그가 있어요',
-  [SNS_RATE_LIMITED]: '잠시 후 다시 시도해 주세요',
 }
 
+const RATE_LIMITED_COPY = '잠시 후 다시 시도해 주세요'
+
+// 빈도 제한은 errorCode가 아니라 HTTP 429로 분기한다(sns.yaml SNS-03 FE 5). develop의 90006은 404 경로 없음이라
+// errorCode로 보면 아직 그 경로가 없는 BE를 부를 때 잠시 후 다시 시도 안내가 나온다.
+const isRateLimited = (error: unknown) => errorResponse(error)?.status === 429
+
 export function snsPostErrorMessage(error: unknown, fallback: string): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
   const code = snsErrorCode(error)
   return (code != null && POST_ERROR_COPY[code]) || fallback
 }
@@ -347,12 +361,21 @@ export function useSnsToggle() {
   })
 }
 
+// 켜기와 끄기 실패 문구. 팔로우, 차단, 뮤트와 SNS-03의 리포스트, 저장이 같이 쓴다. 게시물이 사라졌으면(130400)
+// 원인과 상관없이 삭제된 게시물 안내다(A7).
 export function snsToggleErrorMessage(error: unknown): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
   switch (snsErrorCode(error)) {
     case SNS_UNAVAILABLE:
       return '볼 수 없는 계정이에요'
     case SNS_BLOCKED_BY_ME:
       return '차단한 계정이에요'
+    case SNS_POST_UNAVAILABLE:
+      return '삭제된 게시물이에요'
+    case SNS_REPOST_OWN_POST:
+      return '내 게시물은 리포스트할 수 없어요'
+    case SNS_ACCOUNT_RESTRICTED:
+      return '이용이 제한된 계정이라 이 기능을 사용할 수 없어요'
     default:
       return '요청을 처리하지 못했어요. 다시 시도해 주세요'
   }
@@ -415,4 +438,88 @@ export function useSnsFeed(kind: SnsFeedKind) {
   })
   useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
   return query
+}
+
+// ── SNS-03 리포스트, 저장 ───────────────────────────────────────────────────
+
+const REACTION_FETCHERS: Record<SnsReactionKind, [(id: string) => Promise<unknown>, (id: string) => Promise<unknown>]> = {
+  repost: [repostSnsPost, unrepostSnsPost],
+  save: [saveSnsPost, unsaveSnsPost],
+}
+
+/** 리포스트는 상태가 바뀔 때만 수를 1 올리거나 내린다. 저장은 어떤 수도 바꾸지 않는다(A23) */
+function withReaction(post: SnsPost, kind: SnsReactionKind, on: boolean): SnsPost {
+  if (kind === 'save') return post.saved === on ? post : { ...post, saved: on }
+  if (post.reposted === on) return post
+  return { ...post, reposted: on, repostCount: Math.max(0, post.repostCount + (on ? 1 : -1)) }
+}
+
+const feedHasPost = (data: unknown, publicId: string) =>
+  (data as InfiniteData<SnsFeedPageResult> | undefined)?.pages.some(page =>
+    page.items.some(item => item.post.publicId === publicId),
+  ) ?? false
+
+/** 그 게시물이 든 캐시(상세, 피드 항목의 post)를 바꾼다 */
+function setReaction(queryClient: QueryClient, kind: SnsReactionKind, publicId: string, on: boolean) {
+  queryClient.setQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) }, post => post && withReaction(post, kind, on))
+  queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+    mapFeedPages(data, items =>
+      items.map(item => (item.post.publicId === publicId ? { ...item, post: withReaction(item.post, kind, on) } : item)),
+    ),
+  )
+}
+
+// 같은 게시물에 이어서 누른 요청 묶음. latest는 마지막으로 누른 요청이고 confirmed는 성공한 요청까지 반영한 서버 값이다.
+// 요청은 차례로 가므로 앞 요청의 실패는 뒤 요청이 덮는다. 마지막 요청이 실패할 때만 confirmed로 되돌린다.
+interface ReactionRun {
+  latest: number
+  confirmed: boolean
+}
+const reactionRuns = new WeakMap<QueryClient, Map<string, ReactionRun>>()
+let reactionSeq = 0
+
+function runsOf(queryClient: QueryClient) {
+  let runs = reactionRuns.get(queryClient)
+  if (!runs) reactionRuns.set(queryClient, (runs = new Map()))
+  return runs
+}
+
+/**
+ * 리포스트, 저장 켜기(POST 201)와 끄기(DELETE 204). design 6절 5번이다. 누르는 즉시 받는 중인 조회를 멈추고 그 게시물이 든
+ * 캐시를 바꾼 뒤 요청을 보낸다. 같은 게시물의 요청은 scope로 차례로 보낸다. 빠르게 켜고 끄면 POST와 DELETE가 거꾸로 도착할
+ * 수 있고 응답에 본문이 없어(D3) 서버와 화면이 어긋나도 맞출 수 없기 때문이다. 실패하면 되돌리고 안내는 부른 화면이 띄운다.
+ */
+export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
+  const queryClient = useQueryClient()
+  const id = `${kind}:${publicId}`
+  return useMutation({
+    scope: { id },
+    mutationFn: (on: boolean) => REACTION_FETCHERS[kind][on ? 0 : 1](publicId),
+    // 멈춘 조회는 조회 전 값으로 돌아가므로 멈춘 뒤에 바꾼다. 차례를 기다리는 요청도 누른 즉시 여기까지 온다.
+    onMutate: on => {
+      const runs = runsOf(queryClient)
+      const seq = ++reactionSeq
+      runs.set(id, { latest: seq, confirmed: runs.get(id)?.confirmed ?? !on })
+      void queryClient.cancelQueries({ queryKey: snsKeys.post(publicId) })
+      void queryClient.cancelQueries({ queryKey: snsKeys.feeds, predicate: query => feedHasPost(query.state.data, publicId) })
+      setReaction(queryClient, kind, publicId, on)
+      return seq
+    },
+    onSuccess: (_data, on) => {
+      const run = runsOf(queryClient).get(id)
+      if (run) run.confirmed = on
+    },
+    onError: (_error, _on, seq) => {
+      const run = runsOf(queryClient).get(id)
+      if (run && run.latest === seq) setReaction(queryClient, kind, publicId, run.confirmed)
+    },
+    // 묶음이 끝나면 열린 상세를 서버 값으로 다시 맞춘다. 멈춘 조회도 여기서 다시 읽는다. 피드는 다시 읽으면 보던 위치를
+    // 잃어 바꾼 값을 그대로 둔다. 기다리지 않는다. 기다리면 그사이 누른 다음 요청이 이 조회 뒤로 밀린다.
+    onSettled: (_data, _error, _on, seq) => {
+      const runs = runsOf(queryClient)
+      if (runs.get(id)?.latest !== seq) return
+      runs.delete(id)
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+    },
+  })
 }

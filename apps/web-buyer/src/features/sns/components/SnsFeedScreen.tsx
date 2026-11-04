@@ -1,8 +1,16 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { EmptyState, Modal, Skeleton, Tabs } from '@aechak/design-system/web'
-import { LoginGate, useIsLoggedIn, useLoginGate, type GateResume } from '@/shared/auth'
+import {
+  LoginGate,
+  peekPendingAction,
+  takePendingAction,
+  useIsLoggedIn,
+  useLoginGate,
+  type GateResume,
+  type UseLoginGate,
+} from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
 import { SNS_SERVER_AVAILABLE } from '@/shared/sns-availability'
 import {
@@ -15,11 +23,13 @@ import {
   useSnsToggle,
   type SnsFeedKind,
   type SnsPost,
+  type SnsReactionKind,
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { SnsFeedCard } from './SnsFeedCard'
 import { SnsListEnd, SnsListError } from './SnsListEnd'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
+import { SnsResumeReaction } from './SnsReactionButton'
 import { SnsWriteFab } from './SnsWriteFab'
 
 // 빈 상태(P5). 팔로잉 피드만 탐색 탭 이동 버튼을 두고 탐색, 인기는 안내 문구만이다. 디자인이 없어 FE가 먼저 썼다.
@@ -93,10 +103,32 @@ export function SnsFeedScreen({
   const [more, setMore] = useState<{ post: SnsPost; open: boolean } | null>(null)
   const [confirm, setConfirm] = useState<FeedConfirm | null>(null)
   const [deleting, setDeleting] = useState<SnsPost | null>(null)
+  // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
+  const [resume, setResume] = useState<{ kind: SnsReactionKind; publicId: string } | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
     setToast({ open: true, message, variant })
+  const reactionError = (message: string) => showToast(message, 'error')
+
+  // 카드에서 연 로그인 안내 시트는 로그인 뒤 같은 탭으로 돌아오게 지금 탭을 주소에 먼저 적는다. 주소에 탭이 없으면
+  // 비로그인은 탐색을 보다가 로그인 뒤 같은 주소에서 팔로잉을 연다(P1).
+  const gate: UseLoginGate['requireAuth'] = (feature, action, resumeAction) => {
+    if (!loggedIn && tab !== kind) onTabChange(kind)
+    return requireAuth(feature, action, resumeAction)
+  }
+
+  // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 리포스트, 저장은 피드를 받은 뒤 꺼내 확인 없이 한 번 켠다.
+  // 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다.
+  const items = feed.data
+  useEffect(() => {
+    if (!loggedIn || !items) return
+    const pending = peekPendingAction()
+    if (pending?.kind !== 'repost' && pending?.kind !== 'save') return
+    takePendingAction(pending.publicId)
+    const mine = items.some(item => item.post.publicId === pending.publicId && item.post.isMine)
+    if (pending.kind === 'save' || !mine) setResume({ kind: pending.kind, publicId: pending.publicId })
+  }, [loggedIn, items])
 
   const selectTab = (next: SnsFeedKind) => {
     // 지금 탭을 다시 누르면 첫 페이지부터 새 기준 시각으로 다시 읽는다(design 6절 7번).
@@ -120,7 +152,7 @@ export function SnsFeedScreen({
   }
 
   const mute = (post: SnsPost) =>
-    requireAuth(
+    gate(
       'mute',
       () =>
         toggle.mutate(
@@ -190,7 +222,12 @@ export function SnsFeedScreen({
         <ul className="divide-y divide-border-subtle">
           {feed.data.map(item => (
             <li key={item.post.publicId}>
-              <SnsFeedCard item={item} onMore={post => setMore({ post, open: true })} />
+              <SnsFeedCard
+                item={item}
+                onMore={post => setMore({ post, open: true })}
+                requireAuth={gate}
+                onReactionError={reactionError}
+              />
             </li>
           ))}
         </ul>
@@ -232,7 +269,7 @@ export function SnsFeedScreen({
           onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: more.post.publicId } })}
           onDelete={() => setDeleting(more.post)}
           onMute={() => (more.post.mutedByMe ? setConfirm({ kind: 'unmute', post: more.post }) : mute(more.post))}
-          onBlock={() => requireAuth('block', () => setConfirm({ kind: 'block', post: more.post }), BACK_TO_FEED)}
+          onBlock={() => gate('block', () => setConfirm({ kind: 'block', post: more.post }), BACK_TO_FEED)}
         />
       )}
 
@@ -267,6 +304,7 @@ export function SnsFeedScreen({
         />
       )}
 
+      {resume && <SnsResumeReaction kind={resume.kind} publicId={resume.publicId} onError={reactionError} />}
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}

@@ -1,18 +1,23 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Heart, MessageCircle, MoreHorizontal, PawPrint, Repeat2 } from 'lucide-react'
 import { Avatar } from '@aechak/design-system/web'
+import type { UseLoginGate } from '@/shared/auth'
 import type { SnsFeedItem, SnsPost } from '../sns.queries'
 import { petTagLabel, postDate, relativeTimeLabel } from '../sns.format'
+import { SnsReactionButton } from './SnsReactionButton'
 
 interface SnsFeedCardProps {
   item: SnsFeedItem
   onMore: (post: SnsPost) => void
+  /** 리포스트, 저장 버튼의 로그인 게이트와 실패 안내. 상세 버튼과 같은 처리다(design 6절 4번) */
+  requireAuth: UseLoginGate['requireAuth']
+  onReactionError: (message: string) => void
 }
 
 // 피드 카드(b7-st-1, design 6절 4번). item.post는 상세와 같은 SnsPostDetailResult라 상세 화면 타입을 그대로 쓴다.
 // 카드 전체를 덮는 형제 버튼이 상세로 가고(ProductCard와 같은 방식) 작성자, 더보기, 영상은 그 위에 올린다. 해시태그는
-// SNS-06 목록 라우트 전까지 다른 본문처럼 상세를 연다. 저장 수는 그리지 않는다(A23).
-export function SnsFeedCard({ item, onMore }: SnsFeedCardProps) {
+// SNS-06 목록 라우트 전까지 다른 본문처럼 상세를 연다. 저장 수는 그리지 않는다(A23). 리포스트 카드의 버튼도 원글에 한다.
+export function SnsFeedCard({ item, onMore, requireAuth, onReactionError }: SnsFeedCardProps) {
   const navigate = useNavigate()
   const { post, repostedBy } = item
   const photos = post.photoUrls
@@ -25,7 +30,6 @@ export function SnsFeedCard({ item, onMore }: SnsFeedCardProps) {
   const counts = [
     { label: '좋아요', value: post.likeCount, icon: <Heart className="size-5" /> },
     { label: '댓글', value: post.commentCount, icon: <MessageCircle className="size-5" /> },
-    { label: '리포스트', value: post.repostCount, icon: <Repeat2 className="size-5" /> },
   ]
 
   return (
@@ -123,6 +127,7 @@ export function SnsFeedCard({ item, onMore }: SnsFeedCardProps) {
         />
       )}
 
+      {/* 좋아요와 댓글 버튼은 SNS-04가 붙인다. 리포스트와 저장 버튼은 상세로 가는 버튼 위에 올린다. */}
       <div className="flex items-center gap-4 text-text-secondary">
         {counts.map(count => (
           <span key={count.label} className="flex items-center gap-1">
@@ -131,6 +136,12 @@ export function SnsFeedCard({ item, onMore }: SnsFeedCardProps) {
             <span className="text-body-sm tabular-nums">{count.value.toLocaleString('ko-KR')}</span>
           </span>
         ))}
+        <div className="relative z-[2]">
+          <SnsReactionButton kind="repost" post={post} requireAuth={requireAuth} onError={onReactionError} />
+        </div>
+        <div className="relative z-[2] ml-auto">
+          <SnsReactionButton kind="save" post={post} requireAuth={requireAuth} onError={onReactionError} />
+        </div>
       </div>
 
       <button

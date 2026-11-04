@@ -290,6 +290,18 @@ describe('/sns/posts/new 실패와 다시 시도', () => {
     expect(await screen.findByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument()
   })
 
+  it('빈도 제한은 HTTP 429로 본다. develop의 90006(404 경로 없음)은 일반 실패 안내다', async () => {
+    server.use(
+      http.post(SNS_POSTS_URL, () => HttpResponse.json({ errorCode: 90006, message: '' }, { status: 404 })),
+    )
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await user.type(await screen.findByLabelText('캡션'), '빠르게')
+    await user.click(publishButton())
+    expect(await screen.findByText('게시하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    expect(screen.queryByText('잠시 후 다시 시도해 주세요')).not.toBeInTheDocument()
+  })
+
   it('[AC-SNS02-014] 캡션에 #단어를 쓰면 해시태그 추가 안내가 나오고 게시해도 태그로 등록되지 않는다', async () => {
     const user = userEvent.setup()
     renderAt('/sns/posts/new')

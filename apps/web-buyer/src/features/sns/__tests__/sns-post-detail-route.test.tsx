@@ -133,14 +133,15 @@ describe('/sns/posts/$publicId 게시물 영역', () => {
     expect(screen.queryByText(/골든리트리버|말티즈 \//)).not.toBeInTheDocument()
   })
 
-  it('[AC-SNS02-018] 좋아요, 댓글, 리포스트 수가 보이고 저장 수는 작성자에게도 보이지 않는다', async () => {
+  it('[AC-SNS02-018][AC-SNS03-020] 좋아요, 댓글, 리포스트 수가 보이고 저장 수는 작성자에게도 보이지 않는다', async () => {
     renderAt(postPath(SNS_POST_MINE))
 
     expect(await screen.findByText('리포스트')).toBeInTheDocument()
     expect([count('좋아요'), count('댓글'), count('리포스트')]).toEqual(['0', '0', '0'])
-    expect(screen.queryByText(/저장/)).not.toBeInTheDocument()
-    // 액션 바에서 누를 수 있는 것은 공유뿐이다(G-C2).
-    expect(screen.queryByRole('button', { name: /좋아요|댓글|리포스트/ })).not.toBeInTheDocument()
+    // 저장 버튼은 아이콘만 그린다.
+    expect(screen.getByRole('button', { name: '저장' }).textContent).toBe('')
+    // 좋아요와 댓글 버튼은 SNS-04가 붙인다(G-C2).
+    expect(screen.queryByRole('button', { name: /좋아요|댓글/ })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS02-024] 수정한 게시물에는 수정됨 표시가 붙는다', async () => {

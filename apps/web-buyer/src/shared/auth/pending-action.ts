@@ -3,10 +3,11 @@
 // 접근이 막힌 환경(사파리 프라이빗 등)에서도 화면이 깨지지 않게 읽기와 쓰기를 모두 try/catch로 감싼다.
 
 /**
- * follow만 켜기 요청으로 다시 보내고 block, mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다.
+ * follow, repost, save는 켜기 요청으로 다시 보내고 block, mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다.
  * compose는 대상 없는 글쓰기다(publicId는 빈 문자열). 돌아온 SNS 탭이 작성 화면을 다시 연다(SNS-02 A26).
+ * repost, save의 대상은 게시물 publicId다(SNS-03 design 6절 10번).
  */
-export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open' | 'compose'
+export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open' | 'compose' | 'repost' | 'save'
 
 export interface PendingAction {
   kind: PendingActionKind

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Ban, EyeOff, FileX, Heart, MessageCircle, MoreHorizontal, PawPrint, Repeat2, Share2 } from 'lucide-react'
+import { Ban, EyeOff, FileX, Heart, MessageCircle, MoreHorizontal, PawPrint, Share2 } from 'lucide-react'
 import { Alert, Avatar, Button, MobileScreen, Modal, Skeleton } from '@aechak/design-system/web'
 import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
@@ -17,11 +17,13 @@ import {
   useSnsPost,
   useSnsToggle,
   type SnsPost,
+  type SnsReactionKind,
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { petTagLabel, postDate, postDateLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
+import { SnsReactionButton, SnsResumeReaction } from './SnsReactionButton'
 
 interface ToastState {
   open: boolean
@@ -32,8 +34,8 @@ interface ToastState {
 /** 상세 확인 Modal. 차단은 확인 뒤 상세를 닫고, 뮤트 해제는 확인 뒤 상세에 머문다 */
 type PostConfirm = 'block' | 'unmute'
 
-// 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 세 수와 공유만 그린다. 좋아요, 댓글,
-// 리포스트, 저장 버튼은 그 API를 만드는 SNS-03, SNS-04 FE가 붙인다(G-C2). 신고는 SNS-07 전까지 숨긴다.
+// 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 좋아요와 댓글 수, 리포스트와 저장 버튼(SNS-03),
+// 공유를 그린다. 좋아요와 댓글 버튼은 그 API를 만드는 SNS-04 FE가 붙인다(G-C2). 신고는 SNS-07 전까지 숨긴다.
 // author는 카드나 프로필에서 들어와 작성자를 알 때만 온다. 내가 차단한 작성자의 게시물(403 130001)은 응답에
 // 작성자가 없어서 이 값이 있을 때만 프로필 이동을 보여준다(G4).
 export function SnsPostDetailScreen({ publicId, author }: { publicId: string; author?: string }) {
@@ -49,6 +51,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   // 확인 Modal의 타겟은 화면이 소유하고 Modal은 자체 mutation을 만들지 않는다(AGENTS.md 4절).
   const [confirm, setConfirm] = useState<PostConfirm | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
+  const [resume, setResume] = useState<SnsReactionKind | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
@@ -64,6 +68,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   // 로그인 뒤 다시 실행(A26, design 6절 11번). 상세에서 남긴 행동은 게시물 publicId로 꺼낸다. 실패 응답에는
   // 작성자가 없어 작성자 publicId로 남기면 꺼낼 수 없고 나중에 그 프로필에서 확인 없이 팔로우가 나간다.
   // 볼 수 없게 됐으면 실행하지 않고 안내만 남긴다. 그 작성자 본인으로 로그인했으면 실행하지 않고 버린다.
+  // 리포스트와 저장은 확인 없이 한 번 켠다. 저장은 내 글도 되고(AC-SNS03-032) 리포스트는 내 글이면 버린다.
   useEffect(() => {
     if (!loggedIn) return
     if (unavailable || blockedByMe) {
@@ -72,7 +77,9 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
     }
     if (!post) return
     const pending = takePendingAction(publicId)
-    if (!pending || post.isMine) return
+    if (!pending) return
+    if (pending.kind === 'save' || (pending.kind === 'repost' && !post.isMine)) setResume(pending.kind)
+    if (post.isMine) return
     if (pending.kind === 'follow') {
       mutateToggle(
         { kind: 'follow', publicId: post.author.publicId, on: true },
@@ -243,6 +250,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         />
       )}
 
+      {resume && <SnsResumeReaction kind={resume} publicId={publicId} onError={message => showToast(message, 'error')} />}
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}
@@ -310,8 +318,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const counts = [
     { label: '좋아요', value: post.likeCount, icon: <Heart className="size-5" /> },
     { label: '댓글', value: post.commentCount, icon: <MessageCircle className="size-5" /> },
-    { label: '리포스트', value: post.repostCount, icon: <Repeat2 className="size-5" /> },
   ]
+  const reactionError = (message: string) => showToast(message, 'error')
 
   return screen(
     <article className="flex flex-col gap-3 pb-6 pt-2">
@@ -403,7 +411,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         />
       )}
 
-      {/* 세 수만 보여주고 저장 수는 작성자에게도 보여주지 않는다(A23). 누를 수 있는 버튼은 공유뿐이다. */}
+      {/* 좋아요, 댓글, 리포스트 수를 보여주고 저장 수는 작성자에게도 보여주지 않는다(A23). 저장은 맨 끝에 둔다(b7-st-2). */}
       <div className="flex items-center gap-4 px-4 text-text-secondary">
         {counts.map(count => (
           <span key={count.label} className="flex items-center gap-1">
@@ -412,14 +420,30 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
             <span className="text-body-sm tabular-nums">{count.value.toLocaleString('ko-KR')}</span>
           </span>
         ))}
+        <SnsReactionButton
+          kind="repost"
+          post={post}
+          requireAuth={requireAuth}
+          onError={reactionError}
+          disabled={refreshFailed}
+        />
         <button
           type="button"
           aria-label="공유"
           onClick={() => void share()}
-          className="ml-auto flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
+          className="flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
         >
           <Share2 className="size-5" />
         </button>
+        <div className="ml-auto">
+          <SnsReactionButton
+            kind="save"
+            post={post}
+            requireAuth={requireAuth}
+            onError={reactionError}
+            disabled={refreshFailed}
+          />
+        </div>
       </div>
 
       <p className="flex gap-2 px-4 text-caption text-text-tertiary">
