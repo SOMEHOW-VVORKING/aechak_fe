@@ -1,6 +1,19 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Ban, EyeOff, FileX, Heart, Link2, MessageCircle, MoreHorizontal, PawPrint, Repeat2, Share2 } from 'lucide-react'
+import {
+  Ban,
+  EyeOff,
+  FileX,
+  Heart,
+  Link2,
+  MessageCircle,
+  MoreHorizontal,
+  PawPrint,
+  Pencil,
+  Repeat2,
+  Share2,
+  Trash2,
+} from 'lucide-react'
 import { Alert, Avatar, BottomSheet, Button, ListItem, MobileScreen, Modal, Skeleton } from '@aechak/design-system/web'
 import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
@@ -9,9 +22,11 @@ import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   SNS_BLOCKED_BY_ME,
+  SNS_POST_NOT_MINE,
   SNS_POST_UNAVAILABLE,
   snsErrorCode,
   snsToggleErrorMessage,
+  useDeleteSnsPost,
   useSnsPost,
   useSnsToggle,
   type SnsPost,
@@ -39,11 +54,13 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const { data: post, error, isPending, refetch } = useSnsPost(publicId)
   const toggle = useSnsToggle()
   const mutateToggle = toggle.mutate
+  const remove = useDeleteSnsPost(publicId)
   const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
   const loggedIn = useIsLoggedIn()
   const [moreOpen, setMoreOpen] = useState(false)
   // 확인 Modal의 타겟은 화면이 소유하고 Modal은 자체 mutation을 만들지 않는다(AGENTS.md 4절).
   const [confirm, setConfirm] = useState<PostConfirm | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
@@ -147,6 +164,22 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
     )
   }
 
+  // 삭제는 확인을 거친다. 다른 기기에서 이미 지운 게시물도 지운 것으로 보고 이전 화면으로 간다(AC-SNS02-027).
+  const handleDelete = () =>
+    remove.mutate(undefined, {
+      onSuccess: () => {
+        setDeleteConfirm(false)
+        goBack()
+      },
+      onError: e => {
+        setDeleteConfirm(false)
+        showToast(
+          snsErrorCode(e) === SNS_POST_NOT_MINE ? '본인 게시물만 삭제할 수 있어요' : '삭제하지 못했어요. 다시 시도해 주세요',
+          'error',
+        )
+      },
+    })
+
   const openProfile = (target: string, mine: boolean) =>
     mine ? navigate({ to: '/sns/me' }) : navigate({ to: '/sns/users/$publicId', params: { publicId: target } })
 
@@ -187,6 +220,27 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
               void copyLink()
             }}
           />
+          {/* 수정과 삭제는 본인 게시물에만 있고 신고는 SNS-07 전까지 숨긴다(P12). */}
+          {post.isMine && !refreshFailed && (
+            <>
+              <ListItem
+                leading={<Pencil className="size-5" />}
+                title="수정"
+                onClick={() => {
+                  setMoreOpen(false)
+                  void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId } })
+                }}
+              />
+              <ListItem
+                leading={<Trash2 className="size-5" />}
+                title="삭제"
+                onClick={() => {
+                  setMoreOpen(false)
+                  setDeleteConfirm(true)
+                }}
+              />
+            </>
+          )}
           {!post.isMine && !refreshFailed && (
             <>
               <ListItem
@@ -224,6 +278,21 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
           confirmVariant={RELATION_CONFIRM[confirm].danger ? 'danger' : 'primary'}
           onConfirm={handleConfirm}
           loading={toggle.isPending}
+        />
+      )}
+
+      {deleteConfirm && (
+        <Modal
+          open
+          onClose={() => {
+            if (!remove.isPending) setDeleteConfirm(false)
+          }}
+          title="게시물을 삭제할까요?"
+          description="삭제한 게시물은 되돌릴 수 없어요."
+          confirmLabel="삭제"
+          confirmVariant="danger"
+          onConfirm={handleDelete}
+          loading={remove.isPending}
         />
       )}
 

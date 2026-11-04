@@ -10,6 +10,7 @@ import {
 import {
   blockUser,
   customInstance,
+  deleteSnsPost,
   errorResponse,
   followUser,
   getFollowers,
@@ -24,9 +25,11 @@ import {
   unblockUser,
   unfollowUser,
   unmuteUser,
+  updateSnsPost,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
+  type SnsPostUpdateRequest,
   type SnsProfileResult,
   type SnsRelationItemResult,
   type SnsRelationPageResult,
@@ -54,6 +57,8 @@ export const SNS_BLOCKED_BY_ME = 130001
 export const SNS_SELF_FOLLOW = 130300
 /** 볼 수 없는 게시물(없음, 삭제, 작성자 탈퇴, 작성자가 나를 차단). 원인과 상관없이 삭제된 게시물 안내다(A7, P7) */
 export const SNS_POST_UNAVAILABLE = 130400
+/** 본인 게시물이 아닌 수정, 삭제 */
+export const SNS_POST_NOT_MINE = 130401
 /** 없거나 이미 쓴 tmp key. 작성 화면을 연 채 버킷 수명 규칙(expire-tmp)이 tmp 원본을 지웠을 때도 온다 */
 export const SNS_UPLOAD_NOT_FOUND = 100001
 /** 빈도 제한(429). SNS-T19부터 온다(A27) */
@@ -92,12 +97,43 @@ function retryTransient(failureCount: number, error: unknown): boolean {
  * 게시물 상세(GET /sns/posts/{publicId}). 비로그인도 된다. 프로필처럼 비로그인 응답과 로그인 응답의 보는 사람
  * 필드(isMine, following, mutedByMe)와 차단 판정이 달라 세션 상태를 키에 넣는다.
  */
-export function useSnsPost(publicId: string) {
+export function useSnsPost(publicId: string, { enabled = true }: { enabled?: boolean } = {}) {
   const loggedIn = useIsLoggedIn()
   return useQuery({
     queryKey: [...snsKeys.post(publicId), loggedIn],
     queryFn: async ({ signal }) => (await getSnsPost(publicId, signal)).data,
     retry: retryTransient,
+    enabled,
+  })
+}
+
+/** 수정(PATCH). 바뀐 것이 없어도 204이고 수정됨 표시는 다시 읽은 상세의 edited를 따른다(P8). */
+export function useUpdateSnsPost(publicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: SnsPostUpdateRequest) => updateSnsPost(publicId, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) }),
+  })
+}
+
+/**
+ * 삭제(DELETE). 다른 기기에서 이미 지운 게시물(404 130400)도 지운 것으로 본다(AC-SNS02-027). 상세 캐시를 버리고
+ * 게시물 수가 바뀌어 내 프로필을 다시 읽는다.
+ */
+export function useDeleteSnsPost(publicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      try {
+        await deleteSnsPost(publicId)
+      } catch (error) {
+        if (snsErrorCode(error) !== SNS_POST_UNAVAILABLE) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: snsKeys.post(publicId) })
+      return queryClient.invalidateQueries({ queryKey: snsKeys.me })
+    },
   })
 }
 
