@@ -25,7 +25,8 @@ import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // retryDelay 0: SNS 프로필 조회는 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -169,6 +170,35 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     expect(await screen.findByText('계정이 없거나 지금은 볼 수 없어요.')).toBeInTheDocument()
     // 실패 안내 토스트 없이 화면 안내 하나만 있다.
     expect(screen.getAllByText('볼 수 없는 계정이에요')).toHaveLength(1)
+    expect(followPosts).toBe(1)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-013] 다시 실행한 팔로우가 404 130000이고 프로필 재조회와 그 재시도까지 실패하면 실패 안내를 띄운다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    let followed = false
+    let refetches = 0
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => {
+        followed = true
+        return HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })
+      }),
+      // 팔로우를 보낸 뒤의 재조회만 실패한다. 그 전 프로필 조회는 기본 핸들러가 받는다.
+      http.get(SNS_PROFILE_URL, () => {
+        if (!followed) return undefined
+        refetches += 1
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
+      }),
+    )
+
+    completeLogin()
+
+    // 화면이 기본 프로필이나 볼 수 없는 계정 안내로 바뀌지 않아 이전 프로필이 남으므로 오류 토스트로 알린다.
+    const notice = await screen.findByText('볼 수 없는 계정이에요')
+    expect(notice.closest('[role="alert"]')).not.toBeNull()
+    // 안내는 재조회와 그 재시도(5xx 1회)가 모두 실패한 뒤에 뜬다.
+    expect(refetches).toBe(2)
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeInTheDocument()
     expect(followPosts).toBe(1)
     expect(sessionStorage.length).toBe(0)
   })

@@ -92,17 +92,22 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         {
           onError: e => {
             const code = snsErrorCode(e)
+            const notify = () => setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
             if (code === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
-            // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. 실패 안내 없이 useSnsToggle이 다시 읽은 프로필로
-            // 기본 프로필이나 볼 수 없는 계정 안내를 보여준다(sns.yaml FE 5).
-            else if (code !== SNS_UNAVAILABLE)
-              setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+            else if (code !== SNS_UNAVAILABLE) notify()
+            // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. useSnsToggle이 시작한 재조회를 기다려 화면이 기본 프로필이나
+            // 볼 수 없는 계정 안내로 바뀌었으면 그 화면이 안내다. 재조회까지 실패해 이전 프로필이 남으면 실패 안내를
+            // 띄운다(sns.yaml FE 5).
+            else
+              void refetch({ cancelRefetch: false }).then(r => {
+                if (!r.data?.blockingMe && snsErrorCode(r.error) !== SNS_UNAVAILABLE) notify()
+              })
           },
         },
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
-  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle])
+  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle, refetch])
 
   const follow = (target: SnsProfile) =>
     requireAuth(
