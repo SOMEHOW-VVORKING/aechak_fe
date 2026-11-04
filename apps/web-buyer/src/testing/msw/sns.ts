@@ -438,6 +438,8 @@ function postDetail(row: SnsPostRow, viewer: string | null) {
     isMine,
     following: viewer != null && !isMine && has(state.follows, viewer, row.author),
     mutedByMe: viewer != null && !isMine && has(state.mutes, viewer, row.author),
+    reposted: false,
+    saved: false,
   }
 }
 

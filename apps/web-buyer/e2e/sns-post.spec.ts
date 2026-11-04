@@ -66,6 +66,8 @@ const POST: SnsPostDetailResult = {
   isMine: false,
   following: false,
   mutedByMe: false,
+  reposted: false,
+  saved: false,
 }
 
 const MY_POST: SnsPostDetailResult = {
