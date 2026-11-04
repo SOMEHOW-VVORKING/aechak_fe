@@ -20,6 +20,7 @@ import {
   getFollowers,
   getFollowings,
   getMyBlocks,
+  getMySnsSaves,
   getMyMutes,
   getMySnsProfile,
   getSnsExploreFeed,
@@ -68,7 +69,8 @@ export type SnsFeedItem = SnsFeedItemResult
 export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type SnsGridItem = SnsPostGridItemResult
 /** 프로필 게시물 탭. 저장됨은 내 프로필에만 있다 */
-export type SnsUserPostTab = 'grid' | 'video' | 'repost'
+export type SnsProfileTab = 'grid' | 'video' | 'repost' | 'saved'
+export type SnsUserPostTab = Exclude<SnsProfileTab, 'saved'>
 export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
@@ -120,6 +122,8 @@ export const snsKeys = {
   userPostLists: ['sns', 'user-posts'] as const,
   userPosts: (publicId: string, tab: SnsUserPostTab, loggedIn: boolean) =>
     ['sns', 'user-posts', publicId, tab, loggedIn] as const,
+  // 저장됨은 로그인한 나만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
+  saves: () => ['sns', 'saves'] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -184,6 +188,7 @@ export function useDeleteSnsPost() {
         mapPages(data, items => items.filter(item => item.post.publicId !== publicId)),
       )
       removeGridCell(queryClient, { queryKey: snsKeys.userPostLists }, publicId)
+      removeGridCell(queryClient, { queryKey: snsKeys.saves() }, publicId)
       return queryClient.invalidateQueries({ queryKey: snsKeys.me })
     },
   })
@@ -361,12 +366,13 @@ export function useSnsToggle() {
         void queryClient.invalidateQueries({ queryKey: snsKeys.posts, refetchType: 'none' })
       }
       await refetch(REFETCH_AFTER[kind](publicId))
-      // 차단, 뮤트와 그 해제 뒤에는 숨었던 글이 다시 나오고 새로 숨을 글이 빠져야 해서 받아 둔 피드와 프로필 탭을 지운다
-      // (design 6절 7번). 열린 목록은 이 mutation을 쓰는 화면이 다시 그릴 때 첫 페이지부터 다시 읽는다. 팔로우는 다음
-      // 페이지부터 반영된다(G3).
+      // 차단, 뮤트와 그 해제 뒤에는 숨었던 글이 다시 나오고 새로 숨을 글이 빠져야 해서 받아 둔 피드, 프로필 탭, 저장됨을
+      // 지운다(design 6절 7번). 열린 목록은 이 mutation을 쓰는 화면이 다시 그릴 때 첫 페이지부터 다시 읽는다. 팔로우는
+      // 다음 페이지부터 반영된다(G3).
       if (kind !== 'follow') {
         queryClient.removeQueries({ queryKey: snsKeys.feeds })
         queryClient.removeQueries({ queryKey: snsKeys.userPostLists })
+        queryClient.removeQueries({ queryKey: snsKeys.saves() })
       }
     },
     // 재조회를 기다리지 않는다. 실패 안내와 행 잠금 해제가 재조회(와 그 재시도)에 묶이지 않게 한다.
@@ -534,11 +540,13 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
     onSuccess: (_data, on) => {
       const run = runsOf(queryClient).get(id)
       if (run) run.confirmed = on
-      // 내 리포스트 탭은 끄면 그 칸을 빼고 켜면 다음에 열 때 맨 위에 나오게 다시 읽는다. 끼워 넣지 않는다(P6).
-      if (kind === 'repost') {
-        if (on) void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists, predicate: isMyRepostTab })
-        else removeGridCell(queryClient, { queryKey: snsKeys.userPostLists, predicate: isMyRepostTab }, publicId)
-      }
+      // 내 리포스트 탭과 저장됨은 끄면 그 칸을 빼고 켜면 다음에 열 때 맨 위에 나오게 다시 읽는다. 끼워 넣지 않는다(P6).
+      const mine: QueryFilters =
+        kind === 'repost'
+          ? { queryKey: snsKeys.userPostLists, predicate: isMyRepostTab }
+          : { queryKey: snsKeys.saves() }
+      if (on) void queryClient.invalidateQueries(mine)
+      else removeGridCell(queryClient, mine, publicId)
     },
     onError: (_error, _on, seq) => {
       const run = runsOf(queryClient).get(id)
@@ -571,22 +579,29 @@ function isMyRepostTab(query: Query) {
 }
 
 /**
- * 프로필 그리드, 영상, 리포스트 탭(GET /sns/users/{publicId}/{posts|videos|reposts}). 비로그인도 된다. 이어 불러오기와
- * 90002 재시작은 피드와 같다. 차단 관계 프로필(blockedByMe, blockingMe)에서는 부르지 않는다(SNS-F04).
+ * 프로필 그리드, 영상, 리포스트 탭(GET /sns/users/{publicId}/{posts|videos|reposts})과 저장됨 탭(GET /sns/me/saves).
+ * 저장됨은 내 프로필에서만 부르고 나머지는 비로그인도 된다. 이어 불러오기와 90002 재시작은 피드와 같다. 차단 관계
+ * 프로필(blockedByMe, blockingMe)에서는 부르지 않는다(SNS-F04).
  */
-export function useSnsPostGrid(profile: SnsProfile | undefined, tab: SnsUserPostTab) {
+export function useSnsPostGrid(profile: SnsProfile | undefined, tab: SnsProfileTab) {
   const loggedIn = useIsLoggedIn()
   const owner = profile?.publicId ?? ''
-  const queryKey = useMemo(() => snsKeys.userPosts(owner, tab, loggedIn), [owner, tab, loggedIn])
+  const queryKey = useMemo(
+    () => (tab === 'saved' ? snsKeys.saves() : snsKeys.userPosts(owner, tab, loggedIn)),
+    [owner, tab, loggedIn],
+  )
   const query = useInfiniteQuery({
     queryKey,
-    queryFn: async ({ pageParam, signal }) =>
-      (await GRID_FETCHERS[tab](owner, { cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    queryFn: async ({ pageParam, signal }) => {
+      const params = { cursor: pageParam, size: PAGE_SIZE }
+      return (tab === 'saved' ? await getMySnsSaves(params, signal) : await GRID_FETCHERS[tab](owner, params, signal))
+        .data
+    },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
     select: selectGridItems,
     retry: retryTransient,
-    enabled: profile != null && !profile.blockedByMe && !profile.blockingMe,
+    enabled: profile != null && !profile.blockedByMe && !profile.blockingMe && (tab !== 'saved' || profile.isMe),
     meta: { mine: profile?.isMe === true },
   })
   useRestartOnInvalidCursor(queryKey, query.error, query.data != null)

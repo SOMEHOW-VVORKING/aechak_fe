@@ -5,7 +5,6 @@ import {
   Avatar,
   BottomSheet,
   Button,
-  EmptyState,
   ListItem,
   MobileScreen,
   Modal,
@@ -28,16 +27,14 @@ import {
   useSnsToggle,
   type FollowDirection,
   type SnsProfile,
-  type SnsUserPostTab,
+  type SnsProfileTab,
 } from '../sns.queries'
 import { RELATION_CONFIRM, type RelationConfirm } from '../sns.copy'
 import { petTagLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsPostGrid, SnsPostTabs, type SnsPostTabItem } from './SnsPostGrid'
 
-export type SnsProfileTab = SnsUserPostTab | 'saved'
-
-// 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만.
+// 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만(R3-02).
 const POST_TABS: (SnsPostTabItem<SnsProfileTab> & { empty: string })[] = [
   { key: 'grid', label: '그리드', icon: <Grid3x3 className="size-[22px]" />, empty: '아직 게시물이 없어요' },
   { key: 'video', label: '영상', icon: <SquarePlay className="size-[22px]" />, empty: '아직 영상이 없어요' },
@@ -73,7 +70,7 @@ export function SnsProfileScreen({
   const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
   // 저장됨은 내 프로필에만 있다. 다른 사람 프로필에 주소로 들어오면 그리드를 그린다.
   const activeTab: SnsProfileTab = tab === 'saved' && profile?.isMe === false ? 'grid' : tab
-  const grid = useSnsPostGrid(activeTab === 'saved' ? undefined : profile, activeTab === 'saved' ? 'grid' : activeTab)
+  const grid = useSnsPostGrid(profile, activeTab)
   const toggle = useSnsToggle()
   const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
   const loggedIn = useIsLoggedIn()
@@ -429,18 +426,13 @@ export function SnsProfileScreen({
       </div>
 
       <SnsPostTabs tabs={tabs} activeKey={current.key} onSelect={onTabChange} />
-      {current.key === 'saved' ? (
-        <div className="py-10">
-          <EmptyState title={current.empty} />
-        </div>
-      ) : (
-        !gridGone && (
-          <SnsPostGrid
-            grid={grid}
-            empty={current.empty}
-            author={current.key === 'repost' ? undefined : profile.publicId}
-          />
-        )
+      {/* 리포스트와 저장됨 칸의 작성자는 목록 주인이 아니라 상세로 넘기지 않는다. */}
+      {!gridGone && (
+        <SnsPostGrid
+          grid={grid}
+          empty={current.empty}
+          author={current.key === 'grid' || current.key === 'video' ? profile.publicId : undefined}
+        />
       )}
     </div>,
   )

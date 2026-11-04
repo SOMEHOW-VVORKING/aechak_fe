@@ -1,10 +1,10 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { setAccessToken } from '@aechak/api'
+import { saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_BLOCKER,
@@ -14,8 +14,10 @@ import {
   SNS_MUTUAL,
   SNS_NEIGHBORS,
   SNS_POST_COCO,
+  SNS_POST_DELETED,
   SNS_POST_MINE,
   SNS_POST_NO_CAPTION,
+  SNS_POST_SPAM,
   SNS_POST_TORI,
   SNS_POST_VIDEO,
   SNS_SPAM,
@@ -310,5 +312,112 @@ describe('내 프로필 탭과 캐시', () => {
     await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
     expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(true)
+  })
+})
+
+describe('저장됨 탭', () => {
+  it('[AC-SNS03-031] 저장하면 저장됨 탭 맨 위에 나오고 저장을 끄면 저장됨 탭에서 사라진다', async () => {
+    seedSns({ saves: [snsAct(SNS_ME, SNS_POST_VIDEO)] })
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me?tab=saved', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['영상 게시물']))
+
+    await act(() => router.navigate({ to: '/sns/posts/$publicId', params: { publicId: SNS_POST_COCO } }))
+    await user.click(await screen.findByRole('button', { name: '저장', pressed: false }))
+    await waitFor(() => expect(currentSns().saves.some(r => r.post === SNS_POST_COCO)).toBe(true))
+    await act(() => router.navigate({ to: '/sns/me', search: { tab: 'saved' } }))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '영상 게시물']))
+
+    await user.click(screen.getByRole('button', { name: '사진 2장 게시물' }))
+    await user.click(await screen.findByRole('button', { name: '저장', pressed: true }))
+    await waitFor(() => expect(currentSns().saves.some(r => r.post === SNS_POST_COCO)).toBe(false))
+    act(() => router.history.back())
+    await waitFor(() => expect(cellsIn()).toEqual(['영상 게시물']))
+  })
+
+  it('[AC-SNS03-035] 저장한 글이 없으면 빈 상태이고 게시물이 없는 사용자도 내 프로필에서 저장한 글을 본다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/me?tab=saved')
+    expect(await screen.findByText('저장한 게시물이 없어요')).toBeInTheDocument()
+    cleanup()
+
+    const neighbor = SNS_NEIGHBORS[0]!
+    seedSns({ viewer: neighbor, saves: [snsAct(neighbor, SNS_POST_COCO)] })
+    renderAt('/sns/me')
+    expect(await screen.findByText('아직 게시물이 없어요')).toBeInTheDocument()
+    await user.click(postTabs().getByRole('tab', { name: '저장됨' }))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+  })
+
+  it('[AC-SNS03-037] 다른 사람 프로필에 저장됨 주소로 들어오면 그리드를 그리고 저장됨을 부르지 않는다', async () => {
+    renderAt(`/sns/users/${SNS_COCO}?tab=saved`)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+    expect(postTabs().queryByRole('tab', { name: '저장됨' })).not.toBeInTheDocument()
+    expect(tabRequests.map(url => url.pathname)).toEqual([`/api/v1/sns/users/${SNS_COCO}/posts`])
+  })
+
+  it('[AC-SNS03-033][AC-SNS03-034] 지운 글, 차단 관계와 뮤트한 작성자의 글은 저장됨에서 숨고 뮤트를 풀면 다시 나온다', async () => {
+    seedSns({
+      saves: [
+        snsAct(SNS_ME, SNS_POST_TORI),
+        snsAct(SNS_ME, SNS_POST_SPAM),
+        snsAct(SNS_ME, SNS_POST_DELETED),
+        snsAct(SNS_ME, SNS_POST_COCO),
+      ],
+    })
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me?tab=saved', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+
+    await act(() => router.navigate({ to: '/sns/users/$publicId', params: { publicId: SNS_TORI } }))
+    await user.click(await screen.findByRole('button', { name: '뮤트 해제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '뮤트를 해제할까요?' })).getByRole('button', { name: '해제' }))
+    expect(await screen.findByText('뮤트를 해제했어요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/me', search: { tab: 'saved' } }))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '사진 게시물']))
+  })
+
+  it('[AC-SNS03-012] 저장됨을 내리는 동안 저장을 바꿔도 다음 페이지에 중복과 누락이 없고 새로 저장한 글은 다시 열면 맨 위에 나온다', async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `01JR${String(i + 1).padStart(22, '0')}`)
+    seedSns({
+      posts: [
+        ...currentSns().posts,
+        ...ids.map((id, i) => snsPost(id, SNS_NEIGHBORS[i]!, { caption: `이웃 글 ${i + 1}` })),
+      ],
+      saves: ids.map(id => snsAct(SNS_ME, id)),
+    })
+    renderAt('/sns/me?tab=saved')
+    await waitFor(() => expect(cellsIn()).toHaveLength(20))
+    expect(cellsIn()[0]).toBe('이웃 글 25')
+
+    // 첫 페이지에 있던 글 하나를 끄고 새 글 하나를 저장한다.
+    await act(async () => {
+      await unsaveSnsPost(ids[19]!)
+      await saveSnsPost(SNS_POST_COCO)
+    })
+    setListEndInView(true)
+    await waitFor(() => expect(cellsIn()).toHaveLength(25))
+    expect(new Set(cellsIn()).size).toBe(25)
+    expect(cellsIn().slice(20)).toEqual(['이웃 글 5', '이웃 글 4', '이웃 글 3', '이웃 글 2', '이웃 글 1'])
+    cleanup()
+
+    setListEndInView(false)
+    renderAt('/sns/me?tab=saved')
+    await waitFor(() => expect(cellsIn()[0]).toBe('사진 2장 게시물'))
+    expect(cellsIn()).not.toContain('이웃 글 20')
+  })
+
+  it('[AC-SNS03-032] 내 글도 저장되고 지우면 저장됨에서 그 칸을 뺀다', async () => {
+    seedSns({ saves: [snsAct(SNS_ME, SNS_POST_COCO), snsAct(SNS_ME, SNS_POST_MINE)] })
+    const user = userEvent.setup()
+    renderAt('/sns/me?tab=saved', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['산책 코스 추천받아요', '사진 2장 게시물']))
+
+    await user.click(screen.getByRole('button', { name: '산책 코스 추천받아요' }))
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '삭제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
   })
 })
