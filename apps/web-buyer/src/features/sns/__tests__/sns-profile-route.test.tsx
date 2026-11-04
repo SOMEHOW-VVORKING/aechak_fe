@@ -12,6 +12,7 @@ import {
   SNS_ME,
   SNS_PROFILE_URL,
   SNS_MONG,
+  SNS_MUTUAL,
   SNS_SPAM,
   SNS_TORI,
   WEB_REFRESH_URL,
@@ -42,6 +43,20 @@ function asGuest() {
   logout()
   setAccessToken(null)
   seedSns({ viewer: null })
+}
+
+// 나를 차단한 사용자의 기본 프로필(A7): 기본 프로필 사진(닉네임 첫 글자)과 닉네임만 있고 수, 소개글, 펫, 탭,
+// 팔로우와 공유 버튼은 없다.
+async function expectBasicProfile(nickname: string) {
+  const avatar = await screen.findByLabelText(nickname)
+  expect(avatar).toHaveTextContent(nickname.charAt(0))
+  expect(within(avatar).queryByRole('img')).not.toBeInTheDocument()
+  expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
+  expect(screen.queryByText('게시물')).not.toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: '펫' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /팔로우|팔로잉|공유/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('볼 수 없는 계정이에요')).not.toBeInTheDocument()
 }
 
 // 로그인 사용자는 메모리 access 토큰이 있는 상태로 시작한다(SNS MSW는 Authorization 헤더로 보는 사람을 정한다).
@@ -230,11 +245,8 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
   })
 
-  it.each([
-    ['나를 차단한 사용자', SNS_BLOCKER],
-    ['탈퇴했거나 없는 사용자', '01JZZZZZZZZZZZZZZZZZZZZZZZ'],
-  ])('[AC-SNS01-021] %s의 프로필 링크는 같은 볼 수 없는 계정 안내를 보여준다', async (_, publicId) => {
-    renderAt(`/sns/users/${publicId}`)
+  it('[AC-SNS01-021] 탈퇴했거나 없는 사용자의 프로필 링크는 볼 수 없는 계정 안내를 보여준다', async () => {
+    renderAt('/sns/users/01JZZZZZZZZZZZZZZZZZZZZZZZ')
 
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
     expect(screen.getByText('계정이 없거나 지금은 볼 수 없어요.')).toBeInTheDocument()
@@ -311,6 +323,64 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
   })
 })
 
+describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 사용자의 기본 프로필(R2-06)', () => {
+  it('[AC-SNS01-021] 나를 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임만 보여주고 더보기에는 차단하기만 있다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    await expectBasicProfile('차단러')
+    expect(screen.queryByRole('button', { name: '차단 해제' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(await screen.findByRole('button', { name: '차단하기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /뮤트/ })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-021] 기본 프로필에서 차단하면 확인 모달을 거쳐 서로 차단한 화면으로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '차단하기' }))
+    expect(await screen.findByText('차단할까요?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '차단' }))
+
+    expect(await screen.findByText('차단했어요')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '차단 해제' })).toBeInTheDocument()
+    await expectBasicProfile('차단러')
+    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_BLOCKER)).toBe(true)
+  })
+
+  it('[AC-SNS01-030] 서로 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임, 차단 해제 버튼만 보여준다', async () => {
+    renderAt(`/sns/users/${SNS_MUTUAL}`)
+
+    await expectBasicProfile('맞차단러')
+    expect(screen.getByRole('button', { name: '차단 해제' })).toBeInTheDocument()
+    // 이미지, 소개글, 펫이 있는 사용자여도 보이지 않고 내가 차단한 계정 안내 문구도 없다.
+    expect(screen.queryByText('서로 차단한 사이')).not.toBeInTheDocument()
+    expect(screen.queryByText('차단한 계정이에요')).not.toBeInTheDocument()
+    // 더보기에 둘 신고 항목은 SNS-07에서 붙는다.
+    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-024] 서로 차단한 사이에서 차단을 해제해도 상대의 차단이 남아 기본 프로필이 이어진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_MUTUAL}`)
+
+    await user.click(await screen.findByRole('button', { name: '차단 해제' }))
+    expect(await screen.findByText('차단을 해제할까요?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '해제' }))
+
+    expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '차단 해제' })).not.toBeInTheDocument())
+    await expectBasicProfile('맞차단러')
+    // 이제 나를 차단한 사용자의 기본 프로필이라 더보기에서 다시 차단할 수 있다.
+    expect(screen.getByRole('button', { name: '더보기' })).toBeInTheDocument()
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_MUTUAL)).toBe(false)
+  })
+})
+
 describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토큰 없음)', () => {
   beforeEach(() => {
     // 새로고침은 메모리 토큰만 날리고 세션 유무는 미지 상태로 남긴다 — setAccessToken(null)은
@@ -331,7 +401,7 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
     expect(screen.getByText('뮤트한 계정이에요')).toBeInTheDocument()
   })
 
-  it('[AC-SNS01-021] 세션을 복원하면 나를 차단한 사용자의 링크도 볼 수 없는 계정 안내다', async () => {
+  it('[AC-SNS01-021] 세션을 복원하면 나를 차단한 사용자의 링크는 기본 프로필이다', async () => {
     server.use(
       http.post(WEB_REFRESH_URL, () =>
         HttpResponse.json({ data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 } }),
@@ -339,7 +409,8 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
     )
     renderAt(`/sns/users/${SNS_BLOCKER}`)
 
-    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    // 비로그인으로 보면 수와 팔로우 버튼이 있는 프로필이다. 복원한 토큰으로 불러야 기본 프로필이 된다.
+    await expectBasicProfile('차단러')
   })
 
   it('[AC-SNS01-010] refresh 쿠키가 없으면 비로그인으로 보여주고 팔로우를 누르면 요청 없이 로그인 안내 시트를 연다', async () => {

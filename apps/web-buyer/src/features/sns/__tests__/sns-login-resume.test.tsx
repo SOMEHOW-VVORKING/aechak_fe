@@ -12,6 +12,7 @@ import {
   SNS_FOLLOW_URL,
   SNS_ME,
   SNS_MONG,
+  SNS_PROFILE_URL,
   WEB_REFRESH_URL,
   currentSns,
   seedConsentsSubmitted,
@@ -103,10 +104,24 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     expect(currentSns().follows.filter(r => r.to === SNS_COCO)).toHaveLength(2)
   })
 
-  it('[AC-SNS01-013] 로그인 사이에 상대가 나를 차단했으면 팔로우하지 않고 볼 수 없는 계정 안내를 보여준다', async () => {
+  it('[AC-SNS01-013] 로그인 사이에 상대가 나를 차단했으면 팔로우하지 않고 기본 프로필을 보여준다', async () => {
     await startAsGuest(SNS_COCO, pressFollow)
 
     completeLogin({ blocks: [snsRelation(SNS_COCO, SNS_ME)] })
+
+    // 기본 프로필 사진(닉네임 첫 글자)과 닉네임만 있고 팔로우 버튼과 수는 없다(A7).
+    expect(await screen.findByLabelText('코코집사')).toHaveTextContent('코')
+    expect(screen.queryByRole('button', { name: /팔로우|팔로잉/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
+    expect(followPosts).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-013] 로그인 사이에 상대가 탈퇴했으면 팔로우하지 않고 볼 수 없는 계정 안내를 보여준다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })))
+
+    completeLogin()
 
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
     expect(followPosts).toBe(0)
@@ -115,22 +130,62 @@ describe('로그인 뒤 다시 실행(A26)', () => {
 
   // 프로필은 200으로 열렸는데 그사이 상태가 바뀌어 다시 실행한 POST가 실패하는 경우. 서버 상태도 함께 바꿔
   // 실패 뒤 다시 읽은 프로필이 실제와 같게 한다.
-  it.each([
-    ['404 130000(그사이 상대가 나를 차단)', 404, 130000, snsRelation(SNS_COCO, SNS_ME), '볼 수 없는 계정이에요'],
-    ['403 130001(그사이 내가 상대를 차단)', 403, 130001, snsRelation(SNS_ME, SNS_COCO), '차단한 계정이에요'],
-  ])('[AC-SNS01-013] 다시 실행한 팔로우가 %s로 실패하면 안내를 보여주고 팔로잉으로 바뀌지 않는다', async (_, status, errorCode, block, notice) => {
+  it('[AC-SNS01-013] 다시 실행한 팔로우가 404 130000이면 실패 안내 없이 프로필을 다시 읽어 나를 차단한 사용자의 기본 프로필을 보여준다', async () => {
     await startAsGuest(SNS_COCO, pressFollow)
     server.use(
       http.post(SNS_FOLLOW_URL, () => {
         const now = currentSns()
-        seedSns({ ...now, blocks: [...now.blocks, block] })
-        return HttpResponse.json({ errorCode, message: '' }, { status })
+        seedSns({ ...now, blocks: [...now.blocks, snsRelation(SNS_COCO, SNS_ME)] })
+        return HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })
       }),
     )
 
     completeLogin()
 
-    expect((await screen.findAllByText(notice)).length).toBeGreaterThan(0)
+    // 처음 읽은 프로필은 이미지가 있는 보통 프로필이라 아바타가 첫 글자로 바뀌면 다시 읽은 기본 프로필이다.
+    await waitFor(() => expect(screen.getByLabelText('코코집사')).toHaveTextContent('코'))
+    expect(followPosts).toBe(1)
+    expect(screen.queryByRole('button', { name: /팔로우|팔로잉/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('볼 수 없는 계정이에요')).not.toBeInTheDocument()
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-013] 다시 실행한 팔로우가 404 130000이고 다시 읽은 프로필도 404면 볼 수 없는 계정 안내만 보여준다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    let withdrawn = false
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => {
+        withdrawn = true
+        return HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })
+      }),
+      // 팔로우를 보낸 뒤에 탈퇴가 반영된다. 그 전 프로필 조회는 기본 핸들러가 받는다.
+      http.get(SNS_PROFILE_URL, () =>
+        withdrawn ? HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 }) : undefined,
+      ),
+    )
+
+    completeLogin()
+
+    expect(await screen.findByText('계정이 없거나 지금은 볼 수 없어요.')).toBeInTheDocument()
+    // 실패 안내 토스트 없이 화면 안내 하나만 있다.
+    expect(screen.getAllByText('볼 수 없는 계정이에요')).toHaveLength(1)
+    expect(followPosts).toBe(1)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-013] 다시 실행한 팔로우가 403 130001(그사이 내가 상대를 차단)이면 안내를 보여주고 팔로잉으로 바뀌지 않는다', async () => {
+    await startAsGuest(SNS_COCO, pressFollow)
+    server.use(
+      http.post(SNS_FOLLOW_URL, () => {
+        const now = currentSns()
+        seedSns({ ...now, blocks: [...now.blocks, snsRelation(SNS_ME, SNS_COCO)] })
+        return HttpResponse.json({ errorCode: 130001, message: '' }, { status: 403 })
+      }),
+    )
+
+    completeLogin()
+
+    expect((await screen.findAllByText('차단한 계정이에요')).length).toBeGreaterThan(0)
     expect(followPosts).toBe(1)
     expect(screen.queryByRole('button', { name: '팔로잉' })).not.toBeInTheDocument()
     expect(sessionStorage.length).toBe(0)
