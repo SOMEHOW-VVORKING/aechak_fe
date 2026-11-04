@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -541,5 +541,28 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(await screen.findByText(/아래 휴대폰 본인 인증을 끝낸 뒤/)).toBeInTheDocument()
     // 셀러센터만 쓰는 운영자를 갈 수 없는 곳으로 보내지 않는다.
     expect(screen.queryByText(/구매자 앱/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 인증 블록은 BE requirePhoneVerified()가 걸리는 단계(none/draft/rejected)에만 둘 이유가 있다.
+   * 승인 뒤 이 화면은 스토어 운영 설정이고 심사 중에는 저장·제출 자체가 없어, 거기 인증 칸이
+   * 뜨면 할 일이 없는 입력을 시키는 거짓 안내가 된다. 배치를 고치다 블록이 isFormStage 밖으로
+   * 나가도 다른 단언은 전부 통과하므로(순서 단언도 그대로 참이다) 부재를 따로 못 박는다.
+   */
+  it('[AC-STORE-ROUTE-023] 승인·심사 단계 화면에는 인증 블록이 없다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    renderAt('/store-settings')
+
+    // 스토어 운영 설정이 떠 있는 것까지 확인한 뒤에 부재를 묻는다(렌더 전 통과를 막는다).
+    expect(await screen.findByRole('button', { name: '저장' })).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('휴대폰 번호')).not.toBeInTheDocument()
+
+    cleanup()
+    seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('심사 대기 중이에요')).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
   })
 })
