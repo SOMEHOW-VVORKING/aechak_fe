@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react'
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -18,6 +19,9 @@ import {
   getMyBlocks,
   getMyMutes,
   getMySnsProfile,
+  getSnsExploreFeed,
+  getSnsFollowingFeed,
+  getSnsPopularFeed,
   getSnsPost,
   getSnsProfile,
   muteUser,
@@ -26,6 +30,8 @@ import {
   unfollowUser,
   unmuteUser,
   updateSnsPost,
+  type SnsFeedItemResult,
+  type SnsFeedPageResult,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
@@ -38,13 +44,16 @@ import {
 } from '@aechak/api'
 import { useIsLoggedIn } from '@/shared/auth'
 
-// SNS-01(프로필, 팔로우, 차단, 뮤트)과 SNS-02(게시물, 해시태그)를 spec/contracts/sns.yaml에 붙이는 어댑터.
-// 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체 useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
+// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭)을
+// spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체
+// useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
 
 export type SnsProfile = SnsProfileResult
 export type SnsUserItem = SnsUserItemResult
 export type SnsRelationItem = SnsRelationItemResult
 export type SnsPost = SnsPostDetailResult
+export type SnsFeedItem = SnsFeedItemResult
+export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
@@ -66,6 +75,8 @@ export const SNS_POST_NOT_MINE = 130401
 export const SNS_UPLOAD_NOT_FOUND = 100001
 /** 빈도 제한(429). SNS-T19부터 온다(A27) */
 export const SNS_RATE_LIMITED = 90006
+/** 잘못되거나 만료된 커서(인기 피드 31분, Redis 장애 포함). 그 목록을 첫 페이지부터 다시 연다(sns.yaml SNS-03 FE 3) */
+export const SNS_INVALID_CURSOR = 90002
 
 const PAGE_SIZE = 20
 /** 게시물 하나에 다는 해시태그 상한(A8). 넘으면 서버도 130406으로 거부한다 */
@@ -84,6 +95,9 @@ export const snsKeys = {
   posts: ['sns', 'post'] as const,
   post: (publicId: string) => ['sns', 'post', publicId] as const,
   hashtags: (query: string) => ['sns', 'hashtags', query] as const,
+  // 피드는 profiles 밖에 둔다. 팔로우 성공이 profiles를 무효화해 그 아래에 두면 모든 피드 페이지를 다시 읽는다(design 6절 3번).
+  feeds: ['sns', 'feed'] as const,
+  feed: (kind: SnsFeedKind, loggedIn: boolean) => ['sns', 'feed', kind, loggedIn] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -129,20 +143,24 @@ export function useUpdateSnsPost(publicId: string) {
 /**
  * 삭제(DELETE). 다른 기기에서 이미 지운 게시물(404 130400)도 지운 것으로 본다(AC-SNS02-027). 게시물 수가 바뀌어 내
  * 프로필을 다시 읽는다. 상세 캐시는 다음에 열 때 다시 읽도록 낡은 것으로만 표시한다. 지우면 이전 화면으로 가기 전의
- * 열린 상세가 스켈레톤을 그리고 지운 게시물을 다시 읽는다(차단과 같다).
+ * 열린 상세가 스켈레톤을 그리고 지운 게시물을 다시 읽는다(차단과 같다). 피드 카드에서도 지우므로 대상은 mutate로 받는다.
  */
-export function useDeleteSnsPost(publicId: string) {
+export function useDeleteSnsPost() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (publicId: string) => {
       try {
         await deleteSnsPost(publicId)
       } catch (error) {
         if (snsErrorCode(error) !== SNS_POST_UNAVAILABLE) throw error
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, publicId) => {
       void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId), refetchType: 'none' })
+      // 받아 둔 목록에서 그 게시물을 바로 뺀다(design 6절 4번). 다시 읽으면 보던 위치를 잃는다.
+      queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+        mapFeedPages(data, items => items.filter(item => item.post.publicId !== publicId)),
+      )
       return queryClient.invalidateQueries({ queryKey: snsKeys.me })
     },
   })
@@ -314,6 +332,9 @@ export function useSnsToggle() {
         void queryClient.invalidateQueries({ queryKey: snsKeys.posts, refetchType: 'none' })
       }
       await refetch(REFETCH_AFTER[kind](publicId))
+      // 차단, 뮤트와 그 해제 뒤에는 숨었던 글이 다시 나오고 새로 숨을 글이 빠져야 해서 받아 둔 목록을 지운다(design 6절 7번).
+      // 열린 목록은 이 mutation을 쓰는 화면이 다시 그릴 때 첫 페이지부터 다시 읽는다. 팔로우는 다음 페이지부터 반영된다(G3).
+      if (kind !== 'follow') queryClient.removeQueries({ queryKey: snsKeys.feeds })
     },
     // 재조회를 기다리지 않는다. 실패 안내와 행 잠금 해제가 재조회(와 그 재시도)에 묶이지 않게 한다.
     onError: (_error, { kind, publicId }) => {
@@ -335,4 +356,63 @@ export function snsToggleErrorMessage(error: unknown): string {
     default:
       return '요청을 처리하지 못했어요. 다시 시도해 주세요'
   }
+}
+
+// ── SNS-03 피드 ─────────────────────────────────────────────────────────────
+
+const FEED_FETCHERS = {
+  following: getSnsFollowingFeed,
+  explore: getSnsExploreFeed,
+  popular: getSnsPopularFeed,
+} satisfies Record<SnsFeedKind, unknown>
+
+/** 받아 둔 피드 페이지의 항목을 바꾼다. 데이터가 없는 캐시는 그대로 둔다 */
+function mapFeedPages(
+  data: InfiniteData<SnsFeedPageResult> | undefined,
+  map: (items: SnsFeedItem[]) => SnsFeedItem[],
+) {
+  return data && { ...data, pages: data.pages.map(page => ({ ...page, items: map(page.items) })) }
+}
+
+// 팔로잉 피드는 페이지 사이에 같은 원글이 다시 올 수 있다(G3). 먼저 받은 자리 하나만 남긴다(design 6절 6번).
+function selectFeedItems(data: InfiniteData<SnsFeedPageResult>): SnsFeedItem[] {
+  const seen = new Set<string>()
+  return data.pages
+    .flatMap(page => page.items)
+    .filter(item => {
+      if (seen.has(item.post.publicId)) return false
+      seen.add(item.post.publicId)
+      return true
+    })
+}
+
+// 다음 페이지나 다시 읽기가 400 90002면 그 목록을 첫 페이지부터 다시 연다(design 6절 6번). 첫 페이지는 커서가 없어
+// 90002가 오지 않으므로 받아 둔 페이지가 있을 때만 본다.
+function useRestartOnInvalidCursor(queryKey: QueryKey, error: unknown, hasData: boolean) {
+  const queryClient = useQueryClient()
+  const invalid = hasData && snsErrorCode(error) === SNS_INVALID_CURSOR
+  useEffect(() => {
+    if (invalid) void queryClient.resetQueries({ queryKey, exact: true })
+  }, [invalid, queryKey, queryClient])
+}
+
+/**
+ * 피드(GET /sns/feeds/{kind}). 비로그인 응답과 로그인 응답의 보는 사람 필드가 달라 세션 상태를 키에 넣는다.
+ * 팔로잉 피드는 로그인 필요라 비로그인이면 부르지 않는다.
+ */
+export function useSnsFeed(kind: SnsFeedKind) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.feed(kind, loggedIn), [kind, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await FEED_FETCHERS[kind]({ cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    select: selectFeedItems,
+    retry: retryTransient,
+    enabled: kind !== 'following' || loggedIn,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
 }

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { petSummaryLabel, petTagLabel, postDate, postDateLabel, relationDateLabel } from '../sns.format'
+import { petSummaryLabel, petTagLabel, postDate, postDateLabel, relationDateLabel, relativeTimeLabel } from '../sns.format'
 
 describe('sns.format', () => {
   beforeAll(() => {
@@ -34,6 +34,16 @@ describe('sns.format', () => {
     // 고정한 오늘은 2026년 7월이지만 2027-01-05 게시물의 2020-11생은 생일이 지난 6살이다.
     expect(petTagLabel({ breedLabel: '푸들', birthYearMonth: '2020-11' }, postDate('2027-01-05T08:00:00'))).toBe('푸들 / 6살')
     expect(petTagLabel({ breedLabel: '푸들', birthYearMonth: '2020-11' }, postDate('2025-10-31T23:59:00'))).toBe('푸들 / 4살')
+  })
+
+  it('카드의 상대 시각은 KST 게시 시각과 지금의 차이이고 일주일이 지나면 날짜다', () => {
+    // 2026-10-22 12:00 KST = 03:00 UTC. 기기 시간대와 관계없이 같은 값이다.
+    const now = Date.UTC(2026, 9, 22, 3, 0)
+    expect(relativeTimeLabel('2026-10-22T11:59:30', now)).toBe('방금 전')
+    expect(relativeTimeLabel('2026-10-22T11:15:00', now)).toBe('45분 전')
+    expect(relativeTimeLabel('2026-10-22T09:30:00', now)).toBe('2시간 전')
+    expect(relativeTimeLabel('2026-10-19T12:00:00', now)).toBe('3일 전')
+    expect(relativeTimeLabel('2026-10-15T12:00:00', now)).toBe('2026.10.15')
   })
 
   it('게시 시각은 오전, 오후 12시간제로 쓴다', () => {

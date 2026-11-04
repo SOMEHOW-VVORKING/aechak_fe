@@ -97,3 +97,22 @@ describe('SNS 탭 글쓰기', () => {
     expect(await screen.findByLabelText('캡션')).toBeInTheDocument()
   })
 })
+
+// 하단 SNS 탭은 SNS 공개 뒤에만 피드를 그리고 /sns/feed는 상수와 관계없이 피드를 연다(SNS-03 design 6절 1번).
+describe('SNS 탭 피드', () => {
+  it('SNS 공개 뒤에는 SNS 탭이 피드와 글쓰기 버튼을 그린다', async () => {
+    renderAt('/sns')
+    expect(await screen.findByRole('heading', { name: '애착 SNS' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '팔로잉' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('보리 생일')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '글쓰기' })).toBeInTheDocument()
+  })
+
+  it('SNS 공개 전에도 /sns/feed는 피드를 그리고 글쓰기 버튼은 SNS 탭과 같이 숨긴다', async () => {
+    flags.available = false
+    renderAt('/sns/feed')
+    expect(await screen.findByRole('heading', { name: '애착 SNS' })).toBeInTheDocument()
+    expect(await screen.findByText('보리 생일')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '글쓰기' })).not.toBeInTheDocument()
+  })
+})

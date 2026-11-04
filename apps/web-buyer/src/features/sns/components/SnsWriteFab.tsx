@@ -3,9 +3,9 @@ import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { PenLine } from 'lucide-react'
 import { LoginGate, takeComposeAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
 
-// SNS 탭의 글쓰기 버튼. 피드(SNS-03)가 생기기 전까지 글쓰기 진입점과 로그인 뒤 돌아올 경로는 SNS 탭이다
-// (design 6절 10번). 비로그인은 로그인 안내 시트를 열고 대상 없는 compose 대기 행동을 남긴다. 로그인을 마치고
-// SNS 탭으로 돌아오면 작성 화면을 다시 연다. 글쓰기는 입력이 더 필요해 화면을 여는 데서 멈춘다(A26).
+// SNS 피드의 글쓰기 버튼(design 6절 10번, SNS-03 design 6절 1번). 비로그인은 로그인 안내 시트를 열고 대상 없는
+// compose 대기 행동을 남긴다. 로그인을 마치고 피드로 돌아오면 작성 화면을 다시 연다. 글쓰기는 입력이 더 필요해
+// 화면을 여는 데서 멈춘다(A26).
 export function SnsWriteFab() {
   const navigate = useNavigate()
   const loggedIn = useIsLoggedIn()
