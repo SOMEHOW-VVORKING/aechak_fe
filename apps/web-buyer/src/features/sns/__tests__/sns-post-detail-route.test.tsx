@@ -474,4 +474,23 @@ describe('/sns/posts/$publicId 로그인 뒤 다시 실행(A26)', () => {
     expect(await screen.findByText('차단할까요?')).toBeInTheDocument()
     expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_COCO)).toBe(false)
   })
+
+  it('[AC-SNS02-022] 로그인 뒤 다시 연 확인에서 차단하면 로그인 화면이 아니라 앱 안의 이전 화면으로 간다', async () => {
+    seedSns({ viewer: null })
+    const user = await startAsGuest(SNS_POST_COCO, async guest => {
+      await guest.click(await screen.findByRole('button', { name: '더보기' }))
+      await guest.click(await screen.findByRole('button', { name: '차단하기' }))
+    })
+    // 브라우저 히스토리에는 로그인 화면과 공급자 화면이 남아 있지만 /login/complete가 새 문서라 앱이 쌓은 항목은 없다.
+    Object.defineProperty(window.history, 'length', { configurable: true, value: 4 })
+    try {
+      const router = completeLogin()
+      await user.click(await screen.findByRole('button', { name: '차단' }))
+
+      await waitFor(() => expect(router.state.location.pathname).toBe('/sns'))
+      expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_COCO)).toBe(true)
+    } finally {
+      Reflect.deleteProperty(window.history, 'length')
+    }
+  })
 })
