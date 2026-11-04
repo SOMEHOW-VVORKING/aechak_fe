@@ -502,10 +502,12 @@ function setReaction(queryClient: QueryClient, kind: SnsReactionKind, publicId: 
 }
 
 // 같은 게시물에 이어서 누른 요청 묶음. latest는 마지막으로 누른 요청이고 confirmed는 성공한 요청까지 반영한 서버 값이다.
-// 요청은 차례로 가므로 앞 요청의 실패는 뒤 요청이 덮는다. 마지막 요청이 실패할 때만 confirmed로 되돌린다.
+// 묶음의 첫 confirmed는 바꾸기 전 캐시 값이다. 누른 값의 반대로 짐작하면 이미 켜진 글에 다시 켜기를 보내는 로그인 뒤 다시
+// 실행(A26)이 실패했을 때 꺼진 상태로 되돌린다. 받아 둔 곳이 없어 모르면 되돌리지 않는다. 요청은 차례로 가므로 앞 요청의
+// 실패는 뒤 요청이 덮는다. 마지막 요청이 실패할 때만 confirmed로 되돌린다.
 interface ReactionRun {
   latest: number
-  confirmed: boolean
+  confirmed: boolean | undefined
 }
 const reactionRuns = new WeakMap<QueryClient, Map<string, ReactionRun>>()
 let reactionSeq = 0
@@ -514,6 +516,17 @@ function runsOf(queryClient: QueryClient) {
   let runs = reactionRuns.get(queryClient)
   if (!runs) reactionRuns.set(queryClient, (runs = new Map()))
   return runs
+}
+
+/** 로그인 응답(상세, 피드 항목)에 받아 둔 그 게시물의 반응 값. 받아 둔 곳이 없으면 undefined */
+function cachedReaction(queryClient: QueryClient, kind: SnsReactionKind, publicId: string): boolean | undefined {
+  const post =
+    queryClient.getQueryData<SnsPost>([...snsKeys.post(publicId), true]) ??
+    queryClient
+      .getQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds, predicate: query => query.queryKey[3] === true })
+      .flatMap(([, data]) => data?.pages.flatMap(page => page.items) ?? [])
+      .find(item => item.post.publicId === publicId)?.post
+  return post && (kind === 'repost' ? post.reposted : post.saved)
 }
 
 /**
@@ -531,7 +544,8 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
     onMutate: on => {
       const runs = runsOf(queryClient)
       const seq = ++reactionSeq
-      runs.set(id, { latest: seq, confirmed: runs.get(id)?.confirmed ?? !on })
+      const run = runs.get(id)
+      runs.set(id, { latest: seq, confirmed: run ? run.confirmed : cachedReaction(queryClient, kind, publicId) })
       void queryClient.cancelQueries({ queryKey: snsKeys.post(publicId) })
       void queryClient.cancelQueries({ queryKey: snsKeys.feeds, predicate: query => feedHasPost(query.state.data, publicId) })
       setReaction(queryClient, kind, publicId, on)
@@ -550,7 +564,7 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
     },
     onError: (_error, _on, seq) => {
       const run = runsOf(queryClient).get(id)
-      if (run && run.latest === seq) setReaction(queryClient, kind, publicId, run.confirmed)
+      if (run && run.latest === seq && run.confirmed !== undefined) setReaction(queryClient, kind, publicId, run.confirmed)
     },
     // 묶음이 끝나면 열린 상세를 서버 값으로 다시 맞춘다. 멈춘 조회도 여기서 다시 읽는다. 피드는 다시 읽으면 보던 위치를
     // 잃어 바꾼 값을 그대로 둔다. 기다리지 않는다. 기다리면 그사이 누른 다음 요청이 이 조회 뒤로 밀린다.

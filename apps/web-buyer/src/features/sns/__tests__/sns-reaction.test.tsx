@@ -343,4 +343,23 @@ describe('비로그인 리포스트와 저장', () => {
     expect(reactionRequests).toEqual([])
     expect(sessionStorage.length).toBe(0)
   })
+
+  it.each([
+    ['리포스트', SNS_REPOST_URL, repostIn],
+    ['저장', SNS_SAVE_URL, saveIn],
+  ] as const)('[AC-SNS03-047] 이미 %s한 계정으로 로그인한 뒤 다시 켜기가 실패해도 켜진 상태와 수를 그대로 둔다', async (_, url, button) => {
+    const already = { reposts: [snsAct(SNS_ME, SNS_POST_COCO)], saves: [snsAct(SNS_ME, SNS_POST_COCO)] }
+    asGuest()
+    seedSns({ viewer: null, ...already })
+    const user = userEvent.setup()
+    const guestRouter = renderAt('/sns/feed')
+    await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
+    await user.click(button(cardOf('코코집사')))
+    server.use(http.post(url, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+
+    await loginAndReturn(guestRouter, already)
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
+    expect(button(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true')
+    expect(repostCount(cardOf('코코집사'))).toBe('1')
+  })
 })
