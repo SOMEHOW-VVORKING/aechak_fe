@@ -74,8 +74,8 @@ const MY_POST: SnsPostDetailResult = {
   author: { publicId: '01K8E2E0SNSUSER00000000ME', nickname: '콩이집사', profileImageUrl: null },
   pet: { breedLabel: '말티즈', birthYearMonth: null },
   caption: '콩이 첫 산책',
-  hashtags: ['산책'],
-  photoUrls: [solid('A3C585')],
+  hashtags: ['산책', '댕댕'],
+  photoUrls: [solid('A3C585'), solid('7BA7D9')],
   likeCount: 0,
   commentCount: 0,
   repostCount: 0,
@@ -214,18 +214,47 @@ function jpegSize(bytes: Buffer): { width: number; height: number } | null {
 }
 
 /** 브라우저 캔버스로 큰 PNG를 만든다(긴 변 3,000px). 다시 인코딩하면 2,048px로 줄어야 한다. */
-async function bigPng(page: Page): Promise<Buffer> {
-  const base64 = await page.evaluate(async () => {
+async function bigPng(page: Page, background = '#e8b04b'): Promise<Buffer> {
+  const base64 = await page.evaluate(async background => {
     const canvas = document.createElement('canvas')
     canvas.width = 3000
     canvas.height = 1500
     const context = canvas.getContext('2d')!
-    context.fillStyle = '#e8b04b'
+    context.fillStyle = background
     context.fillRect(0, 0, 3000, 1500)
     context.fillStyle = '#2a8240'
     context.fillRect(200, 200, 1200, 800)
     const blob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'))
     const bytes = new Uint8Array(await blob.arrayBuffer())
+    let binary = ''
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  }, background)
+  return Buffer.from(base64, 'base64')
+}
+
+/** 이 브라우저가 재생할 수 있는 1초 남짓한 세로 WebM을 캔버스로 녹화한다. */
+async function webmClip(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 360
+    canvas.height = 640
+    const context = canvas.getContext('2d')!
+    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm' })
+    const chunks: Blob[] = []
+    recorder.ondataavailable = event => chunks.push(event.data)
+    const stopped = new Promise(resolve => (recorder.onstop = resolve))
+    recorder.start()
+    let frame = 0
+    const timer = setInterval(() => {
+      context.fillStyle = frame++ % 2 ? '#7ba7d9' : '#5b8db8'
+      context.fillRect(0, 0, 360, 640)
+    }, 33)
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    recorder.stop()
+    clearInterval(timer)
+    await stopped
+    const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer())
     let binary = ''
     for (const byte of bytes) binary += String.fromCharCode(byte)
     return btoa(binary)
@@ -289,10 +318,20 @@ test('[AC-SNS02-E2E-003] 사진은 긴 변 2,048px JPEG로 다시 인코딩해 �
   expect(calls.puts[0]!.contentType).toBe('image/jpeg')
   expect(jpegSize(calls.puts[0]!.bytes)).toEqual({ width: 2048, height: 1024 })
 
+  // 두 번째 사진은 첫 사진 뒤에 붙고 게시 본문에 고른 순서대로 실린다.
+  await page
+    .getByLabel('사진 파일')
+    .setInputFiles({ name: 'second.png', mimeType: 'image/png', buffer: await bigPng(page, '#7ba7d9') })
+  await expect(page.getByRole('img', { name: '사진 2' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '게시' })).toBeEnabled()
+
   await page.getByRole('button', { name: '해시태그 추가' }).click()
-  await page.getByRole('textbox', { name: '해시태그 검색' }).fill('산책')
+  const search = page.getByRole('textbox', { name: '해시태그 검색' })
+  await search.fill('산책')
   await page.getByRole('button', { name: '#산책 게시글 9,210 추가' }).click()
-  await page.getByRole('button', { name: '완료 1' }).click()
+  await search.fill('댕')
+  await page.getByRole('button', { name: '#댕댕 게시글 300 추가' }).click()
+  await page.getByRole('button', { name: '완료 2' }).click()
   await shot(page, 'sns-post-04-compose')
 
   await page.getByRole('button', { name: '게시' }).click()
@@ -302,8 +341,8 @@ test('[AC-SNS02-E2E-003] 사진은 긴 변 2,048px JPEG로 다시 인코딩해 �
   expect(calls.creates[0]!.key).toMatch(/^[0-9a-f-]{36}$/)
   expect(calls.creates[0]!.body).toEqual({
     caption: '콩이 첫 산책',
-    photoKeys: ['tmp/42/sns/posts/images/e2e-1.jpg'],
-    hashtags: ['산책'],
+    photoKeys: ['tmp/42/sns/posts/images/e2e-1.jpg', 'tmp/42/sns/posts/images/e2e-2.jpg'],
+    hashtags: ['산책', '댕댕'],
   })
   await shot(page, 'sns-post-05-published')
 })
@@ -363,7 +402,7 @@ test('[AC-SNS02-E2E-006] 내 게시물을 수정하면 수정됨이 붙고 삭�
 
   await expect(page.getByText('콩이 첫 산책 (수정)')).toBeVisible()
   await expect(page.getByText('수정됨')).toBeVisible()
-  expect(calls.patches).toEqual([{ caption: '콩이 첫 산책 (수정)', hashtags: ['산책'] }])
+  expect(calls.patches).toEqual([{ caption: '콩이 첫 산책 (수정)', hashtags: ['산책', '댕댕'] }])
 
   await page.getByRole('button', { name: '더보기' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '삭제' }).click()
@@ -372,4 +411,34 @@ test('[AC-SNS02-E2E-006] 내 게시물을 수정하면 수정됨이 붙고 삭�
   await confirm.getByRole('button', { name: '삭제' }).click()
   await expect(page).toHaveURL('/sns')
   expect(calls.deletes).toBe(1)
+})
+
+test('[AC-SNS02-E2E-008] 영상 게시물 상세는 사진 자리 없이 썸네일을 포스터로 한 영상을 서버가 준 주소에서 불러온다', async ({
+  page,
+}) => {
+  // 세로로 찍은 영상과 썸네일이다. 정사각 자리에 잘리지 않고 양옆이 검게 남는다. 실제 원본은 MP4나 MOV지만
+  // 픽스처 파일 없이 브라우저에서 만들 수 있는 WebM으로 대신한다.
+  const thumbnailUrl = solid('7BA7D9', 720, 1280)
+  const videoUrl = `${BUCKET}/sns/posts/videos/e2e.webm`
+  await stubSns(page, {
+    post: {
+      ...POST,
+      caption: '보리 첫 수영 영상이에요',
+      hashtags: ['댕댕이수영', '골든리트리버'],
+      photoUrls: [],
+      video: { url: videoUrl, thumbnailUrl, durationMs: 42_000 },
+    },
+  })
+  const clip = await webmClip(page)
+  await page.route(videoUrl, route => route.fulfill({ status: 200, contentType: 'video/webm', body: clip }))
+  await page.goto(`/sns/posts/${POST_ID}`)
+
+  const video = page.getByLabel('영상')
+  await expect(video).toHaveAttribute('poster', thumbnailUrl)
+  // HAVE_METADATA(1) 이상이면 그 주소에서 영상을 읽었다.
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1)
+  await expect(page.getByRole('img', { name: /^사진/ })).toHaveCount(0)
+  // 컨트롤의 불러오는 중 표시는 브라우저 내부 화면이라 DOM으로 기다릴 수 없어 영상 자리가 멈출 때까지 기다린다(캡처용).
+  await expect.poll(async () => (await video.screenshot()).equals(await video.screenshot())).toBe(true)
+  await shot(page, 'sns-post-12-video-detail')
 })
