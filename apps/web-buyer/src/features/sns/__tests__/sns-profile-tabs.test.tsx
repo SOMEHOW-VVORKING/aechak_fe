@@ -21,6 +21,7 @@ import {
   SNS_POST_SPAM,
   SNS_POST_TORI,
   SNS_POST_VIDEO,
+  SNS_PROFILE_URL,
   SNS_SAVE_URL,
   SNS_SPAM,
   SNS_TORI,
@@ -291,6 +292,29 @@ describe('프로필 탭 목록 실패', () => {
     setListEndInView(true)
     await waitFor(() => expect(cellsIn()).toHaveLength(26))
     expect(tabRequests.map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
+  })
+
+  it('다음 페이지가 404 130000인데 프로필 다시 읽기까지 실패하면 탭 자리에 다시 시도를 두고 다시 읽으면 같은 응답의 안내로 바꾼다', async () => {
+    seedManyCocoPosts()
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+    await waitFor(() => expect(cellsIn()).toHaveLength(20))
+
+    seedSns({ ...currentSns(), blocks: [...currentSns().blocks, snsRelation(SNS_COCO, SNS_ME)] })
+    let profileFails = true
+    server.use(
+      http.get(SNS_PROFILE_URL, () =>
+        profileFails ? HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 }) : undefined,
+      ),
+    )
+    setListEndInView(true)
+    expect(await screen.findByText('네트워크에 연결할 수 없어요')).toBeInTheDocument()
+    expect(cellsIn()).toEqual([])
+
+    profileFails = false
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByRole('tablist', { name: '게시물 목록' })).not.toBeInTheDocument())
+    expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
   })
 
   it('다시 읽기가 실패하면 받아 둔 칸 위에 실패 안내를 두고 다시 시도하면 안내가 사라진다', async () => {

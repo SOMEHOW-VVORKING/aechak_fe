@@ -34,6 +34,7 @@ import {
 import { RELATION_CONFIRM, type RelationConfirm } from '../sns.copy'
 import { petTagLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
+import { SnsListError } from './SnsListEnd'
 import { SnsPostGrid, SnsPostTabs, type SnsPostTabItem } from './SnsPostGrid'
 
 // 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만(R3-02).
@@ -436,7 +437,10 @@ export function SnsProfileScreen({
 
       <SnsPostTabs tabs={tabs} activeKey={current.key} onSelect={selectTab} />
       {/* 리포스트와 저장됨 칸의 작성자는 목록 주인이 아니라 상세로 넘기지 않는다. */}
-      {!gridGone && (
+      {gridGone ? (
+        // 탭 목록이 사라졌는데 다시 읽은 프로필까지 실패하면 탭 자리에 다시 시도를 둔다. 읽으면 위 분기가 안내로 바꾼다.
+        error != null && <SnsListError onRetry={() => void refetch()} />
+      ) : (
         <SnsPostGrid
           grid={grid}
           empty={current.empty}
