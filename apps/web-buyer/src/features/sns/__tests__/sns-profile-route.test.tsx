@@ -336,6 +336,21 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
     expect(screen.queryByRole('button', { name: /뮤트/ })).not.toBeInTheDocument()
   })
 
+  it('[AC-SNS01-021] 프로필을 연 뒤 상대가 나를 차단해 팔로우가 404 130000이면 실패 안내 없이 기본 프로필로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+    const follow = await screen.findByRole('button', { name: '팔로우' })
+
+    const now = currentSns()
+    seedSns({ ...now, blocks: [...now.blocks, snsRelation(SNS_COCO, SNS_ME)] })
+    await user.click(follow)
+
+    // 처음 읽은 프로필은 이미지가 있는 보통 프로필이라 아바타가 첫 글자로 바뀌면 다시 읽은 기본 프로필이다.
+    await waitFor(() => expect(screen.getByLabelText('코코집사')).toHaveTextContent('코'))
+    // 볼 수 없는 계정이라는 실패 토스트도 없다.
+    await expectBasicProfile('코코집사')
+  })
+
   it('[AC-SNS01-021] 기본 프로필에서 차단하면 확인 모달을 거쳐 서로 차단한 화면으로 바뀐다', async () => {
     const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_BLOCKER}`)

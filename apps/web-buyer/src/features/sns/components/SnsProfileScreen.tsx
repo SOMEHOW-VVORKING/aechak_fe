@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
 import {
@@ -67,6 +67,22 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(탈퇴했거나 없는 계정, A7).
   const unavailable = snsErrorCode(error) === SNS_UNAVAILABLE
 
+  // 팔로우 실패 안내. 버튼으로 누른 팔로우와 로그인 뒤 다시 실행한 팔로우가 같이 쓴다.
+  // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. useSnsToggle이 시작한 재조회를 기다려 화면이 기본 프로필이나
+  // 볼 수 없는 계정 안내로 바뀌었으면 그 화면이 안내다. 재조회까지 실패해 이전 프로필이 남으면 실패 안내를
+  // 띄운다(sns.yaml FE 5).
+  const followFailed = useCallback(
+    (e: unknown) => {
+      const notify = () => setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+      if (snsErrorCode(e) !== SNS_UNAVAILABLE) notify()
+      else
+        void refetch({ cancelRefetch: false }).then(r => {
+          if (!r.data?.blockingMe && snsErrorCode(r.error) !== SNS_UNAVAILABLE) notify()
+        })
+    },
+    [refetch],
+  )
+
   // 로그인 뒤 다시 실행(A26). 로그인 안내 시트에서 남긴 행동을 이 프로필을 다시 읽은 뒤 한 번만 꺼낸다.
   // 팔로우는 확인 없이 켜기 요청을 보내고(이미 팔로우 중이어도 201) 차단, 뮤트는 확인 Modal이나 시트만 다시 연다.
   useEffect(() => {
@@ -91,23 +107,14 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         { kind: 'follow', publicId, on: true },
         {
           onError: e => {
-            const code = snsErrorCode(e)
-            const notify = () => setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
-            if (code === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
-            else if (code !== SNS_UNAVAILABLE) notify()
-            // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. useSnsToggle이 시작한 재조회를 기다려 화면이 기본 프로필이나
-            // 볼 수 없는 계정 안내로 바뀌었으면 그 화면이 안내다. 재조회까지 실패해 이전 프로필이 남으면 실패 안내를
-            // 띄운다(sns.yaml FE 5).
-            else
-              void refetch({ cancelRefetch: false }).then(r => {
-                if (!r.data?.blockingMe && snsErrorCode(r.error) !== SNS_UNAVAILABLE) notify()
-              })
+            if (snsErrorCode(e) === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
+            else followFailed(e)
           },
         },
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
-  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle, refetch])
+  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle, followFailed])
 
   const follow = (target: SnsProfile) =>
     requireAuth(
@@ -115,7 +122,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
       () =>
         toggle.mutate(
           { kind: 'follow', publicId: target.publicId, on: !target.following },
-          { onError: e => showToast(snsToggleErrorMessage(e), 'error') },
+          { onError: followFailed },
         ),
       { kind: 'follow', publicId: target.publicId },
     )
