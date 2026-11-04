@@ -173,6 +173,17 @@ describe('프로필 게시물 탭', () => {
     expect(tabRequests).toHaveLength(2)
     expect(tabRequests[1]!.searchParams.get('cursor')).toMatch(/^gp\|/)
   })
+
+  it('지금 탭을 다시 누르면 커서 없이 첫 페이지부터 다시 읽어 그사이 다른 기기에서 쓴 글이 나온다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`, 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+
+    seedSns({ ...currentSns(), posts: [...currentSns().posts, snsPost(COCO_TEXT, SNS_COCO, { caption: '다른 기기에서 쓴 글' })] })
+    await user.click(postTabs().getByRole('tab', { name: '그리드' }))
+    await waitFor(() => expect(cellsIn()).toEqual(['다른 기기에서 쓴 글', '사진 2장 게시물']))
+    expect(tabRequests.map(url => url.searchParams.has('cursor'))).toEqual([false, false])
+  })
 })
 
 describe('차단과 뮤트 관계의 프로필 탭', () => {

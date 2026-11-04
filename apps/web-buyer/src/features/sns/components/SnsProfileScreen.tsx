@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Ban, Bookmark, EyeOff, Grid3x3, MoreHorizontal, PawPrint, Repeat2, SquarePlay, UserX } from 'lucide-react'
 import {
   Avatar,
@@ -21,6 +22,7 @@ import {
   SNS_SELF_FOLLOW,
   SNS_UNAVAILABLE,
   snsErrorCode,
+  snsKeys,
   snsToggleErrorMessage,
   useSnsPostGrid,
   useSnsProfile,
@@ -66,6 +68,7 @@ export function SnsProfileScreen({
   onTabChange: (tab: SnsProfileTab) => void
 }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const goBack = useSafeBack({ to: '/sns' })
   const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
   // 저장됨은 내 프로필에만 있다. 다른 사람 프로필에 주소로 들어오면 그리드를 그린다.
@@ -344,6 +347,12 @@ export function SnsProfileScreen({
 
   const tabs = POST_TABS.filter(t => t.key !== 'saved' || profile.isMe)
   const current = tabs.find(t => t.key === activeTab) ?? tabs[0]!
+  // 지금 탭을 다시 누르면 첫 페이지부터 새 기준 시각으로 다시 읽는다(design 6절 7번). 피드 탭과 같다.
+  const selectTab = (key: SnsProfileTab) => {
+    if (key !== current.key) return onTabChange(key)
+    const queryKey = key === 'saved' ? snsKeys.saves() : snsKeys.userPosts(profile.publicId, key, loggedIn)
+    void queryClient.resetQueries({ queryKey })
+  }
   const stats: { label: string; value: number | null; list?: FollowDirection }[] = [
     { label: '게시물', value: profile.postCount },
     { label: '팔로워', value: profile.followerCount, list: 'followers' },
@@ -425,7 +434,7 @@ export function SnsProfileScreen({
         </div>
       </div>
 
-      <SnsPostTabs tabs={tabs} activeKey={current.key} onSelect={onTabChange} />
+      <SnsPostTabs tabs={tabs} activeKey={current.key} onSelect={selectTab} />
       {/* 리포스트와 저장됨 칸의 작성자는 목록 주인이 아니라 상세로 넘기지 않는다. */}
       {!gridGone && (
         <SnsPostGrid
