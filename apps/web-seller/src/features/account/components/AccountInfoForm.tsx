@@ -34,11 +34,15 @@ export function AccountInfoForm({ onSave }: AccountInfoFormProps) {
           onChange={event => setManagerPhone(event.target.value)}
         />
       </div>
+      {/* 플랫폼에 주문·정산을 셀러에게 알리는 발송 경로가 없다(실측 2026-11-03 — 구매자 휴대폰
+          인증 코드와 운영팀 문의 통지 메일뿐이다). "이 주소로 가요"를 남겨 두면 셀러가 주소를
+          적어 두고 오지 않는 알림을 기다린다. 입점 심사 화면의 "따로 알림이 가지 않으니 이 화면에서
+          결과를 확인해 주세요"와 같은 결로 적는다. */}
       <Input
         label="알림 받을 메일"
         value={contactEmail}
         inputMode="email"
-        helperText="주문/정산 알림이 이 주소로 가요."
+        helperText="지금은 주문/정산 알림이 이 주소로 가지 않아요. 주문과 정산은 각 화면에서 확인해 주세요."
         onChange={event => setContactEmail(event.target.value)}
       />
 

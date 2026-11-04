@@ -48,19 +48,19 @@ function trackRequests() {
 
 afterEach(() => server.events.removeAllListeners())
 
-// 리뷰 관리(SCRUM-315)와 고객 문의(SCRUM-316)는 seller BE가 생겨 이 목록에서 빠졌다 — 실연동
-// 화면의 계약은 `features/reviews/__tests__/reviews-route.test.tsx`와
-// `features/inquiries/__tests__/inquiries-route.test.tsx`가 각각 고정한다.
+// 리뷰 관리(SCRUM-315)·고객 문의(SCRUM-316)·알림/공지(SCRUM-332)는 seller BE가 생겨 이 목록에서
+// 빠졌다 — 실연동 화면의 계약은 `features/reviews/__tests__/reviews-route.test.tsx`,
+// `features/inquiries/__tests__/inquiries-route.test.tsx`,
+// `features/notices/__tests__/notices-route.test.tsx`가 각각 고정한다.
 const SCREENS = [
   ['/coupons', '혜택/쿠폰/할인'],
-  ['/notices', '알림/공지'],
   ['/account', '계정/보안'],
 ] as const
 
 /**
  * nav에만 이름이 있고 라우트 파일은 한 번도 없던 다섯 화면(SCRUM-301 신설).
- * 그중 리뷰 관리는 SCRUM-315에서, 고객 문의는 SCRUM-316에서 실서버에 붙어 이 파일의 대상에서
- * 빠졌다(세 화면이 남았다).
+ * 그중 리뷰 관리는 SCRUM-315에서, 고객 문의는 SCRUM-316에서, 알림/공지는 SCRUM-332에서 실서버에
+ * 붙어 이 파일의 대상에서 빠졌다(두 화면이 남았다).
  *
  * SCRUM-301은 "지어낸 데이터 행을 그리지 않는다"로 규약 10을 지켰는데 "기능에 들어가도 아무것도
  * 없다"는 지적을 받았다. SCRUM-307에서 **예시 데이터로 실제 목록·폼을 그리고**, 저장되지 않는다는
@@ -114,27 +114,10 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(requests).toEqual([])
   })
 
-  it('[AC-SELLER-SAMPLE-005] 알림/공지는 공지 목록과 수신 설정을 보여주고 저장이 서버로 나가지 않는다', async () => {
-    const requests = trackRequests()
-    renderAt('/notices')
-
-    const row = (
-      await screen.findByText('11월 1일부터 반품 배송비 부담 기준이 바뀌어요')
-    ).closest('tr') as HTMLElement
-    expect(within(row).getByText('정책')).toBeInTheDocument()
-    expect(within(row).getByText('안 읽음')).toBeInTheDocument()
-
-    // 수신 설정 토글은 화면 안에서 실제로 움직인다(장식 토글이 아니다).
-    const smsToggle = screen.getByRole('switch', { name: '취소/반품/교환 문자 수신' })
-    expect(smsToggle).toHaveAttribute('aria-checked', 'false')
-    await userEvent.click(smsToggle)
-    expect(smsToggle).toHaveAttribute('aria-checked', 'true')
-
-    await userEvent.click(screen.getByRole('button', { name: '수신 설정 저장' }))
-
-    expect(await screen.findByText(SAMPLE_ACTION_TOAST)).toBeInTheDocument()
-    expect(requests).toEqual([])
-  })
+  // 알림/공지의 예시 데이터 테스트(AC-SELLER-SAMPLE-005)는 그 화면이 실서버에 붙어
+  // (SCRUM-332) 대상이 사라졌으므로 지웠다 — 공지 목록·상세의 실연동 계약은
+  // `features/notices/__tests__/notices-route.test.tsx`가 고정하고, 그 화면에 하나 남은 예시
+  // (알림 수신 설정 카드)가 저장되지 않음을 글자로 밝히는지도 거기서 단언한다.
 
   it('[AC-SELLER-SAMPLE-006] 계정/보안은 계정 정보와 보안 설정, 접속 기록을 보여주고 저장이 서버로 나가지 않는다', async () => {
     const requests = trackRequests()
@@ -212,22 +195,10 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(requests).toEqual([])
   })
 
-  // 원래 고객 문의 화면으로 이 규약을 확인했는데(SCRUM-307) 그 화면이 실서버에 붙어
-  // (SCRUM-316) 예시 데이터가 아니게 됐다 — 같은 모양의 탭을 가진 알림/공지로 옮겼다.
-  it('[AC-SELLER-SAMPLE-008] 목록 탭은 예시 데이터에 실제로 적용된다', async () => {
-    renderAt('/notices')
-
-    expect(await screen.findByText('9월 정산 지급이 완료됐어요')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: /안 읽음/ }))
-
-    // 읽은 공지는 빠지고 안 읽은 공지만 남는다.
-    await waitFor(() =>
-      expect(screen.queryByText('9월 정산 지급이 완료됐어요')).not.toBeInTheDocument(),
-    )
-    expect(
-      screen.getByText('11월 1일부터 반품 배송비 부담 기준이 바뀌어요'),
-    ).toBeInTheDocument()
-  })
+  // 탭이 예시 데이터에 실제로 적용되는지는 고객 문의로 확인했다가(SCRUM-307) 그 화면이 실서버에
+  // 붙어 알림/공지로 옮겼는데, 공지도 SCRUM-332에서 실연동됐고 **탭 자체를 지웠다**(서버에 읽음
+  // 여부가 없다). 남은 예시 화면 둘에는 탭이 없어 AC-SELLER-SAMPLE-008의 대상이 사라졌다 —
+  // 필터가 실제로 목록을 좁히는지는 실연동 쪽(notices-route.test.tsx)이 쿼리로 단언한다.
 
   it('[AC-SELLER-SAMPLE-011] 발급 중 쿠폰은 중단 버튼이 있고 끝난 쿠폰에는 없으며, 눌러도 서버로 나가지 않는다', async () => {
     const requests = trackRequests()
@@ -246,35 +217,24 @@ describe('라우트가 없던 셀러 화면의 예시 데이터', () => {
     expect(requests).toEqual([])
   })
 
-  it('[AC-SELLER-SAMPLE-012] 상세 Drawer 안에도 "예시 데이터" 띠가 있다', async () => {
-    renderAt('/notices')
+  // Drawer 안에도 띠를 두는 규약(AC-SELLER-SAMPLE-012)은 공지 상세로 확인했는데, 그 화면이
+  // 실연동돼 띠 자체가 없어졌다. 남은 예시 화면 둘에는 Drawer가 없어 대상이 사라졌다 — 다시
+  // 예시 Drawer를 가진 화면이 생기면 그때 이 자리에 되살릴 것(DS Drawer는 fixed inset-0이라
+  // 화면 맨 위의 띠가 닿지 않는다).
 
-    // Drawer는 fixed inset-0 + aria-modal + 바디 스크롤 잠금이라 화면 맨 위의 띠가 닿지 않는다.
-    // 지어낸 정책 날짜를 사실로 믿을 자리라 띠가 Drawer 안에도 있어야 한다(교차검토 지적).
-    const row = (
-      await screen.findByText('11월 1일부터 반품 배송비 부담 기준이 바뀌어요')
-    ).closest('tr') as HTMLElement
-    await userEvent.click(row)
-
-    const drawer = await screen.findByRole('dialog')
-    const notice = within(drawer).getByRole('alert')
-    expect(within(notice).getByText(SAMPLE_DATA_TITLE)).toBeInTheDocument()
-    expect(notice).toHaveTextContent('저장되지 않')
-  })
-
-  it('[AC-SELLER-UNBUILT-002] 서버가 없는 세 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
+  it('[AC-SELLER-UNBUILT-002] 서버가 없는 두 항목이 nav에 "준비 중" 꼬리표와 함께 올라온다', async () => {
     renderAt('/coupons')
 
     // 꼬리표 텍스트가 버튼 안에 있어 접근성 이름이 "<항목> 준비 중"이 된다 — 꼬리표가 빠지면 이름이
     // 달라져 이 단정이 깨진다(꼬리표 유무를 이름으로 검증하는 셈).
     expect(await screen.findByRole('button', { name: '혜택/쿠폰/할인 준비 중' })).toBeInTheDocument()
-    for (const label of ['알림/공지', '계정/보안']) {
-      expect(screen.getByRole('button', { name: `${label} 준비 중` })).toBeInTheDocument()
-    }
-    // 리뷰 관리(SCRUM-315)·고객 문의(SCRUM-316)는 서버가 생겨 꼬리표가 없다 — 꼬리표가 되살아나면
-    // 접근명이 달라져 여기서 깨진다.
+    expect(screen.getByRole('button', { name: '계정/보안 준비 중' })).toBeInTheDocument()
+    // 리뷰 관리(SCRUM-315)·고객 문의(SCRUM-316)·알림/공지(SCRUM-332)는 서버가 생겨 꼬리표가 없다 —
+    // 꼬리표가 되살아나면 접근명이 달라져 여기서 깨진다.
     expect(screen.getByRole('button', { name: '리뷰 관리' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '고객 문의' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '알림/공지' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '알림/공지 준비 중' })).not.toBeInTheDocument()
   })
 
   it('[AC-SELLER-UNBUILT-003] 서버가 붙어 있는 항목에는 꼬리표가 붙지 않는다', async () => {
