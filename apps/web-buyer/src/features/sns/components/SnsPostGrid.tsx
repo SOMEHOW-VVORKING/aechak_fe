@@ -111,7 +111,7 @@ export function SnsPostGrid({ grid, empty, author }: SnsPostGridProps) {
               {item.thumbnailUrl ? (
                 <img src={item.thumbnailUrl} alt="" className="size-full object-cover" />
               ) : (
-                <span className="line-clamp-4 break-words px-2 text-left text-caption text-text-secondary">
+                <span className="line-clamp-4 break-keep break-words px-2 text-left text-caption text-text-secondary">
                   {item.captionPreview}
                 </span>
               )}
