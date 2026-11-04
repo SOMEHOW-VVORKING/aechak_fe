@@ -30,6 +30,8 @@ export const SELLER_SETTLEMENTS_URL = `${sellerBase}/sellers/me/settlements`
 export const SELLER_SETTLEMENT_MONTHS_URL = `${sellerBase}/sellers/me/settlements/months`
 export const SELLER_DASHBOARD_SUMMARY_URL = `${sellerBase}/sellers/me/dashboard/summary`
 export const SELLER_INQUIRIES_URL = `${sellerBase}/sellers/me/inquiries`
+export const PHONE_VERIFICATIONS_URL = `${apiBase}/users/me/phone/verifications`
+export const PHONE_VERIFICATIONS_CONFIRM_URL = `${apiBase}/users/me/phone/verifications/confirm`
 export const PRESIGNED_URL = `${apiBase}/files/presigned-url`
 export const CATEGORIES_URL = `${apiBase}/categories`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
@@ -2722,8 +2724,67 @@ const storeHandlers = [
   }),
 ]
 
+// 휴대폰 점유 인증(발송 → 확인). 입점 신청 화면의 인증 블록이 부르고, 경로 접두가 셀러·어드민에
+// 걸리지 않아 api 호스트로 나간다. 발송 때의 번호 + 고정 코드를 confirm이 대조해 서버의
+// 30005(불일치)·30009(만료=미발송)를 재현한다.
+export const MSW_PHONE_CODE = '123456'
+export const PHONE_CODE_EXPIRES_IN_SECONDS = 180
+export const PHONE_RESEND_COOLDOWN_SECONDS = 60
+let issuedPhoneCode: { phoneNumber: string } | null = null
+
+/** 테스트마다 발송 상태를 비운다(모듈 상태라 resetHandlers로는 돌아가지 않는다). */
+export function seedPhoneVerification(): void {
+  issuedPhoneCode = null
+}
+
+// BE PhoneNumberMasker 재현 — confirm 응답의 UserMe.phoneNumber는 마스킹 표시용이다.
+function maskPhoneWire(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/-/g, '')
+  return `${digits.slice(0, 3)}-${'*'.repeat(Math.max(0, digits.length - 7))}-${digits.slice(-4)}`
+}
+
+const phoneVerificationHandlers = [
+  http.post(PHONE_VERIFICATIONS_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string }
+    if (!/^01[016789]-?\d{3,4}-?\d{4}$/.test(body.phoneNumber)) {
+      return errorAt(400, 90001, '휴대폰 번호 형식이 올바르지 않습니다.')
+    }
+    issuedPhoneCode = { phoneNumber: body.phoneNumber }
+    return HttpResponse.json({
+      data: {
+        expiresInSeconds: PHONE_CODE_EXPIRES_IN_SECONDS,
+        resendCooldownSeconds: PHONE_RESEND_COOLDOWN_SECONDS,
+      },
+    })
+  }),
+  http.post(PHONE_VERIFICATIONS_CONFIRM_URL, async ({ request }) => {
+    const body = (await request.json()) as { phoneNumber: string; code: string }
+    if (issuedPhoneCode == null) {
+      return errorAt(400, 30009, '인증번호가 만료되었습니다. 재발송 시도해 주세요.')
+    }
+    // 코드·번호 불일치는 서버가 의도적으로 구분하지 않는다(둘 다 30005).
+    if (body.code !== MSW_PHONE_CODE || body.phoneNumber !== issuedPhoneCode.phoneNumber) {
+      return errorAt(400, 30005, '인증번호가 올바르지 않습니다.')
+    }
+    issuedPhoneCode = null
+    return HttpResponse.json({
+      data: {
+        status: 'ACTIVE',
+        nickname: '애착상회',
+        profileImageUrl: null,
+        profileImageKey: null,
+        bio: null,
+        email: null,
+        phoneNumber: maskPhoneWire(body.phoneNumber),
+        isPhoneVerified: true,
+      },
+    })
+  }),
+]
+
 export const handlers = [
   ...sellerApplicationHandlers,
+  ...phoneVerificationHandlers,
   ...sellerProductHandlers,
   ...productDraftHandlers,
   ...courierHandlers,
