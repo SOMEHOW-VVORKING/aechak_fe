@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { API_PATH_PREFIX } from '@aechak/api'
+import { apiBase, sellerBase } from './base'
+import { noticeHandlers } from './notices.handlers'
 import { PRODUCT_IMAGE_TYPES } from '@/features/products/products.contract'
 import { MOCK_CATEGORY_TREE, leafIdOf } from '@/features/products/products.mock'
 
@@ -12,10 +13,20 @@ import { MOCK_CATEGORY_TREE, leafIdOf } from '@/features/products/products.mock'
 // seller 모듈에서 받는다. 두 호스트를 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가
 // 똑같이 받아 주어 실제 배포에서만 드러나는 호스트 오배치를 테스트가 놓친다. 두 상수는
 // test-setup.ts의 configureApiHosts 인자와 같은 값이어야 한다.
-export const API_ORIGIN = 'http://localhost:8080'
-export const SELLER_ORIGIN = 'http://localhost:8081'
-const apiBase = `${API_ORIGIN}${API_PATH_PREFIX}`
-const sellerBase = `${SELLER_ORIGIN}${API_PATH_PREFIX}`
+export { API_ORIGIN, SELLER_ORIGIN } from './base'
+
+// 공지(SCRUM-332)부터 핸들러를 기능별 파일로 나눈다(web-admin msw 관례). 기존 import 자리가
+// 바뀌지 않게 URL 상수·시드 함수는 이 파일이 그대로 다시 내보낸다.
+export {
+  SELLER_NOTICES_URL,
+  SELLER_NOTICE_DETAIL_URL,
+  failSellerNoticesList,
+  lastSellerNoticesQuery,
+  makeSellerNoticeWire,
+  seedSellerNotices,
+  sellerNoticesQueries,
+  type SellerNoticeWire,
+} from './notices.handlers'
 
 export const SELLER_APPLICATIONS_URL = `${sellerBase}/seller-applications`
 export const SELLER_APPLICATIONS_SUBMIT_URL = `${sellerBase}/seller-applications/submit`
@@ -2735,5 +2746,6 @@ export const handlers = [
   ...dashboardHandlers,
   ...inquiryHandlers,
   ...reviewsHandlers,
+  ...noticeHandlers,
 ]
 export const server = setupServer(...handlers)

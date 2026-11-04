@@ -5704,6 +5704,60 @@ export interface ProductInspectionAppealRequest {
 }
 
 /**
+ * 독자(구매자·셀러)용 공지 목록 한 행. 두 호스트가 **같은 모양**을 돌려주므로 한 스키마를 둘이 쓴다 — be는 boot 모듈이 갈려 DTO가 둘이지만 필드가 완전히 같다. 어드민 행(AdminNoticeSummary)과 달리 audience·status·createdAt이 없다 — 게시된 것만 내려오고 대상은 경로가 고정해서 더 말할 것이 없다. **content가 없다** — 전문은 상세 경로로만 온다. springdoc 출력에 required가 한 필드도 없어 그대로 옮기면 여섯이 전부 옵셔널이 되므로, be DTO의 Kotlin 널 허용(여섯 모두 non-null)을 그대로 적었다
+ */
+export interface NoticeSummary {
+  /** 공지 공개 식별자(ULID 26자). 상세 경로가 이 값으로 지목한다 */
+  noticeId: string
+  title: string
+  category: NoticeCategory
+  /** 상단 고정 여부. 정렬의 첫 키이기도 해서 고정 공지가 늘 앞에 온다 — 화면이 '중요' 표기로 쓰는 값이 이것이고 따로 오는 플래그가 아니다 */
+  pinned: boolean
+  /** 본문 앞 100자(코드 포인트 기준). 서버가 줄바꿈과 연속 공백을 한 칸으로 평탄화한 뒤 자르고, 잘렸으면 끝에 `…`가 붙는다. **전문이 아니다** */
+  contentPreview: string
+  /** 게시 시각. **오프셋 없는 LocalDateTime(KST 벽시계)**이다 — springdoc 출력의 `format: date-time`은 be가 LocalDateTime을 쓴 결과일 뿐 오프셋이 실리지 않으므로, UTC로 해석하면 아홉 시간 어긋난 시각을 읽는다. 어드민 행과 달리 **비지 않는다** — 조회 조건이 게시 시각이 있는 공지만 고른다 */
+  publishedAt: string
+}
+
+export interface NoticeListData {
+  items: NoticeSummary[]
+  /**
+   * 현재 분류 기준 전체 수. **첫 페이지만 채워지고 cursor를 보낸 페이지는 null이다** — 첫 페이지 값을 붙들어 두면 스크롤에 따라 낡은 숫자를 가리킨다
+   * @nullable
+   */
+  totalCount: number | null
+  /**
+   * 다음 페이지의 cursor. 마지막 페이지에서는 null이다
+   * @nullable
+   */
+  nextCursor: string | null
+  /** 서버가 `nextCursor != null`과 같음을 보장한다(어긋나면 응답을 만들지 못한다). `더 보기`를 열 때 읽을 값은 이쪽이 아니라 **직전 조건의 nextCursor**다 — placeholder 구간에는 본문이 이전 조건의 페이지라 옛 커서를 요구한다 */
+  hasNext: boolean
+}
+
+export interface NoticeListResponse {
+  data: NoticeListData
+}
+
+/**
+ * 독자용 공지 상세. 구매자·셀러 두 호스트가 같은 모양이다. **내부 메모(internalMemo)·노출 대상·작성 운영자·생성·수정 시각이 없다** — 운영 기록이라 독자에게 내려오지 않는다. 어드민 상세(AdminNoticeDetailData)의 자리를 빌려 쓰면 없는 필드를 읽는다
+ */
+export interface NoticeDetailData {
+  noticeId: string
+  title: string
+  /** 공지 전문(최대 2000자). 목록의 contentPreview와 달리 평탄화하지 않은 원문 */
+  content: string
+  category: NoticeCategory
+  pinned: boolean
+  /** 게시 시각. 오프셋 없는 LocalDateTime(KST 벽시계)이고 비지 않는다 */
+  publishedAt: string
+}
+
+export interface NoticeDetailResponse {
+  data: NoticeDetailData
+}
+
+/**
  * 이전 응답의 nextCursor. 목록 종류·주인·검색어에 묶이고 어긋나면 400 90002
  */
 export type SnsCursorParameter = string
@@ -6427,6 +6481,36 @@ export type GetAdminReportsParams = {
    * 직전 응답의 nextCursor. **조건이 바뀐 채 재사용하면 400 errorCode 90002**라 커서를 버리고 처음부터 받아야 한다
    */
   cursor?: string
+  size?: number
+}
+
+export type GetNoticesParams = {
+  /**
+   * 미선택은 키째 빼서 보낼 것 — '분류 전체'를 뜻하는 값은 이 열거에 없다
+   */
+  category?: NoticeCategory
+  /**
+   * 직전 응답의 nextCursor. **커서에 분류 필터가 실리지 않아 서버가 끊어 주지 않는다** — 필터를 바꾼 채 재사용하면 엉뚱한 앵커에서 이어 읽어 섞인 목록이 되고 그것을 막는 것은 FE뿐이다. 망가진 커서만 400 errorCode 90002다
+   */
+  cursor?: string
+  /**
+   * 1~100으로 절삭된다(범위를 벗어나도 400이 아니다)
+   */
+  size?: number
+}
+
+export type GetSellerNoticesParams = {
+  /**
+   * 미선택은 키째 빼서 보낼 것 — '분류 전체'를 뜻하는 값은 이 열거에 없다
+   */
+  category?: NoticeCategory
+  /**
+   * 직전 응답의 nextCursor. **커서에 분류 필터가 실리지 않는다** — 필터를 바꾼 채 재사용하면 엉뚱한 앵커에서 이어 읽는다. 망가진 커서만 400 errorCode 90002다
+   */
+  cursor?: string
+  /**
+   * 1~100으로 절삭된다(범위를 벗어나도 400이 아니다)
+   */
   size?: number
 }
 
@@ -28593,4 +28677,781 @@ export const useAppealMyProductInspection = <TError = unknown, TContext = unknow
   const mutationOptions = getAppealMyProductInspectionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 구매자가 읽는 서비스 공지. 운영자가 **게시한**(PUBLISHED) 것 중 대상이 ALL이거나 BUYER인 것만 내려온다 — 대상은 경로가 고정하므로 쿼리로 고를 수 없고, 초안과 내린 공지는 목록에 아예 없다. 로그인 필요(미인증 401 errorCode 20004)이며 비회원 공개 경로가 아니다. 정렬은 **(고정 여부, 게시 시각, id) 내림차순 고정**이라 고정 공지가 늘 앞에 온다 — 화면이 게시 시각만 보여 주면 눈에 보이는 순서와 어긋난다. **`totalCount`는 첫 페이지에만 실리고 cursor를 보낸 페이지에서는 null이다.** 읽음 여부·푸시 발송 필드는 응답에 없다 — 열람 기록 테이블도 발송 경로도 플랫폼에 없어 자리를 만들면 "읽었다"·"보냈다"고 읽히는 계약이 된다.
+ * @summary 구매자 공지 목록
+ */
+export const getNotices = (params?: GetNoticesParams, signal?: AbortSignal) => {
+  return customInstance<NoticeListResponse>({ url: `/notices`, method: 'GET', params, signal })
+}
+
+export const getGetNoticesQueryKey = (params?: GetNoticesParams) => {
+  return [`/notices`, ...(params ? [params] : [])] as const
+}
+
+export const getGetNoticesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotices>>> = ({ signal }) =>
+    getNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNoticesQueryResult = NonNullable<Awaited<ReturnType<typeof getNotices>>>
+export type GetNoticesQueryError = unknown
+
+export function useGetNotices<TData = Awaited<ReturnType<typeof getNotices>>, TError = unknown>(
+  params: undefined | GetNoticesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNotices<TData = Awaited<ReturnType<typeof getNotices>>, TError = unknown>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNotices<TData = Awaited<ReturnType<typeof getNotices>>, TError = unknown>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 구매자 공지 목록
+ */
+
+export function useGetNotices<TData = Awaited<ReturnType<typeof getNotices>>, TError = unknown>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetNoticesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetNoticesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotices>>> = ({ signal }) =>
+    getNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNoticesSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getNotices>>>
+export type GetNoticesSuspenseQueryError = unknown
+
+export function useGetNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params: undefined | GetNoticesParams,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 구매자 공지 목록
+ */
+
+export function useGetNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getNotices>>,
+  TError = unknown,
+>(
+  params?: GetNoticesParams,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetNoticesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 공지 한 건의 전문. 게시되지 않은 공지와 **구매자 대상이 아닌 공지를 같은 404 errorCode 150000으로 끊는다** — 코드를 가르면 다른 대상 공지의 존재가 새므로 화면도 두 경우를 구분해 말할 수 없다. 목록 행의 `contentPreview`는 앞 100자뿐이라 전문은 이 경로로만 온다.
+ * @summary 구매자 공지 상세
+ */
+export const getNotice = (noticeId: string, signal?: AbortSignal) => {
+  return customInstance<NoticeDetailResponse>({
+    url: `/notices/${noticeId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetNoticeQueryKey = (noticeId?: string) => {
+  return [`/notices/${noticeId}`] as const
+}
+
+export const getGetNoticeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetNoticeQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotice>>> = ({ signal }) =>
+    getNotice(noticeId, signal)
+
+  return { queryKey, queryFn, enabled: !!noticeId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNotice>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNoticeQueryResult = NonNullable<Awaited<ReturnType<typeof getNotice>>>
+export type GetNoticeQueryError = unknown
+
+export function useGetNotice<TData = Awaited<ReturnType<typeof getNotice>>, TError = unknown>(
+  noticeId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNotice>>,
+          TError,
+          Awaited<ReturnType<typeof getNotice>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNotice<TData = Awaited<ReturnType<typeof getNotice>>, TError = unknown>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNotice>>,
+          TError,
+          Awaited<ReturnType<typeof getNotice>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNotice<TData = Awaited<ReturnType<typeof getNotice>>, TError = unknown>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 구매자 공지 상세
+ */
+
+export function useGetNotice<TData = Awaited<ReturnType<typeof getNotice>>, TError = unknown>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetNoticeQueryOptions(noticeId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetNoticeSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetNoticeQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotice>>> = ({ signal }) =>
+    getNotice(noticeId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getNotice>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNoticeSuspenseQueryResult = NonNullable<Awaited<ReturnType<typeof getNotice>>>
+export type GetNoticeSuspenseQueryError = unknown
+
+export function useGetNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options: {
+    query: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 구매자 공지 상세
+ */
+
+export function useGetNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseSuspenseQueryOptions<Awaited<ReturnType<typeof getNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetNoticeSuspenseQueryOptions(noticeId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러가 읽는 서비스 공지. 대상이 ALL이거나 SELLER인 **게시된** 공지만 내려오고 대상은 경로가 고정한다 — 구매자 대상 공지는 구매자 호스트 경로가 돌려준다. 응답 모양·정렬·커서 계약은 `/notices`와 같고 **같은 스키마를 쓴다**. 셀러 자격 게이트가 공지 조회보다 앞선다 — 미인증은 401 errorCode 20004, 셀러로 등록되지 않은 계정은 403 errorCode 10004다. **`totalCount`는 첫 페이지에만 실린다.**
+ * @summary 셀러센터 공지 목록
+ */
+export const getSellerNotices = (params?: GetSellerNoticesParams, signal?: AbortSignal) => {
+  return customInstance<NoticeListResponse>({
+    url: `/sellers/me/notices`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSellerNoticesQueryKey = (params?: GetSellerNoticesParams) => {
+  return [`/sellers/me/notices`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSellerNoticesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerNotices>>> = ({ signal }) =>
+    getSellerNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerNoticesQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerNotices>>>
+export type GetSellerNoticesQueryError = unknown
+
+export function useGetSellerNotices<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerNoticesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNotices<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerNotices>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerNotices>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNotices<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 공지 목록
+ */
+
+export function useGetSellerNotices<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerNoticesQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerNoticesSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerNoticesQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerNotices>>> = ({ signal }) =>
+    getSellerNotices(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerNotices>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerNoticesSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerNotices>>
+>
+export type GetSellerNoticesSuspenseQueryError = unknown
+
+export function useGetSellerNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params: undefined | GetSellerNoticesParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 공지 목록
+ */
+
+export function useGetSellerNoticesSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotices>>,
+  TError = unknown,
+>(
+  params?: GetSellerNoticesParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotices>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerNoticesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 공지 한 건의 전문. 게시되지 않은 공지와 셀러 대상이 아닌 공지를 같은 404 errorCode 150000으로 끊는다. 셀러가 아닌 계정은 그 공지가 있어도 403 errorCode 10004다 — 자격 판정이 공지 조회보다 앞서므로 404로 존재 여부가 새지 않는다.
+ * @summary 셀러센터 공지 상세
+ */
+export const getSellerNotice = (noticeId: string, signal?: AbortSignal) => {
+  return customInstance<NoticeDetailResponse>({
+    url: `/sellers/me/notices/${noticeId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSellerNoticeQueryKey = (noticeId?: string) => {
+  return [`/sellers/me/notices/${noticeId}`] as const
+}
+
+export const getGetSellerNoticeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerNoticeQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerNotice>>> = ({ signal }) =>
+    getSellerNotice(noticeId, signal)
+
+  return { queryKey, queryFn, enabled: !!noticeId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSellerNotice>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerNoticeQueryResult = NonNullable<Awaited<ReturnType<typeof getSellerNotice>>>
+export type GetSellerNoticeQueryError = unknown
+
+export function useGetSellerNotice<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerNotice>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerNotice>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNotice<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSellerNotice>>,
+          TError,
+          Awaited<ReturnType<typeof getSellerNotice>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNotice<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 공지 상세
+ */
+
+export function useGetSellerNotice<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerNoticeQueryOptions(noticeId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSellerNoticeSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSellerNoticeQueryKey(noticeId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSellerNotice>>> = ({ signal }) =>
+    getSellerNotice(noticeId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSellerNotice>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSellerNoticeSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSellerNotice>>
+>
+export type GetSellerNoticeSuspenseQueryError = unknown
+
+export function useGetSellerNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSellerNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 셀러센터 공지 상세
+ */
+
+export function useGetSellerNoticeSuspense<
+  TData = Awaited<ReturnType<typeof getSellerNotice>>,
+  TError = unknown,
+>(
+  noticeId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSellerNotice>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSellerNoticeSuspenseQueryOptions(noticeId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }

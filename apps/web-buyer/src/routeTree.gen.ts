@@ -43,9 +43,11 @@ import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
 import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
 import { Route as TabsMarketRouteImport } from './routes/_tabs/market'
 import { Route as TabsChatRouteImport } from './routes/_tabs/chat'
+import { Route as SettingsNoticesIndexRouteImport } from './routes/settings/notices/index'
 import { Route as ProductsProductIdIndexRouteImport } from './routes/products/$productId/index'
 import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId/index'
 import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
+import { Route as SettingsNoticesNoticeIdRouteImport } from './routes/settings/notices/$noticeId'
 import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
 import { Route as OrdersOrderIdClaimRouteImport } from './routes/orders/$orderId/claim'
@@ -224,6 +226,11 @@ const TabsChatRoute = TabsChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => TabsRoute,
 } as any)
+const SettingsNoticesIndexRoute = SettingsNoticesIndexRouteImport.update({
+  id: '/settings/notices/',
+  path: '/settings/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsProductIdIndexRoute = ProductsProductIdIndexRouteImport.update({
   id: '/products/$productId/',
   path: '/products/$productId/',
@@ -237,6 +244,11 @@ const OrdersOrderIdIndexRoute = OrdersOrderIdIndexRouteImport.update({
 const MypagePetsIndexRoute = MypagePetsIndexRouteImport.update({
   id: '/mypage/pets/',
   path: '/mypage/pets/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsNoticesNoticeIdRoute = SettingsNoticesNoticeIdRouteImport.update({
+  id: '/settings/notices/$noticeId',
+  path: '/settings/notices/$noticeId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReviewsProductProductIdRoute = ReviewsProductProductIdRouteImport.update({
@@ -320,9 +332,11 @@ export interface FileRoutesByFullPath {
   '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
@@ -366,9 +380,11 @@ export interface FileRoutesByTo {
   '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
+  '/settings/notices': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
@@ -414,9 +430,11 @@ export interface FileRoutesById {
   '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
@@ -462,9 +480,11 @@ export interface FileRouteTypes {
     | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/settings/notices/'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId/'
@@ -508,9 +528,11 @@ export interface FileRouteTypes {
     | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
+    | '/settings/notices'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId'
@@ -555,9 +577,11 @@ export interface FileRouteTypes {
     | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/settings/notices/'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
     | '/sns/users/$publicId/'
@@ -598,9 +622,11 @@ export interface RootRouteChildren {
   OrdersOrderIdClaimRoute: typeof OrdersOrderIdClaimRoute
   ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
   ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
+  SettingsNoticesNoticeIdRoute: typeof SettingsNoticesNoticeIdRoute
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
+  SettingsNoticesIndexRoute: typeof SettingsNoticesIndexRoute
   ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
   SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
@@ -846,6 +872,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TabsChatRouteImport
       parentRoute: typeof TabsRoute
     }
+    '/settings/notices/': {
+      id: '/settings/notices/'
+      path: '/settings/notices'
+      fullPath: '/settings/notices/'
+      preLoaderRoute: typeof SettingsNoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/$productId/': {
       id: '/products/$productId/'
       path: '/products/$productId'
@@ -865,6 +898,13 @@ declare module '@tanstack/react-router' {
       path: '/mypage/pets'
       fullPath: '/mypage/pets/'
       preLoaderRoute: typeof MypagePetsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/notices/$noticeId': {
+      id: '/settings/notices/$noticeId'
+      path: '/settings/notices/$noticeId'
+      fullPath: '/settings/notices/$noticeId'
+      preLoaderRoute: typeof SettingsNoticesNoticeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reviews/product/$productId': {
@@ -979,9 +1019,11 @@ const rootRouteChildren: RootRouteChildren = {
   OrdersOrderIdClaimRoute: OrdersOrderIdClaimRoute,
   ProductsProductIdReportRoute: ProductsProductIdReportRoute,
   ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
+  SettingsNoticesNoticeIdRoute: SettingsNoticesNoticeIdRoute,
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
+  SettingsNoticesIndexRoute: SettingsNoticesIndexRoute,
   ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,
   SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
