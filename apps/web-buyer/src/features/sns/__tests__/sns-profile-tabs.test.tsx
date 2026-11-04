@@ -281,6 +281,24 @@ describe('프로필 탭 목록 실패', () => {
     await waitFor(() => expect(cellsIn()).toHaveLength(26))
     expect(tabRequests.map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
   })
+
+  it('다시 읽기가 실패하면 받아 둔 칸 위에 실패 안내를 두고 다시 시도하면 안내가 사라진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+
+    server.use(http.get(SNS_USER_POSTS_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/게시물을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(cellsIn()).toEqual(['사진 2장 게시물'])
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByText(/게시물을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
+    expect(cellsIn()).toEqual(['사진 2장 게시물'])
+  })
 })
 
 describe('내 프로필 탭과 캐시', () => {

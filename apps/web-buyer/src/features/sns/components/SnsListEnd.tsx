@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { WifiOff } from 'lucide-react'
-import { Button, EmptyState, Skeleton } from '@aechak/design-system/web'
+import { Alert, Button, EmptyState, Skeleton } from '@aechak/design-system/web'
 
 /** 첫 페이지 조회 실패. 빈 상태가 아니라 b13-st-3 네트워크 오류 안내와 다시 시도다(design 6절 6번) */
 export function SnsListError({ onRetry }: { onRetry: () => void }) {
@@ -11,6 +11,20 @@ export function SnsListError({ onRetry }: { onRetry: () => void }) {
       description="연결 상태를 확인한 뒤 다시 시도해 주세요."
       action={{ label: '다시 시도', onClick: onRetry }}
     />
+  )
+}
+
+/** 받아 둔 목록의 다시 읽기 실패. 목록은 두고 위에 알린다(AGENTS.md 6절 7). 문구는 상세의 같은 안내와 같다 */
+export function SnsRefetchError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="px-4 py-2">
+      <Alert variant="error">
+        게시물을 다시 불러오지 못했어요.{' '}
+        <button type="button" onClick={onRetry} className="font-semibold underline">
+          다시 시도
+        </button>
+      </Alert>
+    </div>
   )
 }
 

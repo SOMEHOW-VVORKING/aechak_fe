@@ -4,7 +4,7 @@ import type { UseInfiniteQueryResult } from '@tanstack/react-query'
 import { Copy, Play } from 'lucide-react'
 import { EmptyState, Skeleton } from '@aechak/design-system/web'
 import type { SnsGridItem } from '../sns.queries'
-import { SnsListEnd, SnsListError } from './SnsListEnd'
+import { SnsListEnd, SnsListError, SnsRefetchError } from './SnsListEnd'
 
 export interface SnsPostTabItem<K extends string> {
   key: K
@@ -77,15 +77,21 @@ export function SnsPostGrid({ grid, empty, author }: SnsPostGridProps) {
   const navigate = useNavigate()
   if (grid.isPending) return <GridSkeleton />
   if (!grid.data) return <SnsListError onRetry={() => void grid.refetch()} />
+  // 다시 읽기가 실패해도 받아 둔 칸은 두고 위에 알린다.
+  const refetchError = grid.isRefetchError && <SnsRefetchError onRetry={() => void grid.refetch()} />
   if (grid.data.length === 0) {
     return (
-      <div className="py-10">
-        <EmptyState title={empty} />
-      </div>
+      <>
+        {refetchError}
+        <div className="py-10">
+          <EmptyState title={empty} />
+        </div>
+      </>
     )
   }
   return (
     <>
+      {refetchError}
       <ul aria-label="게시물" className="grid grid-cols-3 gap-0.5">
         {grid.data.map(item => (
           <li key={item.publicId}>

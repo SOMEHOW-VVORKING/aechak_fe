@@ -27,7 +27,7 @@ import {
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { SnsFeedCard } from './SnsFeedCard'
-import { SnsListEnd, SnsListError } from './SnsListEnd'
+import { SnsListEnd, SnsListError, SnsRefetchError } from './SnsListEnd'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
 import { SnsResumeReaction } from './SnsReactionButton'
 import { SnsWriteFab } from './SnsWriteFab'
@@ -202,6 +202,8 @@ export function SnsFeedScreen({
     })
   }
 
+  // 다시 읽기가 실패하면 받아 둔 카드는 두고 그 값으로 하는 처리(반응, 수정, 삭제, 뮤트, 차단)만 잠근다(AGENTS.md 6절 7).
+  const refreshFailed = feed.isRefetchError
   const empty = FEED_TABS.find(t => t.key === kind)!.empty
   let body: ReactNode
   if (feed.isPending) {
@@ -227,6 +229,7 @@ export function SnsFeedScreen({
                 onMore={post => setMore({ post, open: true })}
                 requireAuth={gate}
                 onReactionError={reactionError}
+                locked={refreshFailed}
               />
             </li>
           ))}
@@ -255,6 +258,7 @@ export function SnsFeedScreen({
         />
       </div>
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {refreshFailed && <SnsRefetchError onRetry={() => void feed.refetch()} />}
         {body}
       </div>
       {/* 글쓰기 버튼은 SNS 탭과 같은 조건으로만 그린다(design 6절 1번). */}
@@ -265,6 +269,7 @@ export function SnsFeedScreen({
           post={more.post}
           open={more.open}
           onClose={() => setMore(prev => prev && { ...prev, open: false })}
+          locked={refreshFailed}
           onCopyLink={() => void copyLink(more.post)}
           onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: more.post.publicId } })}
           onDelete={() => setDeleting(more.post)}

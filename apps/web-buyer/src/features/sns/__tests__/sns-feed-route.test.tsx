@@ -470,4 +470,27 @@ describe('/sns/feed 받아 둔 카드', () => {
     expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
     expect(requestsTo('following')).toHaveLength(1)
   })
+
+  it('다시 읽기가 실패하면 받아 둔 카드 위에 실패 안내를 두고 반응 버튼과 더보기의 쓰기 항목을 잠근다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/feed?tab=explore')
+    await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
+
+    server.use(http.get(SNS_EXPLORE_FEED_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/게시물을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    const card = cardOf('몽이아빠')
+    expect(within(card).getByRole('button', { name: /^리포스트/ })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: '저장' })).toBeDisabled()
+    await user.click(within(card).getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사'])
+    await user.keyboard('{Escape}')
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByText(/게시물을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
+    expect(within(cardOf('몽이아빠')).getByRole('button', { name: '저장' })).toBeEnabled()
+  })
 })
