@@ -17,9 +17,11 @@ import {
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+function renderAt(
+  path: string,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -112,6 +114,27 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     seedSns({ posts: currentSns().posts.map(p => (p.publicId === SNS_POST_MINE ? { ...p, deleted: true } : p)) })
     await user.click(saveButton())
     expect(await screen.findByText('삭제된 게시물이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS02-028] 저장하다 삭제된 게시물임을 알면 상세로 돌아가도 남은 캐시 대신 삭제된 게시물 안내가 나온다', async () => {
+    const user = userEvent.setup()
+    // 앱과 같은 staleTime이면 상세로 돌아가도 캐시만 쓴다.
+    const router = renderAt(
+      editPath(SNS_POST_MINE),
+      new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } }),
+    )
+    await user.type(await screen.findByLabelText('캡션'), ' 수정')
+    seedSns({ posts: currentSns().posts.map(p => (p.publicId === SNS_POST_MINE ? { ...p, deleted: true } : p)) })
+    await user.click(saveButton())
+    expect(await screen.findByText('삭제된 게시물이에요')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '뒤로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/posts/${SNS_POST_MINE}`))
+    // 수정 화면의 같은 안내를 잡지 않게 상세 화면으로 바뀐 뒤에 본다.
+    expect(await screen.findByText('게시물')).toBeInTheDocument()
+    expect(await screen.findByText('삭제된 게시물이에요')).toBeInTheDocument()
+    expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS02-033] 수정으로 금지어 비율을 넘기면 거부되고 입력이 남는다', async () => {

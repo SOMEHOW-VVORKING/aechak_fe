@@ -107,12 +107,19 @@ export function useSnsPost(publicId: string, { enabled = true }: { enabled?: boo
   })
 }
 
-/** 수정(PATCH). 바뀐 것이 없어도 204이고 수정됨 표시는 다시 읽은 상세의 edited를 따른다(P8). */
+/**
+ * 수정(PATCH). 바뀐 것이 없어도 204이고 수정됨 표시는 다시 읽은 상세의 edited를 따른다(P8). 그사이 지운
+ * 게시물(404 130400)이면 상세도 다시 읽는다. 캐시를 그대로 두면 돌아간 상세가 지운 게시물을 그린다.
+ */
 export function useUpdateSnsPost(publicId: string) {
   const queryClient = useQueryClient()
+  const refetchPost = () => queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
   return useMutation({
     mutationFn: (body: SnsPostUpdateRequest) => updateSnsPost(publicId, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) }),
+    onSuccess: refetchPost,
+    onError: error => {
+      if (snsErrorCode(error) === SNS_POST_UNAVAILABLE) void refetchPost()
+    },
   })
 }
 
