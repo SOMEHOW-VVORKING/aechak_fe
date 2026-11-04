@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query'
 import {
   blockUser,
+  customInstance,
   errorResponse,
   followUser,
   getFollowers,
@@ -21,6 +22,8 @@ import {
   unblockUser,
   unfollowUser,
   unmuteUser,
+  type SnsPostCreateRequest,
+  type SnsPostCreateResponse,
   type SnsPostDetailResult,
   type SnsProfileResult,
   type SnsRelationItemResult,
@@ -49,6 +52,10 @@ export const SNS_BLOCKED_BY_ME = 130001
 export const SNS_SELF_FOLLOW = 130300
 /** 볼 수 없는 게시물(없음, 삭제, 작성자 탈퇴, 작성자가 나를 차단). 원인과 상관없이 삭제된 게시물 안내다(A7, P7) */
 export const SNS_POST_UNAVAILABLE = 130400
+/** 없거나 이미 쓴 tmp key. 작성 화면을 연 채 버킷 수명 규칙(expire-tmp)이 tmp 원본을 지웠을 때도 온다 */
+export const SNS_UPLOAD_NOT_FOUND = 100001
+/** 빈도 제한(429). SNS-T19부터 온다(A27) */
+export const SNS_RATE_LIMITED = 90006
 
 const PAGE_SIZE = 20
 
@@ -86,6 +93,51 @@ export function useSnsPost(publicId: string) {
     queryFn: async ({ signal }) => (await getSnsPost(publicId, signal)).data,
     retry: retryTransient,
   })
+}
+
+export interface CreateSnsPostInput {
+  /** 작성 화면을 열 때 만든 키. 그 화면의 모든 게시 시도에 같은 값을 보낸다(design 6절 2번) */
+  idempotencyKey: string
+  body: SnsPostCreateRequest
+}
+
+// orval이 header 파라미터를 생성하지 않아 Idempotency-Key는 customInstance로 직접 붙인다(주문그룹 생성과 같다).
+export function createSnsPostWithKey(input: CreateSnsPostInput): Promise<SnsPostCreateResponse> {
+  return customInstance<SnsPostCreateResponse>({
+    url: '/sns/posts',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': input.idempotencyKey },
+    data: input.body,
+  })
+}
+
+/** 게시. 201이면 게시물 수가 바뀌어 내 프로필을 다시 읽는다(SNS-T04부터 postCount가 오른다). */
+export function useCreateSnsPost() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CreateSnsPostInput) => (await createSnsPostWithKey(input)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: snsKeys.me }),
+  })
+}
+
+// 게시와 수정 실패 문구. 게시물 규칙(1304xx)과 해시태그 규칙(1305xx)은 코드별로 알리고 입력은 남긴다.
+// 키와 요청 형식 오류(100002, 100003, 90001, 90004)와 서버 오류는 일반 실패 문구다.
+const POST_ERROR_COPY: Record<number, string> = {
+  130402: '캡션이나 사진, 영상 중 하나는 있어야 해요',
+  130403: '캡션은 2,200자까지 쓸 수 있어요',
+  130404: '사진은 10장까지, 영상은 1개만 올릴 수 있어요',
+  130405: '쓸 수 없는 단어가 많아 올릴 수 없어요. 내용을 고쳐 주세요',
+  130406: '해시태그는 30개까지 달 수 있어요',
+  130407: '60초 이하 영상만 올릴 수 있어요',
+  130500: '해시태그는 한글, 영문, 숫자, 밑줄만 쓸 수 있어요',
+  130501: '해시태그는 30자 이하로 써 주세요',
+  130502: '쓸 수 없는 단어가 든 해시태그가 있어요',
+  [SNS_RATE_LIMITED]: '잠시 후 다시 시도해 주세요',
+}
+
+export function snsPostErrorMessage(error: unknown, fallback: string): string {
+  const code = snsErrorCode(error)
+  return (code != null && POST_ERROR_COPY[code]) || fallback
 }
 
 /** publicId가 없으면 내 프로필(GET /sns/me, 로그인 필요)을 읽는다. 다른 사용자 프로필은 비로그인도 된다. */

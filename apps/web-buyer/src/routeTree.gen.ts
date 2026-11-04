@@ -47,6 +47,7 @@ import { Route as SettingsNoticesIndexRouteImport } from './routes/settings/noti
 import { Route as ProductsProductIdIndexRouteImport } from './routes/products/$productId/index'
 import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId/index'
 import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
+import { Route as SnsPostsNewRouteImport } from './routes/sns/posts/new'
 import { Route as SettingsNoticesNoticeIdRouteImport } from './routes/settings/notices/$noticeId'
 import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
@@ -247,6 +248,11 @@ const MypagePetsIndexRoute = MypagePetsIndexRouteImport.update({
   path: '/mypage/pets/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsNewRoute = SnsPostsNewRouteImport.update({
+  id: '/sns/posts/new',
+  path: '/sns/posts/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsNoticesNoticeIdRoute = SettingsNoticesNoticeIdRouteImport.update({
   id: '/settings/notices/$noticeId',
   path: '/settings/notices/$noticeId',
@@ -339,6 +345,7 @@ export interface FileRoutesByFullPath {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
@@ -388,6 +395,7 @@ export interface FileRoutesByTo {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
@@ -439,6 +447,7 @@ export interface FileRoutesById {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
@@ -490,6 +499,7 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
@@ -539,6 +549,7 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
@@ -589,6 +600,7 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
@@ -635,6 +647,7 @@ export interface RootRouteChildren {
   ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
   ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
   SettingsNoticesNoticeIdRoute: typeof SettingsNoticesNoticeIdRoute
+  SnsPostsNewRoute: typeof SnsPostsNewRoute
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
@@ -913,6 +926,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypagePetsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/new': {
+      id: '/sns/posts/new'
+      path: '/sns/posts/new'
+      fullPath: '/sns/posts/new'
+      preLoaderRoute: typeof SnsPostsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/notices/$noticeId': {
       id: '/settings/notices/$noticeId'
       path: '/settings/notices/$noticeId'
@@ -1040,6 +1060,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsProductIdReportRoute: ProductsProductIdReportRoute,
   ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
   SettingsNoticesNoticeIdRoute: SettingsNoticesNoticeIdRoute,
+  SnsPostsNewRoute: SnsPostsNewRoute,
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
