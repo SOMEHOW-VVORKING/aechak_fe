@@ -352,9 +352,10 @@ function AttachmentTile({
           <span className="sr-only">{label} 올리는 중</span>
         </span>
       )}
-      {/* 이 기기가 디코딩하지 못하는 영상이다. 다시 시도해도 같아서 빼기만 둔다(design 6절 4번). */}
+      {/* 이 기기가 디코딩하지 못하는 영상이다. 다시 시도해도 같아서 빼기만 둔다(design 6절 4번).
+          안내는 빼기 버튼(위 28px) 아래에 두고 낱말 중간에서 줄을 바꾸지 않는다. */}
       {item.status === 'unsupported' && (
-        <span className="absolute inset-0 flex items-center justify-center bg-black/55 p-1.5 text-center text-badge text-white">
+        <span className="absolute inset-0 flex items-center justify-center break-keep bg-black/55 px-1.5 pb-1.5 pt-7 text-center text-badge text-white">
           이 기기에서 올릴 수 없는 영상 형식이에요
         </span>
       )}
