@@ -259,7 +259,7 @@ test('[AC-SNS03-E2E-001] 비로그인은 탐색 탭으로 열려 사진, 영상,
   // 사진 3장은 처음 2장을 두 칸으로 보이고 남은 장수를 적는다.
   await expect(photos.getByRole('img', { name: /^사진/ })).toHaveCount(2)
   await expect(photos.getByText('+1')).toBeVisible()
-  await expect(cardOf(page, '초코맘').getByLabel('영상')).toHaveAttribute('poster', VIDEO.video!.thumbnailUrl)
+  await expect(cardOf(page, '초코맘').getByLabel('영상', { exact: true })).toHaveAttribute('poster', VIDEO.video!.thumbnailUrl)
   await expect(cardOf(page, '몽이아빠').getByText('수정됨')).toBeVisible()
   // 비로그인 카드는 수가 그대로 나오고 버튼은 꺼져 있다.
   await expect(photos.getByRole('button', { name: /^리포스트/ })).toHaveAttribute('aria-pressed', 'false')
@@ -351,7 +351,8 @@ test('[AC-SNS03-E2E-004] 프로필은 아이콘 탭과 하단 탭바를 그리�
   await shot(page, 'sns-feed-06-profile-video')
   await cells(page).first().click()
   await expect(page).toHaveURL(new RegExp(`/sns/posts/${BORI_VIDEO.publicId}`))
-  await expect(page.getByLabel('영상')).toBeVisible()
+  // 주소가 바뀐 뒤에도 잠시 프로필이 남아 있다. 상세 본문의 영상을 기다린다.
+  await expect(page.getByRole('article').getByLabel('영상', { exact: true })).toBeVisible()
 
   await page.goBack()
   await expect(postTabs(page).nth(1)).toHaveAttribute('aria-selected', 'true')
