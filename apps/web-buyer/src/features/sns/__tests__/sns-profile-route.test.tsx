@@ -365,6 +365,8 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
     await expectBasicProfile('차단러')
     expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
     expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_BLOCKER)).toBe(true)
+    // Modal을 연 더보기가 사라져도 포커스가 body로 떨어지지 않고 뒤로 가기 버튼에 있다.
+    expect(screen.getByRole('button', { name: '뒤로 가기' })).toHaveFocus()
   })
 
   it('[AC-SNS01-030] 서로 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임, 차단 해제 버튼만 보여준다', async () => {
@@ -397,6 +399,8 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
     // 이제 나를 차단한 사용자의 기본 프로필이라 더보기에서 다시 차단할 수 있다.
     expect(screen.getByRole('button', { name: '더보기' })).toBeInTheDocument()
     expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_MUTUAL)).toBe(false)
+    // Modal을 연 차단 해제 버튼이 사라져도 포커스가 body로 떨어지지 않고 뒤로 가기 버튼에 있다.
+    expect(screen.getByRole('button', { name: '뒤로 가기' })).toHaveFocus()
   })
 })
 

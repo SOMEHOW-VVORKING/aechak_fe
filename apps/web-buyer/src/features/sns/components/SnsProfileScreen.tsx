@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
 import {
@@ -60,6 +60,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
   const [tab, setTab] = useState('grid')
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
+  const backRef = useRef<HTMLButtonElement>(null)
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
     setToast({ open: true, message, variant })
@@ -152,6 +153,9 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         onSuccess: () => {
           setConfirm(null)
           showToast(copy.done)
+          // 바뀐 관계로 본문 분기가 바뀌면 Modal을 연 버튼이 사라져 Modal이 포커스를 돌려줄 곳이 없다. 어느 분기에나 있는
+          // 뒤로 가기 버튼으로 먼저 옮긴다. 연 버튼이 남아 있으면 Modal이 닫히면서 그 버튼으로 돌려준다.
+          backRef.current?.focus()
         },
         onError: e => {
           setConfirm(null)
@@ -168,6 +172,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
     <MobileScreen
       header={
         <BackAppBar
+          backRef={backRef}
           onBack={goBack}
           title={unavailable ? undefined : profile?.nickname}
           actions={
