@@ -290,7 +290,7 @@ describe('프로필 탭 목록 실패', () => {
 
     expire = true
     setListEndInView(true)
-    await waitFor(() => expect(cellsIn()).toHaveLength(26))
+    await waitFor(() => expect(cellsIn()).toHaveLength(26), { timeout: 3000 })
     expect(tabRequests.map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
   })
 

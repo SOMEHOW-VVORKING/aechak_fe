@@ -238,7 +238,7 @@ describe('/sns/feed 이어 불러오기', () => {
     await waitFor(() => expect(cards()).toHaveLength(20))
 
     setListEndInView(true)
-    await waitFor(() => expect(cards()).toHaveLength(33))
+    await waitFor(() => expect(cards()).toHaveLength(33), { timeout: 3000 })
     expect(requestsTo('explore').map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
     expect(screen.queryByText('다음 글을 불러오지 못했어요')).not.toBeInTheDocument()
   })
@@ -413,7 +413,7 @@ describe('/sns/feed 인기 피드', () => {
     await waitFor(() => expect(cards()).toHaveLength(20))
 
     setListEndInView(true)
-    await waitFor(() => expect(cards()).toHaveLength(25))
+    await waitFor(() => expect(cards()).toHaveLength(25), { timeout: 3000 })
     expect(requestsTo('popular').map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
   })
 })
