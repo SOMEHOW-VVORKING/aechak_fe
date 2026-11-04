@@ -4425,16 +4425,19 @@ export interface SnsPetSummaryResult {
 export interface SnsProfileResult {
   publicId: string
   nickname: string
-  /** @nullable */
+  /**
+   * blockingMe=true면 null(기본 프로필 사진을 보여준다)
+   * @nullable
+   */
   profileImageUrl: string | null
   /**
-   * 비었거나 blockedByMe=true면 null
+   * 비었거나 blockedByMe=true거나 blockingMe=true면 null
    * @maxLength 150
    * @nullable
    */
   bio: string | null
   /**
-   * 대표 펫부터 ACTIVE 펫 전체. 없으면 빈 배열, blockedByMe=true면 null
+   * 대표 펫부터 ACTIVE 펫 전체. 없으면 빈 배열, blockedByMe=true거나 blockingMe=true면 null
    * @nullable
    */
   pets: SnsPetResult[] | null
@@ -4448,6 +4451,8 @@ export interface SnsProfileResult {
   following: boolean
   blockedByMe: boolean
   mutedByMe: boolean
+  /** 이 사용자가 보는 사람을 차단했으면 true. true면 nickname만 채운 기본 프로필이고 팔로우 버튼을 숨긴다. 비로그인은 false */
+  blockingMe: boolean
 }
 
 export interface SnsProfileResponse {
@@ -13796,7 +13801,7 @@ export const useSubmitInquiry = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 비로그인이면 관계 필드(following, blockedByMe, mutedByMe, isMe)가 모두 false다. 볼 수 없는 사용자(없음·탈퇴· 온보딩 전·나를 차단)는 404 130000 하나로 온다. 내가 차단한 사용자는 200 + blockedByMe=true이고 bio·pets·세 수가 null이다. 토큰을 보냈을 때만 401 20004 / 403 20005 / 403 20006이 난다.
+ * 비로그인이면 관계 필드(following, blockedByMe, mutedByMe, blockingMe, isMe)가 모두 false다. 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전)는 404 130000 하나로 온다. 내가 차단한 사용자는 200 + blockedByMe=true이고 bio, pets, 세 수가 null이다. 나를 차단한 사용자는 200 + blockingMe=true이고 nickname만 채운다(profileImageUrl, bio, pets, 세 수가 null). 서로 차단이면 blockedByMe도 true다(sns.yaml 0.3.0, R2-06). 토큰을 보냈을 때만 401 20004 / 403 20005 / 403 20006이 난다.
  * @summary 다른 사용자의 SNS 프로필(비로그인 허용)
  */
 export const getSnsProfile = (publicId: string, signal?: AbortSignal) => {
