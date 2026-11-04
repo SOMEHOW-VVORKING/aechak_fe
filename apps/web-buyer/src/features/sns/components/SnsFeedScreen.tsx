@@ -210,7 +210,8 @@ export function SnsFeedScreen({
     body = <FeedSkeleton />
   } else if (!feed.data) {
     body = <SnsListError onRetry={() => void feed.refetch()} />
-  } else if (feed.data.length === 0) {
+  } else if (feed.data.length === 0 && !feed.hasNextPage) {
+    // 받아 둔 카드를 모두 뺐어도 다음 페이지가 남았으면 빈 안내 대신 아래 목록 끝을 두어 이어 부른다.
     body = (
       <EmptyState
         title={empty}

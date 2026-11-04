@@ -507,4 +507,32 @@ describe('저장됨 탭', () => {
     expect(cellsIn()).toEqual(['영상 게시물'])
     expect(currentSns().saves.some(r => r.post === SNS_POST_COCO)).toBe(false)
   })
+
+  it('받아 둔 칸을 모두 빼도 다음 페이지가 남았으면 빈 안내 대신 목록 끝을 두어 이어서 불러온다', async () => {
+    seedSns({ saves: [snsAct(SNS_ME, SNS_POST_VIDEO), snsAct(SNS_ME, SNS_POST_COCO)] })
+    // 첫 페이지는 칸 하나이고 다음 페이지가 남아 있다.
+    const { items } = (await getMySnsSaves({ size: 20 })).data
+    server.use(
+      http.get(SNS_MY_SAVES_URL, ({ request }) =>
+        HttpResponse.json({
+          data: new URL(request.url).searchParams.has('cursor')
+            ? { items: items.slice(1), nextCursor: null, hasNext: false }
+            : { items: items.slice(0, 1), nextCursor: 'next', hasNext: true },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me?tab=saved', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+
+    await user.click(screen.getByRole('button', { name: '사진 2장 게시물' }))
+    await user.click(await screen.findByRole('button', { name: '저장', pressed: true }))
+    await waitFor(() => expect(currentSns().saves.some(r => r.post === SNS_POST_COCO)).toBe(false))
+    act(() => router.history.back())
+    await waitFor(() => expect(screen.queryByRole('button', { name: '사진 2장 게시물' })).not.toBeInTheDocument())
+    expect(screen.queryByText('저장한 게시물이 없어요')).not.toBeInTheDocument()
+
+    setListEndInView(true)
+    await waitFor(() => expect(cellsIn()).toEqual(['영상 게시물']))
+  })
 })

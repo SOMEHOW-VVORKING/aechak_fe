@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { setAccessToken, type SnsFeedItemResult } from '@aechak/api'
+import { getSnsFollowingFeed, setAccessToken, type SnsFeedItemResult } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
@@ -492,5 +492,31 @@ describe('/sns/feed 받아 둔 카드', () => {
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
     await waitFor(() => expect(screen.queryByText(/게시물을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
     expect(within(cardOf('몽이아빠')).getByRole('button', { name: '저장' })).toBeEnabled()
+  })
+
+  it('받아 둔 카드를 모두 지워도 다음 페이지가 남았으면 빈 안내 대신 목록 끝을 두어 이어서 불러온다', async () => {
+    // 첫 페이지는 내 글 하나이고 다음 페이지가 남아 있다.
+    const { items } = (await getSnsFollowingFeed({ size: 20 })).data
+    server.use(
+      http.get(SNS_FOLLOWING_FEED_URL, ({ request }) =>
+        HttpResponse.json({
+          data: new URL(request.url).searchParams.has('cursor')
+            ? { items: items.slice(1), nextCursor: null, hasNext: false }
+            : { items: items.slice(0, 1), nextCursor: 'next', hasNext: true },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/sns/feed')
+    await screen.findByText('보리 생일')
+
+    await user.click(within(cardOf('보리언니')).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '삭제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
+    await waitFor(() => expect(cards()).toHaveLength(0))
+    expect(screen.queryByText('팔로잉 피드에 아직 글이 없어요')).not.toBeInTheDocument()
+
+    setListEndInView(true)
+    expect(await screen.findByText('산책 코스 추천받아요')).toBeInTheDocument()
   })
 })

@@ -79,7 +79,8 @@ export function SnsPostGrid({ grid, empty, author }: SnsPostGridProps) {
   if (!grid.data) return <SnsListError onRetry={() => void grid.refetch()} />
   // 다시 읽기가 실패해도 받아 둔 칸은 두고 위에 알린다.
   const refetchError = grid.isRefetchError && <SnsRefetchError onRetry={() => void grid.refetch()} />
-  if (grid.data.length === 0) {
+  // 받아 둔 칸을 모두 뺐어도 다음 페이지가 남았으면 빈 안내 대신 목록 끝을 두어 이어 부른다.
+  if (grid.data.length === 0 && !grid.hasNextPage) {
     return (
       <>
         {refetchError}
