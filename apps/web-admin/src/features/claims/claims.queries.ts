@@ -21,6 +21,7 @@ import type {
   AdminClaimSummary,
   ReturnCostBearer,
 } from './claims.contract'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   DEFAULT_PAGE_SIZE,
   normalizeClaimSearchParams,
@@ -98,6 +99,20 @@ export function useAdminClaims(input: AdminClaimSearchInput): AdminClaimListResu
       void query.fetchNextPage()
     },
   }
+}
+
+/**
+ * 개입 가능한(진행 중) 클레임 건수. 대시보드 첫 화면의 칸과 할 일 줄이 쓴다.
+ *
+ * `openOnly=true`를 **명시해서** 보낸다 — 생략하면 서버가 `status`가 빈 요청에서만 그렇게 접으므로
+ * 지금은 같은 결과지만, 뜻을 파라미터로 적어 두지 않으면 서버의 암묵 규칙이 바뀌는 날 조용히
+ * "종결까지 전부"가 된다. 클레임 화면의 기본 범위(`개입 가능한 건`)와 같은 모수다.
+ */
+export function useOpenClaimCount(): number | null {
+  const params = normalizeClaimSearchParams({ openOnly: true, size: 1 })
+  return useMetricValue([...ADMIN_CLAIMS_QUERY_KEY, 'open-count'], signal =>
+    getAdminClaims(params, signal).then(response => response.data.totalCount),
+  )
 }
 
 export interface AdminClaimDetailResult {

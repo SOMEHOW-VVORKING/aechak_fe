@@ -1056,8 +1056,19 @@ const orderHandlers = [
     })
   }),
 
-  http.get(ADMIN_ORDER_METRICS_URL, () => {
-    const monitored = orders.filter(row => MONITORED.includes(row.status))
+  http.get(ADMIN_ORDER_METRICS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    // 날짜 축을 실제로 걸러 준다. 무시하면 FE가 `orderedFrom`/`orderedTo`를 안 보내도 테스트가
+    // 통과하고, 대시보드의 `오늘 거래액`이 플랫폼 전체 누적 금액을 오늘로 그린다.
+    // 서버는 `LocalDate`를 `[from 00:00, to+1일 00:00)` 반개구간으로 펴므로 날짜 문자열 비교로
+    // 같은 경계가 된다(`orderedAt`이 `YYYY-MM-DDTHH:mm:ss`라 앞 10자가 날짜다).
+    const from = params.get('orderedFrom')
+    const to = params.get('orderedTo')
+    const inRange = (row: AdminOrderWire) => {
+      const day = row.orderedAt.slice(0, 10)
+      return (from == null || day >= from) && (to == null || day <= to)
+    }
+    const monitored = orders.filter(row => MONITORED.includes(row.status)).filter(inRange)
     return HttpResponse.json({
       data: {
         awaitingDispatchCount: monitored.filter(row => AWAITING_DISPATCH.includes(row.status)).length,
@@ -1138,11 +1149,77 @@ const orderHandlers = [
   }),
 ]
 
+// ── 상품 검수 큐 ───────────────────────────────────────────────────────────────
+
+type WireInspectionStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED'
+
+/**
+ * BE AdminProductInspectionSummary 모양. 목록만 받는다 — 상세·승인·반려는
+ * `features/ai-review-queue/__tests__`가 각자 `server.use`로 깐다.
+ */
+export interface AdminProductInspectionWire {
+  productId: string
+  productName: string
+  sellerName: string
+  status: WireInspectionStatus
+  latestJudgment: 'PASS' | 'FLAG' | 'UNJUDGED' | 'FAILED' | null
+  blindedAt: string
+  appealedAt: string | null
+}
+
+let productInspections: AdminProductInspectionWire[] = []
+
+export function makeAdminProductInspectionWire(
+  overrides: Partial<AdminProductInspectionWire> = {},
+): AdminProductInspectionWire {
+  return {
+    productId: '01JQUEUEPRODUCT00000000001',
+    productName: '연어 건사료 2kg',
+    sellerName: '애착상회',
+    status: 'PENDING_REVIEW',
+    latestJudgment: 'FLAG',
+    blindedAt: '2026-10-22T10:00:40',
+    appealedAt: null,
+    ...overrides,
+  }
+}
+
+export function seedAdminProductInspections(rows: AdminProductInspectionWire[] = []): void {
+  productInspections = rows.map(row => ({ ...row }))
+}
+
+/**
+ * 오프셋 페이지 목록. **`totalCount`는 필터 기준 전체 수이고 페이지 길이와 다르다** — 1건만
+ * 받아 건수를 읽는 호출부(대시보드)가 목록 길이로 세고 있으면 그 차이에서 드러난다.
+ */
+const inspectionHandlers = [
+  http.get(ADMIN_PRODUCT_INSPECTIONS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const status = params.get('status')
+    const appealed = params.get('appealed')
+    const page = Number(params.get('page') ?? 0)
+    const size = Number(params.get('size') ?? 20)
+    const matched = productInspections
+      .filter(row => status == null || row.status === status)
+      // `appealed=false`는 보내지 않는 것이 FE 관례다 — 보내면 여기서도 이의 있는 것만 남는다.
+      .filter(row => appealed !== 'true' || row.appealedAt != null)
+    return HttpResponse.json({
+      data: {
+        items: matched.slice(page * size, page * size + size),
+        totalCount: matched.length,
+      },
+    })
+  }),
+]
+
 export const handlers = [
   ...applicationHandlers,
   ...rosterHandlers,
   ...memberHandlers,
   ...orderHandlers,
+  // 검수 큐 핸들러도 시드 없이 빈 목록으로 답한다 — 대시보드(`/`)가 검수 대기 수를 조회하고,
+  // 그 화면이 nav·예시 화면 테스트에서 열린다(핸들러가 없으면 onUnhandledRequest:'error').
+  ...inspectionHandlers,
   ...inquiryHandlers,
   ...claimHandlers,
   ...reviewHandlers,

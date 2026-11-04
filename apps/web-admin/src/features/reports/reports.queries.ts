@@ -15,6 +15,7 @@ import {
   type DecideReportRequest,
   type GetAdminReportsParams,
 } from '@aechak/api'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   toReportDetailView,
   toReportRow,
@@ -97,6 +98,20 @@ export function useAdminReports(params: ReportListParams): ReportListResult {
       void query.fetchNextPage()
     },
   }
+}
+
+/**
+ * 미처리(`RECEIVED`) 신고 건수. 대시보드 첫 화면의 칸과 할 일 줄이 쓴다.
+ *
+ * 미처리 신고는 전부 `RECEIVED`다(`reports.map.ts`의 상태 3값 중 나머지 둘은 처리가 끝난 뒤의
+ * 결과다). 대상 종류로 좁히지 않아 상품·리뷰·회원 신고를 합쳐 센다 — 운영자의 할 일은 종류와
+ * 무관하게 하나의 줄이다.
+ */
+export function useReceivedReportCount(): number | null {
+  const params: GetAdminReportsParams = { status: 'RECEIVED', size: 1 }
+  return useMetricValue([...REPORTS_QUERY_KEY, 'received-count'], signal =>
+    getAdminReports(params, signal).then(response => response.data.totalCount),
+  )
 }
 
 /** 상세를 여는 좌표. 번호 하나로는 행이 갈리지 않아 종류를 함께 쥔다. */

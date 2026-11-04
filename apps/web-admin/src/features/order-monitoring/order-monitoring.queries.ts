@@ -16,9 +16,11 @@ import {
   type AdminOrderMetricsData,
   type GetAdminOrdersParams,
 } from '@aechak/api'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   STATUS_FILTER_TO_WIRE,
   toDetailView,
+  toKstDateParam,
   toMonitorRow,
   type AdminOrderDetailView,
   type AdminOrderMonitorRow,
@@ -142,6 +144,24 @@ export function useAdminOrderMonitorMetrics(): OrderMetricsResult {
     isError: query.isError,
     error: query.error,
   }
+}
+
+/**
+ * 오늘(KST) 주문 금액 하나. 대시보드 첫 화면의 `오늘 거래액` 칸이 쓴다.
+ *
+ * **지표 경로를 날짜로 좁힌 별도 쿼리다.** 모니터링 화면의 `useAdminOrderMonitorMetrics`는
+ * 파라미터 없이 플랫폼 전체를 받으므로 같은 키를 재사용하면 그 화면의 카드 넷이 오늘로 눌린다 —
+ * 키에 날짜를 실어 가른다(날짜가 바뀌면 키가 바뀌어 다시 받는다).
+ *
+ * 금액은 서버 `totalOrderAmount`를 그대로 쓴다 — 취소 주문과 취소·반품으로 종결된 품목이 빠지고
+ * 적립금이 빠지지 않아 **수납액이 아니다**. 카드가 그 뜻을 footer로 말해야 한다.
+ */
+export function useTodayOrderAmount(): number | null {
+  const today = toKstDateParam(new Date())
+  const params = { orderedFrom: today, orderedTo: today }
+  return useMetricValue([...ORDER_MONITORING_QUERY_KEY, 'metrics', params], signal =>
+    getAdminOrderMetrics(params, signal).then(response => response.data.totalOrderAmount),
+  )
 }
 
 export interface OrderDetailResult {

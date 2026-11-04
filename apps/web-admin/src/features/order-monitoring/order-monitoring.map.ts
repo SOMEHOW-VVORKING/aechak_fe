@@ -115,6 +115,31 @@ export function toTimeLabel(isoLocal: string): string {
   return `${isoLocal.slice(5, 10)} ${isoLocal.slice(11, 16)}`
 }
 
+/**
+ * 주문 날짜 파라미터(`orderedFrom`/`orderedTo`)를 만드는 포맷터 — **서버는 `LocalDate`를 받는다**
+ * (`AdminOrderMetricsRequest`가 `@DateTimeFormat(ISO.DATE)`로 바인딩하는 `2026-11-03` 꼴).
+ * date-time을 보내면 바인딩에서 400이다.
+ *
+ * **KST 벽시계 날짜로 만든다.** 서버 JVM이 `TZ=Asia/Seoul`이고(BE Dockerfile) 그 날짜를
+ * `[날짜 00:00, 다음날 00:00)` 반개구간으로 펴서 `order.created_at`과 비교하므로, 운영자
+ * 브라우저가 어느 표준시든 서버가 세는 "오늘"과 같은 하루를 가리켜야 한다. `Date` 지역 날짜나
+ * `toISOString()`(UTC)로 만들면 **자정 경계 아홉 시간이 어긋난다** — KST 00:00~09:00에는 UTC가
+ * 아직 어제라 하루 전 수치를 오늘로 읽고, 브라우저가 UTC면 매일 그 시간대가 그렇다.
+ */
+const KST_DATE_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+export function toKstDateParam(instant: Date): string {
+  const parts = KST_DATE_PARTS.formatToParts(instant)
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find(part => part.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
 export interface AdminOrderMonitorRow {
   /** 주문 공개 식별자(ULID). 상세·독촉 경로가 지목하는 값이고 행 키다. */
   orderId: string

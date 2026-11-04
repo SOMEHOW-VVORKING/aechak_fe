@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../routeTree.gen'
 import {
   ADMIN_APPLICATIONS_URL,
-  ADMIN_PRODUCT_INSPECTIONS_URL,
   makeAdminApplicationWire,
   seedAdminApplications,
   seedAdminAuditLogs,
@@ -15,6 +14,7 @@ import {
   seedAdminInquiries,
   seedAdminNotices,
   seedAdminOrders,
+  seedAdminProductInspections,
   seedAdminReports,
   seedAdminReviews,
   server,
@@ -70,11 +70,15 @@ const LIVE_LABELS = [
 /**
  * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
  * 화면에서는 상단 띠로 드러난다(SCRUM-308).
+ *
+ * 목데이터 화면이 넷인데 여기 셋뿐인 이유: '상품 검수 관리'(`/products/review`)는 같은 '검수'
+ * 그룹에 실연동 'AI 검수 큐'가 있어 **nav 입구를 내렸다**(SCRUM-313). nav에 없으니 이 분류의
+ * 대상이 아니고, 그 화면의 띠와 쓰기 차단은 `admin-mock-screens.test.tsx`가 URL 진입으로 본다
+ * (그 파일이 그 화면의 **유일한** 띠 가드다 — 거기서 빼면 아무것도 지키지 않는다).
  */
 const PENDING_LABELS = [
   '대시보드',
   '셀러 관리',
-  '상품 검수 관리',
   '채팅 CS 모니터링',
 ] as const
 
@@ -84,7 +88,7 @@ const pendingName = (label: string) => `${label} 준비 중`
 /**
  * nav 항목이 **어느 화면으로 가는지**. 주소로 직접 열어 보는 단언은 라벨과 `key`가 어긋난 것을
  * 잡지 못한다 — 라벨은 그대로 두고 `key`만 다른 경로로 바꿔도 통과하므로, 실제로 눌러서 도착지를
- * 확인한다. 15항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
+ * 확인한다. 14항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
  * 화면에 떨어진 것이다.
  */
 const NAV_DESTINATIONS = [
@@ -92,7 +96,6 @@ const NAV_DESTINATIONS = [
   ['셀러 입점 심사', '/sellers/applications'],
   ['셀러 관리', '/sellers'],
   ['일반 회원 관리', '/members'],
-  ['상품 검수 관리', '/products/review'],
   ['AI 검수 큐', '/products/ai-queue'],
   ['신고 제재 관리', '/reports'],
   ['서비스 문의 관리', '/inquiries'],
@@ -117,10 +120,8 @@ describe('어드민 nav', () => {
   beforeEach(() => {
     // 심사 대기 0건 → 입점 심사 항목에 숫자 배지가 붙지 않는 상태가 기본값이다.
     seedAdminApplications()
-    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회한다 — 빈 큐로 받아 준다.
-    server.use(
-      http.get(ADMIN_PRODUCT_INSPECTIONS_URL, () => HttpResponse.json({ data: { items: [], totalCount: 0 } })),
-    )
+    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회하고, 대시보드도 검수 대기 수를 받아 온다.
+    seedAdminProductInspections()
     // 주문 배송 모니터링은 실연동이라 이 화면을 열면 목록·지표 조회가 나간다.
     seedAdminOrders()
     // 실연동 화면도 nav 테스트에서 열린다 — 빈 목록으로 시드해 테스트 사이 상태를 끊는다.
@@ -135,7 +136,7 @@ describe('어드민 nav', () => {
     seedAdminReports()
   })
 
-  it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
+  it('[AC-ADMIN-NAV-001] 5그룹 14항목이 이름으로 모두 렌더된다', async () => {
     renderAt('/')
 
     for (const label of LIVE_LABELS) {
@@ -152,18 +153,20 @@ describe('어드민 nav', () => {
 
   /**
    * 차단 이전 nav의 그룹 배치 + 그 뒤 생긴 `/admins`. 머리글과 항목을 각각 전역에서 찾기만 하면
-   * **항목이 다른 그룹으로 옮겨가도 통과한다** — 머리글 5개와 항목 15개는 그대로이기 때문이다.
+   * **항목이 다른 그룹으로 옮겨가도 통과한다** — 머리글 5개와 항목 14개는 그대로이기 때문이다.
    * 운영자가 메뉴에서 읽는 정보의 절반이 "무엇이 무엇과 묶여 있나"라 소속까지 고정한다.
    */
   const GROUPS = [
     ['운영', ['대시보드', '셀러 입점 심사', '셀러 관리', '일반 회원 관리']],
-    ['검수', ['상품 검수 관리', 'AI 검수 큐']],
+    // 목데이터 '상품 검수 관리'의 입구를 내려 한 항목뿐이다(SCRUM-313) — 아래 항목 수 단언이
+    // 그 입구가 되올라오는 것을 잡는다.
+    ['검수', ['AI 검수 큐']],
     ['신고 / 문의', ['신고 제재 관리', '서비스 문의 관리']],
     ['주문 / 클레임', ['주문 배송 모니터링', '취소/반품/교환', '리뷰 관리', '채팅 CS 모니터링']],
     ['운영 관리', ['관리자 관리', '알림/공지 관리', '어드민 액션 로그']],
   ] as const satisfies readonly (readonly [string, readonly string[]])[]
 
-  it('[AC-ADMIN-NAV-008] 15항목이 정해진 5그룹에 소속되어 묶인다', async () => {
+  it('[AC-ADMIN-NAV-008] 14항목이 정해진 5그룹에 소속되어 묶인다', async () => {
     renderAt('/')
 
     expect(await screen.findByRole('button', { name: '관리자 관리' })).toBeInTheDocument()
@@ -229,7 +232,7 @@ describe('어드민 nav', () => {
     // 입점 심사는 서버 대기 수를 숫자로 받는다(꼬리표 자리와 겹치지 않는다).
     expect(await screen.findByRole('button', { name: '셀러 입점 심사 2' })).toBeInTheDocument()
     // 준비 중 항목은 숫자 배지를 받지 않는다 — 상수 배지는 AGENTS.md가 금지한 장식 UI다.
-    expect(screen.getByRole('button', { name: pendingName('상품 검수 관리') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: pendingName('셀러 관리') })).toBeInTheDocument()
   })
 
   /**
@@ -239,7 +242,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 5항목의 목적지에는 띠가 **있어야** 하고, 실연동 10항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 3항목의 목적지에는 띠가 **있어야** 하고, 실연동 11항목에는 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).
@@ -257,7 +260,7 @@ describe('어드민 nav', () => {
    * 실연동 작업은 항목을 한 배열에서 다른 배열로 옮기는 일이라, **옮기다 흘리는 것**이 이 파일의
    * 실제 실패 모양이다. 그래서 두 배열이 `NAV_DESTINATIONS`를 빠짐없이, 겹치지 않게 덮는지
    * 여기서 고정한다. `NAV_DESTINATIONS` 자체는 AC-ADMIN-NAV-008이 렌더된 nav와 맞춰 두므로
-   * (그룹마다 항목 수까지 센다) 이 둘을 합치면 nav에 올라온 15항목 전부가 분류를 받는다.
+   * (그룹마다 항목 수까지 센다) 이 둘을 합치면 nav에 올라온 14항목 전부가 분류를 받는다.
    */
   it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동/준비 중 한쪽으로만 분류된다', () => {
     const classified = [...LIVE_LABELS, ...PENDING_LABELS]
