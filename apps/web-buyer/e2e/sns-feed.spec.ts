@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test'
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test'
 import type {
   SnsFeedItemResult,
   SnsFeedPageResult,
@@ -12,7 +12,7 @@ import type {
 // 즉 IntersectionObserver로 목록 끝에서 다음 페이지를 부르는지, 같은 게시물의 켜기와 끄기 요청이 앞 요청이 끝난 뒤에
 // 나가는지를 여기서 확인한다. 실백엔드 없이 page.route 스텁으로 contracts/sns.yaml 0.4.0을 재현한다(교차 출처 8080 +
 // withCredentials라 정확한 origin과 Allow-Credentials, OPTIONS 방어 필수). 하단 SNS 탭은 SNS_SERVER_AVAILABLE=false라
-// 피드는 /sns/feed로 연다. 각 상태를 PR 첨부용으로 test-results/pr-f05(gitignore)에 찍는다.
+// 피드는 /sns/feed로 연다. 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
 const ORIGIN = 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
@@ -21,7 +21,7 @@ const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
 }
-const SHOTS = 'test-results/pr-f05'
+const SHOTS = 'test-results/pr-c'
 
 // PR 캡처 직전 dev 전용 ReactQueryDevtools 플로팅 버튼을 숨긴다(실제 화면에는 없는 dev 오버레이).
 async function shot(page: Page, name: string) {
@@ -30,6 +30,13 @@ async function shot(page: Page, name: string) {
       '.tsqd-parent-container,.tsqd-open-btn-container,[aria-label*="query devtools" i],[aria-label*="Tanstack" i]{display:none!important}',
   })
   await page.screenshot({ path: `${SHOTS}/${name}.png`, animations: 'disabled' })
+}
+
+// 카드 영상 주소는 스텁이 404로 답한다. 컨트롤의 불러오는 중 표시는 브라우저 내부 화면이라 DOM으로 기다릴 수 없어
+// 불러오기가 끝난 뒤 화면이 멈출 때까지 기다린다(캡처용).
+async function settleVideo(page: Page, video: Locator) {
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.error !== null)).toBe(true)
+  await expect.poll(async () => (await page.screenshot()).equals(await page.screenshot())).toBe(true)
 }
 
 function fulfill(route: Route, status: number, json?: unknown) {
@@ -126,7 +133,9 @@ const EXPLORE: SnsFeedPageResult = {
   nextCursor: null,
   hasNext: false,
 }
-const POPULAR: SnsFeedPageResult = { items: [], nextCursor: null, hasNext: false }
+// 인기는 원글만 점수순으로 온다. 리포스트 항목이 없다.
+const POPULAR: SnsFeedPageResult = { items: [item(PHOTOS), item(REPOSTED), item(VIDEO)], nextCursor: null, hasNext: false }
+const EMPTY: SnsFeedPageResult = { items: [], nextCursor: null, hasNext: false }
 
 const grid = (value: SnsPostDetailResult): SnsPostGridItemResult => ({
   publicId: value.publicId,
@@ -157,7 +166,7 @@ const BORI_TEXT = post(10, BORI, { caption: '오늘은 사진 없이 글만 남�
 const BORI_TABS: Record<string, SnsPostGridPageResult> = {
   posts: gridPage([grid(BORI_TEXT), grid(BORI_VIDEO), grid(PHOTOS)]),
   videos: gridPage([grid(BORI_VIDEO)]),
-  reposts: gridPage([grid(TEXT)]),
+  reposts: gridPage([grid(TEXT), grid(VIDEO)]),
 }
 
 const ME: SnsProfileResult = {
@@ -176,6 +185,7 @@ interface StubOptions {
   member?: boolean
   /** 켜기(POST) 응답을 늦춰 같은 게시물 요청이 차례로 나가는지 본다 */
   slowOn?: number
+  emptyFollowing?: boolean
 }
 
 // 스텁하지 않은 API 호출은 여기 모았다가 테스트 끝에 비어 있는지 본다.
@@ -206,8 +216,8 @@ async function stubSns(page: Page, opts: StubOptions = {}) {
     const url = new URL(route.request().url())
     calls.feeds.push(url)
     const kind = url.pathname.split('/').pop()
-    const body =
-      kind === 'following' ? FOLLOWING[url.searchParams.get('cursor') ?? '']! : kind === 'explore' ? EXPLORE : POPULAR
+    const following = opts.emptyFollowing ? EMPTY : FOLLOWING[url.searchParams.get('cursor') ?? '']!
+    const body = kind === 'following' ? following : kind === 'explore' ? EXPLORE : POPULAR
     return fulfill(route, 200, { data: body })
   })
 
@@ -259,11 +269,13 @@ test('[AC-SNS03-E2E-001] 비로그인은 탐색 탭으로 열려 사진, 영상,
   // 사진 3장은 처음 2장을 두 칸으로 보이고 남은 장수를 적는다.
   await expect(photos.getByRole('img', { name: /^사진/ })).toHaveCount(2)
   await expect(photos.getByText('+1')).toBeVisible()
-  await expect(cardOf(page, '초코맘').getByLabel('영상', { exact: true })).toHaveAttribute('poster', VIDEO.video!.thumbnailUrl)
+  const video = cardOf(page, '초코맘').getByLabel('영상', { exact: true })
+  await expect(video).toHaveAttribute('poster', VIDEO.video!.thumbnailUrl)
   await expect(cardOf(page, '몽이아빠').getByText('수정됨')).toBeVisible()
   // 비로그인 카드는 수가 그대로 나오고 버튼은 꺼져 있다.
   await expect(photos.getByRole('button', { name: /^리포스트/ })).toHaveAttribute('aria-pressed', 'false')
   await expect(photos.getByRole('button', { name: '저장' })).toHaveAttribute('aria-pressed', 'false')
+  await settleVideo(page, video)
   await shot(page, 'sns-feed-01-explore-guest')
 
   await page.getByRole('tab', { name: '팔로잉' }).click()
@@ -305,6 +317,8 @@ test('[AC-SNS03-E2E-003] 카드에서 리포스트와 저장을 누르면 바로
   const calls = await stubSns(page, { slowOn: 1500 })
   await page.goto('/sns/feed?tab=explore')
 
+  // 캡처는 켜기 응답을 늦춘 사이에 찍으므로 영상은 누르기 전에 기다린다.
+  await settleVideo(page, cardOf(page, '초코맘').getByLabel('영상', { exact: true }))
   const card = cardOf(page, '보리언니')
   const repost = card.getByRole('button', { name: /^리포스트/ })
   await repost.click()
@@ -357,6 +371,12 @@ test('[AC-SNS03-E2E-004] 프로필은 아이콘 탭과 하단 탭바를 그리�
   await page.goBack()
   await expect(postTabs(page).nth(1)).toHaveAttribute('aria-selected', 'true')
   await expect(cells(page)).toHaveCount(1)
+
+  await postTabs(page).nth(2).click()
+  await expect(page).toHaveURL(/tab=repost/)
+  await expect(cells(page)).toHaveCount(2)
+  await expect(cells(page).nth(0)).toHaveAccessibleName(/^주말 산책 코스 추천받아요/)
+  await shot(page, 'sns-feed-08-profile-repost')
 })
 
 test('[AC-SNS03-E2E-005] 내 프로필의 저장됨 탭은 저장한 글을 칸으로 보여준다', async ({ page }) => {
@@ -369,4 +389,22 @@ test('[AC-SNS03-E2E-005] 내 프로필의 저장됨 탭은 저장한 글을 칸�
   await expect(cells(page).nth(0)).toHaveAccessibleName('사진 3장 게시물')
   await expect(cells(page).nth(1)).toHaveAccessibleName('영상 게시물')
   await shot(page, 'sns-feed-07-profile-saved')
+})
+
+test('[AC-SNS03-E2E-006] 팔로잉 피드가 비면 탐색 보기 안내가 나오고 인기 탭은 리포스트 표시 없이 카드를 보여준다', async ({
+  page,
+}) => {
+  const calls = await stubSns(page, { emptyFollowing: true })
+  await page.goto('/sns/feed')
+
+  await expect(page.getByText('팔로잉 피드에 아직 글이 없어요')).toBeVisible()
+  await expect(page.getByRole('button', { name: '탐색 보기' })).toBeVisible()
+  await shot(page, 'sns-feed-09-following-empty')
+
+  await page.getByRole('tab', { name: '인기' }).click()
+  await expect(page).toHaveURL(/tab=popular/)
+  await expect(page.getByRole('button', { name: /님의 게시물 보기$/ })).toHaveCount(3)
+  await expect(page.getByText(/리포스트했어요$/)).toHaveCount(0)
+  await shot(page, 'sns-feed-10-popular')
+  expect(calls.feeds.map(url => url.pathname.split('/').pop())).toEqual(['following', 'popular'])
 })
