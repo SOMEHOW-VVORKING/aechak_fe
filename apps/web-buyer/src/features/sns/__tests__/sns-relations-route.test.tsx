@@ -127,7 +127,7 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     expect(router.state.location.pathname).toBe('/mypage/sns-relations')
   })
 
-  it('[AC-SNS01-024] 서로 차단한 상태에서 한쪽만 해제하면 목록에서 빠지지만 상대 프로필은 계속 볼 수 없다', async () => {
+  it('[AC-SNS01-024] 서로 차단한 상태에서 한쪽만 해제하면 목록에서 빠지지만 상대 프로필은 계속 기본 프로필이다', async () => {
     seedSns({ blocks: [snsRelation(SNS_BLOCKER, SNS_ME), snsRelation(SNS_ME, SNS_BLOCKER)] })
     const user = userEvent.setup()
     const router = renderAt('/mypage/sns-relations')
@@ -136,8 +136,11 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     await user.click(await screen.findByRole('button', { name: '해제' }))
     expect(await screen.findByText('차단한 계정이 없어요')).toBeInTheDocument()
 
+    // 상대가 건 차단이 남아 있어 수와 팔로우 버튼 없이 기본 프로필 사진과 닉네임만 보인다(A7).
     await router.navigate({ to: '/sns/users/$publicId', params: { publicId: SNS_BLOCKER } })
-    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    expect(await screen.findByLabelText('차단러')).toHaveTextContent('차')
+    expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /팔로우|차단 해제/ })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS01-026] 뮤트 해제 요청이 실패하면 목록과 수가 그대로이고 실패 안내가 뜬다', async () => {

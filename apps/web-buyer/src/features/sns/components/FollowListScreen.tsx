@@ -83,8 +83,9 @@ export function FollowListScreen({
   if (!loggedIn) return screen(null)
 
   // 목록 주인을 볼 수 없으면(130000) 볼 수 없는 계정, 내가 차단했으면(130001) 차단한 계정 안내(P11).
+  // 주인이 나를 차단했으면(서로 차단 포함) 프로필은 200 blockingMe여도 목록은 130000이라 목록 응답 전에도 같은 안내다.
   const code = snsErrorCode(list.error) ?? snsErrorCode(profile.error)
-  if (code === SNS_UNAVAILABLE) {
+  if (code === SNS_UNAVAILABLE || profile.data?.blockingMe) {
     return screen(<ScreenEmptyState title="볼 수 없는 계정이에요" description="계정이 없거나 지금은 볼 수 없어요." />)
   }
   if (code === SNS_BLOCKED_BY_ME || profile.data?.blockedByMe) {

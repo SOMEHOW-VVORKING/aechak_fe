@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
 import {
@@ -60,19 +60,36 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
   const [tab, setTab] = useState('grid')
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
+  const backRef = useRef<HTMLButtonElement>(null)
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
     setToast({ open: true, message, variant })
 
-  // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(차단당했거나 탈퇴, A7).
+  // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(탈퇴했거나 없는 계정, A7).
   const unavailable = snsErrorCode(error) === SNS_UNAVAILABLE
+
+  // 팔로우 실패 안내. 버튼으로 누른 팔로우와 로그인 뒤 다시 실행한 팔로우가 같이 쓴다.
+  // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. useSnsToggle이 시작한 재조회를 기다려 화면이 기본 프로필이나
+  // 볼 수 없는 계정 안내로 바뀌었으면 그 화면이 안내다. 재조회까지 실패해 이전 프로필이 남으면 실패 안내를
+  // 띄운다(sns.yaml FE 5).
+  const followFailed = useCallback(
+    (e: unknown) => {
+      const notify = () => setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+      if (snsErrorCode(e) !== SNS_UNAVAILABLE) notify()
+      else
+        void refetch({ cancelRefetch: false }).then(r => {
+          if (!r.data?.blockingMe && snsErrorCode(r.error) !== SNS_UNAVAILABLE) notify()
+        })
+    },
+    [refetch],
+  )
 
   // 로그인 뒤 다시 실행(A26). 로그인 안내 시트에서 남긴 행동을 이 프로필을 다시 읽은 뒤 한 번만 꺼낸다.
   // 팔로우는 확인 없이 켜기 요청을 보내고(이미 팔로우 중이어도 201) 차단, 뮤트는 확인 Modal이나 시트만 다시 연다.
   useEffect(() => {
     if (!publicId || !loggedIn) return
     if (unavailable) {
-      // 그사이 상대가 나를 차단했거나 탈퇴했다. 실행하지 않고 볼 수 없는 계정 안내만 남긴다.
+      // 그사이 상대가 탈퇴했다. 실행하지 않고 볼 수 없는 계정 안내만 남긴다.
       takePendingAction(publicId)
       return
     }
@@ -84,19 +101,21 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
       return
     }
     if (profile.blockedByMe) return
+    // 그사이 상대가 나를 차단했다. 기본 프로필에는 팔로우 버튼과 뮤트 항목이 없어 차단만 다시 연다(A7).
+    if (profile.blockingMe && pending.kind !== 'block') return
     if (pending.kind === 'follow') {
       mutateToggle(
         { kind: 'follow', publicId, on: true },
         {
           onError: e => {
             if (snsErrorCode(e) === SNS_SELF_FOLLOW) void navigate({ to: '/sns/me', replace: true })
-            else setToast({ open: true, message: snsToggleErrorMessage(e), variant: 'error' })
+            else followFailed(e)
           },
         },
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
-  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle])
+  }, [publicId, loggedIn, unavailable, profile, navigate, mutateToggle, followFailed])
 
   const follow = (target: SnsProfile) =>
     requireAuth(
@@ -104,7 +123,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
       () =>
         toggle.mutate(
           { kind: 'follow', publicId: target.publicId, on: !target.following },
-          { onError: e => showToast(snsToggleErrorMessage(e), 'error') },
+          { onError: followFailed },
         ),
       { kind: 'follow', publicId: target.publicId },
     )
@@ -134,6 +153,9 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         onSuccess: () => {
           setConfirm(null)
           showToast(copy.done)
+          // 바뀐 관계로 본문 분기가 바뀌면 Modal을 연 버튼이 사라져 Modal이 포커스를 돌려줄 곳이 없다. 어느 분기에나 있는
+          // 뒤로 가기 버튼으로 먼저 옮긴다. 연 버튼이 남아 있으면 Modal이 닫히면서 그 버튼으로 돌려준다.
+          backRef.current?.focus()
         },
         onError: e => {
           setConfirm(null)
@@ -150,6 +172,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
     <MobileScreen
       header={
         <BackAppBar
+          backRef={backRef}
           onBack={goBack}
           title={unavailable ? undefined : profile?.nickname}
           actions={
@@ -179,29 +202,32 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
               requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId: profile.publicId })
             }}
           />
-          <ListItem
-            leading={<EyeOff className="size-5" />}
-            title={profile.mutedByMe ? '뮤트 해제' : '뮤트하기'}
-            onClick={() => {
-              setMoreOpen(false)
-              if (profile.mutedByMe) {
-                setConfirm('unmute')
-                return
-              }
-              requireAuth(
-                'mute',
-                () =>
-                  toggle.mutate(
-                    { kind: 'mute', publicId: profile.publicId, on: true },
-                    {
-                      onSuccess: () => showToast('뮤트했어요'),
-                      onError: e => showToast(snsToggleErrorMessage(e), 'error'),
-                    },
-                  ),
-                { kind: 'mute', publicId: profile.publicId },
-              )
-            }}
-          />
+          {/* 나를 차단한 계정의 기본 프로필은 차단만 둔다(A7). 신고 항목은 SNS-07에서 붙는다. */}
+          {!profile.blockingMe && (
+            <ListItem
+              leading={<EyeOff className="size-5" />}
+              title={profile.mutedByMe ? '뮤트 해제' : '뮤트하기'}
+              onClick={() => {
+                setMoreOpen(false)
+                if (profile.mutedByMe) {
+                  setConfirm('unmute')
+                  return
+                }
+                requireAuth(
+                  'mute',
+                  () =>
+                    toggle.mutate(
+                      { kind: 'mute', publicId: profile.publicId, on: true },
+                      {
+                        onSuccess: () => showToast('뮤트했어요'),
+                        onError: e => showToast(snsToggleErrorMessage(e), 'error'),
+                      },
+                    ),
+                  { kind: 'mute', publicId: profile.publicId },
+                )
+              }}
+            />
+          )}
         </BottomSheet>
       )}
 
@@ -253,6 +279,22 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         description="잠시 후 다시 시도해 주세요."
         action={{ label: '다시 시도', onClick: () => void refetch() }}
       />,
+    )
+  }
+
+  // 나를 차단한 계정의 기본 프로필(A7, R2-06): 닉네임만 오고 이미지, 수, 소개글, 펫은 null이다. 기본 프로필 사진과
+  // 닉네임만 그리고 팔로우와 공유 버튼, 탭은 두지 않는다. 서로 차단이면 blockedByMe도 true라 차단 해제 버튼을 함께 둔다.
+  if (profile.blockingMe) {
+    return screen(
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+        <Avatar name={profile.nickname} size="xl" />
+        <p className="text-subheading font-semibold text-text-primary">{profile.nickname}</p>
+        {profile.blockedByMe && (
+          <Button variant="secondary" onClick={() => setConfirm('unblockMutual')}>
+            차단 해제
+          </Button>
+        )}
+      </div>,
     )
   }
 

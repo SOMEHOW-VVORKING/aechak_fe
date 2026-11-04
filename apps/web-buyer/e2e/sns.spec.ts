@@ -68,6 +68,7 @@ const BORI: SnsProfileResult = {
   following: false,
   blockedByMe: false,
   mutedByMe: false,
+  blockingMe: false,
 }
 
 // 내가 차단한 계정: 닉네임과 이미지만 오고 소개글, 펫, 수는 null(계약 P11).
@@ -80,6 +81,17 @@ const BORI_BLOCKED: SnsProfileResult = {
   followingCount: null,
   blockedByMe: true,
 }
+
+// 나를 차단한 계정: 닉네임만 오고 이미지, 소개글, 펫, 수는 null(계약 0.3.0 blockingMe, R2-06).
+const BORI_BLOCKING_ME: SnsProfileResult = {
+  ...BORI_BLOCKED,
+  profileImageUrl: null,
+  blockedByMe: false,
+  blockingMe: true,
+}
+
+// 서로 차단: 나를 차단한 계정 응답에 blockedByMe도 true다.
+const BORI_MUTUAL: SnsProfileResult = { ...BORI_BLOCKING_ME, blockedByMe: true }
 
 const ME: SnsProfileResult = {
   publicId: ME_ID,
@@ -94,6 +106,7 @@ const ME: SnsProfileResult = {
   following: false,
   blockedByMe: false,
   mutedByMe: false,
+  blockingMe: false,
 }
 
 const FOLLOWERS: SnsUserItemResult[] = [
@@ -418,4 +431,53 @@ test('[AC-SNS01-E2E-012] 관리 목록에서 차단 해제를 누르면 확인 M
   await expect(modal.getByRole('button', { name: '해제' })).toBeVisible()
   expect(calls.toggles).toEqual([])
   await shot(page, 'sns-14-relations-unblock-confirm')
+})
+
+test('[AC-SNS01-E2E-013] 나를 차단한 프로필은 기본 프로필 사진과 닉네임만 보여주고 더보기에는 차단하기만 있다', async ({
+  page,
+}) => {
+  const calls = await stubSns(page, { profile: BORI_BLOCKING_ME })
+  await page.goto(profileUrl)
+
+  // 이미지 대신 닉네임 첫 글자 아바타(기본 프로필 사진)를 그린다.
+  const avatar = page.getByLabel('보리언니', { exact: true })
+  await expect(avatar).toHaveText('보')
+  await expect(avatar.locator('img')).toHaveCount(0)
+  await expect(page.getByText('팔로워')).toHaveCount(0)
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '공유' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '차단 해제' })).toHaveCount(0)
+  await shot(page, 'sns-15-profile-blocking-me')
+
+  await page.getByRole('button', { name: '더보기' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText('차단하기')).toBeVisible()
+  await expect(sheet.getByText(/뮤트/)).toHaveCount(0)
+  await shot(page, 'sns-16-blocking-me-more-sheet')
+
+  await sheet.getByText('차단하기').click()
+  await expect(page.getByRole('dialog', { name: '차단할까요?' })).toBeVisible()
+  expect(calls.toggles).toEqual([])
+})
+
+test('[AC-SNS01-E2E-014] 서로 차단한 프로필은 기본 프로필과 차단 해제 버튼만 보여주고 해제는 확인 Modal을 거친다', async ({
+  page,
+}) => {
+  const calls = await stubSns(page, { profile: BORI_MUTUAL })
+  await page.goto(profileUrl)
+
+  const avatar = page.getByLabel('보리언니', { exact: true })
+  await expect(avatar).toHaveText('보')
+  await expect(avatar.locator('img')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '차단 해제' })).toBeVisible()
+  await expect(page.getByText('차단한 계정이에요')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '더보기' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await shot(page, 'sns-17-profile-mutual-block')
+
+  await page.getByRole('button', { name: '차단 해제' }).click()
+  await expect(page.getByRole('dialog', { name: '차단을 해제할까요?' })).toBeVisible()
+  expect(calls.toggles).toEqual([])
 })

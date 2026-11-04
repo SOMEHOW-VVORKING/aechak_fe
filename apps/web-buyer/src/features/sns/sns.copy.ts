@@ -2,7 +2,7 @@ import type { SnsToggleKind } from './sns.queries'
 
 // 차단, 차단 해제, 뮤트 해제 확인 Modal(b7-st-8 8-B). 프로필과 관리 목록이 같은 문구를 쓴다.
 // 확인 버튼 라벨은 뒤에 깔린 버튼(차단 해제, 뮤트 해제)과 겹치지 않게 짧게 적는다.
-export type RelationConfirm = 'block' | 'unblock' | 'unmute'
+export type RelationConfirm = 'block' | 'unblock' | 'unblockMutual' | 'unmute'
 
 export const RELATION_CONFIRM: Record<
   RelationConfirm,
@@ -32,6 +32,18 @@ export const RELATION_CONFIRM: Record<
     title: '차단을 해제할까요?',
     description: nickname =>
       `${nickname}님이 회원님의 게시물과 프로필을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.`,
+    confirmLabel: '해제',
+    danger: false,
+    done: '차단을 해제했어요',
+  },
+  // 서로 차단한 프로필의 차단 해제. 상대의 차단이 남아 해제해도 서로 볼 수 없다(PRD 서로 차단한 상태에서 한쪽만 해제).
+  // 관리 목록은 상대의 차단을 모르므로 unblock을 쓴다.
+  unblockMutual: {
+    kind: 'block',
+    on: false,
+    title: '차단을 해제할까요?',
+    description: nickname =>
+      `회원님이 건 차단만 해제돼요. ${nickname}님과는 서로의 게시물과 프로필을 계속 볼 수 없어요.`,
     confirmLabel: '해제',
     danger: false,
     done: '차단을 해제했어요',
