@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
+import { http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
 import { logout } from '@/shared/auth'
@@ -9,6 +10,7 @@ import {
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_POST_MINE_PHOTO,
+  SNS_POST_URL,
   currentSns,
   seedSns,
   server,
@@ -122,6 +124,28 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     await user.click(saveButton())
     expect(await screen.findByText('쓸 수 없는 단어가 많아 올릴 수 없어요. 내용을 고쳐 주세요')).toBeInTheDocument()
     expect(caption).toHaveValue('욕설 욕설')
+  })
+
+  it('저장 중에는 해시태그 칩을 뺄 수 없다', async () => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.patch(SNS_POST_URL, async () => {
+        await held
+        return undefined
+      }),
+    )
+    const user = userEvent.setup()
+    const router = renderAt(editPath(SNS_POST_MINE_PHOTO))
+    await screen.findByLabelText('캡션')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '#생일 빼기' })).toBeDisabled())
+    release()
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/posts/${SNS_POST_MINE_PHOTO}`))
+    expect(patchBodies).toEqual([{ caption: '보리 생일', hashtags: ['생일'] }])
   })
 
   it('본인 게시물이 아니면 수정 화면 대신 상세로 보낸다', async () => {

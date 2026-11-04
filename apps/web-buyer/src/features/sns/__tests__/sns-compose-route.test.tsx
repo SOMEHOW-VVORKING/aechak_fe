@@ -460,6 +460,32 @@ describe('/sns/posts/new 닫기와 비로그인', () => {
     await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\/01K/))
   })
 
+  it('게시 중에는 해시태그 칩도 뺄 수 없다', async () => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.post(SNS_POSTS_URL, async () => {
+        await held
+        return undefined
+      }),
+    )
+    const user = userEvent.setup()
+    const router = renderAt('/sns/posts/new')
+    await user.type(await screen.findByLabelText('캡션'), '태그 단 글')
+    await user.click(screen.getByRole('button', { name: '해시태그 추가' }))
+    await user.type(await screen.findByRole('textbox', { name: '해시태그 검색' }), '산책')
+    await user.click(await screen.findByRole('button', { name: '#산책 게시글 52 추가' }))
+    await user.click(screen.getByRole('button', { name: '완료 1' }))
+    await user.click(publishButton())
+
+    expect(screen.getByRole('button', { name: '#산책 빼기' })).toBeDisabled()
+    release()
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\/01K/))
+    expect(postRequests[0]!.body['hashtags']).toEqual(['산책'])
+  })
+
   it('아무것도 쓰지 않았으면 확인 없이 닫는다', async () => {
     const user = userEvent.setup()
     const router = renderAt('/sns/posts/new')

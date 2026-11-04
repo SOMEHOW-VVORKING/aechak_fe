@@ -22,7 +22,16 @@ export function hashtagCountLabel(count: number): string {
 }
 
 /** 작성, 수정 화면의 해시태그 칩. 칩에는 서버가 정규화한 이름을 쓴다 */
-export function HashtagChips({ tags, onRemove }: { tags: string[]; onRemove?: (tag: string) => void }) {
+export function HashtagChips({
+  tags,
+  onRemove,
+  disabled = false,
+}: {
+  tags: string[]
+  onRemove?: (tag: string) => void
+  /** 게시나 저장 중에는 빼지 않는다. 그때 뺀 태그는 이미 보낸 요청에 실리지 않는다 */
+  disabled?: boolean
+}) {
   if (tags.length === 0) return null
   return (
     <ul aria-label="해시태그" className="flex flex-wrap gap-2">
@@ -36,8 +45,9 @@ export function HashtagChips({ tags, onRemove }: { tags: string[]; onRemove?: (t
             <button
               type="button"
               aria-label={`#${tag} 빼기`}
+              disabled={disabled}
               onClick={() => onRemove(tag)}
-              className="flex size-5 items-center justify-center rounded-full focus-visible:outline-none focus-visible:shadow-focus-ring"
+              className="flex size-5 items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-focus-ring"
             >
               <X className="size-3.5" />
             </button>

@@ -197,6 +197,7 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <HashtagChips
           tags={form.hashtags}
+          disabled={update.isPending}
           onRemove={tag => setForm({ ...form, hashtags: form.hashtags.filter(t => t !== tag) })}
         />
         <Button

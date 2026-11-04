@@ -253,7 +253,11 @@ export function SnsComposeScreen() {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <HashtagChips tags={hashtags} onRemove={tag => setHashtags(prev => prev.filter(t => t !== tag))} />
+          <HashtagChips
+            tags={hashtags}
+            disabled={submitting}
+            onRemove={tag => setHashtags(prev => prev.filter(t => t !== tag))}
+          />
           <Button
             variant="ghost"
             size="sm"
