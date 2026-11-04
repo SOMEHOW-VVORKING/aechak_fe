@@ -37,6 +37,20 @@ beforeEach(() => {
 })
 
 describe('해시태그 모달', () => {
+  it('완료나 뒤로 가기로 닫으면 작성 화면의 해시태그 추가 버튼으로 포커스가 돌아온다', async () => {
+    const user = userEvent.setup()
+    renderCompose()
+
+    await user.type(await openPicker(user), '산책')
+    await user.click(await screen.findByRole('button', { name: '#산책 게시글 52 추가' }))
+    await user.click(screen.getByRole('button', { name: '완료 1' }))
+    expect(screen.getByRole('button', { name: '해시태그 추가' })).toHaveFocus()
+
+    await openPicker(user)
+    await user.click(screen.getByRole('button', { name: '뒤로 가기' }))
+    expect(screen.getByRole('button', { name: '해시태그 추가' })).toHaveFocus()
+  })
+
   it('처음 열면 검색창에 포커스가 있고 안내 없이 추천 태그만 게시글 수 순으로 나온다', async () => {
     const user = userEvent.setup()
     renderCompose()

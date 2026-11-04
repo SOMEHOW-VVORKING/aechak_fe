@@ -34,6 +34,12 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
   const update = useUpdateSnsPost(publicId)
   const [form, setForm] = useState<EditForm | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  // 모달은 수정 화면을 통째로 갈아 끼워 닫으면 포커스가 사라진다. 닫고 돌아온 화면은 해시태그 추가 버튼에 포커스를 둔다.
+  const [pickerClosed, setPickerClosed] = useState(false)
+  const closePicker = () => {
+    setPickerOpen(false)
+    setPickerClosed(true)
+  }
   // 다른 기기에서 지운 게시물을 저장하면 130400이 온다(AC-SNS02-028).
   const [deleted, setDeleted] = useState(false)
   const [toast, setToast] = useState({ open: false, message: '' })
@@ -85,10 +91,10 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
     return (
       <SnsHashtagPicker
         initial={form.hashtags}
-        onCancel={() => setPickerOpen(false)}
+        onCancel={closePicker}
         onDone={hashtags => {
           setForm({ ...form, hashtags })
-          setPickerOpen(false)
+          closePicker()
         }}
       />
     )
@@ -210,6 +216,7 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
           size="sm"
           leftIcon={<Hash className="size-4" />}
           disabled={update.isPending}
+          autoFocus={pickerClosed}
           onClick={() => setPickerOpen(true)}
         >
           해시태그 추가

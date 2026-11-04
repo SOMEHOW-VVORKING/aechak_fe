@@ -87,6 +87,15 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     expect(patchBodies).toEqual([{ caption: '보리 생일', hashtags: ['생일'] }])
   })
 
+  it('해시태그 모달을 닫으면 수정 화면의 해시태그 추가 버튼으로 포커스가 돌아온다', async () => {
+    const user = userEvent.setup()
+    renderAt(editPath(SNS_POST_MINE_PHOTO))
+
+    await user.click(await screen.findByRole('button', { name: '해시태그 추가' }))
+    await user.click(await screen.findByRole('button', { name: '완료 1' }))
+    expect(screen.getByRole('button', { name: '해시태그 추가' })).toHaveFocus()
+  })
+
   it('[AC-SNS02-025] 사진 영역은 바꿀 수 없게 그린다', async () => {
     renderAt(editPath(SNS_POST_MINE_PHOTO))
 

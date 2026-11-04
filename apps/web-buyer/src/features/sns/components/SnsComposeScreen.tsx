@@ -42,6 +42,12 @@ export function SnsComposeScreen() {
   const [caption, setCaption] = useState('')
   const [hashtags, setHashtags] = useState<string[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  // 모달은 작성 화면을 통째로 갈아 끼워 닫으면 포커스가 사라진다. 닫고 돌아온 화면은 해시태그 추가 버튼에 포커스를 둔다.
+  const [pickerClosed, setPickerClosed] = useState(false)
+  const closePicker = () => {
+    setPickerOpen(false)
+    setPickerClosed(true)
+  }
   // 화면을 열 때 한 번 만들어 이 화면의 모든 게시 시도에 보낸다. 응답을 받지 못해 다시 눌러도 게시물은 하나다(P13).
   const [idempotencyKey] = useState(randomId)
   const [submitting, setSubmitting] = useState(false)
@@ -135,10 +141,10 @@ export function SnsComposeScreen() {
       <>
         <SnsHashtagPicker
           initial={hashtags}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={closePicker}
           onDone={tags => {
             setHashtags(tags)
-            setPickerOpen(false)
+            closePicker()
           }}
         />
         {leaveModal}
@@ -263,6 +269,7 @@ export function SnsComposeScreen() {
             size="sm"
             leftIcon={<Hash className="size-4" />}
             disabled={submitting}
+            autoFocus={pickerClosed}
             onClick={() => setPickerOpen(true)}
           >
             해시태그 추가
