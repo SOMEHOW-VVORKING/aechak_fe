@@ -153,13 +153,32 @@ export function useSnsPost(publicId: string, { enabled = true }: { enabled?: boo
 /**
  * 수정(PATCH). 바뀐 것이 없어도 204이고 수정됨 표시는 다시 읽은 상세의 edited를 따른다(P8). 그사이 지운
  * 게시물(404 130400)이면 상세도 다시 읽는다. 캐시를 그대로 두면 돌아간 상세가 지운 게시물을 그린다.
+ * 성공하면 받아 둔 피드 카드도 다시 읽은 상세로 바꾸고 프로필 탭은 다음에 열 때 다시 읽는다. 그대로 두면 staleTime 안에
+ * 돌아간 목록이 고치기 전 내용을 그린다.
  */
 export function useUpdateSnsPost(publicId: string) {
   const queryClient = useQueryClient()
   const refetchPost = () => queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
   return useMutation({
     mutationFn: (body: SnsPostUpdateRequest) => updateSnsPost(publicId, body),
-    onSuccess: refetchPost,
+    onSuccess: async () => {
+      await refetchPost()
+      // 수정은 로그인한 작성자만 해서 로그인 응답 상세를 읽는다. 피드는 다시 읽으면 보던 위치를 잃어 그 카드만 바꾼다.
+      const post = queryClient.getQueryData<SnsPost>([...snsKeys.post(publicId), true])
+      if (post) {
+        const { caption, hashtags, edited } = post
+        queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+          mapPages(data, items =>
+            items.map(item =>
+              item.post.publicId === publicId ? { ...item, post: { ...item.post, caption, hashtags, edited } } : item,
+            ),
+          ),
+        )
+      }
+      // 프로필 탭 칸의 본문 앞부분(captionPreview)은 서버가 잘라 주므로 칸은 고치지 않고 다음에 열 때 다시 읽는다.
+      void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists })
+      void queryClient.invalidateQueries({ queryKey: snsKeys.saves() })
+    },
     onError: error => {
       if (snsErrorCode(error) === SNS_POST_UNAVAILABLE) void refetchPost()
     },
@@ -210,12 +229,18 @@ export function createSnsPostWithKey(input: CreateSnsPostInput): Promise<SnsPost
   })
 }
 
-/** 게시. 201이면 게시물 수가 바뀌어 내 프로필을 다시 읽는다(SNS-T04부터 postCount가 오른다). */
+/**
+ * 게시. 201이면 게시물 수가 바뀌어 내 프로필을 다시 읽는다(SNS-T04부터 postCount가 오른다). 내 프로필 탭도 무효화해
+ * 다음에 열 때 새 글이 맨 위에 나오게 한다. 그대로 두면 staleTime 안에는 수만 오르고 칸은 그대로다.
+ */
 export function useCreateSnsPost() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (input: CreateSnsPostInput) => (await createSnsPostWithKey(input)).data,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: snsKeys.me }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists, predicate: query => query.meta?.['mine'] === true })
+      return queryClient.invalidateQueries({ queryKey: snsKeys.me })
+    },
   })
 }
 

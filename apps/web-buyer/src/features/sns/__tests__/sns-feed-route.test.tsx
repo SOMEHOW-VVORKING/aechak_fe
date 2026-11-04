@@ -451,3 +451,23 @@ describe('/sns/feed 뮤트와 차단 해제 뒤', () => {
     expect(await screen.findByText('광고 게시물')).toBeInTheDocument()
   })
 })
+
+describe('/sns/feed 받아 둔 카드', () => {
+  it('[AC-SNS02-029] 카드의 글을 고치고 돌아오면 앱과 같은 staleTime에서도 피드를 다시 읽지 않고 그 카드에 바뀐 캡션과 수정됨이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed', 60_000)
+    expect(await screen.findByText('산책 코스 추천받아요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: SNS_POST_MINE } }))
+    const caption = await screen.findByLabelText('캡션')
+    await user.clear(caption)
+    await user.type(caption, '산책 코스 정리했어요')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/feed'))
+    const card = (await screen.findByText('산책 코스 정리했어요')).closest('article')!
+    expect(within(card).getByText('수정됨')).toBeInTheDocument()
+    expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
+    expect(requestsTo('following')).toHaveLength(1)
+  })
+})

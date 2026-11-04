@@ -313,6 +313,35 @@ describe('내 프로필 탭과 캐시', () => {
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
     expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(true)
   })
+
+  it('[AC-SNS02-029] 내 글을 고치고 돌아오면 앱과 같은 staleTime에서도 그리드 칸에 바뀐 본문 앞부분이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 추천받아요']))
+
+    await act(() => router.navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: SNS_POST_MINE } }))
+    const caption = await screen.findByLabelText('캡션')
+    await user.clear(caption)
+    await user.type(caption, '산책 코스 정리했어요')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/me'))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 정리했어요']))
+  })
+
+  it('[AC-SNS02-004] 글을 게시하고 내 프로필로 오면 앱과 같은 staleTime에서도 그리드 맨 위에 새 글이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me', 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 추천받아요']))
+
+    await act(() => router.navigate({ to: '/sns/posts/new' }))
+    await user.type(await screen.findByLabelText('캡션'), '새로 쓴 글')
+    await user.click(screen.getByRole('button', { name: '게시' }))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\/01K/))
+
+    await act(() => router.navigate({ to: '/sns/me' }))
+    await waitFor(() => expect(cellsIn()).toEqual(['새로 쓴 글', '사진 2장 게시물', '산책 코스 추천받아요']))
+  })
 })
 
 describe('저장됨 탭', () => {
