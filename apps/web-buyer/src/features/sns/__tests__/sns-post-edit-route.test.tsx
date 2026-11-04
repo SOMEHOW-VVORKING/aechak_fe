@@ -239,6 +239,24 @@ describe('/sns/posts/$publicId 내 게시물 더보기', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/sns'))
     expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(true)
+    // 이전 화면으로 가는 동안 지운 게시물을 다시 읽지 않는다(처음 연 한 번뿐이다).
+    expect(postGets).toBe(1)
+  })
+
+  it('[AC-SNS02-027] 지운 게시물을 다시 열면 남은 캐시 대신 삭제된 게시물 안내를 보여준다', async () => {
+    const user = userEvent.setup()
+    // 앱과 같은 staleTime이면 다시 열어도 캐시만 쓴다. 지운 뒤에는 서버에 다시 물어야 한다.
+    const router = renderAt(
+      `/sns/posts/${SNS_POST_MINE}`,
+      new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } }),
+    )
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '삭제' }))
+    await user.click(within(screen.getByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns'))
+
+    await router.navigate({ to: '/sns/posts/$publicId', params: { publicId: SNS_POST_MINE } })
+    expect(await screen.findByText('삭제된 게시물이에요')).toBeInTheDocument()
   })
 
   it('[AC-SNS02-027] 다른 기기에서 이미 지운 게시물을 다시 지워도 오류 없이 이전 화면으로 간다', async () => {

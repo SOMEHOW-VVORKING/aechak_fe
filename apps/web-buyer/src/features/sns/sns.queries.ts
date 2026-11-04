@@ -124,8 +124,9 @@ export function useUpdateSnsPost(publicId: string) {
 }
 
 /**
- * 삭제(DELETE). 다른 기기에서 이미 지운 게시물(404 130400)도 지운 것으로 본다(AC-SNS02-027). 상세 캐시를 버리고
- * 게시물 수가 바뀌어 내 프로필을 다시 읽는다.
+ * 삭제(DELETE). 다른 기기에서 이미 지운 게시물(404 130400)도 지운 것으로 본다(AC-SNS02-027). 게시물 수가 바뀌어 내
+ * 프로필을 다시 읽는다. 상세 캐시는 다음에 열 때 다시 읽도록 낡은 것으로만 표시한다. 지우면 이전 화면으로 가기 전의
+ * 열린 상세가 스켈레톤을 그리고 지운 게시물을 다시 읽는다(차단과 같다).
  */
 export function useDeleteSnsPost(publicId: string) {
   const queryClient = useQueryClient()
@@ -138,7 +139,7 @@ export function useDeleteSnsPost(publicId: string) {
       }
     },
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: snsKeys.post(publicId) })
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId), refetchType: 'none' })
       return queryClient.invalidateQueries({ queryKey: snsKeys.me })
     },
   })
