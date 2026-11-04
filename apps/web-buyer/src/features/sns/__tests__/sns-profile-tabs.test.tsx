@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
+import { getMySnsSaves, saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_BLOCKER,
@@ -12,6 +12,7 @@ import {
   SNS_ME,
   SNS_MONG,
   SNS_MUTUAL,
+  SNS_MY_SAVES_URL,
   SNS_NEIGHBORS,
   SNS_POST_COCO,
   SNS_POST_DELETED,
@@ -20,6 +21,7 @@ import {
   SNS_POST_SPAM,
   SNS_POST_TORI,
   SNS_POST_VIDEO,
+  SNS_SAVE_URL,
   SNS_SPAM,
   SNS_TORI,
   SNS_USER_POSTS_URL,
@@ -448,5 +450,43 @@ describe('저장됨 탭', () => {
     await user.click(await screen.findByRole('button', { name: '삭제' }))
     await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+  })
+
+  it('저장 끄기가 끝나기 전에 다시 읽기 시작한 저장됨 응답이 늦게 와도 끈 칸이 되살아나지 않는다', async () => {
+    seedSns({ saves: [snsAct(SNS_ME, SNS_POST_VIDEO), snsAct(SNS_ME, SNS_POST_COCO)] })
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me?tab=saved')
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '영상 게시물']))
+
+    // 끄기(DELETE)는 붙잡아 두고, 돌아와서 다시 읽는 저장됨은 끄기 전 목록을 끄기가 끝난 뒤에 돌려준다.
+    const before = (await getMySnsSaves({ size: 20 })).data
+    let releaseDelete!: () => void
+    const deleteHeld = new Promise<void>(resolve => (releaseDelete = resolve))
+    let releaseGet!: () => void
+    const getHeld = new Promise<void>(resolve => (releaseGet = resolve))
+    server.use(
+      http.delete(SNS_SAVE_URL, async () => {
+        await deleteHeld
+      }),
+      http.get(
+        SNS_MY_SAVES_URL,
+        async () => {
+          await getHeld
+          return HttpResponse.json({ data: before })
+        },
+        { once: true },
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: '사진 2장 게시물' }))
+    await user.click(await screen.findByRole('button', { name: '저장', pressed: true }))
+    act(() => router.history.back())
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '영상 게시물']))
+
+    releaseDelete()
+    await waitFor(() => expect(cellsIn()).toEqual(['영상 게시물']))
+    releaseGet()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(cellsIn()).toEqual(['영상 게시물'])
+    expect(currentSns().saves.some(r => r.post === SNS_POST_COCO)).toBe(false)
   })
 })

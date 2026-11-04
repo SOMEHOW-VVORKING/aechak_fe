@@ -200,14 +200,16 @@ export function useDeleteSnsPost() {
         if (snsErrorCode(error) !== SNS_POST_UNAVAILABLE) throw error
       }
     },
-    onSuccess: (_data, publicId) => {
+    onSuccess: async (_data, publicId) => {
       void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId), refetchType: 'none' })
       // 받아 둔 피드와 프로필 탭에서 그 게시물을 바로 뺀다(design 6절 4번). 다시 읽으면 보던 위치를 잃는다.
-      queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
-        mapPages(data, items => items.filter(item => item.post.publicId !== publicId)),
-      )
-      removeGridCell(queryClient, { queryKey: snsKeys.userPostLists }, publicId)
-      removeGridCell(queryClient, { queryKey: snsKeys.saves() }, publicId)
+      await Promise.all([
+        removeFromLists<InfiniteData<SnsFeedPageResult>>(queryClient, { queryKey: snsKeys.feeds }, data =>
+          mapPages(data, items => items.filter(item => item.post.publicId !== publicId)),
+        ),
+        removeGridCell(queryClient, { queryKey: snsKeys.userPostLists }, publicId),
+        removeGridCell(queryClient, { queryKey: snsKeys.saves() }, publicId),
+      ])
       return queryClient.invalidateQueries({ queryKey: snsKeys.me })
     },
   })
@@ -447,9 +449,24 @@ function mapPages<T extends { items: unknown[] }>(
   return data && { ...data, pages: data.pages.map(page => ({ ...page, items: map(page.items) })) }
 }
 
+/**
+ * 받아 둔 목록에서 항목을 뺀다. 빼기 전에 보낸 목록 조회는 뺀 항목을 다시 들고 올 수 있어 멈추고 뺀 뒤 그 목록만 다시
+ * 읽는다. 멈춘 조회는 조회 전 데이터로 돌아가고 첫 조회였으면 다시 읽어야 끝난다. 받는 중이 아니던 목록은 다시 읽지 않는다.
+ */
+async function removeFromLists<T>(
+  queryClient: QueryClient,
+  filters: QueryFilters,
+  remove: (data: T | undefined) => T | undefined,
+) {
+  const fetching = queryClient.getQueryCache().findAll(filters).filter(query => query.state.fetchStatus !== 'idle')
+  await queryClient.cancelQueries(filters)
+  queryClient.setQueriesData<T>(filters, remove)
+  if (fetching.length > 0) void queryClient.invalidateQueries({ predicate: query => fetching.includes(query) })
+}
+
 /** 받아 둔 프로필 탭에서 그 게시물 칸을 뺀다 */
 function removeGridCell(queryClient: QueryClient, filters: QueryFilters, publicId: string) {
-  queryClient.setQueriesData<InfiniteData<SnsPostGridPageResult>>(filters, data =>
+  return removeFromLists<InfiniteData<SnsPostGridPageResult>>(queryClient, filters, data =>
     mapPages(data, items => items.filter(item => item.publicId !== publicId)),
   )
 }
@@ -585,7 +602,7 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
           ? { queryKey: snsKeys.userPostLists, predicate: isMyRepostTab }
           : { queryKey: snsKeys.saves() }
       if (on) void queryClient.invalidateQueries(mine)
-      else removeGridCell(queryClient, mine, publicId)
+      else void removeGridCell(queryClient, mine, publicId)
     },
     onError: (_error, _on, seq) => {
       const run = runsOf(queryClient).get(id)
