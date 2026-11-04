@@ -54,7 +54,7 @@ async function expectBasicProfile(nickname: string) {
   expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
   expect(screen.queryByText('게시물')).not.toBeInTheDocument()
   expect(screen.queryByRole('list', { name: '펫' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  expect(screen.queryByRole('tablist', { name: '게시물 목록' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /팔로우|팔로잉|공유/ })).not.toBeInTheDocument()
   expect(screen.queryByText('볼 수 없는 계정이에요')).not.toBeInTheDocument()
 }
@@ -93,14 +93,12 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SNS01-002] 다른 사용자 프로필에는 저장됨 탭이 없고 탭 셋만 빈 상태로 보인다', async () => {
+  it('[AC-SNS01-002][AC-SNS03-037] 다른 사용자 프로필에는 저장됨 탭이 없고 그리드, 영상, 리포스트 탭만 보인다', async () => {
     renderAt(`/sns/users/${SNS_COCO}`)
 
-    expect(await screen.findByRole('tab', { name: '그리드' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '영상' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '리포스트' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: '저장됨' })).not.toBeInTheDocument()
-    expect(screen.getByText('아직 게시물이 없어요')).toBeInTheDocument()
+    const tabs = within(await screen.findByRole('tablist', { name: '게시물 목록' }))
+    expect(tabs.getAllByRole('tab').map(tab => tab.getAttribute('aria-label'))).toEqual(['그리드', '영상', '리포스트'])
+    expect(tabs.getByRole('tab', { name: '그리드' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('[AC-SNS01-003] 펫이 여럿이면 대표 펫을 먼저 품종과 나이로 쓰고 생년월 없는 펫은 품종만 쓴다', async () => {

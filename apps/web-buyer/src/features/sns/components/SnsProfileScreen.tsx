@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Ban, EyeOff, MoreHorizontal, PawPrint, UserX } from 'lucide-react'
+import { Ban, Bookmark, EyeOff, Grid3x3, MoreHorizontal, PawPrint, Repeat2, SquarePlay, UserX } from 'lucide-react'
 import {
   Avatar,
   BottomSheet,
@@ -10,34 +10,46 @@ import {
   MobileScreen,
   Modal,
   Skeleton,
-  Tabs,
 } from '@aechak/design-system/web'
 import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import { AppTabBar } from '@/shared/components/AppTabBar'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
+  SNS_BLOCKED_BY_ME,
   SNS_SELF_FOLLOW,
   SNS_UNAVAILABLE,
   snsErrorCode,
   snsToggleErrorMessage,
+  useSnsPostGrid,
   useSnsProfile,
   useSnsToggle,
   type FollowDirection,
   type SnsProfile,
+  type SnsUserPostTab,
 } from '../sns.queries'
 import { RELATION_CONFIRM, type RelationConfirm } from '../sns.copy'
 import { petTagLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
+import { SnsPostGrid, SnsPostTabs, type SnsPostTabItem } from './SnsPostGrid'
 
-// 프로필 탭(A22). 글은 SNS-03 이후 패키지에서 붙으므로 지금은 탭 틀과 빈 상태만 그린다. 저장됨은 본인만.
-const POST_TABS = [
-  { key: 'grid', label: '그리드', empty: '아직 게시물이 없어요' },
-  { key: 'video', label: '영상', empty: '아직 영상이 없어요' },
-  { key: 'repost', label: '리포스트', empty: '아직 리포스트가 없어요' },
-  { key: 'saved', label: '저장됨', empty: '저장한 게시물이 없어요' },
+export type SnsProfileTab = SnsUserPostTab | 'saved'
+
+// 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만.
+const POST_TABS: (SnsPostTabItem<SnsProfileTab> & { empty: string })[] = [
+  { key: 'grid', label: '그리드', icon: <Grid3x3 className="size-[22px]" />, empty: '아직 게시물이 없어요' },
+  { key: 'video', label: '영상', icon: <SquarePlay className="size-[22px]" />, empty: '아직 영상이 없어요' },
+  { key: 'repost', label: '리포스트', icon: <Repeat2 className="size-[22px]" />, empty: '아직 리포스트가 없어요' },
+  { key: 'saved', label: '저장됨', icon: <Bookmark className="size-[22px]" />, empty: '저장한 게시물이 없어요' },
 ]
+
+/** 프로필 라우트의 search(`?tab=`). 상세에서 돌아와도 탭을 유지한다. 모르는 값은 버리고 그리드를 쓴다 */
+export function snsProfileSearch(search: Record<string, unknown>): { tab?: SnsProfileTab } {
+  const tab = POST_TABS.find(t => t.key === search['tab'])?.key
+  return tab ? { tab } : {}
+}
 
 interface ToastState {
   open: boolean
@@ -46,11 +58,22 @@ interface ToastState {
 }
 
 // SNS 프로필(b7-st-4). publicId가 없으면 내 프로필(GET /sns/me)이다. 다른 사용자 프로필은 비로그인도 본다(A9).
-// 메시지 버튼, 알림 버튼(R1-18), 페르소나 배지는 이번 범위에 없다.
-export function SnsProfileScreen({ publicId }: { publicId?: string }) {
+// 메시지 버튼, 알림 버튼(R1-18), 페르소나 배지는 이번 범위에 없다. 하단 탭바를 그린다(SNS-01 F5).
+export function SnsProfileScreen({
+  publicId,
+  tab = 'grid',
+  onTabChange,
+}: {
+  publicId?: string
+  tab?: SnsProfileTab
+  onTabChange: (tab: SnsProfileTab) => void
+}) {
   const navigate = useNavigate()
   const goBack = useSafeBack({ to: '/sns' })
   const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
+  // 저장됨은 내 프로필에만 있다. 다른 사람 프로필에 주소로 들어오면 그리드를 그린다.
+  const activeTab: SnsProfileTab = tab === 'saved' && profile?.isMe === false ? 'grid' : tab
+  const grid = useSnsPostGrid(activeTab === 'saved' ? undefined : profile, activeTab === 'saved' ? 'grid' : activeTab)
   const toggle = useSnsToggle()
   const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
   const loggedIn = useIsLoggedIn()
@@ -58,7 +81,6 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   const [moreOpen, setMoreOpen] = useState(false)
   // 확인 Modal의 타겟은 라우트(이 화면)가 소유한다. Modal은 자체 mutation을 만들지 않는다.
   const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
-  const [tab, setTab] = useState('grid')
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
   const backRef = useRef<HTMLButtonElement>(null)
 
@@ -67,6 +89,14 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
 
   // 볼 수 없는 계정(404 130000)은 다시 조회에서 나와도 이전 데이터보다 먼저 본다(탈퇴했거나 없는 계정, A7).
   const unavailable = snsErrorCode(error) === SNS_UNAVAILABLE
+
+  // 탭 목록이 404 130000이나 403 130001이면 그사이 주인이 탈퇴했거나 차단 관계가 됐다. 프로필을 다시 읽어 프로필 화면의
+  // 같은 응답과 같은 안내(볼 수 없는 계정, 기본 프로필, 차단한 계정)로 바꾼다(design 6절 6번).
+  const gridCode = snsErrorCode(grid.error)
+  const gridGone = gridCode === SNS_UNAVAILABLE || gridCode === SNS_BLOCKED_BY_ME
+  useEffect(() => {
+    if (gridGone) void refetch()
+  }, [gridGone, refetch])
 
   // 팔로우 실패 안내. 버튼으로 누른 팔로우와 로그인 뒤 다시 실행한 팔로우가 같이 쓴다.
   // 130000은 그사이 나를 차단했거나 탈퇴한 경우다. useSnsToggle이 시작한 재조회를 기다려 화면이 기본 프로필이나
@@ -170,6 +200,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   // 본문만 분기하고 Modal, 시트, 토스트는 어느 분기에서도 함께 렌더한다(차단 직후 본문이 바뀌어도 토스트가 남는다).
   const screen = (content: ReactNode) => (
     <MobileScreen
+      footer={<AppTabBar activeKey="/sns" />}
       header={
         <BackAppBar
           backRef={backRef}
@@ -315,7 +346,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
   }
 
   const tabs = POST_TABS.filter(t => t.key !== 'saved' || profile.isMe)
-  const activeTab = tabs.find(t => t.key === tab) ?? tabs[0]!
+  const current = tabs.find(t => t.key === activeTab) ?? tabs[0]!
   const stats: { label: string; value: number | null; list?: FollowDirection }[] = [
     { label: '게시물', value: profile.postCount },
     { label: '팔로워', value: profile.followerCount, list: 'followers' },
@@ -397,10 +428,20 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         </div>
       </div>
 
-      <Tabs tabs={tabs} activeKey={activeTab.key} onSelect={setTab} className="px-2" />
-      <div className="py-10">
-        <EmptyState title={activeTab.empty} />
-      </div>
+      <SnsPostTabs tabs={tabs} activeKey={current.key} onSelect={onTabChange} />
+      {current.key === 'saved' ? (
+        <div className="py-10">
+          <EmptyState title={current.empty} />
+        </div>
+      ) : (
+        !gridGone && (
+          <SnsPostGrid
+            grid={grid}
+            empty={current.empty}
+            author={current.key === 'repost' ? undefined : profile.publicId}
+          />
+        )
+      )}
     </div>,
   )
 }

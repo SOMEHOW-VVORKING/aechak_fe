@@ -1,6 +1,6 @@
 export { FollowListScreen } from './components/FollowListScreen'
 export { SnsRelationsScreen } from './components/SnsRelationsScreen'
-export { SnsProfileScreen } from './components/SnsProfileScreen'
+export { SnsProfileScreen, snsProfileSearch } from './components/SnsProfileScreen'
 export { SnsPostDetailScreen } from './components/SnsPostDetailScreen'
 export { SnsComposeScreen } from './components/SnsComposeScreen'
 export { SnsPostEditScreen } from './components/SnsPostEditScreen'
