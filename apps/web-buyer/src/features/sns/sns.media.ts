@@ -37,9 +37,20 @@ function drawToJpeg(source: CanvasImageSource, width: number, height: number): P
   )
 }
 
+// imageOrientation의 from-image를 모르는 예전 브라우저는 옵션 값에서 TypeError를 던진다. 그때는 옵션 없이
+// 디코딩한다(지금 브라우저는 옵션이 없어도 EXIF 방향을 반영한다).
+async function decodeImage(file: Blob): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch (error) {
+    if (error instanceof TypeError) return createImageBitmap(file)
+    throw error
+  }
+}
+
 /** 사진을 EXIF 방향을 반영해 긴 변 2,048px 이하 JPEG Blob으로 다시 만든다. */
 export async function encodeSnsPhoto(file: Blob): Promise<Blob> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  const bitmap = await decodeImage(file)
   try {
     return await drawToJpeg(bitmap, bitmap.width, bitmap.height)
   } finally {

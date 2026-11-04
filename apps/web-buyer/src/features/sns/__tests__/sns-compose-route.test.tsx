@@ -17,12 +17,25 @@ import {
 import { routeTree } from '../../../routeTree.gen'
 import type * as SnsMedia from '../sns.media'
 
-// jsdom에는 createImageBitmap과 캔버스 인코딩이 없다. 다시 인코딩만 갈아 끼우고 발급과 PUT은 실제 코드로 보낸다.
+// jsdom에는 createImageBitmap, 캔버스 인코딩, 영상 디코딩이 없다. 그 셋만 갈아 끼우고 발급과 PUT은 실제 코드로 보낸다.
 // 인코딩 결과는 파일 이름을 담은 JPEG라 크기(contentLength)로 어느 사진인지 알 수 있다.
-vi.mock('../sns.media', async importOriginal => ({
-  ...(await importOriginal<typeof SnsMedia>()),
-  encodeSnsPhoto: vi.fn(async (file: File) => new Blob([file.name], { type: 'image/jpeg' })),
-}))
+// 영상 길이는 파일 이름으로 정한다(long은 75초, broken은 디코딩 실패). nothumb는 첫 썸네일 뜨기에 실패한다.
+const thumbnailFailures = new Set<string>()
+vi.mock('../sns.media', async importOriginal => {
+  const actual = await importOriginal<typeof SnsMedia>()
+  return {
+    ...actual,
+    encodeSnsPhoto: vi.fn(async (file: File) => new Blob([file.name], { type: 'image/jpeg' })),
+    readVideoDuration: vi.fn(async (file: File) => {
+      if (file.name.startsWith('broken')) throw new actual.VideoUnsupportedError('decode error')
+      return file.name.startsWith('long') ? 75_000 : 42_500
+    }),
+    captureVideoThumbnail: vi.fn(async (file: File) => {
+      if (thumbnailFailures.delete(file.name)) throw new Error('no frame')
+      return new Blob(['thumb'], { type: 'image/jpeg' })
+    }),
+  }
+})
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
@@ -36,6 +49,7 @@ function renderAt(path: string) {
 }
 
 const photo = (name: string) => new File(['raw'], name, { type: 'image/jpeg' })
+const video = (name: string) => new File(['video'], name, { type: 'video/mp4' })
 const publishButton = () => screen.getByRole('button', { name: '게시' })
 
 interface PostRequest {
@@ -65,7 +79,7 @@ async function attach(user: ReturnType<typeof userEvent.setup>, ...names: string
   await user.upload(screen.getByLabelText('사진 파일'), names.map(photo))
 }
 
-const tiles = () => within(screen.getByRole('list', { name: '첨부한 사진' })).getAllByRole('img')
+const tiles = () => within(screen.getByRole('list', { name: '첨부' })).getAllByRole('img')
 
 describe('/sns/posts/new 게시', () => {
   it('[AC-SNS02-004] 첨부 없이 캡션만 게시하면 텍스트 게시물이 생기고 상세로 간다', async () => {
@@ -290,6 +304,98 @@ describe('/sns/posts/new 실패와 다시 시도', () => {
     expect(await screen.findByText('오늘 #산책')).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: '해시태그' })).not.toBeInTheDocument()
     expect(postRequests[0]!.body['hashtags']).toBeUndefined()
+  })
+})
+
+describe('/sns/posts/new 영상', () => {
+  const attachVideo = async (user: ReturnType<typeof userEvent.setup>, file: File) =>
+    user.upload(screen.getByLabelText('영상 파일'), file)
+
+  it('영상을 올려 게시하면 키, 썸네일 키, 길이를 함께 보내고 상세에서 재생한다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/posts/new')
+    await screen.findByLabelText('캡션')
+
+    await attachVideo(user, video('walk.mp4'))
+    expect(await screen.findByText('0:43')).toBeInTheDocument()
+    await waitFor(() => expect(publishButton()).toBeEnabled())
+    await user.click(publishButton())
+
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\/01K/))
+    const body = postRequests[0]!.body as { video: { key: string; thumbnailKey: string; durationMs: number } }
+    expect(body.video.key).toMatch(/^tmp\/1\/sns\/posts\/videos\//)
+    expect(body.video.thumbnailKey).toMatch(/^tmp\/1\/sns\/posts\/images\//)
+    expect(body.video.durationMs).toBe(42_500)
+    expect(body).not.toHaveProperty('photoKeys')
+    expect(await screen.findByLabelText('영상')).toHaveAttribute('poster', expect.stringContaining('sns/posts/images/'))
+  })
+
+  it('[AC-SNS02-010] 60초나 100MB를 넘는 영상과 두 번째 영상은 붙이지 않고 안내한다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await screen.findByLabelText('캡션')
+
+    await attachVideo(user, video('long.mp4'))
+    expect(await screen.findByText('60초 이하 영상만 올릴 수 있어요')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('list', { name: '첨부' })).not.toBeInTheDocument())
+
+    const huge = video('huge.mp4')
+    Object.defineProperty(huge, 'size', { value: 100 * 1024 * 1024 + 1 })
+    await attachVideo(user, huge)
+    expect(await screen.findByText('100MB 이하 영상만 올릴 수 있어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '첨부' })).not.toBeInTheDocument()
+
+    await attachVideo(user, video('first.mp4'))
+    await screen.findByText('0:43')
+    await attachVideo(user, video('second.mp4'))
+    expect(await screen.findByText('영상은 1개만 올릴 수 있어요. 바꾸려면 지금 영상을 먼저 빼 주세요')).toBeInTheDocument()
+    expect(tiles()).toHaveLength(1)
+  })
+
+  it('[AC-SNS02-007] 사진과 영상을 함께 고르면 붙이지 않고 안내한다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await screen.findByLabelText('캡션')
+
+    await attach(user, 'a.jpg')
+    await attachVideo(user, video('walk.mp4'))
+    expect(await screen.findByText('사진과 영상은 함께 올릴 수 없어요')).toBeInTheDocument()
+    expect(tiles().map(img => img.getAttribute('alt'))).toEqual(['사진 1'])
+
+    await user.click(screen.getByRole('button', { name: '사진 1 빼기' }))
+    await attachVideo(user, video('walk.mp4'))
+    await screen.findByText('0:43')
+    await attach(user, 'b.jpg')
+    expect(await screen.findAllByText('사진과 영상은 함께 올릴 수 없어요')).not.toHaveLength(0)
+    expect(tiles().map(img => img.getAttribute('alt'))).toEqual(['영상'])
+    expect(screen.queryByRole('button', { name: '사진 추가' })).not.toBeInTheDocument()
+  })
+
+  it('이 기기에서 디코딩하지 못하는 영상은 다시 시도 없이 안내와 빼기만 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await user.type(await screen.findByLabelText('캡션'), '영상 글')
+
+    await attachVideo(user, video('broken.mov'))
+    expect(await screen.findByText('이 기기에서 올릴 수 없는 영상 형식이에요')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '영상 다시 시도' })).not.toBeInTheDocument()
+    expect(publishButton()).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: '영상 빼기' }))
+    expect(publishButton()).toBeEnabled()
+  })
+
+  it('썸네일을 만들지 못하면 다시 시도와 빼기를 보여주고 다시 시도하면 올린다', async () => {
+    thumbnailFailures.add('nothumb.mp4')
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await screen.findByLabelText('캡션')
+
+    await attachVideo(user, video('nothumb.mp4'))
+    expect(await screen.findByText('올리지 못했어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '영상 빼기' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '영상 다시 시도' }))
+    await waitFor(() => expect(publishButton()).toBeEnabled())
   })
 })
 

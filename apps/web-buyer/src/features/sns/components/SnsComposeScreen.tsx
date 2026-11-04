@@ -1,6 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
 import { useBlocker, useNavigate } from '@tanstack/react-router'
-import { ChevronLeft, ChevronRight, Hash, Image as ImageIcon, LoaderCircle, Plus, RotateCw, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Hash,
+  Image as ImageIcon,
+  LoaderCircle,
+  Play,
+  Plus,
+  RotateCw,
+  Video,
+  X,
+} from 'lucide-react'
 import { Button, MobileScreen, Modal } from '@aechak/design-system/web'
 import type { SnsPostCreateRequest } from '@aechak/api'
 import { LoginGate, useSessionState } from '@/shared/auth'
@@ -24,7 +35,9 @@ export function SnsComposeScreen() {
   const navigate = useNavigate()
   const goBack = useSafeBack({ to: '/sns' })
   const guest = useSessionState() === 'guest'
-  const attachments = useSnsAttachments()
+  const [toast, setToast] = useState({ open: false, message: '' })
+  const notify = (message: string) => setToast({ open: true, message })
+  const attachments = useSnsAttachments({ onNotice: notify })
   const create = useCreateSnsPost()
   const [caption, setCaption] = useState('')
   const [hashtags, setHashtags] = useState<string[]>([])
@@ -37,11 +50,12 @@ export function SnsComposeScreen() {
   // 나가기 확인의 응답. true면 머물고 false면 나간다(useBlocker의 shouldBlockFn이 기다린다).
   const [leaveConfirm, setLeaveConfirm] = useState<((stay: boolean) => void) | null>(null)
   const leavingRef = useRef(false)
-  const [toast, setToast] = useState({ open: false, message: '' })
   const photoInput = useRef<HTMLInputElement>(null)
+  const videoInput = useRef<HTMLInputElement>(null)
 
   const text = normalizeCaption(caption)
   const { items } = attachments
+  const hasVideo = items.some(item => item.kind === 'video')
   // 캡션이 비었거나 공백뿐이고 첨부도 없으면 게시할 수 없다(P1).
   const canPublish = !submitting && attachments.ready && (text !== '' || items.length > 0)
   const dirty = caption.trim() !== '' || items.length > 0 || hashtags.length > 0
@@ -66,19 +80,17 @@ export function SnsComposeScreen() {
     setLeaveConfirm(null)
   }
 
-  const notify = (message: string) => setToast({ open: true, message })
-
-  const pickPhotos = (files: File[]) => {
-    const dropped = attachments.addPhotos(files)
-    if (dropped > 0) notify(`사진은 최대 ${PHOTO_MAX}장까지 올릴 수 있어요`)
+  // 빈 필드는 생략한다. 생략하면 null이나 빈 배열과 같다(SnsPostCreateRequest). 영상은 키, 썸네일 키, 길이를 함께 보낸다.
+  const bodyOf = (current: Attachment[]): SnsPostCreateRequest => {
+    const video = current.find(item => item.kind === 'video')
+    const photoKeys = current.flatMap(item => (item.kind === 'photo' ? [item.key!] : []))
+    return {
+      caption: text === '' ? null : text,
+      ...(photoKeys.length > 0 && { photoKeys }),
+      ...(video && { video: { key: video.key!, thumbnailKey: video.thumbnailKey!, durationMs: video.durationMs! } }),
+      ...(hashtags.length > 0 && { hashtags }),
+    }
   }
-
-  // 빈 필드는 생략한다. 생략하면 null이나 빈 배열과 같다(SnsPostCreateRequest).
-  const bodyOf = (current: Attachment[]): SnsPostCreateRequest => ({
-    caption: text === '' ? null : text,
-    ...(current.length > 0 && { photoKeys: current.map(item => item.key!) }),
-    ...(hashtags.length > 0 && { hashtags }),
-  })
 
   const publish = async () => {
     if (!canPublish || submittingRef.current) return
@@ -169,6 +181,15 @@ export function SnsComposeScreen() {
           >
             <ImageIcon className="size-6" />
           </button>
+          <button
+            type="button"
+            aria-label="영상 첨부"
+            disabled={submitting}
+            onClick={() => videoInput.current?.click()}
+            className="flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring disabled:text-icon-muted"
+          >
+            <Video className="size-6" />
+          </button>
           <span className="ml-auto pr-2 text-caption tabular-nums text-text-tertiary">
             {captionLength(caption)}/{CAPTION_MAX}
           </span>
@@ -199,9 +220,9 @@ export function SnsComposeScreen() {
         </div>
 
         {items.length > 0 && (
-          <ul aria-label="첨부한 사진" className="flex flex-wrap gap-2">
+          <ul aria-label="첨부" className="flex flex-wrap gap-2">
             {items.map((item, index) => (
-              <PhotoTile
+              <AttachmentTile
                 key={item.id}
                 item={item}
                 index={index}
@@ -212,7 +233,7 @@ export function SnsComposeScreen() {
                 onRemove={() => attachments.remove(item.id)}
               />
             ))}
-            {items.length < PHOTO_MAX && (
+            {!hasVideo && items.length < PHOTO_MAX && (
               <li>
                 <button
                   type="button"
@@ -253,8 +274,20 @@ export function SnsComposeScreen() {
         hidden
         aria-label="사진 파일"
         onChange={e => {
-          pickPhotos(Array.from(e.target.files ?? []))
+          attachments.addPhotos(Array.from(e.target.files ?? []))
           // 같은 파일을 다시 골라도 change가 오게 비운다.
+          e.target.value = ''
+        }}
+      />
+      <input
+        ref={videoInput}
+        type="file"
+        accept="video/*"
+        hidden
+        aria-label="영상 파일"
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (file) attachments.addVideo(file)
           e.target.value = ''
         }}
       />
@@ -273,7 +306,12 @@ export function SnsComposeScreen() {
   )
 }
 
-function PhotoTile({
+const formatDuration = (ms: number) => {
+  const seconds = Math.round(ms / 1000)
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function AttachmentTile({
   item,
   index,
   count,
@@ -291,17 +329,33 @@ function PhotoTile({
   onRetry: () => void
   onRemove: () => void
 }) {
-  const label = `사진 ${index + 1}`
+  const video = item.kind === 'video' ? item : null
+  const label = video ? '영상' : `사진 ${index + 1}`
   const busy = item.status === 'processing' || item.status === 'uploading'
   const iconButton =
     'flex size-6 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-focus-ring'
   return (
     <li className="relative size-24 overflow-hidden rounded-card bg-surface-sunken">
       {item.previewUrl && <img src={item.previewUrl} alt={label} className="size-full object-cover" />}
+      {video?.status === 'done' && video.durationMs != null && (
+        <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 text-badge text-white">
+          <Play className="size-3" />
+          {formatDuration(video.durationMs)}
+        </span>
+      )}
       {busy && (
-        <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white">
+        <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/30 text-white">
           <LoaderCircle className="size-6 animate-spin" />
+          {video?.status === 'uploading' && (
+            <span className="text-badge tabular-nums">{Math.round(video.progress * 100)}%</span>
+          )}
           <span className="sr-only">{label} 올리는 중</span>
+        </span>
+      )}
+      {/* 이 기기가 디코딩하지 못하는 영상이다. 다시 시도해도 같아서 빼기만 둔다(design 6절 4번). */}
+      {item.status === 'unsupported' && (
+        <span className="absolute inset-0 flex items-center justify-center bg-black/55 p-1.5 text-center text-badge text-white">
+          이 기기에서 올릴 수 없는 영상 형식이에요
         </span>
       )}
       {item.status === 'failed' && (
@@ -321,7 +375,7 @@ function PhotoTile({
       >
         <X className="size-3.5" />
       </button>
-      {count > 1 && (
+      {!video && count > 1 && (
         <span className="absolute inset-x-1 bottom-1 flex justify-between">
           <button
             type="button"
