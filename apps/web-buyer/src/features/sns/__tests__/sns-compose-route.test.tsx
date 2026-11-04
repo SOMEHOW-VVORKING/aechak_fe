@@ -397,6 +397,53 @@ describe('/sns/posts/new 영상', () => {
     await user.click(screen.getByRole('button', { name: '영상 다시 시도' }))
     await waitFor(() => expect(publishButton()).toBeEnabled())
   })
+
+  it.each([
+    ['영상을 빼면', (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: '영상 빼기' }))],
+    [
+      '작성 화면을 닫으면',
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(screen.getByRole('button', { name: '닫기' }))
+        await user.click(await screen.findByRole('button', { name: '나가기' }))
+      },
+    ],
+  ])('썸네일을 올리는 중에 %s 그 PUT을 끊고 영상 발급도 받지 않는다', async (_, stop) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.put('https://fake-s3.local/*', async () => {
+        await held
+        return undefined
+      }),
+    )
+    const purposes: string[] = []
+    let puts = 0
+    server.events.on('request:start', async ({ request }) => {
+      if (request.method === 'PUT') puts += 1
+      if (request.url.endsWith('/files/presigned-url')) {
+        purposes.push(((await request.clone().json()) as { purpose: string }).purpose)
+      }
+    })
+    // jsdom과 MSW는 끊은 XHR에 abort 이벤트를 주지 않아 abort 호출로 확인한다.
+    const abort = vi.spyOn(XMLHttpRequest.prototype, 'abort')
+    try {
+      const user = userEvent.setup()
+      renderAt('/sns/posts/new')
+      await screen.findByLabelText('캡션')
+      await attachVideo(user, video('walk.mp4'))
+      await waitFor(() => expect(puts).toBe(1))
+
+      await stop(user)
+      await waitFor(() => expect(abort).toHaveBeenCalled())
+      release()
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(purposes).toEqual(['SNS_POST_IMAGE'])
+    } finally {
+      abort.mockRestore()
+    }
+  })
 })
 
 describe('/sns/posts/new 닫기와 비로그인', () => {

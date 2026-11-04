@@ -114,8 +114,10 @@ export function captureVideoThumbnail(file: Blob): Promise<Blob> {
 }
 
 // presigned URL은 서명이 자격 증명이라 인증 헤더가 붙은 axios가 아니라 XHR로 보낸다(fetch는 업로드 진행률을 주지 않는다).
-function putBlob(url: string, blob: Blob, onProgress?: (ratio: number) => void): Promise<void> {
+// signal이 끊기면(첨부를 빼거나 작성 화면을 닫음) 남은 바이트를 보내지 않는다.
+function putBlob(url: string, blob: Blob, onProgress?: (ratio: number) => void, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('upload aborted'))
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', blob.type)
@@ -126,6 +128,8 @@ function putBlob(url: string, blob: Blob, onProgress?: (ratio: number) => void):
     }
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`upload ${xhr.status}`)))
     xhr.onerror = () => reject(new Error('upload network error'))
+    xhr.onabort = () => reject(new Error('upload aborted'))
+    signal?.addEventListener('abort', () => xhr.abort())
     xhr.send(blob)
   })
 }
@@ -138,8 +142,9 @@ export async function uploadSnsMedia(
   blob: Blob,
   purpose: 'SNS_POST_IMAGE' | 'SNS_POST_VIDEO',
   onProgress?: (ratio: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const issued = await issuePresignedUrl({ purpose, contentType: blob.type, contentLength: blob.size })
-  await putBlob(issued.data.url, blob, onProgress)
+  const issued = await issuePresignedUrl({ purpose, contentType: blob.type, contentLength: blob.size }, signal)
+  await putBlob(issued.data.url, blob, onProgress, signal)
   return issued.data.key
 }

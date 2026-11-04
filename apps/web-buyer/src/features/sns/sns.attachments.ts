@@ -64,14 +64,19 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
   // 빼거나 화면을 닫은 첨부의 object URL을 놓치지 않게 만든 주소를 모두 기억해 둔다.
   // 미리보기 주소가 생기기 전에도 살아 있는 첨부로 표시해 둔다(빈 문자열은 revoke하지 않는다).
   const previewUrls = useRef(new Map<string, string>())
+  // 빼거나 화면을 닫은 첨부의 업로드를 끊는다. 첨부마다 하나이고 다시 시도와 다시 올리기도 같은 것을 쓴다.
+  const uploads = useRef(new Map<string, AbortController>())
   // 사진 여러 장을 한꺼번에 디코딩하면 휴대폰 메모리가 모자라 다시 인코딩은 한 장씩 한다.
   const encodeQueue = useRef<Promise<unknown>>(Promise.resolve())
 
   useEffect(() => {
     const urls = previewUrls.current
+    const controllers = uploads.current
     return () => {
       urls.forEach(url => url && URL.revokeObjectURL(url))
       urls.clear()
+      controllers.forEach(controller => controller.abort())
+      controllers.clear()
     }
   }, [])
 
@@ -96,6 +101,7 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
 
   // 인코딩은 한 번만 하고 업로드만 다시 할 수 있게 Blob이 있으면 인코딩을 건너뛴다.
   const uploadPhoto = async (item: PhotoAttachment): Promise<PhotoAttachment> => {
+    const signal = uploads.current.get(item.id)?.signal
     let blob = item.blob
     if (!blob) {
       patch(item.id, { status: 'processing' })
@@ -103,13 +109,15 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
       patch(item.id, { blob, previewUrl: setPreview(item.id, blob) })
     }
     patch(item.id, { status: 'uploading' })
-    const key = await uploadSnsMedia(blob, 'SNS_POST_IMAGE')
+    const key = await uploadSnsMedia(blob, 'SNS_POST_IMAGE', undefined, signal)
     patch(item.id, { status: 'done', key })
     return { ...item, blob, key, status: 'done' }
   }
 
   // 썸네일을 뜨고 썸네일(SNS_POST_IMAGE)과 영상(SNS_POST_VIDEO)을 올린다. 이미 끝난 단계는 건너뛴다.
   const uploadVideo = async (item: VideoAttachment): Promise<VideoAttachment> => {
+    // 시작할 때 잡아 둔다. 썸네일을 올리는 사이 빼면 끊긴 signal이라 영상은 발급부터 받지 않는다.
+    const signal = uploads.current.get(item.id)?.signal
     let { thumbnail, thumbnailKey, key } = item
     if (!thumbnail) {
       patch(item.id, { status: 'processing' })
@@ -117,10 +125,10 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
       patch(item.id, { thumbnail, previewUrl: setPreview(item.id, thumbnail) })
     }
     patch(item.id, { status: 'uploading' })
-    thumbnailKey ??= await uploadSnsMedia(thumbnail, 'SNS_POST_IMAGE')
+    thumbnailKey ??= await uploadSnsMedia(thumbnail, 'SNS_POST_IMAGE', undefined, signal)
     patch(item.id, { thumbnailKey })
     // 100MB까지 올리므로 진행률을 보여준다(design 6절 4번).
-    key ??= await uploadSnsMedia(item.file, 'SNS_POST_VIDEO', progress => patch(item.id, { progress }))
+    key ??= await uploadSnsMedia(item.file, 'SNS_POST_VIDEO', progress => patch(item.id, { progress }), signal)
     patch(item.id, { status: 'done', key, progress: 1 })
     return { ...item, thumbnail, thumbnailKey, key, status: 'done', progress: 1 }
   }
@@ -133,7 +141,10 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
   }
 
   const attach = (added: Attachment[]) => {
-    for (const item of added) previewUrls.current.set(item.id, '')
+    for (const item of added) {
+      previewUrls.current.set(item.id, '')
+      uploads.current.set(item.id, new AbortController())
+    }
     setItems(list => [...list, ...added])
   }
 
@@ -141,6 +152,8 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
     const url = previewUrls.current.get(id)
     if (url) URL.revokeObjectURL(url)
     previewUrls.current.delete(id)
+    uploads.current.get(id)?.abort()
+    uploads.current.delete(id)
     setItems(list => list.filter(item => item.id !== id))
   }
 
