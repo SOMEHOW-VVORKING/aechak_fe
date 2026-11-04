@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useBlocker, useNavigate } from '@tanstack/react-router'
-import { ChevronLeft, ChevronRight, Image as ImageIcon, LoaderCircle, Plus, RotateCw, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Hash, Image as ImageIcon, LoaderCircle, Plus, RotateCw, X } from 'lucide-react'
 import { Button, MobileScreen, Modal } from '@aechak/design-system/web'
 import type { SnsPostCreateRequest } from '@aechak/api'
 import { LoginGate, useSessionState } from '@/shared/auth'
@@ -9,6 +9,7 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { PHOTO_MAX, useSnsAttachments, type Attachment } from '../sns.attachments'
 import { SNS_UPLOAD_NOT_FOUND, snsErrorCode, snsPostErrorMessage, useCreateSnsPost } from '../sns.queries'
 import { CAPTION_MAX, captionLength, clampCaption, hasHashWord, normalizeCaption } from '../sns.text'
+import { HashtagChips, SnsHashtagPicker } from './SnsHashtagPicker'
 
 function randomId(): string {
   const c = globalThis.crypto
@@ -26,6 +27,8 @@ export function SnsComposeScreen() {
   const attachments = useSnsAttachments()
   const create = useCreateSnsPost()
   const [caption, setCaption] = useState('')
+  const [hashtags, setHashtags] = useState<string[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
   // 화면을 열 때 한 번 만들어 이 화면의 모든 게시 시도에 보낸다. 응답을 받지 못해 다시 눌러도 게시물은 하나다(P13).
   const [idempotencyKey] = useState(randomId)
   const [submitting, setSubmitting] = useState(false)
@@ -41,7 +44,7 @@ export function SnsComposeScreen() {
   const { items } = attachments
   // 캡션이 비었거나 공백뿐이고 첨부도 없으면 게시할 수 없다(P1).
   const canPublish = !submitting && attachments.ready && (text !== '' || items.length > 0)
-  const dirty = caption.trim() !== '' || items.length > 0
+  const dirty = caption.trim() !== '' || items.length > 0 || hashtags.length > 0
 
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
@@ -74,6 +77,7 @@ export function SnsComposeScreen() {
   const bodyOf = (current: Attachment[]): SnsPostCreateRequest => ({
     caption: text === '' ? null : text,
     ...(current.length > 0 && { photoKeys: current.map(item => item.key!) }),
+    ...(hashtags.length > 0 && { hashtags }),
   })
 
   const publish = async () => {
@@ -97,6 +101,37 @@ export function SnsComposeScreen() {
       submittingRef.current = false
       setSubmitting(false)
     }
+  }
+
+  // 나가기 확인은 해시태그 모달을 연 채 이동해도 보여야 한다. 블로커가 이 응답을 기다린다.
+  const leaveModal = leaveConfirm && (
+    <Modal
+      open
+      onClose={() => answerLeave(true)}
+      title="작성을 취소할까요?"
+      description="작성한 내용은 저장되지 않아요."
+      confirmLabel="나가기"
+      cancelLabel="계속 쓰기"
+      confirmVariant="danger"
+      onConfirm={() => answerLeave(false)}
+    />
+  )
+
+  // 해시태그 모달은 작성 화면 위에 통째로 그린다. 작성 상태는 이 컴포넌트가 들고 있어 그대로 남는다.
+  if (pickerOpen) {
+    return (
+      <>
+        <SnsHashtagPicker
+          initial={hashtags}
+          onCancel={() => setPickerOpen(false)}
+          onDone={tags => {
+            setHashtags(tags)
+            setPickerOpen(false)
+          }}
+        />
+        {leaveModal}
+      </>
+    )
   }
 
   return (
@@ -195,6 +230,19 @@ export function SnsComposeScreen() {
             )}
           </ul>
         )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <HashtagChips tags={hashtags} onRemove={tag => setHashtags(prev => prev.filter(t => t !== tag))} />
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<Hash className="size-4" />}
+            disabled={submitting}
+            onClick={() => setPickerOpen(true)}
+          >
+            해시태그 추가
+          </Button>
+        </div>
       </div>
 
       <input
@@ -211,18 +259,7 @@ export function SnsComposeScreen() {
         }}
       />
 
-      {leaveConfirm && (
-        <Modal
-          open
-          onClose={() => answerLeave(true)}
-          title="작성을 취소할까요?"
-          description="작성한 내용은 저장되지 않아요."
-          confirmLabel="나가기"
-          cancelLabel="계속 쓰기"
-          confirmVariant="danger"
-          onConfirm={() => answerLeave(false)}
-        />
-      )}
+      {leaveModal}
 
       <LoginGate open={guest} feature="write" onClose={goBack} resume={{ kind: 'open', publicId: '' }} />
       <AppToast

@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -19,6 +20,7 @@ import {
   getSnsPost,
   getSnsProfile,
   muteUser,
+  searchSnsHashtags,
   unblockUser,
   unfollowUser,
   unmuteUser,
@@ -58,6 +60,9 @@ export const SNS_UPLOAD_NOT_FOUND = 100001
 export const SNS_RATE_LIMITED = 90006
 
 const PAGE_SIZE = 20
+/** 게시물 하나에 다는 해시태그 상한(A8). 넘으면 서버도 130406으로 거부한다 */
+export const HASHTAG_MAX = 30
+const HASHTAG_SEARCH_SIZE = 20
 
 export const snsKeys = {
   all: ['sns'] as const,
@@ -70,6 +75,7 @@ export const snsKeys = {
   relations: (kind: RelationKind) => ['sns', kind] as const,
   posts: ['sns', 'post'] as const,
   post: (publicId: string) => ['sns', 'post', publicId] as const,
+  hashtags: (query: string) => ['sns', 'hashtags', query] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -138,6 +144,21 @@ const POST_ERROR_COPY: Record<number, string> = {
 export function snsPostErrorMessage(error: unknown, fallback: string): string {
   const code = snsErrorCode(error)
   return (code != null && POST_ERROR_COPY[code]) || fallback
+}
+
+/**
+ * 해시태그 자동완성(GET /sns/hashtags). 빈 검색어는 EMPTY와 추천 태그다. 입력이 바뀌는 동안 이전 결과를 남겨
+ * 목록이 깜빡이지 않게 한다. 검색어 정규화와 상태 판정은 서버가 한다(design 6절 6번).
+ */
+export function useHashtagSearch(query: string) {
+  return useQuery({
+    queryKey: snsKeys.hashtags(query),
+    // 빈 검색어는 키째 뺀다(AGENTS.md 6절 6). 서버는 검색어가 없으면 EMPTY로 답한다.
+    queryFn: async ({ signal }) =>
+      (await searchSnsHashtags({ query: query || undefined, size: HASHTAG_SEARCH_SIZE }, signal)).data,
+    placeholderData: keepPreviousData,
+    retry: retryTransient,
+  })
 }
 
 /** publicId가 없으면 내 프로필(GET /sns/me, 로그인 필요)을 읽는다. 다른 사용자 프로필은 비로그인도 된다. */
