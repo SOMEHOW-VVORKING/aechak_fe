@@ -2613,7 +2613,7 @@ export interface ShippingPolicyUpdateRequest {
 }
 
 /**
- * 셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 — 나머지는 403 errorCode 10002다.
+ * 셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 — 나머지는 403 errorCode 10002다. 어드민 셀러 관리(`/admin/sellers`)가 읽고 쓰는 값도 같은 열거다. **SUSPENDED는 해제 예정 시각이 지나도 저절로 ACTIVE로 돌아가지 않는다** — 게이트가 status != ACTIVE만 보고 만료를 보지 않아 해제는 운영자 조치뿐이다. PAUSED·WITHDRAWN으로 가는 전이 코드는 아직 없어 그 상태의 셀러는 현재 생기지 않지만, 응답에는 실릴 수 있으므로 화면은 다섯 값을 다 읽을 수 있어야 한다.
  */
 export type SellerStatus = (typeof SellerStatus)[keyof typeof SellerStatus]
 
@@ -4401,6 +4401,203 @@ export interface RejectAdminSellerApplicationRequest {
    * @nullable
    */
   reason?: string | null
+}
+
+/**
+ * 목록 판매자 유형 필터. 응답의 businessType 세 값과 1:1이 아니다 — 거르는 축은 "사업자인가" 둘뿐이라 BUSINESS는 SOLE_PROPRIETORSHIP·CORPORATE를, INDIVIDUAL은 PERSONAL_GENERAL을 가리킨다. ALL·생략·알 수 없는 값은 모두 전체다. **ALL이 아닌 값을 주면 입점 신청서가 없는 셀러(businessType=null)는 결과에서 빠진다**
+ */
+export type AdminSellerTypeFilter =
+  (typeof AdminSellerTypeFilter)[keyof typeof AdminSellerTypeFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminSellerTypeFilter = {
+  ALL: 'ALL',
+  BUSINESS: 'BUSINESS',
+  INDIVIDUAL: 'INDIVIDUAL',
+} as const
+
+/**
+ * 판매정지 이력 한 행의 조치. 이력은 추가 전용이라 해제도 RELEASE 행으로 쌓인다. 회원 제재의 SanctionAction과 다른 어휘다 — 이쪽이 막는 것은 판매뿐이다
+ */
+export type SellerSanctionAction = (typeof SellerSanctionAction)[keyof typeof SellerSanctionAction]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSanctionAction = {
+  SUSPEND: 'SUSPEND',
+  RELEASE: 'RELEASE',
+} as const
+
+/**
+ * 판매정지 사유 고정 어휘. 자유 문자열이 아닌 이유는 "같은 사유로 몇 번 정지했는가"를 답할 수 있어야 하기 때문이다. OTHER는 reasonDetail이 필수다(없으면 400 errorCode 10010). 사람이 읽는 라벨은 응답에 실리지 않아 화면이 들고 있어야 한다 — 상품 정보 허위 기재 / 신고 누적 / 결제·정산 이상 거래 / 기타
+ */
+export type SellerSanctionReasonCode =
+  (typeof SellerSanctionReasonCode)[keyof typeof SellerSanctionReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSanctionReasonCode = {
+  FALSE_PRODUCT_INFO: 'FALSE_PRODUCT_INFO',
+  REPEATED_REPORT: 'REPEATED_REPORT',
+  ABNORMAL_TRANSACTION: 'ABNORMAL_TRANSACTION',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 입점 신청서가 없는 셀러는 null — 유형을 모른다는 뜻이고 개인으로 접으면 거짓이 된다
+ * @nullable
+ */
+export type AdminSellerSummaryBusinessType = BusinessType | null
+
+/**
+ * 목록·상세의 한 셀러. 입점 신청서가 없는 셀러(시딩·과거 데이터)는 businessType과 representativeNameMasked가 **둘 다 null**이다 — 유형·대표자명이 sellers에 없고 서버가 신청서를 left join으로 붙이기 때문이다. 화면 목업의 '최근 접속'과 '신고 누적'은 이 응답에 없다 — users에 최근 접속 칼럼이 없고, 신고 대상 종류에 셀러가 없어 셀 수 있는 값이 아니다(지어내지 말 것)
+ */
+export interface AdminSellerSummary {
+  /** sellers.user_id — 모든 경로의 경로 변수이고 목록 정렬 키다 */
+  sellerId: number
+  storeName: string
+  status: SellerStatus
+  /**
+   * 입점 신청서가 없는 셀러는 null — 유형을 모른다는 뜻이고 개인으로 접으면 거짓이 된다
+   * @nullable
+   */
+  businessType: AdminSellerSummaryBusinessType
+  /**
+   * **서버가 가려서 내려준 값**이다(가운데를 가리고 성과 끝 글자만 남긴다) — 화면에서 또 가리지 말 것. 평문이 필요한 통장사본 대조는 입점 심사 상세가 담당한다: 목록은 한 요청에 최대 100행의 대표자명을 내보내는 자리라 평문을 실으면 노출면이 행 수만큼 커진다. 신청서가 없으면 null
+   * @nullable
+   */
+  representativeNameMasked: string | null
+  /** 그 셀러의 상품 행 수. **판매 상태로 거르지 않는다**(판매중지·블라인드도 들어간다) */
+  productCount: number
+  /** sellers.confirmed_order_count — **구매확정** 누적이다(주문 접수 누적이 아니다) */
+  cumulativeOrderCount: number
+  /** 지급 대기(PENDING) 정산 원장이 한 행이라도 있는지. **금액이 아니라 보유 여부** */
+  hasUnsettledAmount: boolean
+  /** 운영 상태가 마지막으로 바뀐 시각(오프셋 없는 LocalDateTime) */
+  statusChangedAt: string
+  /**
+   * 현재 정지의 해제 예정 시각. 무기한 정지와 정지 아닌 셀러는 null이다. **그 시각이 지나도 상태는 저절로 풀리지 않는다** — 해제는 운영자 조치이고 서버에 만료 처리가 없다(회원의 임시 정지와 다른 동작이다)
+   * @nullable
+   */
+  suspensionUntil: string | null
+}
+
+export interface AdminSellerListData {
+  items: AdminSellerSummary[]
+  /** 현재 필터 기준 전체 행 수(페이지 크기가 아니다) */
+  totalCount: number
+}
+
+export interface AdminSellerListResponse {
+  data: AdminSellerListData
+}
+
+/**
+ * RELEASE 행은 제재 어휘를 쓰지 않아 늘 null이다
+ * @nullable
+ */
+export type SellerSanctionHistoryReasonCode = SellerSanctionReasonCode | null
+
+/**
+ * 판매정지 이력 한 행. 추가 전용이라 해제도 action=RELEASE 행으로 쌓인다
+ */
+export interface SellerSanctionHistory {
+  sanctionId: number
+  action: SellerSanctionAction
+  /**
+   * RELEASE 행은 제재 어휘를 쓰지 않아 늘 null이다
+   * @nullable
+   */
+  reasonCode: SellerSanctionHistoryReasonCode
+  /**
+   * 운영자가 쓴 상세 사유. 공백뿐이면 서버가 null로 저장한다
+   * @nullable
+   */
+  reasonDetail: string | null
+  /**
+   * **그때 정한** 해제 예정 시각. 무기한 정지와 RELEASE 행은 null이다. 현재 값은 셀러의 suspensionUntil이고 이 값은 그 조치 시점의 기록이다
+   * @nullable
+   */
+  effectiveUntil: string | null
+  /**
+   * **그 조치 시점의** 운영자 메모 사본 — 현재 메모(internalMemo)와 다를 수 있다
+   * @nullable
+   */
+  memo: string | null
+  /** 조치한 운영자의 users.id */
+  actedByAdminId: number
+  /** 조치 시각(오프셋 없는 LocalDateTime) */
+  actedAt: string
+}
+
+/**
+ * 현재 정지의 사유 어휘. **정지 중이 아니면 null**이고 화면의 사유 선택을 채우는 값이다
+ * @nullable
+ */
+export type AdminSellerDetailDataSuspensionReasonCode = SellerSanctionReasonCode | null
+
+export interface AdminSellerDetailData {
+  seller: AdminSellerSummary
+  /**
+   * 현재 정지의 사유 어휘. **정지 중이 아니면 null**이고 화면의 사유 선택을 채우는 값이다
+   * @nullable
+   */
+  suspensionReasonCode: AdminSellerDetailDataSuspensionReasonCode
+  /**
+   * 사람이 읽는 현재 정지 사유 한 줄(`어휘 라벨` 또는 `어휘 라벨 — 상세`). 해제하면 null
+   * @nullable
+   */
+  suspensionReason: string | null
+  /**
+   * 셀러의 **현재** 운영자 메모. 셀러에게 보이지 않는다
+   * @nullable
+   */
+  internalMemo: string | null
+  /** 최신순, 최대 50건 */
+  sanctions: SellerSanctionHistory[]
+}
+
+export interface AdminSellerDetailResponse {
+  data: AdminSellerDetailData
+}
+
+export interface SuspendSellerRequest {
+  reasonCode: SellerSanctionReasonCode
+  /**
+   * reasonCode=OTHER면 필수(없으면 400 errorCode 10010)
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /**
+   * **생략·null이면 무기한 정지**다. 만료 시각은 서버가 계산한다
+   * @minimum 1
+   * @maximum 365
+   */
+  durationDays?: number
+  /**
+   * 비어 있지 않을 때만 현재 메모를 덮어쓴다 — 빈 값으로 기존 메모를 지우지 않는다
+   * @maxLength 500
+   */
+  memo?: string
+}
+
+/**
+ * 본문 전체를 생략할 수 있다(`{}`도 받는다). 고정 어휘 사유가 없는 조치라 상세 사유만 받는다
+ */
+export interface ReleaseSellerSuspensionRequest {
+  /** @maxLength 500 */
+  reasonDetail?: string
+  /**
+   * 비어 있지 않을 때만 현재 메모를 덮어쓴다
+   * @maxLength 500
+   */
+  memo?: string
+}
+
+/**
+ * 덮어쓰기다. **null·공백이면 메모를 지운다**(제재 조치에 딸린 memo와 규칙이 반대다)
+ */
+export interface SaveSellerMemoRequest {
+  /** @maxLength 500 */
+  memo?: string
 }
 
 export interface SnsPetResult {
@@ -6379,6 +6576,30 @@ export type GetAdminSellerApplicationsParams = {
    * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
    */
   status?: ApplicationStatus
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminSellersParams = {
+  /**
+   * 운영 상태. 대소문자는 무시된다. 생략하면 전체
+   */
+  status?: SellerStatus
+  /**
+   * 판매자 유형 축. 생략하면 ALL
+   */
+  sellerType?: AdminSellerTypeFilter
+  /**
+   * 상호명 부분일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
   /**
    * @minimum 0
    */
@@ -26709,6 +26930,680 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
   TContext
 > => {
   const mutationOptions = getRejectAdminSellerApplicationMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011 — 둘은 Security 필터 구간에서 끝나 감사 로그에 남지 않는다). 입점 심사(`/admin/seller-applications`)와 다른 층이다 — 여기서 막는 것은 **판매**이고, 계정 로그인 차단은 `/admin/members`가 users.status로 따로 다룬다(셀러도 role=GENERAL이라 한 계정이 양쪽 목록에 함께 등장할 수 있다). **오프셋 페이지네이션**이고 커서가 아니다. 정렬은 `sellerId` 내림차순(개점 역순) 고정이라 정렬 파라미터가 없다 — sellers는 user_id가 PK이고 별도 셀러 id가 없어 그것이 중복·누락 없는 유일한 키다. `status`·`sellerType` 형식 오류는 서버가 보정한다(대소문자 무시, 알 수 없는 status는 조건 없음, 알 수 없는 sellerType은 ALL) — **400을 내지 않는다.** page 음수는 0으로, size는 1~100으로 절삭한다. `keyword`는 상호명(storeName) 부분일치이고 앞뒤 공백을 떼며 공백뿐이면 조건이 없는 것으로 본다. **`sellerType`을 BUSINESS·INDIVIDUAL로 주면 입점 신청서가 없는 셀러는 결과에서 빠진다** (유형을 모르는 셀러를 어느 쪽으로도 세지 않는다) — 그 셀러는 businessType이 null이다. `totalCount`는 필터 기준 전체 행 수다(현재 페이지 크기가 아니다).
+ * @summary 어드민 입점 셀러 목록
+ */
+export const getAdminSellers = (params?: GetAdminSellersParams, signal?: AbortSignal) => {
+  return customInstance<AdminSellerListResponse>({
+    url: `/admin/sellers`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminSellersQueryKey = (params?: GetAdminSellersParams) => {
+  return [`/admin/sellers`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminSellersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellers>>> = ({ signal }) =>
+    getAdminSellers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminSellers>>>
+export type GetAdminSellersQueryError = unknown
+
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 목록
+ */
+
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellers>>> = ({ signal }) =>
+    getAdminSellers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellers>>
+>
+export type GetAdminSellersSuspenseQueryError = unknown
+
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 목록
+ */
+
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행과 **같은 스키마**의 셀러 하나에 현재 정지 사유·운영자 메모·제재 이력을 더한다. `suspensionReasonCode`는 화면의 사유 선택을 채우는 값이고 **정지 중이 아니면 null**이다 (서버가 sellers에 사유 코드를 또 두지 않고 이력의 최근 SUSPEND 행에서 읽는다 — 같은 사실을 두 곳에 적어 한쪽만 갱신되는 자리를 만들지 않았다). `suspensionReason`은 사람이 읽는 사유 한 줄(`어휘 라벨` 또는 `어휘 라벨 — 상세`)이고 해제하면 null이 된다. `internalMemo`는 **현재** 메모이고, 이력 행의 memo는 그 조치 시점의 사본이라 서로 다를 수 있다. `sanctions`는 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 10000 — 셀러가 아닌 식별자(없는 계정과 셀러로 등록되지 않은 계정이 같은 응답이다).
+ * @summary 어드민 입점 셀러 상세
+ */
+export const getAdminSellerDetail = (sellerId: number, signal?: AbortSignal) => {
+  return customInstance<AdminSellerDetailResponse>({
+    url: `/admin/sellers/${sellerId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminSellerDetailQueryKey = (sellerId?: number) => {
+  return [`/admin/sellers/${sellerId}`] as const
+}
+
+export const getGetAdminSellerDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerDetailQueryKey(sellerId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerDetail>>> = ({ signal }) =>
+    getAdminSellerDetail(sellerId, signal)
+
+  return { queryKey, queryFn, enabled: !!sellerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerDetail>>
+>
+export type GetAdminSellerDetailQueryError = unknown
+
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 상세
+ */
+
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerDetailQueryOptions(sellerId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellerDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerDetailQueryKey(sellerId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerDetail>>> = ({ signal }) =>
+    getAdminSellerDetail(sellerId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerDetail>>
+>
+export type GetAdminSellerDetailSuspenseQueryError = unknown
+
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 상세
+ */
+
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerDetailSuspenseQueryOptions(sellerId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러 상태를 SUSPENDED로 옮기고 제재 이력 한 행(action=SUSPEND)을 남긴다. 성공은 204 No Content(본문 없음)다. 거부된 요청은 상태도 이력도 바꾸지 않는다. 막는 것은 판매뿐이다 — 셀러의 로그인은 끊기지 않고 `products.sale_status`도 건드리지 않는다. `durationDays`를 **생략하면 무기한 정지**이고 만료 시각은 서버 시계로 계산한다(클라이언트가 보낸 시각을 받지 않는다). **그 시각이 지나도 상태는 SUSPENDED로 남는다** — 자동 해제가 없다 (노출·쓰기 게이트가 status != ACTIVE만 보고 만료를 보지 않는다). 화면에 "기간이 지나면 자동으로 풀려요"라고 쓰면 거짓이 된다. `memo`는 **비어 있지 않을 때만** 현재 메모(`sellers.admin_memo`)를 덮어쓴다 — 공백·누락으로는 기존 메모를 지우지 않는다(지우는 경로는 메모 저장이다). **검증 순서가 계약의 일부다**: 식별자(404) → 이력 행 입력(10010·10011) → 상태 전이 (10007·10009). 이미 정지된 셀러에 기타 사유만 고르고 보내면 10007이 아니라 10010이 온다. 400 errorCode 90001 — reasonCode 누락, durationDays 범위 밖(1~365), reasonDetail·memo 500자 초과. 400 errorCode 10010 — reasonCode=OTHER인데 reasonDetail이 비었음. 400 errorCode 10011 — 사유·메모가 저장 한계(500자)를 넘음. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10007 — 이미 판매정지 상태. 409 errorCode 10009 — WITHDRAWN·WITHDRAWAL_REQUESTED 셀러(해제가 되돌릴 자리가 없다) 또는 **동시 조치 충돌**(낙관적 잠금). 둘 다 화면이 낡았다는 신호라 재조회가 답이다.
+ * @summary 어드민 셀러 판매정지
+ */
+export const suspendAdminSeller = (
+  sellerId: number,
+  suspendSellerRequest: SuspendSellerRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/suspensions`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: suspendSellerRequest,
+    signal,
+  })
+}
+
+export const getSuspendAdminSellerMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendAdminSeller>>,
+    TError,
+    { sellerId: number; data: SuspendSellerRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suspendAdminSeller>>,
+  TError,
+  { sellerId: number; data: SuspendSellerRequest },
+  TContext
+> => {
+  const mutationKey = ['suspendAdminSeller']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suspendAdminSeller>>,
+    { sellerId: number; data: SuspendSellerRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return suspendAdminSeller(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SuspendAdminSellerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suspendAdminSeller>>
+>
+export type SuspendAdminSellerMutationBody = SuspendSellerRequest
+export type SuspendAdminSellerMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 판매정지
+ */
+export const useSuspendAdminSeller = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof suspendAdminSeller>>,
+      TError,
+      { sellerId: number; data: SuspendSellerRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof suspendAdminSeller>>,
+  TError,
+  { sellerId: number; data: SuspendSellerRequest },
+  TContext
+> => {
+  const mutationOptions = getSuspendAdminSellerMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 정지 **직전 상태**로 되돌리고 해제 이력 한 행(action=RELEASE, reasonCode·effectiveUntil은 null)을 남긴다(UPDATE가 아니다). 직전 상태가 비어 있는 행(이 전이가 생기기 전에 정지된 셀러)은 ACTIVE로 되돌린다. 성공은 204 No Content(본문 없음)다. 본문은 생략할 수 있고 `{}`도 받는다. DELETE가 아닌 이유는 사유·메모를 본문으로 받기 때문이다 — 프록시가 DELETE 본문을 잘라 감사 기록의 사유 칸이 비면 안 된다(회원 제재 해제와 같은 결정). `memo`는 비어 있지 않을 때만 현재 메모를 덮어쓴다. 400 errorCode 10011 — 사유·메모 길이 초과. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10008 — 판매정지 상태가 아님. 409 errorCode 10009 — 동시 조치 충돌.
+ * @summary 어드민 셀러 판매정지 해제
+ */
+export const releaseAdminSellerSuspension = (
+  sellerId: number,
+  releaseSellerSuspensionRequest?: ReleaseSellerSuspensionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/suspensions/release`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: releaseSellerSuspensionRequest,
+    signal,
+  })
+}
+
+export const getReleaseAdminSellerSuspensionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+    TError,
+    { sellerId: number; data: ReleaseSellerSuspensionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+  TError,
+  { sellerId: number; data: ReleaseSellerSuspensionRequest },
+  TContext
+> => {
+  const mutationKey = ['releaseAdminSellerSuspension']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+    { sellerId: number; data: ReleaseSellerSuspensionRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return releaseAdminSellerSuspension(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReleaseAdminSellerSuspensionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>
+>
+export type ReleaseAdminSellerSuspensionMutationBody = ReleaseSellerSuspensionRequest
+export type ReleaseAdminSellerSuspensionMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 판매정지 해제
+ */
+export const useReleaseAdminSellerSuspension = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+      TError,
+      { sellerId: number; data: ReleaseSellerSuspensionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+  TError,
+  { sellerId: number; data: ReleaseSellerSuspensionRequest },
+  TContext
+> => {
+  const mutationOptions = getReleaseAdminSellerSuspensionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * `sellers.admin_memo`를 덮어쓴다(앞뒤 공백 제거). 성공은 204 No Content(본문 없음)다. **memo가 null·공백이면 메모를 지운다** — 본문 자체를 생략해도 같다. 제재 조치에 딸려 오는 memo와 규칙이 반대라는 점을 섞지 말 것(그쪽은 빈 값으로 지우지 않는다). **제재 이력 행은 남지 않는다** — 누가 언제 바꿨는지는 감사 로그 (`/admin/audit-logs`의 SELLER_MEMO_UPDATED)가 받는다. 이력 행의 memo는 그 조치 시점의 사본이라 이 경로로 바뀌지 않는다. 400 errorCode 10011 — 500자 초과. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10009 — 동시 조치 충돌(메모 저장도 같은 행의 version을 올린다).
+ * @summary 어드민 셀러 내부 메모 저장
+ */
+export const saveAdminSellerMemo = (
+  sellerId: number,
+  saveSellerMemoRequest?: SaveSellerMemoRequest,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/memo`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: saveSellerMemoRequest,
+  })
+}
+
+export const getSaveAdminSellerMemoMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+    TError,
+    { sellerId: number; data: SaveSellerMemoRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+  TError,
+  { sellerId: number; data: SaveSellerMemoRequest },
+  TContext
+> => {
+  const mutationKey = ['saveAdminSellerMemo']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+    { sellerId: number; data: SaveSellerMemoRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return saveAdminSellerMemo(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SaveAdminSellerMemoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>
+>
+export type SaveAdminSellerMemoMutationBody = SaveSellerMemoRequest
+export type SaveAdminSellerMemoMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 내부 메모 저장
+ */
+export const useSaveAdminSellerMemo = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+      TError,
+      { sellerId: number; data: SaveSellerMemoRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+  TError,
+  { sellerId: number; data: SaveSellerMemoRequest },
+  TContext
+> => {
+  const mutationOptions = getSaveAdminSellerMemoMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
