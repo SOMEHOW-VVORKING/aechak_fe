@@ -362,4 +362,40 @@ describe('비로그인 리포스트와 저장', () => {
     expect(button(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true')
     expect(repostCount(cardOf('코코집사'))).toBe('1')
   })
+
+  // 차단과 뮤트는 확인이 더 필요한 행동이라 로그인 뒤 확인 Modal이나 더보기 시트만 다시 연다(A26).
+  it('[A26] 카드 더보기에서 차단을 누르고 로그인을 마치면 같은 탭으로 돌아와 그 작성자의 차단 확인이 다시 열린다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const guestRouter = renderAt('/sns/feed')
+    await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
+    await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '차단하기' }))
+
+    const router = await loginAndReturn(guestRouter)
+    const modal = await screen.findByRole('dialog', { name: '차단할까요?' })
+    expect(router.state.location.search).toEqual({ tab: 'explore' })
+    expect(within(modal).getByText(/^몽이아빠님은/)).toBeInTheDocument()
+    await user.click(within(modal).getByRole('button', { name: '차단' }))
+    expect(await screen.findByText('차단했어요')).toBeInTheDocument()
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_MONG)).toBe(true)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[A26] 카드 더보기에서 뮤트를 누르고 로그인을 마치면 같은 탭으로 돌아와 그 글의 더보기 시트가 다시 열린다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const guestRouter = renderAt('/sns/feed')
+    await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
+    await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '뮤트하기' }))
+
+    await loginAndReturn(guestRouter)
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '뮤트하기', '차단하기'])
+    await user.click(within(sheet).getByRole('button', { name: '뮤트하기' }))
+    expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
+    expect(currentSns().mutes.some(r => r.from === SNS_ME && r.to === SNS_MONG)).toBe(true)
+    expect(sessionStorage.length).toBe(0)
+  })
 })

@@ -45,7 +45,7 @@ export function snsFeedSearch(search: Record<string, unknown>): { tab?: SnsFeedK
   return tab ? { tab } : {}
 }
 
-// 비로그인으로 카드 더보기의 뮤트, 차단을 누르면 로그인 뒤 이 피드로만 돌아온다. 대상 카드는 다시 찾지 않는다.
+// 비로그인이 누른 팔로잉 탭은 로그인 뒤 이 피드로 돌아오기만 한다(A9).
 const BACK_TO_FEED: GateResume = { kind: 'open', publicId: '' }
 
 interface ToastState {
@@ -118,16 +118,25 @@ export function SnsFeedScreen({
     return requireAuth(feature, action, resumeAction)
   }
 
-  // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 리포스트, 저장은 피드를 받은 뒤 꺼내 확인 없이 한 번 켠다.
-  // 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다.
+  // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 행동은 피드를 받은 뒤 꺼낸다. 리포스트, 저장은 확인 없이 한 번
+  // 켠다. 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다. 차단, 뮤트는 확인이 더
+  // 필요해 그 카드의 확인 Modal이나 더보기 시트만 다시 연다. 로그인한 피드에 그 카드가 없으면(그사이 볼 수 없게 됐거나 내 글)
+  // 열지 않는다.
   const items = feed.data
   useEffect(() => {
     if (!loggedIn || !items) return
     const pending = peekPendingAction()
-    if (pending?.kind !== 'repost' && pending?.kind !== 'save') return
-    takePendingAction(pending.publicId)
-    const mine = items.some(item => item.post.publicId === pending.publicId && item.post.isMine)
-    if (pending.kind === 'save' || !mine) setResume({ kind: pending.kind, publicId: pending.publicId })
+    if (!pending) return
+    const { kind, publicId } = pending
+    if (kind !== 'repost' && kind !== 'save' && kind !== 'block' && kind !== 'mute') return
+    takePendingAction(publicId)
+    const post = items.find(item => item.post.publicId === publicId)?.post
+    if (kind === 'repost' || kind === 'save') {
+      if (kind === 'save' || !post?.isMine) setResume({ kind, publicId })
+    } else if (post && !post.isMine) {
+      if (kind === 'block') setConfirm({ kind: 'block', post })
+      else setMore({ post, open: true })
+    }
   }, [loggedIn, items])
 
   const selectTab = (next: SnsFeedKind) => {
@@ -162,7 +171,7 @@ export function SnsFeedScreen({
             onError: e => showToast(snsToggleErrorMessage(e), 'error'),
           },
         ),
-      BACK_TO_FEED,
+      { kind: 'mute', publicId: post.publicId },
     )
 
   // 차단과 뮤트 해제는 확인을 거친다. 성공하면 useSnsToggle이 받아 둔 피드를 지워 첫 페이지부터 다시 읽는다.
@@ -275,7 +284,12 @@ export function SnsFeedScreen({
           onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: more.post.publicId } })}
           onDelete={() => setDeleting(more.post)}
           onMute={() => (more.post.mutedByMe ? setConfirm({ kind: 'unmute', post: more.post }) : mute(more.post))}
-          onBlock={() => gate('block', () => setConfirm({ kind: 'block', post: more.post }), BACK_TO_FEED)}
+          onBlock={() =>
+            gate('block', () => setConfirm({ kind: 'block', post: more.post }), {
+              kind: 'block',
+              publicId: more.post.publicId,
+            })
+          }
         />
       )}
 
