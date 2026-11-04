@@ -83,6 +83,7 @@ function post(n: number, author: SnsPostDetailResult['author'], fields: Partial<
     mutedByMe: false,
     reposted: false,
     saved: false,
+    liked: false,
     ...fields,
   }
   return value

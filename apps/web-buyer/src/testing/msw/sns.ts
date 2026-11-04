@@ -491,6 +491,7 @@ function postDetail(row: SnsPostRow, viewer: string | null) {
     mutedByMe: viewer != null && !isMine && has(state.mutes, viewer, row.author),
     reposted: viewer != null && !isMine && state.reposts.some(r => r.user === viewer && r.post === row.publicId),
     saved: viewer != null && state.saves.some(r => r.user === viewer && r.post === row.publicId),
+    liked: false,
   }
 }
 

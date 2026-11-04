@@ -4650,7 +4650,9 @@ export interface SnsPostDetailResult {
    * @nullable
    */
   video: SnsPostDetailResultVideo
+  /** 좋아요 수. 보는 사람과 관계없이 같고 차단과 뮤트로 줄지 않는다(Q12) */
   likeCount: number
+  /** 댓글 수. 게시물 작성자가 뮤트한 사용자에게는 그 사용자의 숨긴 댓글까지 센 보는 사람별 값이다(R1-03). 안내 문구 자리는 세지 않는다 */
   commentCount: number
   /** 지금 남은 리포스트 수(보는 사람과 관계없이 같다). 저장 수 필드는 없다(누구에게도 보여주지 않는다) */
   repostCount: number
@@ -4665,6 +4667,8 @@ export interface SnsPostDetailResult {
   reposted: boolean
   /** 보는 사람이 저장했으면 true. 비로그인은 false */
   saved: boolean
+  /** 보는 사람이 좋아요했으면 true. 비로그인은 false(SNS-04) */
+  liked: boolean
 }
 
 export interface SnsPostDetailResponse {
@@ -4786,6 +4790,164 @@ export interface SnsPostGridPageResult {
 
 export interface SnsPostGridPageResponse {
   data: SnsPostGridPageResult
+}
+
+export interface SnsLikeResult {
+  /** 요청을 처리한 뒤의 좋아요 수(보는 사람과 관계없이 같다) */
+  likeCount: number
+}
+
+/**
+ * 게시물과 댓글 좋아요 켜기, 끄기의 응답
+ */
+export interface SnsLikeResponse {
+  data: SnsLikeResult
+}
+
+/**
+ * 지금 대표 펫. 펫이 없으면 null. FE가 오늘 날짜로 나이를 계산한다
+ * @nullable
+ */
+export type SnsLikerItemResultPet = SnsPetResult | null
+
+/**
+ * 좋아요한 사람 행. pet은 팔로우 목록 행의 petSummary와 모양이 다르다
+ */
+export interface SnsLikerItemResult {
+  publicId: string
+  nickname: string
+  /** @nullable */
+  profileImageUrl: string | null
+  /**
+   * 지금 대표 펫. 펫이 없으면 null. FE가 오늘 날짜로 나이를 계산한다
+   * @nullable
+   */
+  pet: SnsLikerItemResultPet
+  /** 보는 사람 본인 행이면 true(팔로우 버튼 대신 나 표시) */
+  isMe: boolean
+  /** 보는 사람이 이 행 사용자를 팔로우 중이면 true. isMe면 false */
+  following: boolean
+}
+
+export interface SnsLikerListResult {
+  /** 전체 좋아요 수. items에서 빠진 차단 관계 사용자도 센다 */
+  likeCount: number
+  /** 뺄 사용자를 뺀 뒤에도 100명을 넘게 남으면 true(하단 안내를 고른다) */
+  hasMore: boolean
+  /**
+   * 최근에 누른 순서로 100명까지
+   * @maxItems 100
+   */
+  items: SnsLikerItemResult[]
+}
+
+export interface SnsLikerListResponse {
+  data: SnsLikerListResult
+}
+
+export interface SnsCommentCreateRequest {
+  /** 서버가 NFC 정규화, 줄바꿈 정리, 앞뒤 공백 지우기 뒤 코드 포인트로 센다. 비면 130702, 500자를 넘으면 130703 */
+  content: string
+  /**
+   * 답글달기를 누른 댓글의 publicId. 최상위 댓글이면 생략하거나 null
+   * @nullable
+   */
+  parentPublicId?: string | null
+}
+
+export interface SnsCommentUpdateRequest {
+  /** 작성과 같은 규칙 */
+  content: string
+}
+
+export type SnsCommentStatus = (typeof SnsCommentStatus)[keyof typeof SnsCommentStatus]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SnsCommentStatus = {
+  ACTIVE: 'ACTIVE',
+  DELETED: 'DELETED',
+  WITHDRAWN: 'WITHDRAWN',
+} as const
+
+/**
+ * 작성자. 안내 문구 항목이면 null
+ * @nullable
+ */
+export type SnsCommentItemResultAuthor = SnsPostAuthorResult | null
+
+/**
+ * 댓글 목록과 단건의 항목. status가 DELETED나 WITHDRAWN이면 안내 문구 항목이고 author와 content가 null, likeCount가 0이며 불리언이 모두 false다
+ */
+export interface SnsCommentItemResult {
+  publicId: string
+  /**
+   * 대댓글이면 최상위 댓글의 publicId. 최상위 댓글이면 null
+   * @nullable
+   */
+  parentPublicId: string | null
+  status: SnsCommentStatus
+  /**
+   * 작성자. 안내 문구 항목이면 null
+   * @nullable
+   */
+  author: SnsCommentItemResultAuthor
+  /**
+   * 금지어를 가린 뒤의 내용. 안내 문구 항목이면 null
+   * @nullable
+   */
+  content: string | null
+  likeCount: number
+  /** 보는 사람이 좋아요했으면 true. 비로그인과 안내 문구 항목은 false */
+  liked: boolean
+  /** 내용을 고친 적이 있으면 true(수정됨 표시) */
+  edited: boolean
+  /** 이 항목과 그 최상위 댓글이 모두 ACTIVE면 true. true일 때만 답글달기를 보여준다 */
+  replyable: boolean
+  /** 보는 사람이 작성자면 true(수정과 삭제를 보여준다). 비로그인과 안내 문구 항목은 false */
+  isMine: boolean
+  /** 작성 시각. ISO LocalDateTime(KST, 오프셋 없음) */
+  createdAt: string
+}
+
+/**
+ * 댓글 목록 한 페이지. totalCount가 없고 헤더의 수는 상세 commentCount를 쓴다
+ */
+export interface SnsCommentPageResult {
+  /** 최상위 댓글 다음에 그 대댓글을 작성 순서로 이어 붙인 목록. 최상위 댓글은 오래된순이다 */
+  items: SnsCommentItemResult[]
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsCommentPageResponse {
+  data: SnsCommentPageResult
+}
+
+/**
+ * 댓글 작성과 수정의 응답. 쓴 사람 기준 항목이다
+ */
+export interface SnsCommentResponse {
+  data: SnsCommentItemResult
+}
+
+/**
+ * comment가 대댓글이면 그 최상위 댓글(안내 문구 항목일 수 있다). 최상위 댓글이면 null
+ * @nullable
+ */
+export type SnsCommentThreadResultParent = SnsCommentItemResult | null
+
+export interface SnsCommentThreadResult {
+  comment: SnsCommentItemResult
+  /**
+   * comment가 대댓글이면 그 최상위 댓글(안내 문구 항목일 수 있다). 최상위 댓글이면 null
+   * @nullable
+   */
+  parent: SnsCommentThreadResultParent
+}
+
+export interface SnsCommentThreadResponse {
+  data: SnsCommentThreadResult
 }
 
 export type InspectionProgressStep =
@@ -6042,6 +6204,11 @@ export type SnsNicknameParameter = string
  */
 export type SnsPostListCursorParameter = string
 
+/**
+ * 이전 응답의 nextCursor. 게시물에 묶이고 다른 게시물이나 다른 목록의 커서면 400 90002
+ */
+export type SnsCommentCursorParameter = string
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -6318,6 +6485,18 @@ export type GetMySnsSavesParams = {
    * 이전 응답의 nextCursor. 피드는 첫 페이지 기준을 담고 프로필 탭과 저장됨은 목록 주인에도 묶인다. 어긋나거나 만료되면 400 90002
    */
   cursor?: SnsPostListCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type GetSnsPostCommentsParams = {
+  /**
+   * 이전 응답의 nextCursor. 게시물에 묶이고 다른 게시물이나 다른 목록의 커서면 400 90002
+   */
+  cursor?: SnsCommentCursorParameter
   /**
    * @minimum 1
    * @maximum 100
@@ -18146,6 +18325,1375 @@ export function useGetMySnsSavesSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetMySnsSavesSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이미 좋아요했어도 201과 지금의 수다. 자기 게시물에도 누를 수 있다. 판정은 상세와 같아 볼 수 없는 게시물은 404 130400, 내가 작성자를 차단했으면 403 130001이다.
+ * @summary 게시물 좋아요(멱등 켜기)
+ */
+export const likeSnsPost = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsLikeResponse>({
+    url: `/sns/posts/${publicId}/like`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getLikeSnsPostMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof likeSnsPost>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof likeSnsPost>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['likeSnsPost']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof likeSnsPost>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return likeSnsPost(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type LikeSnsPostMutationResult = NonNullable<Awaited<ReturnType<typeof likeSnsPost>>>
+
+export type LikeSnsPostMutationError = unknown
+
+/**
+ * @summary 게시물 좋아요(멱등 켜기)
+ */
+export const useLikeSnsPost = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof likeSnsPost>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof likeSnsPost>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getLikeSnsPostMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같아 볼 수 없게 된 게시물의 좋아요는 끌 수 없다(130400, 130001).
+ * @summary 게시물 좋아요 취소(멱등 끄기)
+ */
+export const unlikeSnsPost = (publicId: string) => {
+  return customInstance<SnsLikeResponse>({ url: `/sns/posts/${publicId}/like`, method: 'DELETE' })
+}
+
+export const getUnlikeSnsPostMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlikeSnsPost>>,
+    TError,
+    { publicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlikeSnsPost>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationKey = ['unlikeSnsPost']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlikeSnsPost>>,
+    { publicId: string }
+  > = props => {
+    const { publicId } = props ?? {}
+
+    return unlikeSnsPost(publicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnlikeSnsPostMutationResult = NonNullable<Awaited<ReturnType<typeof unlikeSnsPost>>>
+
+export type UnlikeSnsPostMutationError = unknown
+
+/**
+ * @summary 게시물 좋아요 취소(멱등 끄기)
+ */
+export const useUnlikeSnsPost = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlikeSnsPost>>,
+      TError,
+      { publicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlikeSnsPost>>,
+  TError,
+  { publicId: string },
+  TContext
+> => {
+  const mutationOptions = getUnlikeSnsPostMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 최근에 누른 순서로 100명까지 한 번에 온다. 커서와 서버 검색은 없고 닉네임 검색은 FE가 items 안에서 한다. 차단 관계와 탈퇴한 사용자는 빠지고 뮤트한 사용자는 나온다. likeCount는 빠진 사용자도 센 전체 수다. 판정은 좋아요 켜기와 같다(130400, 130001).
+ * @summary 게시물 좋아요한 사람(최근 100명)
+ */
+export const getSnsPostLikers = (publicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsLikerListResponse>({
+    url: `/sns/posts/${publicId}/likers`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSnsPostLikersQueryKey = (publicId?: string) => {
+  return [`/sns/posts/${publicId}/likers`] as const
+}
+
+export const getGetSnsPostLikersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsPostLikersQueryKey(publicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsPostLikers>>> = ({ signal }) =>
+    getSnsPostLikers(publicId, signal)
+
+  return { queryKey, queryFn, enabled: !!publicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsPostLikers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsPostLikersQueryResult = NonNullable<Awaited<ReturnType<typeof getSnsPostLikers>>>
+export type GetSnsPostLikersQueryError = unknown
+
+export function useGetSnsPostLikers<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsPostLikers>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsPostLikers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostLikers<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsPostLikers>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsPostLikers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostLikers<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 게시물 좋아요한 사람(최근 100명)
+ */
+
+export function useGetSnsPostLikers<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsPostLikersQueryOptions(publicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsPostLikersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsPostLikersQueryKey(publicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsPostLikers>>> = ({ signal }) =>
+    getSnsPostLikers(publicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsPostLikers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsPostLikersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsPostLikers>>
+>
+export type GetSnsPostLikersSuspenseQueryError = unknown
+
+export function useGetSnsPostLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 게시물 좋아요한 사람(최근 100명)
+ */
+
+export function useGetSnsPostLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostLikers>>,
+  TError = unknown,
+>(
+  publicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsPostLikersSuspenseQueryOptions(publicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 한 페이지는 최상위 댓글 size개와 그 아래 보이는 대댓글 전부이고 items는 이미 스레드 순서다. 차단 관계, 뮤트, 섀도우 처리로 숨긴 댓글은 그 아래 대댓글과 함께 빠진다. 대댓글이 남은 지운 최상위 댓글은 안내 문구 항목(DELETED, WITHDRAWN)이다. 판정은 상세와 같다(130400, 130001). 토큰을 보냈을 때만 401과 403 20005, 20006이 난다.
+ * @summary 댓글 목록(오래된순, 비로그인 허용)
+ */
+export const getSnsPostComments = (
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsCommentPageResponse>({
+    url: `/sns/posts/${publicId}/comments`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSnsPostCommentsQueryKey = (
+  publicId?: string,
+  params?: GetSnsPostCommentsParams,
+) => {
+  return [`/sns/posts/${publicId}/comments`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSnsPostCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsPostCommentsQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsPostComments>>> = ({ signal }) =>
+    getSnsPostComments(publicId, params, signal)
+
+  return { queryKey, queryFn, enabled: !!publicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsPostComments>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsPostCommentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsPostComments>>
+>
+export type GetSnsPostCommentsQueryError = unknown
+
+export function useGetSnsPostComments<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params: undefined | GetSnsPostCommentsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsPostComments>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsPostComments>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostComments<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsPostComments>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsPostComments>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostComments<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 목록(오래된순, 비로그인 허용)
+ */
+
+export function useGetSnsPostComments<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsPostCommentsQueryOptions(publicId, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsPostCommentsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsPostCommentsQueryKey(publicId, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsPostComments>>> = ({ signal }) =>
+    getSnsPostComments(publicId, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsPostComments>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsPostCommentsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsPostComments>>
+>
+export type GetSnsPostCommentsSuspenseQueryError = unknown
+
+export function useGetSnsPostCommentsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params: undefined | GetSnsPostCommentsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostCommentsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsPostCommentsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 목록(오래된순, 비로그인 허용)
+ */
+
+export function useGetSnsPostCommentsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsPostComments>>,
+  TError = unknown,
+>(
+  publicId: string,
+  params?: GetSnsPostCommentsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsPostComments>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsPostCommentsSuspenseQueryOptions(publicId, params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * parentPublicId가 없으면 최상위 댓글이고 대댓글을 가리키면 그 최상위 댓글 아래 붙는다. 같은 작성자가 같은 게시물에 같은 키로 쓴 댓글이 있으면 본문이 달라도 그 댓글의 지금 항목으로 201이고 그사이 지웠으면 DELETED 항목이다. 판정 순서는 키(90001, 90004), 내용(130702, 130703, 130704), 게시물(130400, 130001), 답글 대상(130700, 130705)이다.
+ * @summary 댓글과 대댓글 작성(Idempotency-Key 필수)
+ */
+export const createSnsComment = (
+  publicId: string,
+  snsCommentCreateRequest: SnsCommentCreateRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsCommentResponse>({
+    url: `/sns/posts/${publicId}/comments`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: snsCommentCreateRequest,
+    signal,
+  })
+}
+
+export const getCreateSnsCommentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSnsComment>>,
+    TError,
+    { publicId: string; data: SnsCommentCreateRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSnsComment>>,
+  TError,
+  { publicId: string; data: SnsCommentCreateRequest },
+  TContext
+> => {
+  const mutationKey = ['createSnsComment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSnsComment>>,
+    { publicId: string; data: SnsCommentCreateRequest }
+  > = props => {
+    const { publicId, data } = props ?? {}
+
+    return createSnsComment(publicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type CreateSnsCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSnsComment>>
+>
+export type CreateSnsCommentMutationBody = SnsCommentCreateRequest
+export type CreateSnsCommentMutationError = unknown
+
+/**
+ * @summary 댓글과 대댓글 작성(Idempotency-Key 필수)
+ */
+export const useCreateSnsComment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSnsComment>>,
+      TError,
+      { publicId: string; data: SnsCommentCreateRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSnsComment>>,
+  TError,
+  { publicId: string; data: SnsCommentCreateRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateSnsCommentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 대댓글이면 최상위 댓글을 parent로 함께 준다. 없거나 목록 규칙으로 보이지 않는 댓글은 404 130700이고 게시물 판정은 상세와 같다 (130400, 130001).
+ * @summary 댓글 하나와 최상위 댓글(알림 진입, 댓글 좋아요한 사람)
+ */
+export const getSnsComment = (commentPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsCommentThreadResponse>({
+    url: `/sns/comments/${commentPublicId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSnsCommentQueryKey = (commentPublicId?: string) => {
+  return [`/sns/comments/${commentPublicId}`] as const
+}
+
+export const getGetSnsCommentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsCommentQueryKey(commentPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsComment>>> = ({ signal }) =>
+    getSnsComment(commentPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!commentPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsComment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsCommentQueryResult = NonNullable<Awaited<ReturnType<typeof getSnsComment>>>
+export type GetSnsCommentQueryError = unknown
+
+export function useGetSnsComment<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsComment>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsComment>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsComment<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsComment>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsComment>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsComment<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 하나와 최상위 댓글(알림 진입, 댓글 좋아요한 사람)
+ */
+
+export function useGetSnsComment<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsCommentQueryOptions(commentPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsCommentSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsCommentQueryKey(commentPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsComment>>> = ({ signal }) =>
+    getSnsComment(commentPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsComment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsCommentSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsComment>>
+>
+export type GetSnsCommentSuspenseQueryError = unknown
+
+export function useGetSnsCommentSuspense<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentSuspense<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentSuspense<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 하나와 최상위 댓글(알림 진입, 댓글 좋아요한 사람)
+ */
+
+export function useGetSnsCommentSuspense<
+  TData = Awaited<ReturnType<typeof getSnsComment>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsComment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsCommentSuspenseQueryOptions(commentPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * content를 통째로 바꾸고 200과 바뀐 항목이다. 내용 규칙(130702, 130703, 130704)이 댓글 조회보다 먼저다. 그 뒤 없거나 지운 댓글 404 130700, 게시물 판정(130400, 130001), 남의 댓글 403 130701이다. 같은 내용이면 edited도 그대로다.
+ * @summary 본인 댓글 수정
+ */
+export const updateSnsComment = (
+  commentPublicId: string,
+  snsCommentUpdateRequest: SnsCommentUpdateRequest,
+) => {
+  return customInstance<SnsCommentResponse>({
+    url: `/sns/comments/${commentPublicId}`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: snsCommentUpdateRequest,
+  })
+}
+
+export const getUpdateSnsCommentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSnsComment>>,
+    TError,
+    { commentPublicId: string; data: SnsCommentUpdateRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSnsComment>>,
+  TError,
+  { commentPublicId: string; data: SnsCommentUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ['updateSnsComment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSnsComment>>,
+    { commentPublicId: string; data: SnsCommentUpdateRequest }
+  > = props => {
+    const { commentPublicId, data } = props ?? {}
+
+    return updateSnsComment(commentPublicId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UpdateSnsCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSnsComment>>
+>
+export type UpdateSnsCommentMutationBody = SnsCommentUpdateRequest
+export type UpdateSnsCommentMutationError = unknown
+
+/**
+ * @summary 본인 댓글 수정
+ */
+export const useUpdateSnsComment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSnsComment>>,
+      TError,
+      { commentPublicId: string; data: SnsCommentUpdateRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSnsComment>>,
+  TError,
+  { commentPublicId: string; data: SnsCommentUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateSnsCommentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 이미 지운 댓글도 204다. 게시물 판정을 하지 않아 없는 publicId만 404 130700이고 남의 댓글은 403 130701이다.
+ * @summary 본인 댓글 삭제(멱등)
+ */
+export const deleteSnsComment = (commentPublicId: string) => {
+  return customInstance<void>({ url: `/sns/comments/${commentPublicId}`, method: 'DELETE' })
+}
+
+export const getDeleteSnsCommentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSnsComment>>,
+    TError,
+    { commentPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['deleteSnsComment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSnsComment>>,
+    { commentPublicId: string }
+  > = props => {
+    const { commentPublicId } = props ?? {}
+
+    return deleteSnsComment(commentPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type DeleteSnsCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSnsComment>>
+>
+
+export type DeleteSnsCommentMutationError = unknown
+
+/**
+ * @summary 본인 댓글 삭제(멱등)
+ */
+export const useDeleteSnsComment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSnsComment>>,
+      TError,
+      { commentPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getDeleteSnsCommentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 게시물 좋아요와 같은 규칙이다. 없거나 보이지 않거나 안내 문구만 남은 댓글은 404 130700, 게시물 판정은 상세와 같다(130400, 130001).
+ * @summary 댓글 좋아요(멱등 켜기)
+ */
+export const likeSnsComment = (commentPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsLikeResponse>({
+    url: `/sns/comments/${commentPublicId}/like`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getLikeSnsCommentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof likeSnsComment>>,
+    TError,
+    { commentPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof likeSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['likeSnsComment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof likeSnsComment>>,
+    { commentPublicId: string }
+  > = props => {
+    const { commentPublicId } = props ?? {}
+
+    return likeSnsComment(commentPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type LikeSnsCommentMutationResult = NonNullable<Awaited<ReturnType<typeof likeSnsComment>>>
+
+export type LikeSnsCommentMutationError = unknown
+
+/**
+ * @summary 댓글 좋아요(멱등 켜기)
+ */
+export const useLikeSnsComment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof likeSnsComment>>,
+      TError,
+      { commentPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof likeSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getLikeSnsCommentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같다.
+ * @summary 댓글 좋아요 취소(멱등 끄기)
+ */
+export const unlikeSnsComment = (commentPublicId: string) => {
+  return customInstance<SnsLikeResponse>({
+    url: `/sns/comments/${commentPublicId}/like`,
+    method: 'DELETE',
+  })
+}
+
+export const getUnlikeSnsCommentMutationOptions = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlikeSnsComment>>,
+    TError,
+    { commentPublicId: string },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlikeSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationKey = ['unlikeSnsComment']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlikeSnsComment>>,
+    { commentPublicId: string }
+  > = props => {
+    const { commentPublicId } = props ?? {}
+
+    return unlikeSnsComment(commentPublicId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnlikeSnsCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlikeSnsComment>>
+>
+
+export type UnlikeSnsCommentMutationError = unknown
+
+/**
+ * @summary 댓글 좋아요 취소(멱등 끄기)
+ */
+export const useUnlikeSnsComment = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlikeSnsComment>>,
+      TError,
+      { commentPublicId: string },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlikeSnsComment>>,
+  TError,
+  { commentPublicId: string },
+  TContext
+> => {
+  const mutationOptions = getUnlikeSnsCommentMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 게시물 좋아요한 사람과 같은 규칙과 응답이다. 판정은 댓글 좋아요 켜기와 같다(130700, 130400, 130001).
+ * @summary 댓글 좋아요한 사람(최근 100명)
+ */
+export const getSnsCommentLikers = (commentPublicId: string, signal?: AbortSignal) => {
+  return customInstance<SnsLikerListResponse>({
+    url: `/sns/comments/${commentPublicId}/likers`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetSnsCommentLikersQueryKey = (commentPublicId?: string) => {
+  return [`/sns/comments/${commentPublicId}/likers`] as const
+}
+
+export const getGetSnsCommentLikersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsCommentLikersQueryKey(commentPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsCommentLikers>>> = ({ signal }) =>
+    getSnsCommentLikers(commentPublicId, signal)
+
+  return { queryKey, queryFn, enabled: !!commentPublicId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsCommentLikers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsCommentLikersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsCommentLikers>>
+>
+export type GetSnsCommentLikersQueryError = unknown
+
+export function useGetSnsCommentLikers<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsCommentLikers>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsCommentLikers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentLikers<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsCommentLikers>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsCommentLikers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentLikers<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 좋아요한 사람(최근 100명)
+ */
+
+export function useGetSnsCommentLikers<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsCommentLikersQueryOptions(commentPublicId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsCommentLikersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsCommentLikersQueryKey(commentPublicId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsCommentLikers>>> = ({ signal }) =>
+    getSnsCommentLikers(commentPublicId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsCommentLikers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsCommentLikersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsCommentLikers>>
+>
+export type GetSnsCommentLikersSuspenseQueryError = unknown
+
+export function useGetSnsCommentLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsCommentLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 댓글 좋아요한 사람(최근 100명)
+ */
+
+export function useGetSnsCommentLikersSuspense<
+  TData = Awaited<ReturnType<typeof getSnsCommentLikers>>,
+  TError = unknown,
+>(
+  commentPublicId: string,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsCommentLikers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsCommentLikersSuspenseQueryOptions(commentPublicId, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,

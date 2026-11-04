@@ -267,6 +267,7 @@ describe('/sns/feed 이어 불러오기', () => {
         mutedByMe: false,
         reposted: false,
         saved: false,
+        liked: false,
       },
       repostedBy: null,
     })
