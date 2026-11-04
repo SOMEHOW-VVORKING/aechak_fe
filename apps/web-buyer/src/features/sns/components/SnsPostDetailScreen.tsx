@@ -250,7 +250,9 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         />
       )}
 
-      {resume && <SnsResumeReaction kind={resume} publicId={publicId} onError={message => showToast(message, 'error')} />}
+      {resume && (
+        <SnsResumeReaction key={resume} kind={resume} publicId={publicId} onError={message => showToast(message, 'error')} />
+      )}
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}

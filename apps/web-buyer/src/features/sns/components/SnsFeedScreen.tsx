@@ -304,7 +304,14 @@ export function SnsFeedScreen({
         />
       )}
 
-      {resume && <SnsResumeReaction kind={resume.kind} publicId={resume.publicId} onError={reactionError} />}
+      {resume && (
+        <SnsResumeReaction
+          key={`${resume.kind}:${resume.publicId}`}
+          kind={resume.kind}
+          publicId={resume.publicId}
+          onError={reactionError}
+        />
+      )}
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}
