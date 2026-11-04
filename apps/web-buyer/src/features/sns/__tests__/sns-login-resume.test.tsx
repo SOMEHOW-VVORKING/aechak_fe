@@ -118,6 +118,36 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     expect(sessionStorage.length).toBe(0)
   })
 
+  it('[AC-SNS01-013] 로그인 사이에 상대가 나를 차단했어도 차단은 기본 프로필에서 확인 Modal을 다시 연다', async () => {
+    await startAsGuest(SNS_COCO, async user => {
+      await user.click(await screen.findByRole('button', { name: '더보기' }))
+      await user.click(await screen.findByRole('button', { name: '차단하기' }))
+    })
+
+    completeLogin({ blocks: [snsRelation(SNS_COCO, SNS_ME)] })
+
+    expect(await screen.findByText('차단할까요?')).toBeInTheDocument()
+    expect(screen.getByLabelText('코코집사')).toHaveTextContent('코')
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_COCO)).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS01-013] 로그인 사이에 상대가 나를 차단했으면 뮤트는 시트를 다시 열지 않는다(기본 프로필에는 뮤트가 없다)', async () => {
+    await startAsGuest(SNS_COCO, async user => {
+      await user.click(await screen.findByRole('button', { name: '더보기' }))
+      await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
+    })
+
+    completeLogin({ blocks: [snsRelation(SNS_COCO, SNS_ME)] })
+
+    expect(await screen.findByLabelText('코코집사')).toHaveTextContent('코')
+    await waitFor(() => expect(sessionStorage.length).toBe(0))
+    // 시트는 열린 뒤 한 번 더 렌더해야 보인다(BottomSheet mounted). 그 렌더를 기다린 뒤 닫혀 있는지 본다.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(screen.queryByRole('button', { name: '차단하기' })).not.toBeInTheDocument()
+    expect(currentSns().mutes.some(r => r.from === SNS_ME && r.to === SNS_COCO)).toBe(false)
+  })
+
   it('[AC-SNS01-013] 로그인 사이에 상대가 탈퇴했으면 팔로우하지 않고 볼 수 없는 계정 안내를 보여준다', async () => {
     await startAsGuest(SNS_COCO, pressFollow)
     server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })))
