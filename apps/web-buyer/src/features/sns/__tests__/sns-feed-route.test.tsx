@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -17,6 +17,8 @@ import {
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_POST_NO_CAPTION,
+  SNS_SPAM,
+  SNS_TORI,
   currentSns,
   seedSns,
   server,
@@ -27,10 +29,10 @@ import {
 import { setListEndInView } from '@/testing/intersection'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+function renderAt(path: string, staleTime = 0) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
   // retryDelay 0: 피드 조회는 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, staleTime } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -413,5 +415,39 @@ describe('/sns/feed 인기 피드', () => {
     setListEndInView(true)
     await waitFor(() => expect(cards()).toHaveLength(25))
     expect(requestsTo('popular').map(url => url.searchParams.has('cursor'))).toEqual([false, true, false, true])
+  })
+})
+
+// 앱과 같은 staleTime이면 피드로 돌아와도 캐시만 쓴다. 뮤트와 차단을 풀면 받아 둔 피드를 지워 첫 페이지부터 다시 읽어야
+// 숨었던 글이 다시 나온다(design 6절 7번).
+describe('/sns/feed 뮤트와 차단 해제 뒤', () => {
+  it('[AC-SNS03-043] 뮤트를 풀고 돌아오면 그 사용자의 글이 피드에 다시 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed?tab=explore', 60_000)
+    await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
+    expect(screen.queryByText('토리 생일')).not.toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/users/$publicId', params: { publicId: SNS_TORI } }))
+    await user.click(await screen.findByRole('button', { name: '뮤트 해제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '뮤트를 해제할까요?' })).getByRole('button', { name: '해제' }))
+    expect(await screen.findByText('뮤트를 해제했어요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/feed', search: { tab: 'explore' } }))
+    expect(await screen.findByText('토리 생일')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS03-044] 차단을 풀고 돌아오면 그 사용자의 글이 탐색 피드에 다시 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed?tab=explore', 60_000)
+    await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
+    expect(screen.queryByText('광고 게시물')).not.toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/users/$publicId', params: { publicId: SNS_SPAM } }))
+    await user.click(await screen.findByRole('button', { name: '차단 해제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '차단을 해제할까요?' })).getByRole('button', { name: '해제' }))
+    expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/feed', search: { tab: 'explore' } }))
+    expect(await screen.findByText('광고 게시물')).toBeInTheDocument()
   })
 })

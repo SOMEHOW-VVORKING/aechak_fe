@@ -203,9 +203,10 @@ describe('리포스트와 저장 버튼', () => {
 
 describe('리포스트와 저장 실패 안내', () => {
   it.each([
-    ['그사이 지워진 글은 삭제된 게시물 안내다', 'deleted', '삭제된 게시물이에요'],
-    ['그사이 차단한 작성자의 글은 차단한 계정 안내다', 'blocked', '차단한 계정이에요'],
-  ] as const)('[AC-SNS03-015] %s', async (_, change, message) => {
+    ['[AC-SNS03-015][AC-SNS03-027]', '지우기 전에 불러온 카드의 리포스트는 삭제된 게시물 안내다', 'deleted', '삭제된 게시물이에요'],
+    ['[AC-SNS03-015][AC-SNS03-028]', '그사이 나를 차단한 작성자의 글은 리포스트할 수 없고 삭제된 게시물 안내다', 'blocking', '삭제된 게시물이에요'],
+    ['[AC-SNS03-015]', '그사이 차단한 작성자의 글은 차단한 계정 안내다', 'blocked', '차단한 계정이에요'],
+  ] as const)('%s %s', async (_, __, change, message) => {
     const user = userEvent.setup()
     renderAt(EXPLORE)
     await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
@@ -213,7 +214,10 @@ describe('리포스트와 저장 실패 안내', () => {
     seedSns(
       change === 'deleted'
         ? { ...sns, posts: sns.posts.map(p => (p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p)) }
-        : { ...sns, blocks: [...sns.blocks, snsRelation(SNS_ME, SNS_COCO)] },
+        : {
+            ...sns,
+            blocks: [...sns.blocks, change === 'blocking' ? snsRelation(SNS_COCO, SNS_ME) : snsRelation(SNS_ME, SNS_COCO)],
+          },
     )
 
     await user.click(repostIn(cardOf('코코집사')))
