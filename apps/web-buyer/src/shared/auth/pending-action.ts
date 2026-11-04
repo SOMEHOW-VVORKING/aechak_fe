@@ -2,8 +2,11 @@
 // 돌아올 주소로 /login/complete만 받으므로, 메모리가 아니라 같은 출처 sessionStorage에 보관한다.
 // 접근이 막힌 환경(사파리 프라이빗 등)에서도 화면이 깨지지 않게 읽기와 쓰기를 모두 try/catch로 감싼다.
 
-/** follow만 켜기 요청으로 다시 보내고 block·mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다. */
-export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open'
+/**
+ * follow만 켜기 요청으로 다시 보내고 block, mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다.
+ * compose는 대상 없는 글쓰기다(publicId는 빈 문자열). 돌아온 SNS 탭이 작성 화면을 다시 연다(SNS-02 A26).
+ */
+export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open' | 'compose'
 
 export interface PendingAction {
   kind: PendingActionKind
@@ -71,6 +74,13 @@ export function takePendingAction(publicId: string): PendingAction | null {
   if (action?.publicId !== publicId) return null
   clearPendingAction()
   return action
+}
+
+/** 대상 없는 글쓰기 대기 행동을 꺼내고 지운다. 글쓰기가 아니면 그대로 두고 false다. */
+export function takeComposeAction(): boolean {
+  if (peekPendingAction()?.kind !== 'compose') return false
+  clearPendingAction()
+  return true
 }
 
 /**
