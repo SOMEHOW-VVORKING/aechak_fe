@@ -28,7 +28,8 @@ interface EditForm {
 export function SnsPostEditScreen({ publicId }: { publicId: string }) {
   const navigate = useNavigate()
   const goBack = useSafeBack({ to: '/sns/posts/$publicId', params: { publicId } })
-  const guest = useSessionState() === 'guest'
+  const session = useSessionState()
+  const guest = session === 'guest'
   const { data: post, error, isPending, refetch } = useSnsPost(publicId, { enabled: !guest })
   const update = useUpdateSnsPost(publicId)
   const [form, setForm] = useState<EditForm | null>(null)
@@ -42,9 +43,13 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
     if (post?.isMine && !form) setForm({ caption: post.caption ?? '', hashtags: post.hashtags })
   }, [post, form])
 
+  // 세션을 확인하기 전(unknown)에는 토큰 없이 읽어 본인 게시물도 isMine이 false로 온다(design 6절 11번).
+  // 회원으로 확인된 뒤에만 상세로 보내고, 그때까지는 스켈레톤을 두었다가 회원이 되면 다시 읽은 상세로 폼을 채운다.
   useEffect(() => {
-    if (post && !post.isMine) void navigate({ to: '/sns/posts/$publicId', params: { publicId }, replace: true })
-  }, [post, navigate, publicId])
+    if (session === 'member' && post && !post.isMine) {
+      void navigate({ to: '/sns/posts/$publicId', params: { publicId }, replace: true })
+    }
+  }, [session, post, navigate, publicId])
 
   const unavailable = deleted || snsErrorCode(error) === SNS_POST_UNAVAILABLE
   // 다시 조회가 실패하면 고친 내용은 남기고 저장만 잠근다(AGENTS.md 6절 7).

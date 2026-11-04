@@ -1,16 +1,17 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
-import { http } from 'msw'
+import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
-import { logout } from '@/shared/auth'
+import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_POST_MINE_PHOTO,
   SNS_POST_URL,
+  WEB_REFRESH_URL,
   currentSns,
   seedSns,
   server,
@@ -177,6 +178,21 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/posts/${SNS_POST_COCO}`))
     expect(await screen.findByText('오늘 코코랑 한강 산책')).toBeInTheDocument()
     expect(patchBodies).toHaveLength(0)
+  })
+
+  it('세션을 확인하기 전에 토큰 없이 읽은 내 게시물은 상세로 보내지 않고 회원으로 확인되면 폼을 채운다', async () => {
+    // 새로고침 뒤 refresh가 5xx면 세션은 확인 전(unknown)으로 남고 상세는 토큰 없이 읽혀 isMine이 false다.
+    resetAuth()
+    server.use(http.post(WEB_REFRESH_URL, () => new HttpResponse(null, { status: 503 })))
+    const router = renderAt(editPath(SNS_POST_MINE))
+    await waitFor(() => expect(postGets).toBe(1))
+    // 응답이 화면에 닿고 이동 여부가 정해질 때까지 기다린다.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(router.state.location.pathname).toBe(editPath(SNS_POST_MINE))
+
+    act(() => setAccessToken('test-token'))
+    expect(await screen.findByLabelText('캡션')).toHaveValue('산책 코스 추천받아요')
+    expect(router.state.location.pathname).toBe(editPath(SNS_POST_MINE))
   })
 
   it('비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 시트를 연다', async () => {
