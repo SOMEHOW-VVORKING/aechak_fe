@@ -17,6 +17,15 @@ export const SNS_MY_MUTES_URL = `${base}/sns/me/mutes`
 export const SNS_POSTS_URL = `${base}/sns/posts`
 export const SNS_POST_URL = `${base}/sns/posts/:publicId`
 export const SNS_HASHTAGS_URL = `${base}/sns/hashtags`
+export const SNS_REPOST_URL = `${base}/sns/posts/:publicId/repost`
+export const SNS_SAVE_URL = `${base}/sns/posts/:publicId/save`
+export const SNS_FOLLOWING_FEED_URL = `${base}/sns/feeds/following`
+export const SNS_EXPLORE_FEED_URL = `${base}/sns/feeds/explore`
+export const SNS_POPULAR_FEED_URL = `${base}/sns/feeds/popular`
+export const SNS_USER_POSTS_URL = `${base}/sns/users/:publicId/posts`
+export const SNS_USER_VIDEOS_URL = `${base}/sns/users/:publicId/videos`
+export const SNS_USER_REPOSTS_URL = `${base}/sns/users/:publicId/reposts`
+export const SNS_MY_SAVES_URL = `${base}/sns/me/saves`
 
 export const SNS_ME = '01JB7XQ2M4K9TR3N5W8YZC6DHF'
 export const SNS_COCO = '01JABCDEF0123456789ABCDEFG'
@@ -96,6 +105,14 @@ export interface SnsPostRow {
   idempotencyKey?: string
 }
 
+/** 리포스트와 저장 행(SNS-03). id는 서버 관계 행 id처럼 늘기만 하고 리포스트 탭과 저장됨 커서가 담는다 */
+export interface SnsActRow {
+  id: number
+  user: string
+  post: string
+  createdAt: string
+}
+
 export interface SnsSeed {
   /** 보는 사람. null이면 비로그인 */
   viewer: string | null
@@ -105,6 +122,13 @@ export interface SnsSeed {
   posts: SnsPostRow[]
   /** PUT까지 끝났고 아직 게시에 쓰지 않은 tmp key. 게시가 쓰면 지운다(다시 쓰면 404 100001) */
   uploads: string[]
+  /** 배열 뒤쪽이 최근 행이다. id는 seedSns가 배열 순서대로 다시 매긴다 */
+  reposts: SnsActRow[]
+  saves: SnsActRow[]
+  /** 이용 제한(RESTRICTED) 사용자. 리포스트와 저장 켜기, 끄기가 403 20013이다 */
+  restricted: string[]
+  /** 첫 페이지 요청 시각. 탐색 피드 7일과 인기 피드 72시간을 여기서 거꾸로 센다 */
+  now: string
 }
 
 const rel = (from: string, to: string, createdAt = '2026-10-01T09:00:00'): Relation => ({ from, to, createdAt })
@@ -177,13 +201,27 @@ const DEFAULT_SEED = (): SnsSeed => ({
   mutes: [rel(SNS_ME, SNS_TORI, '2026-06-20T10:00:00')],
   posts: DEFAULT_POSTS(),
   uploads: [],
+  reposts: [],
+  saves: [],
+  restricted: [],
+  // 픽스처 게시물(10월 21일, 22일)이 탐색 7일과 인기 72시간 안에 든다.
+  now: '2026-10-24T09:00:00',
 })
 
 let state = DEFAULT_SEED()
 let clock = 0
+/** 리포스트와 저장 행 id. 지운 행의 id를 다시 쓰지 않게 늘기만 한다 */
+let actSeq = 0
+/** 인기 피드 순위. 첫 페이지마다 하나 만들고 다음 페이지 커서가 그 순위를 따른다(G1) */
+const rankings = new Map<string, string[]>()
+let rankingSeq = 0
 
 export function seedSns(overrides: Partial<SnsSeed> = {}): void {
   state = { ...DEFAULT_SEED(), ...overrides }
+  actSeq = 0
+  state.reposts = state.reposts.map(r => ({ ...r, id: ++actSeq }))
+  state.saves = state.saves.map(r => ({ ...r, id: ++actSeq }))
+  rankings.clear()
 }
 
 /** 핸들러가 반영한 현재 관계. 테스트가 서버 상태를 단언할 때 읽는다. */
@@ -307,8 +345,14 @@ function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
       if (has(state.blocks, viewer, target)) return error(403, 130001)
     }
     if (!has(state[key], viewer, target)) state[key] = [...state[key], rel(viewer, target, now())]
-    // 차단은 두 방향 팔로우를 지운다(차단 해제로 되살아나지 않는다).
-    if (key === 'blocks') state.follows = without(without(state.follows, viewer, target), target, viewer)
+    // 차단은 두 방향 팔로우와 두 사람이 서로의 글에 한 리포스트를 지운다(차단 해제로 되살아나지 않는다, A12).
+    if (key === 'blocks') {
+      state.follows = without(without(state.follows, viewer, target), target, viewer)
+      const authorOf = (post: string) => state.posts.find(r => r.publicId === post)?.author
+      state.reposts = state.reposts.filter(
+        r => !((r.user === viewer && authorOf(r.post) === target) || (r.user === target && authorOf(r.post) === viewer)),
+      )
+    }
     return new HttpResponse(null, { status: 201 })
   }
   const off = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
@@ -432,14 +476,14 @@ function postDetail(row: SnsPostRow, viewer: string | null) {
     video: row.video,
     likeCount: 0,
     commentCount: 0,
-    repostCount: 0,
+    repostCount: state.reposts.filter(r => r.post === row.publicId).length,
     edited: row.edited,
     createdAt: row.createdAt,
     isMine,
     following: viewer != null && !isMine && has(state.follows, viewer, row.author),
     mutedByMe: viewer != null && !isMine && has(state.mutes, viewer, row.author),
-    reposted: false,
-    saved: false,
+    reposted: viewer != null && !isMine && state.reposts.some(r => r.user === viewer && r.post === row.publicId),
+    saved: viewer != null && state.saves.some(r => r.user === viewer && r.post === row.publicId),
   }
 }
 
@@ -571,6 +615,306 @@ function searchHashtags({ request }: { request: Request }) {
     : respond('NEW', matches)
 }
 
+// ── SNS-03 리포스트, 저장, 피드, 프로필 탭 ─────────────────────────────────────────────────
+// 계약(sns.yaml 0.4.0 SNS-03 초안)의 판정 순서, 노출 규칙, 커서 범위를 흉내 낸다. 커서는 `태그|범위|기준|마지막`이다.
+// 태그나 범위(목록 주인)가 다르거나 모양이 깨졌거나 마지막 항목을 찾지 못하면 400 90002다. 피드 커서는 범위가 비어 있다.
+
+/** 리포스트와 저장 행. id는 seedSns가 다시 매긴다 */
+export const snsAct = (user: string, post: string, createdAt = '2026-10-23T10:00:00'): SnsActRow => ({
+  id: 0,
+  user,
+  post,
+  createdAt,
+})
+
+/** 인기 피드 순위가 만료된 상황(31분이 지났거나 Redis가 순위를 잃음). 남은 커서는 400 90002다 */
+export function expireSnsPopularRankings(): void {
+  rankings.clear()
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+// 시각은 오프셋 없는 KST 문자열이다. 서로 빼기만 하므로 UTC로 읽는다.
+const epoch = (time: string) => Date.parse(`${time}Z`)
+const postRow = (publicId: string) => state.posts.find(r => r.publicId === publicId)
+const blockedEither = (a: string, b: string) => has(state.blocks, a, b) || has(state.blocks, b, a)
+
+/** 목록에 나오는 글. 지운 글, 탈퇴한 작성자, 보는 사람과 차단 관계인 작성자, (mute면) 뮤트한 작성자의 글을 뺀다 */
+function shownTo(row: SnsPostRow | undefined, viewer: string | null, mute = true): row is SnsPostRow {
+  if (!row || row.deleted || !USERS[row.author]) return false
+  if (viewer == null || viewer === row.author) return true
+  return !blockedEither(viewer, row.author) && !(mute && has(state.mutes, viewer, row.author))
+}
+
+interface Keyed {
+  time: string
+  publicId: string
+}
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+/** 최신순(시각이 같으면 publicId 역순). 탐색 피드와 팔로잉 피드의 keyset 순서다 */
+const newerFirst = (a: Keyed, b: Keyed) => compare(b.time, a.time) || compare(b.publicId, a.publicId)
+/** keyset 순서에서 last 뒤에 오는 항목 */
+const after = (item: Keyed, last: Keyed) => newerFirst(last, item) < 0
+
+function listQuery(request: Request, tag: string, scope: string) {
+  const url = new URL(request.url)
+  const size = Number(url.searchParams.get('size') ?? 20)
+  if (!Number.isInteger(size) || size < 1 || size > 100) return { error: error(400, 90001) }
+  const raw = url.searchParams.get('cursor')
+  if (raw == null) return { size, cursor: null }
+  const parts = raw.split('|')
+  if (parts.length !== 4 || parts[0] !== tag || parts[1] !== scope) return { error: error(400, 90002) }
+  return { size, cursor: { anchor: parts[2]!, last: parts[3]! } }
+}
+
+/** size개를 싣고 하나라도 남으면 마지막 항목으로 다음 커서를 만든다 */
+function listResponse<T>(rows: T[], size: number, toItem: (row: T) => unknown, cursorOf: (last: T) => string) {
+  const slice = rows.slice(0, size)
+  const hasNext = rows.length > size
+  return HttpResponse.json({
+    data: { items: slice.map(toItem), nextCursor: hasNext ? cursorOf(slice.at(-1)!) : null, hasNext },
+  })
+}
+
+const feedItem = (row: SnsPostRow, viewer: string | null, by: string | null = null) => ({
+  post: postDetail(row, viewer),
+  repostedBy: by == null ? null : { publicId: by, nickname: USERS[by]!.nickname },
+})
+
+function gridItem(row: SnsPostRow) {
+  const mediaType = row.video ? 'VIDEO' : row.photoUrls.length > 0 ? 'PHOTO' : 'TEXT'
+  return {
+    publicId: row.publicId,
+    mediaType,
+    thumbnailUrl: row.video?.thumbnailUrl ?? row.photoUrls[0] ?? null,
+    photoCount: row.photoUrls.length,
+    // 텍스트 게시물 캡션의 앞 100 코드 포인트(D4)
+    captionPreview: mediaType === 'TEXT' ? Array.from(row.caption ?? '').slice(0, 100).join('') : null,
+  }
+}
+
+// 켜기(POST 201)와 끄기(DELETE 204). 이용 제한 계정은 UserStatusFilter가 둘 다 403 20013으로 막는다(G8).
+// 켜기는 상세와 같은 판정(130400, 리포스트만 본인 글 130600, 내가 차단한 작성자 130001)이고 끄기는 없는 publicId만 404다(D3).
+function reaction(key: 'reposts' | 'saves') {
+  const on = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
+    if (viewer == null) return unauthenticated()
+    if (state.restricted.includes(viewer)) return error(403, 20013)
+    const row = findPost(params)
+    if (!row || row.deleted) return error(404, 130400)
+    if (key === 'reposts' && row.author === viewer) return error(400, 130600)
+    if (!USERS[row.author]) return error(404, 130400)
+    if (row.author !== viewer) {
+      if (has(state.blocks, row.author, viewer)) return error(404, 130400)
+      if (has(state.blocks, viewer, row.author)) return error(403, 130001)
+    }
+    if (!state[key].some(r => r.user === viewer && r.post === row.publicId)) {
+      state[key] = [...state[key], { id: ++actSeq, user: viewer, post: row.publicId, createdAt: postNow() }]
+    }
+    return new HttpResponse(null, { status: 201 })
+  }
+  const off = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
+    if (viewer == null) return unauthenticated()
+    if (state.restricted.includes(viewer)) return error(403, 20013)
+    const row = findPost(params)
+    if (!row) return error(404, 130400)
+    state[key] = state[key].filter(r => !(r.user === viewer && r.post === row.publicId))
+    return new HttpResponse(null, { status: 204 })
+  }
+  return [on, off] as const
+}
+
+const [repost, unrepost] = reaction('reposts')
+const [save, unsave] = reaction('saves')
+
+// 팔로잉 피드(R1-16 (a)). 원천은 나와 팔로우한 사용자이고 원글마다 보이는 이벤트(원천의 게시와 리포스트) 중 가장 늦은
+// 시각에 한 번 나온다. 기준(첫 페이지 때의 게시물 수와 리포스트 행 id)보다 뒤에 생긴 게시와 리포스트는 넣지 않는다.
+function followingFeed({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  const query = listQuery(request, 'fl', '')
+  if (query.error) return query.error
+  const anchor = query.cursor?.anchor ?? `${state.posts.length}~${actSeq}`
+  const [postLimit, repostLimit] = anchor.split('~').map(Number)
+  if (!Number.isInteger(postLimit) || !Number.isInteger(repostLimit)) return error(400, 90002)
+  const followed = state.follows.filter(r => r.from === viewer).map(r => r.to)
+  const sources = new Set(
+    [viewer, ...followed].filter(
+      id => id === viewer || (USERS[id] && !blockedEither(viewer, id) && !has(state.mutes, viewer, id)),
+    ),
+  )
+  const latest = new Map<string, { publicId: string; time: string; by: string | null }>()
+  const offer = (publicId: string, time: string, by: string | null) => {
+    if (!shownTo(postRow(publicId), viewer)) return
+    const prev = latest.get(publicId)
+    if (!prev || time >= prev.time) latest.set(publicId, { publicId, time, by })
+  }
+  state.posts.forEach((row, index) => {
+    if (index < postLimit! && sources.has(row.author)) offer(row.publicId, row.createdAt, null)
+  })
+  state.reposts.forEach(r => {
+    if (r.id <= repostLimit! && sources.has(r.user)) offer(r.post, r.createdAt, r.user)
+  })
+  let events = [...latest.values()].sort(newerFirst)
+  if (query.cursor) {
+    const [time = '', publicId = ''] = query.cursor.last.split('~')
+    if (!postRow(publicId)) return error(400, 90002)
+    events = events.filter(event => after(event, { time, publicId }))
+  }
+  return listResponse(
+    events,
+    query.size,
+    event => feedItem(postRow(event.publicId)!, viewer, event.by),
+    last => `fl||${anchor}|${last.time}~${last.publicId}`,
+  )
+}
+
+// 탐색 피드(Q3, P4). 기준 시각부터 7일 안의 원글을 최신순으로 싣는다. 리포스트는 나오지 않는다.
+function exploreFeed({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  const query = listQuery(request, 'ex', '')
+  if (query.error) return query.error
+  const anchor = query.cursor?.anchor ?? state.now
+  if (Number.isNaN(epoch(anchor))) return error(400, 90002)
+  const from = epoch(anchor) - 7 * DAY_MS
+  let rows = state.posts
+    .filter(
+      row =>
+        shownTo(row, viewer) &&
+        epoch(row.createdAt) >= from &&
+        (viewer == null || (row.author !== viewer && !has(state.follows, viewer, row.author))),
+    )
+    .map(row => ({ row, time: row.createdAt, publicId: row.publicId }))
+    .sort(newerFirst)
+  if (query.cursor) {
+    const last = postRow(query.cursor.last)
+    if (!last) return error(400, 90002)
+    rows = rows.filter(item => after(item, { time: last.createdAt, publicId: last.publicId }))
+  }
+  return listResponse(
+    rows,
+    query.size,
+    item => feedItem(item.row, viewer),
+    last => `ex||${anchor}|${last.publicId}`,
+  )
+}
+
+// 인기 피드(G1, G2). 첫 페이지에서 72시간 안의 점수 있는 원글로 순위를 정해 남기고 다음 페이지는 그 순위를 따른다.
+// SNS-04 전이라 점수는 리포스트 수 x 3이다. 읽을 때마다 지운 글과 차단, 뮤트한 작성자의 글을 빼고 그만큼 뒤 순위로 채운다.
+function popularFeed({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  const query = listQuery(request, 'pp', '')
+  if (query.error) return query.error
+  let rankingId = query.cursor?.anchor
+  let offset = 0
+  if (rankingId == null) {
+    const from = epoch(state.now) - 3 * DAY_MS
+    const score = (row: SnsPostRow) => state.reposts.filter(r => r.post === row.publicId).length * 3
+    rankingId = String(++rankingSeq)
+    rankings.set(
+      rankingId,
+      state.posts
+        .filter(row => !row.deleted && USERS[row.author] && epoch(row.createdAt) >= from && score(row) > 0)
+        .sort(
+          (a, b) =>
+            score(b) - score(a) ||
+            newerFirst({ time: a.createdAt, publicId: a.publicId }, { time: b.createdAt, publicId: b.publicId }),
+        )
+        .slice(0, 1000)
+        .map(row => row.publicId),
+    )
+  } else {
+    offset = Number(query.cursor!.last)
+    if (!rankings.has(rankingId) || !Number.isInteger(offset) || offset < 0 || offset >= 1000) return error(400, 90002)
+  }
+  const ranking = rankings.get(rankingId)!
+  const page: SnsPostRow[] = []
+  let next = offset
+  while (next < ranking.length && page.length < query.size) {
+    const row = postRow(ranking[next]!)
+    next += 1
+    if (shownTo(row, viewer)) page.push(row)
+  }
+  const hasNext = next < ranking.length
+  return HttpResponse.json({
+    data: {
+      items: page.map(row => feedItem(row, viewer)),
+      nextCursor: hasNext ? `pp||${rankingId}|${next}` : null,
+      hasNext,
+    },
+  })
+}
+
+// 프로필 그리드, 영상, 리포스트 탭(D5). 주인 판정은 팔로워 목록과 같고 비로그인은 차단 판정을 건너뛴다.
+// 그리드와 영상은 게시물 id(배열 순서) 역순, 리포스트 탭은 리포스트 행 id 역순이다. 뮤트한 주인의 글도 그대로 나온다(A15).
+function profileTab(tab: 'posts' | 'videos' | 'reposts') {
+  const tag = { posts: 'gp', videos: 'gv', reposts: 'gr' }[tab]
+  return ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
+    const owner = String(params['publicId'])
+    if (!USERS[owner]) return unavailable()
+    if (viewer != null && owner !== viewer) {
+      if (has(state.blocks, owner, viewer)) return unavailable()
+      if (has(state.blocks, viewer, owner)) return error(403, 130001)
+    }
+    const query = listQuery(request, tag, owner)
+    if (query.error) return query.error
+    if (tab === 'reposts') {
+      // 주인 본인은 자기가 뮤트한 작성자의 글도 본다. 다른 보는 사람에게는 그 사람이 뮤트한 작성자의 글을 뺀다.
+      const rows = state.reposts
+        .filter(r => r.user === owner && shownTo(postRow(r.post), viewer, viewer !== owner))
+        .sort((a, b) => b.id - a.id)
+      return actPage(rows, query, tag, owner)
+    }
+    let rows = state.posts
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.author === owner && !row.deleted && (tab === 'posts' || row.video != null))
+      .reverse()
+    if (query.cursor) {
+      const lastIndex = state.posts.findIndex(r => r.publicId === query.cursor!.last)
+      if (lastIndex < 0) return error(400, 90002)
+      rows = rows.filter(({ index }) => index < lastIndex)
+    }
+    return listResponse(
+      rows,
+      query.size,
+      ({ row }) => gridItem(row),
+      last => `${tag}|${owner}|-|${last.row.publicId}`,
+    )
+  }
+}
+
+/** 리포스트 탭과 저장됨은 관계 행 id 역순이고 커서가 마지막 행 id를 담는다 */
+function actPage(
+  rows: SnsActRow[],
+  query: { size: number; cursor: { last: string } | null },
+  tag: string,
+  scope: string,
+) {
+  let rest = rows
+  if (query.cursor) {
+    const lastId = Number(query.cursor.last)
+    if (!Number.isInteger(lastId)) return error(400, 90002)
+    rest = rows.filter(r => r.id < lastId)
+  }
+  return listResponse(
+    rest,
+    query.size,
+    r => gridItem(postRow(r.post)!),
+    last => `${tag}|${scope}|-|${last.id}`,
+  )
+}
+
+// 저장됨 탭. 본인만 보고 지운 글, 탈퇴한 작성자, 차단 관계와 뮤트한 작성자의 글을 숨긴다(내 글은 늘 나온다, P10).
+function mySaves({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  const query = listQuery(request, 'sv', viewer)
+  if (query.error) return query.error
+  const rows = state.saves.filter(r => r.user === viewer && shownTo(postRow(r.post), viewer)).sort((a, b) => b.id - a.id)
+  return actPage(rows, query, 'sv', viewer)
+}
+
 export const snsHandlers = [
   http.get(SNS_ME_URL, ({ request }) => {
     const viewer = viewerOf(request)
@@ -597,4 +941,15 @@ export const snsHandlers = [
   http.patch(SNS_POST_URL, updatePost),
   http.delete(SNS_POST_URL, deletePost),
   http.get(SNS_HASHTAGS_URL, searchHashtags),
+  http.post(SNS_REPOST_URL, repost),
+  http.delete(SNS_REPOST_URL, unrepost),
+  http.post(SNS_SAVE_URL, save),
+  http.delete(SNS_SAVE_URL, unsave),
+  http.get(SNS_FOLLOWING_FEED_URL, followingFeed),
+  http.get(SNS_EXPLORE_FEED_URL, exploreFeed),
+  http.get(SNS_POPULAR_FEED_URL, popularFeed),
+  http.get(SNS_USER_POSTS_URL, profileTab('posts')),
+  http.get(SNS_USER_VIDEOS_URL, profileTab('videos')),
+  http.get(SNS_USER_REPOSTS_URL, profileTab('reposts')),
+  http.get(SNS_MY_SAVES_URL, mySaves),
 ]
