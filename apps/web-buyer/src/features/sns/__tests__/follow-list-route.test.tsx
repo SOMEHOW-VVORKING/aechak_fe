@@ -15,6 +15,7 @@ import {
   SNS_ME,
   SNS_NEIGHBORS,
   SNS_MONG,
+  SNS_MUTUAL,
   SNS_SPAM,
   SNS_TORI,
   seedSns,
@@ -191,6 +192,24 @@ describe('/sns/users/$publicId/follows 목록', () => {
     renderAt(`/sns/users/${SNS_BLOCKER}/follows`)
 
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-019] 서로 차단한 사용자의 목록은 목록 응답 전에도 차단한 계정 안내 없이 볼 수 없는 계정 안내를 보여준다', async () => {
+    // 목록 응답을 붙잡아 프로필(200, blockingMe와 blockedByMe가 true)만 온 상태를 본다. 풀면 기본 핸들러가 404 130000을 준다.
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = () => resolve()
+    })
+    server.use(
+      http.get(SNS_FOLLOWERS_URL, async () => {
+        await held
+      }),
+    )
+    renderAt(`/sns/users/${SNS_MUTUAL}/follows`)
+
+    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    expect(screen.queryByText('차단한 계정이에요')).not.toBeInTheDocument()
+    release()
   })
 
   it('[AC-SNS01-019] 내가 차단한 사용자의 목록은 차단한 계정 안내를 보여준다', async () => {
