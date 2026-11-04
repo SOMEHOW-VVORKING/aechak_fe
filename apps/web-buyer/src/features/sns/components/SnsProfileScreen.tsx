@@ -285,7 +285,7 @@ export function SnsProfileScreen({ publicId }: { publicId?: string }) {
         <Avatar name={profile.nickname} size="xl" />
         <p className="text-subheading font-semibold text-text-primary">{profile.nickname}</p>
         {profile.blockedByMe && (
-          <Button variant="secondary" onClick={() => setConfirm('unblock')}>
+          <Button variant="secondary" onClick={() => setConfirm('unblockMutual')}>
             차단 해제
           </Button>
         )}

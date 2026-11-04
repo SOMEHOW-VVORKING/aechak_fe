@@ -385,6 +385,10 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
 
     await user.click(await screen.findByRole('button', { name: '차단 해제' }))
     expect(await screen.findByText('차단을 해제할까요?')).toBeInTheDocument()
+    // 상대의 차단이 남으므로 상대가 내 게시물과 프로필을 다시 볼 수 있다고 안내하지 않는다.
+    expect(
+      screen.getByText('회원님이 건 차단만 해제돼요. 맞차단러님과는 서로의 게시물과 프로필을 계속 볼 수 없어요.'),
+    ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '해제' }))
 
     expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
