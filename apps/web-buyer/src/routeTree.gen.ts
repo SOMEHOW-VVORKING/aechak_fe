@@ -54,6 +54,7 @@ import { Route as OrdersOrderIdClaimRouteImport } from './routes/orders/$orderId
 import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
+import { Route as SnsPostsPublicIdIndexRouteImport } from './routes/sns/posts/$publicId/index'
 import { Route as SnsUsersPublicIdFollowsRouteImport } from './routes/sns/users/$publicId/follows'
 import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/products/$productId/inquiries/new'
 
@@ -281,6 +282,11 @@ const SnsUsersPublicIdIndexRoute = SnsUsersPublicIdIndexRouteImport.update({
   path: '/sns/users/$publicId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsPublicIdIndexRoute = SnsPostsPublicIdIndexRouteImport.update({
+  id: '/sns/posts/$publicId/',
+  path: '/sns/posts/$publicId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SnsUsersPublicIdFollowsRoute = SnsUsersPublicIdFollowsRouteImport.update({
   id: '/sns/users/$publicId/follows',
   path: '/sns/users/$publicId/follows',
@@ -339,6 +345,7 @@ export interface FileRoutesByFullPath {
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -387,6 +394,7 @@ export interface FileRoutesByTo {
   '/settings/notices': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesById {
@@ -437,6 +445,7 @@ export interface FileRoutesById {
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -487,6 +496,7 @@ export interface FileRouteTypes {
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/settings/notices'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId'
     | '/sns/users/$publicId'
   id:
     | '__root__'
@@ -584,6 +595,7 @@ export interface FileRouteTypes {
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesById: FileRoutesById
 }
@@ -629,6 +641,7 @@ export interface RootRouteChildren {
   SettingsNoticesIndexRoute: typeof SettingsNoticesIndexRoute
   ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
+  SnsPostsPublicIdIndexRoute: typeof SnsPostsPublicIdIndexRoute
   SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
 }
 
@@ -949,6 +962,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SnsUsersPublicIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/$publicId/': {
+      id: '/sns/posts/$publicId/'
+      path: '/sns/posts/$publicId'
+      fullPath: '/sns/posts/$publicId/'
+      preLoaderRoute: typeof SnsPostsPublicIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sns/users/$publicId/follows': {
       id: '/sns/users/$publicId/follows'
       path: '/sns/users/$publicId/follows'
@@ -1026,6 +1046,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsNoticesIndexRoute: SettingsNoticesIndexRoute,
   ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,
+  SnsPostsPublicIdIndexRoute: SnsPostsPublicIdIndexRoute,
   SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
 }
 export const routeTree = rootRouteImport

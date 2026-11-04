@@ -15,11 +15,13 @@ import {
   getMyBlocks,
   getMyMutes,
   getMySnsProfile,
+  getSnsPost,
   getSnsProfile,
   muteUser,
   unblockUser,
   unfollowUser,
   unmuteUser,
+  type SnsPostDetailResult,
   type SnsProfileResult,
   type SnsRelationItemResult,
   type SnsRelationPageResult,
@@ -28,22 +30,25 @@ import {
 } from '@aechak/api'
 import { useIsLoggedIn } from '@/shared/auth'
 
-// SNS-01(프로필, 팔로우, 차단, 뮤트)을 spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라
-// fetcher만 소비하고 여기서 자체 useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
+// SNS-01(프로필, 팔로우, 차단, 뮤트)과 SNS-02(게시물, 해시태그)를 spec/contracts/sns.yaml에 붙이는 어댑터.
+// 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체 useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
 
 export type SnsProfile = SnsProfileResult
 export type SnsUserItem = SnsUserItemResult
 export type SnsRelationItem = SnsRelationItemResult
+export type SnsPost = SnsPostDetailResult
 export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
 
 /** 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전, 나를 차단). 차단 사실을 드러내지 않으려고 한 코드로 온다(A7). */
 export const SNS_UNAVAILABLE = 130000
-/** 내가 차단한 사용자의 팔로워, 팔로잉 목록과 팔로우 요청 */
+/** 내가 차단한 사용자의 팔로워, 팔로잉 목록과 팔로우 요청. 내가 차단한 작성자의 게시물 상세(G4) */
 export const SNS_BLOCKED_BY_ME = 130001
 /** 자기 자신 팔로우 */
 export const SNS_SELF_FOLLOW = 130300
+/** 볼 수 없는 게시물(없음, 삭제, 작성자 탈퇴, 작성자가 나를 차단). 원인과 상관없이 삭제된 게시물 안내다(A7, P7) */
+export const SNS_POST_UNAVAILABLE = 130400
 
 const PAGE_SIZE = 20
 
@@ -56,6 +61,8 @@ export const snsKeys = {
   followList: (publicId: string, direction: FollowDirection, nickname: string) =>
     ['sns', 'follows', publicId, direction, nickname] as const,
   relations: (kind: RelationKind) => ['sns', kind] as const,
+  posts: ['sns', 'post'] as const,
+  post: (publicId: string) => ['sns', 'post', publicId] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -66,6 +73,19 @@ export function snsErrorCode(error: unknown): number | undefined {
 function retryTransient(failureCount: number, error: unknown): boolean {
   const status = errorResponse(error)?.status
   return (status == null || status >= 500) && failureCount < 1
+}
+
+/**
+ * 게시물 상세(GET /sns/posts/{publicId}). 비로그인도 된다. 프로필처럼 비로그인 응답과 로그인 응답의 보는 사람
+ * 필드(isMine, following, mutedByMe)와 차단 판정이 달라 세션 상태를 키에 넣는다.
+ */
+export function useSnsPost(publicId: string) {
+  const loggedIn = useIsLoggedIn()
+  return useQuery({
+    queryKey: [...snsKeys.post(publicId), loggedIn],
+    queryFn: async ({ signal }) => (await getSnsPost(publicId, signal)).data,
+    retry: retryTransient,
+  })
 }
 
 /** publicId가 없으면 내 프로필(GET /sns/me, 로그인 필요)을 읽는다. 다른 사용자 프로필은 비로그인도 된다. */
@@ -136,10 +156,13 @@ const TOGGLE_FETCHERS: Record<SnsToggleKind, [(id: string) => Promise<unknown>, 
 
 // 켜기, 끄기 뒤 다시 읽을 캐시(design 6절 8). 팔로우는 대상과 목록 주인의 수가 바뀌어 열려 있는 프로필 전부와
 // 내 프로필, 차단은 두 방향 팔로우가 지워져 팔로우 목록까지, 뮤트는 대상 프로필과 뮤트 목록만 다시 읽는다.
+// 팔로우와 뮤트는 게시물 상세의 following, mutedByMe도 바꾸므로 게시물 상세도 다시 읽는다(SNS-02 상세).
+// 차단은 상세가 닫히고 이전 화면으로 가므로(P12) 열린 상세를 다시 읽지 않는다. 읽으면 닫히기 전에 차단 안내가 비친다.
+// 대신 다음에 열 때 다시 읽도록 게시물 캐시를 낡은 것으로만 표시한다(아래 onSuccess).
 const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
-  follow: () => [snsKeys.profiles, snsKeys.me],
+  follow: () => [snsKeys.profiles, snsKeys.me, snsKeys.posts],
   block: publicId => [snsKeys.profile(publicId), snsKeys.me, snsKeys.follows, snsKeys.relations('blocks')],
-  mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes')],
+  mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes'), snsKeys.posts],
 }
 
 // 켜기와 끄기는 화면에서 수를 직접 더하지 않고 성공 뒤 서버 값을 다시 읽는다.
@@ -165,6 +188,10 @@ export function useSnsToggle() {
             })),
           },
         )
+      }
+      if (kind === 'block') {
+        // 차단과 차단 해제는 게시물 상세 응답(403 130001)을 바꾼다. 다음에 열 때 캐시를 믿지 않고 서버에 다시 묻게 한다.
+        void queryClient.invalidateQueries({ queryKey: snsKeys.posts, refetchType: 'none' })
       }
       await refetch(REFETCH_AFTER[kind](publicId))
     },
