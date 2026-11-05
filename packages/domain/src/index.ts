@@ -53,10 +53,9 @@ export type {
   SellerAccount,
   MemberAccountStatus,
   MemberAccount,
-  ProductReviewSaleStatus,
-  ProductReviewActor,
-  ProductReviewStatus,
-  ProductReviewItem,
+  ProductCatalogSaleStatus,
+  ProductCatalogInspectionStatus,
+  ProductCatalogItem,
   ProductReportReason,
   ProductReport,
 } from './types'
