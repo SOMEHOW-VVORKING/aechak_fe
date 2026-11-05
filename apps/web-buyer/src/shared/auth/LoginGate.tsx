@@ -35,6 +35,8 @@ const SNS_FEATURES = new Set<GateFeature>(['follow', 'follows', 'block', 'mute',
 export interface GateResume {
   kind: PendingActionKind
   publicId: string
+  /** 로그인 뒤 돌아갈 경로를 게이트가 열린 화면의 경로 대신 정할 때 쓴다 */
+  returnTo?: string
 }
 
 const FEATURE_COPY: Record<GateFeature, string> = {
@@ -116,7 +118,7 @@ export function LoginGate({ open, feature, onClose, resume }: LoginGateProps) {
   // 로그인 화면은 페이지 전체를 이동하므로 행동과 돌아올 경로를 sessionStorage에 남긴다.
   // onClose는 부르지 않는다. 시트는 화면과 함께 사라지고, 화면에 따라 onClose가 뒤로 가기라 이동이 겹친다.
   const goLogin = () => {
-    if (resume) savePendingAction({ ...resume, returnTo: href })
+    if (resume) savePendingAction({ ...resume, returnTo: resume.returnTo ?? href })
     navigate({ to: '/onboarding/login', search: resume ? { resume: true } : {} })
   }
 

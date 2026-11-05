@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { EmptyState, Modal, Skeleton, Tabs } from '@aechak/design-system/web'
 import {
@@ -45,9 +45,6 @@ export function snsFeedSearch(search: Record<string, unknown>): { tab?: SnsFeedK
   return tab ? { tab } : {}
 }
 
-// 비로그인이 누른 팔로잉 탭은 로그인 뒤 이 피드로 돌아오기만 한다(A9).
-const BACK_TO_FEED: GateResume = { kind: 'open', publicId: '' }
-
 interface ToastState {
   open: boolean
   message: string
@@ -90,6 +87,7 @@ export function SnsFeedScreen({
   onTabChange: (tab: SnsFeedKind) => void
 }) {
   const navigate = useNavigate()
+  const pathname = useRouterState({ select: s => s.location.pathname })
   const queryClient = useQueryClient()
   const loggedIn = useIsLoggedIn()
   // 첫 탭은 로그인이면 팔로잉, 비로그인이면 탐색이다(P1). 비로그인은 팔로잉을 볼 수 없어 주소에 있어도 탐색을 그린다.
@@ -153,9 +151,12 @@ export function SnsFeedScreen({
       if (listRef.current) listRef.current.scrollTop = 0
       onTabChange(next)
     }
-    // 비로그인이 팔로잉을 누르면 로그인 안내 시트를 열고 로그인 뒤 이 피드로 돌아온다(A9).
-    if (next === 'following') requireAuth('feed', open, BACK_TO_FEED)
-    else open()
+    // 비로그인이 팔로잉을 누르면 로그인 안내 시트를 열고 로그인 뒤 이 피드의 팔로잉 탭으로 돌아온다(A9, A26). 주소의 탭은
+    // 보던 탭 그대로 두고 돌아올 주소에만 팔로잉을 적는다.
+    if (next === 'following') {
+      const resume: GateResume = { kind: 'open', publicId: '', returnTo: `${pathname}?tab=following` }
+      requireAuth('feed', open, resume)
+    } else open()
   }
 
   const copyLink = async (post: SnsPost) => {

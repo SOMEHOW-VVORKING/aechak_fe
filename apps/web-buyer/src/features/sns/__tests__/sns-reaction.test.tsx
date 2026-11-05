@@ -5,7 +5,7 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { HttpResponse, delay, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
-import { logout, resetAuth } from '@/shared/auth'
+import { logout, peekPendingAction, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
   SNS_ME,
@@ -361,6 +361,22 @@ describe('비로그인 리포스트와 저장', () => {
     expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
     expect(button(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true')
     expect(repostCount(cardOf('코코집사'))).toBe('1')
+  })
+
+  it('[A9][A26] 인기 탭에서 팔로잉 탭을 누르고 로그인하면 돌아올 주소가 팔로잉 탭이다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed?tab=popular')
+    await screen.findByRole('tab', { name: '인기', selected: true })
+    await user.click(screen.getByRole('tab', { name: '팔로잉' }))
+    expect(await screen.findByText(/팔로잉 피드는 로그인한 회원만 볼 수 있어요/)).toBeInTheDocument()
+    // 로그인 안내 시트 뒤의 피드는 보던 인기 탭 그대로다.
+    expect(screen.getByRole('tab', { name: '인기' })).toHaveAttribute('aria-selected', 'true')
+    expect(router.state.location.search).toEqual({ tab: 'popular' })
+
+    await user.click(screen.getByRole('button', { name: '로그인 / 회원가입' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/onboarding/login'))
+    expect(peekPendingAction()?.returnTo).toBe('/sns/feed?tab=following')
   })
 
   // 차단과 뮤트는 확인이 더 필요한 행동이라 로그인 뒤 확인 Modal이나 더보기 시트만 다시 연다(A26).
