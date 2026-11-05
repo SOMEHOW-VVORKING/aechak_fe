@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -308,6 +308,34 @@ describe('/sns/feed 이어 불러오기', () => {
     await user.click(screen.getByRole('tab', { name: '인기' }))
     expect(screen.getByRole('tab', { name: '인기' })).toHaveAttribute('aria-selected', 'true')
     expect(list.scrollTop).toBe(0)
+  })
+
+  it('상세에서 돌아오면 보던 탭의 스크롤 위치로 열고 탭을 바꾼 뒤 돌아오면 맨 위에서 연다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed', 60_000)
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    const listOf = () => cards()[0]!.closest('ul')!.parentElement!
+    listOf().scrollTop = 500
+    fireEvent.scroll(listOf())
+
+    await user.click(cards()[0]!)
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\//))
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/feed'))
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    expect(listOf().scrollTop).toBe(500)
+
+    // 인기 탭에 다녀와 탐색 탭을 다시 열면 맨 위에서 연다(탭 전환 규칙). 그 상태로 상세에 다녀와도 맨 위다.
+    await user.click(screen.getByRole('tab', { name: '인기' }))
+    await user.click(screen.getByRole('tab', { name: '탐색' }))
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    await user.click(cards()[0]!)
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\//))
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'explore' }))
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    expect(listOf().scrollTop).toBe(0)
   })
 })
 

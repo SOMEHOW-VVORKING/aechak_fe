@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { EmptyState, Modal, Skeleton, Tabs } from '@aechak/design-system/web'
@@ -44,6 +44,10 @@ export function snsFeedSearch(search: Record<string, unknown>): { tab?: SnsFeedK
   const tab = FEED_TABS.find(t => t.key === search['tab'])?.key
   return tab ? { tab } : {}
 }
+
+// 상세에 다녀오면 피드가 새로 마운트돼 스크롤 칸이 맨 위로 돌아간다(탭 셸은 경로마다 다시 마운트한다). 마지막으로
+// 스크롤한 탭과 위치를 앱이 떠 있는 동안 기억했다가 같은 탭으로 돌아오면 되살린다. 탭을 바꾸면 지운다.
+let lastScroll: { kind: SnsFeedKind; top: number } | null = null
 
 interface ToastState {
   open: boolean
@@ -139,6 +143,14 @@ export function SnsFeedScreen({
     }
   }, [loggedIn, items])
 
+  // 받아 둔 카드를 처음 그린 때 한 번만 되살린다. 받아 둔 피드가 없으면 첫 페이지가 그려진 뒤 되살린다.
+  const restored = useRef(false)
+  useLayoutEffect(() => {
+    if (restored.current || !items) return
+    restored.current = true
+    if (listRef.current && lastScroll?.kind === kind) listRef.current.scrollTop = lastScroll.top
+  }, [items, kind])
+
   const selectTab = (next: SnsFeedKind) => {
     // 지금 탭을 다시 누르면 첫 페이지부터 새 기준 시각으로 다시 읽는다(design 6절 7번).
     if (next === kind) {
@@ -148,6 +160,7 @@ export function SnsFeedScreen({
     }
     // 다른 탭도 맨 위에서 연다. 스크롤 칸은 탭이 바뀌어도 같은 요소라 받아 둔 탭이 이전 탭의 깊이에서 열린다.
     const open = () => {
+      lastScroll = null
       if (listRef.current) listRef.current.scrollTop = 0
       onTabChange(next)
     }
@@ -281,7 +294,13 @@ export function SnsFeedScreen({
         />
       </div>
       {/* 아래 여백(96px)은 글쓰기 버튼(바닥에서 72px)보다 커서 끝까지 내리면 마지막 카드의 버튼이 글쓰기 버튼에 가리지 않는다. */}
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        ref={listRef}
+        onScroll={e => {
+          lastScroll = { kind, top: e.currentTarget.scrollTop }
+        }}
+        className="min-h-0 flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {refreshFailed && <SnsRefetchError onRetry={() => void feed.refetch()} />}
         {body}
       </div>
