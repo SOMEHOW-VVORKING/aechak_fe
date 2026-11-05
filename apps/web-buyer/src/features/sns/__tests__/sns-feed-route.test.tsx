@@ -142,7 +142,7 @@ describe('/sns/feed 탭', () => {
     const user = userEvent.setup()
     renderAt('/sns/feed?tab=explore')
 
-    expect(await screen.findByText('최근 7일 동안 올라온 글이 없어요')).toBeInTheDocument()
+    expect(await screen.findByText('아직 올라온 글이 없어요')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '탐색 보기' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: '인기' }))
@@ -194,7 +194,7 @@ describe('/sns/feed 이어 불러오기', () => {
     renderAt('/sns/feed')
 
     expect(await screen.findByText('네트워크에 연결할 수 없어요')).toBeInTheDocument()
-    expect(screen.queryByText('최근 7일 동안 올라온 글이 없어요')).not.toBeInTheDocument()
+    expect(screen.queryByText('아직 올라온 글이 없어요')).not.toBeInTheDocument()
 
     server.resetHandlers()
     await user.click(screen.getByRole('button', { name: '다시 시도' }))

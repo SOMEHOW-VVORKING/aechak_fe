@@ -62,6 +62,8 @@ const detail = async (publicId: string) =>
   (await axiosInstance.get<{ data: FeedItem['post'] }>(`/sns/posts/${publicId}`)).data.data
 
 const asGuest = () => setAccessToken(null)
+// 픽스처 기준 시각(10월 24일)에서 7일과 72시간이 모두 지난 글
+const OLD_POST = '01JF9W3Q6R8T2V4X7Z9B1C3OLD'
 
 beforeEach(() => {
   seedSns()
@@ -197,18 +199,30 @@ describe('팔로잉 피드', () => {
 })
 
 describe('탐색 피드', () => {
-  it('비로그인은 7일 안의 모든 원글을 본다. 7일이 지난 글과 리포스트 표시는 없다', async () => {
+  it('비로그인은 7일 안의 모든 원글을 보고 7일 안의 글이 20개 이상이면 7일이 지난 글은 없다. 리포스트 표시도 없다', async () => {
+    const recent = Array.from({ length: 20 }, (_, i) =>
+      snsPost(`01JF9W3Q6R8T2V4X7Z9B1C30${String(i).padStart(2, '0')}`, SNS_COCO, { createdAt: '2026-10-23T09:00:00' }),
+    )
     seedSns({
       posts: [
         ...currentSns().posts,
-        snsPost('01JF9W3Q6R8T2V4X7Z9B1C3OLD', SNS_COCO, { caption: '오래된 글', createdAt: '2026-10-16T09:00:00' }),
+        ...recent,
+        snsPost(OLD_POST, SNS_COCO, { caption: '오래된 글', createdAt: '2026-10-16T09:00:00' }),
       ],
     })
     asGuest()
-    const page = await feed('explore')
-    expect(ids(page)).not.toContain('01JF9W3Q6R8T2V4X7Z9B1C3OLD')
+    const page = await feed('explore', { size: 50 })
+    expect(ids(page)).not.toContain(OLD_POST)
     expect(ids(page)).toEqual(expect.arrayContaining([SNS_POST_MINE, SNS_POST_TORI, SNS_POST_SPAM]))
     expect(page.items.every(item => item.repostedBy === null && !item.post.reposted)).toBe(true)
+  })
+
+  it('7일 안의 글이 20개에 못 미치면 7일이 지난 글을 맨 뒤에 잇는다', async () => {
+    seedSns({
+      posts: [...currentSns().posts, snsPost(OLD_POST, SNS_COCO, { caption: '오래된 글', createdAt: '2026-10-16T09:00:00' })],
+    })
+    asGuest()
+    expect(ids(await feed('explore', { size: 50 })).at(-1)).toBe(OLD_POST)
   })
 
   it('로그인이면 내 글, 팔로우한 사용자, 차단 관계, 뮤트한 사용자의 글을 뺀다', async () => {
@@ -218,6 +232,14 @@ describe('탐색 피드', () => {
 })
 
 describe('인기 피드', () => {
+  it('72시간 안의 글이 20개에 못 미치면 72시간이 지난 점수 있는 글을 그 뒤에 잇는다', async () => {
+    seedSns({
+      posts: [...currentSns().posts, snsPost(OLD_POST, SNS_COCO, { caption: '오래된 글', createdAt: '2026-10-16T09:00:00' })],
+      reposts: [snsAct(SNS_MONG, SNS_POST_VIDEO), snsAct(SNS_MONG, OLD_POST), snsAct(SNS_CHOCO, OLD_POST)],
+    })
+    expect(ids(await feed('popular'))).toEqual([SNS_POST_VIDEO, OLD_POST])
+  })
+
   it('리포스트 점수순이고 점수가 0인 글은 없으며 다음 페이지는 첫 페이지의 순위를 따른다', async () => {
     seedSns({
       reposts: [

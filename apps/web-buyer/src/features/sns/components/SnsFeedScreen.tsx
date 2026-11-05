@@ -35,7 +35,7 @@ import { SnsWriteFab } from './SnsWriteFab'
 // 빈 상태(P5). 팔로잉 피드만 탐색 탭 이동 버튼을 두고 탐색, 인기는 안내 문구만이다. 디자인이 없어 FE가 먼저 썼다.
 const FEED_TABS: { key: SnsFeedKind; label: string; empty: string }[] = [
   { key: 'following', label: '팔로잉', empty: '팔로잉 피드에 아직 글이 없어요' },
-  { key: 'explore', label: '탐색', empty: '최근 7일 동안 올라온 글이 없어요' },
+  { key: 'explore', label: '탐색', empty: '아직 올라온 글이 없어요' },
   { key: 'popular', label: '인기', empty: '지금은 인기 글이 없어요' },
 ]
 

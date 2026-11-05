@@ -627,6 +627,8 @@ export function expireSnsPopularRankings(): void {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+// 탐색과 인기가 기간을 넓히지 않아도 되는 글 수. 첫 화면 한 페이지다(R1-17)
+const MIN_FEED_POSTS = 20
 // 시각은 오프셋 없는 KST 문자열이다. 서로 빼기만 하므로 UTC로 읽는다.
 const epoch = (time: string) => Date.parse(`${time}Z`)
 const postRow = (publicId: string) => state.posts.find(r => r.publicId === publicId)
@@ -763,7 +765,8 @@ function followingFeed({ request }: { request: Request }) {
   )
 }
 
-// 탐색 피드(Q3, P4). 기준 시각부터 7일 안의 원글을 최신순으로 싣는다. 리포스트는 나오지 않는다.
+// 탐색 피드(Q3, P4, R1-17). 기준 시각부터 7일 안의 원글을 최신순으로 싣고 7일 안의 글이 20개에 못 미치면 7일이 지난 글을 잇는다.
+// 리포스트는 나오지 않는다.
 function exploreFeed({ request }: { request: Request }) {
   const viewer = viewerOf(request)
   const query = listQuery(request, 'ex', '')
@@ -771,13 +774,11 @@ function exploreFeed({ request }: { request: Request }) {
   const anchor = query.cursor?.anchor ?? state.now
   if (Number.isNaN(epoch(anchor))) return error(400, 90002)
   const from = epoch(anchor) - 7 * DAY_MS
-  let rows = state.posts
-    .filter(
-      row =>
-        shownTo(row, viewer) &&
-        epoch(row.createdAt) >= from &&
-        (viewer == null || (row.author !== viewer && !has(state.follows, viewer, row.author))),
-    )
+  const candidates = state.posts.filter(
+    row => shownTo(row, viewer) && (viewer == null || (row.author !== viewer && !has(state.follows, viewer, row.author))),
+  )
+  const inWindow = candidates.filter(row => epoch(row.createdAt) >= from)
+  let rows = (inWindow.length < MIN_FEED_POSTS ? candidates : inWindow)
     .map(row => ({ row, time: row.createdAt, publicId: row.publicId }))
     .sort(newerFirst)
   if (query.cursor) {
@@ -793,7 +794,8 @@ function exploreFeed({ request }: { request: Request }) {
   )
 }
 
-// 인기 피드(G1, G2). 첫 페이지에서 72시간 안의 점수 있는 원글로 순위를 정해 남기고 다음 페이지는 그 순위를 따른다.
+// 인기 피드(G1, G2, R1-17). 첫 페이지에서 72시간 안의 점수 있는 원글로 순위를 정해 남기고 다음 페이지는 그 순위를 따른다.
+// 72시간 안의 글이 20개에 못 미치면 72시간이 지난 점수 있는 글을 그 뒤에 점수순으로 잇는다.
 // SNS-04 전이라 점수는 리포스트 수 x 3이다. 읽을 때마다 지운 글과 차단, 뮤트한 작성자의 글을 빼고 그만큼 뒤 순위로 채운다.
 function popularFeed({ request }: { request: Request }) {
   const viewer = viewerOf(request)
@@ -804,19 +806,19 @@ function popularFeed({ request }: { request: Request }) {
   if (rankingId == null) {
     const from = epoch(state.now) - 3 * DAY_MS
     const score = (row: SnsPostRow) => state.reposts.filter(r => r.post === row.publicId).length * 3
-    rankingId = String(++rankingSeq)
-    rankings.set(
-      rankingId,
-      state.posts
-        .filter(row => !row.deleted && USERS[row.author] && epoch(row.createdAt) >= from && score(row) > 0)
+    const rank = (rows: SnsPostRow[]) =>
+      rows
+        .filter(row => !row.deleted && USERS[row.author] && score(row) > 0)
         .sort(
           (a, b) =>
             score(b) - score(a) ||
             newerFirst({ time: a.createdAt, publicId: a.publicId }, { time: b.createdAt, publicId: b.publicId }),
         )
-        .slice(0, 1000)
-        .map(row => row.publicId),
-    )
+        .map(row => row.publicId)
+    const recent = rank(state.posts.filter(row => epoch(row.createdAt) >= from))
+    const ranking = recent.length < MIN_FEED_POSTS ? [...new Set([...recent, ...rank(state.posts)])] : recent
+    rankingId = String(++rankingSeq)
+    rankings.set(rankingId, ranking.slice(0, 1000))
   } else {
     offset = Number(query.cursor!.last)
     if (!rankings.has(rankingId) || !Number.isInteger(offset) || offset < 0 || offset >= 1000) return error(400, 90002)
