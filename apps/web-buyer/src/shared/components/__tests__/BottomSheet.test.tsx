@@ -63,12 +63,13 @@ describe('BottomSheet', () => {
       await user.click(opener)
       const dialog = await screen.findByRole('dialog')
       expect(dialog.contains(document.activeElement), `${round}번째 열기`).toBe(true)
-      await user.tab()
-      expect(screen.getByRole('button', { name: '추천순' })).toHaveFocus()
-      await user.tab()
+      // 열자마자 Shift+Tab을 눌러도 포커스가 시트 뒤의 버튼으로 넘어가지 않는다
+      await user.tab({ shift: true })
       expect(screen.getByRole('button', { name: '최신순' })).toHaveFocus()
       await user.tab()
       expect(screen.getByRole('button', { name: '추천순' })).toHaveFocus()
+      await user.tab({ shift: true })
+      expect(screen.getByRole('button', { name: '최신순' })).toHaveFocus()
 
       await user.keyboard('{Escape}')
       expect(opener).toHaveFocus()

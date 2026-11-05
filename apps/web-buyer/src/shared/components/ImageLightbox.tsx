@@ -56,13 +56,16 @@ export function ImageLightbox({ src, onClose, alt = '' }: ImageLightboxProps) {
         e.preventDefault()
         return
       }
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 라이트박스 뒤로 넘어간다.
+      const outside = active === panel || !panel.contains(active)
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (active === first || outside) {
           e.preventDefault()
           last.focus()
         }
       } else {
-        if (document.activeElement === last) {
+        if (active === last || outside) {
           e.preventDefault()
           first.focus()
         }

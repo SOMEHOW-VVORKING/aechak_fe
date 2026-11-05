@@ -57,10 +57,13 @@ export function Modal({
       if (!items.length) { e.preventDefault(); return }
       const first = items[0]!
       const last = items[items.length - 1]!
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 패널 뒤로 넘어간다.
+      const outside = active === panel || !panel.contains(active)
       if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+        if (active === first || outside) { e.preventDefault(); last.focus() }
       } else {
-        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+        if (active === last || outside) { e.preventDefault(); first.focus() }
       }
     }
     document.addEventListener('keydown', handler)
