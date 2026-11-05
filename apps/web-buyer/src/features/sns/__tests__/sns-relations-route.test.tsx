@@ -19,6 +19,7 @@ import {
   snsRelation,
 } from '@/testing/msw/server'
 import { setAccessToken } from '@aechak/api'
+import { logout } from '@/shared/auth'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -208,5 +209,26 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     expect(await screen.findByText('차단한 계정이 없어요')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /뮤트/ }))
     expect(await screen.findByText('뮤트한 계정이 없어요')).toBeInTheDocument()
+  })
+})
+
+describe('/mypage/sns-relations 비로그인', () => {
+  it('비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 화면을 보여준다', async () => {
+    logout()
+    setAccessToken(null)
+    seedSns({ viewer: null })
+    const snsRequests: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname.includes('/sns/')) snsRequests.push(request.url)
+    })
+    try {
+      const router = renderAt('/mypage/sns-relations')
+      expect(await screen.findByText(/차단\/뮤트 관리는 로그인한 회원만 볼 수 있어요\./)).toBeInTheDocument()
+      expect(screen.getByText('차단/뮤트 관리')).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/mypage/sns-relations')
+      expect(snsRequests).toEqual([])
+    } finally {
+      server.events.removeAllListeners()
+    }
   })
 })

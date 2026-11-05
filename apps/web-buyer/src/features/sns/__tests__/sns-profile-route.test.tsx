@@ -456,3 +456,22 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
     expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}/follows`)
   })
 })
+
+describe('/sns/me 비로그인', () => {
+  it('비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 화면을 보여준다', async () => {
+    asGuest()
+    const snsRequests: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname.includes('/sns/')) snsRequests.push(request.url)
+    })
+    try {
+      const router = renderAt('/sns/me')
+      expect(await screen.findByText(/내 SNS 프로필은 로그인한 회원만 볼 수 있어요\./)).toBeInTheDocument()
+      expect(screen.getByText('내 SNS 프로필')).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/sns/me')
+      expect(snsRequests).toEqual([])
+    } finally {
+      server.events.removeAllListeners()
+    }
+  })
+})
