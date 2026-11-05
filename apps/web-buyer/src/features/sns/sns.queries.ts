@@ -618,6 +618,8 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
       // 묶음 중에 새로 시작한 피드 조회(지금 탭 다시 누르기, 포커스 재조회)는 서버 반영 전 값을 받아 왔을 수 있어 서버 값을
       // 한 번 더 적는다. 같은 값이면 그대로 두어 수가 두 번 바뀌지 않는다.
       if (run.confirmed !== undefined) setReaction(queryClient, kind, publicId, run.confirmed)
+      // 아직 받는 중인 피드 조회는 그 뒤에 도착해 반영 전 값으로 덮어쓴다. 멈추고 서버 값을 다시 읽는다.
+      void removeFromLists(queryClient, { queryKey: snsKeys.feeds }, data => data)
       void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
     },
   })

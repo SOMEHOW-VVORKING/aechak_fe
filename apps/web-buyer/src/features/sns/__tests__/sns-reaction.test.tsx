@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, delay, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { setAccessToken } from '@aechak/api'
+import { getSnsExploreFeed, setAccessToken } from '@aechak/api'
 import { logout, peekPendingAction, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
+  SNS_EXPLORE_FEED_URL,
   SNS_ME,
   SNS_MONG,
   SNS_POST_COCO,
@@ -182,6 +183,43 @@ describe('리포스트와 저장 버튼', () => {
     await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true'))
     expect(repostCount(cardOf('코코집사'))).toBe('1')
     expect(reposted(SNS_ME, SNS_POST_COCO)).toBe(true)
+  })
+
+  it('[AC-SNS03-022] 리포스트 요청 중에 다시 읽기 시작한 피드가 요청이 끝난 뒤에 반영 전 값으로 와도 카드가 켜지고 수가 1 오른다', async () => {
+    const user = userEvent.setup()
+    renderAt(EXPLORE)
+    await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
+
+    // 리포스트(POST)는 붙잡아 두고, 지금 탭을 다시 눌러 읽는 피드는 리포스트 전 목록을 리포스트가 끝난 뒤에 돌려준다.
+    const before = (await getSnsExploreFeed({ size: 20 })).data
+    let releasePost!: () => void
+    const postHeld = new Promise<void>(resolve => (releasePost = resolve))
+    let releaseGet!: () => void
+    const getHeld = new Promise<void>(resolve => (releaseGet = resolve))
+    server.use(
+      http.post(SNS_REPOST_URL, async () => {
+        await postHeld
+      }),
+      http.get(
+        SNS_EXPLORE_FEED_URL,
+        async () => {
+          await getHeld
+          return HttpResponse.json({ data: before })
+        },
+        { once: true },
+      ),
+    )
+    await user.click(repostIn(cardOf('코코집사')))
+    await user.click(screen.getByRole('tab', { name: '탐색' }))
+
+    releasePost()
+    await waitFor(() => expect(reactionResponses).toBe(1))
+    await new Promise(resolve => setTimeout(resolve, 50))
+    releaseGet()
+    await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true'))
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true')
+    expect(repostCount(cardOf('코코집사'))).toBe('1')
   })
 
   it('[AC-SNS03-023] 내 글의 리포스트 버튼은 상세와 카드에서 잠기고 저장은 된다', async () => {
