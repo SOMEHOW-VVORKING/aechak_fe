@@ -410,6 +410,34 @@ describe('/sns/posts/new 영상', () => {
     await waitFor(() => expect(publishButton()).toBeEnabled())
   })
 
+  it('[AC-SNS02-031] tmp 원본이 지워져 다시 올리다 영상이 실패하면 다시 시도는 지워진 키 대신 영상을 새로 올려 게시한다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/posts/new')
+    await screen.findByLabelText('캡션')
+    await attachVideo(user, video('walk.mp4'))
+    await waitFor(() => expect(publishButton()).toBeEnabled())
+
+    expireSnsUploads()
+    server.use(
+      http.put('https://fake-s3.local/tmp/1/sns/posts/videos/*', () => new HttpResponse(null, { status: 500 }), {
+        once: true,
+      }),
+    )
+    await user.click(publishButton())
+    expect(await screen.findByText('올리지 못했어요')).toBeInTheDocument()
+    const presigned = presignCount
+
+    await user.click(screen.getByRole('button', { name: '영상 다시 시도' }))
+    await waitFor(() => expect(publishButton()).toBeEnabled())
+    expect(presignCount).toBe(presigned + 1)
+    await user.click(publishButton())
+
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\/01K/))
+    const videoKey = (request: PostRequest) => (request.body as { video: { key: string } }).video.key
+    expect(postRequests).toHaveLength(2)
+    expect(videoKey(postRequests[1]!)).not.toBe(videoKey(postRequests[0]!))
+  })
+
   it.each([
     ['영상을 빼면', (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: '영상 빼기' }))],
     [
