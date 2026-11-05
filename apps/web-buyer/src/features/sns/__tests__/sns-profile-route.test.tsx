@@ -79,7 +79,8 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     expect(await screen.findByText('코코와 삽니다')).toBeInTheDocument()
     expect(screen.getAllByText('코코집사').length).toBeGreaterThan(0)
     expect(screen.getByRole('list', { name: '펫' })).toBeInTheDocument()
-    expect(stat('게시물')).toBe('0')
+    // 지운 글(SNS_POST_DELETED)은 세지 않는다.
+    expect(stat('게시물')).toBe('1')
     expect(stat('팔로워')).toBe('2')
     expect(stat('팔로잉')).toBe('1')
     // 메시지 버튼과 알림 버튼(R1-18)은 없다.

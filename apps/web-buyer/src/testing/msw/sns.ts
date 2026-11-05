@@ -254,7 +254,7 @@ function profile(target: string, viewer: string | null) {
     profileImageUrl: blockingMe ? null : user.profileImageUrl,
     bio: hidden ? null : user.bio,
     pets: hidden ? null : user.pets,
-    postCount: hidden ? null : 0,
+    postCount: hidden ? null : state.posts.filter(row => row.author === target && !row.deleted).length,
     followerCount: hidden ? null : counted(r => r.to === target),
     followingCount: hidden ? null : counted(r => r.from === target),
     isMe: viewer === target,

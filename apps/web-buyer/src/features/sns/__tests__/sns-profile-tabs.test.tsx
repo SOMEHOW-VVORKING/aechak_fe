@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { getMySnsSaves, getSnsProfile, saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
+import { getMySnsSaves, saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_BLOCKER,
@@ -372,10 +372,6 @@ describe('내 프로필 탭과 캐시', () => {
   })
 
   it('[AC-SNS02-027] 주소로 연 내 프로필에서 글을 지우고 돌아오면 앱과 같은 staleTime에서도 게시물 수가 준다', async () => {
-    // MSW 프로필의 게시물 수는 늘 0이라 지우지 않은 내 원글 수로 답하게 한다.
-    const me = (await getSnsProfile(SNS_ME)).data
-    const myPosts = () => currentSns().posts.filter(p => p.author === SNS_ME && !p.deleted).length
-    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ data: { ...me, postCount: myPosts() } })))
     const user = userEvent.setup()
     renderAt(`/sns/users/${SNS_ME}`, 60_000)
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 추천받아요']))
@@ -404,10 +400,11 @@ describe('내 프로필 탭과 캐시', () => {
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 정리했어요']))
   })
 
-  it('[AC-SNS02-004] 글을 게시하고 내 프로필로 오면 앱과 같은 staleTime에서도 그리드 맨 위에 새 글이 나온다', async () => {
+  it('[AC-SNS02-004] 글을 게시하고 내 프로필로 오면 앱과 같은 staleTime에서도 게시물 수가 오르고 그리드 맨 위에 새 글이 나온다', async () => {
     const user = userEvent.setup()
     const router = renderAt('/sns/me', 60_000)
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 추천받아요']))
+    expect(postCount()).toBe('2')
 
     await act(() => router.navigate({ to: '/sns/posts/new' }))
     await user.type(await screen.findByLabelText('캡션'), '새로 쓴 글')
@@ -416,6 +413,7 @@ describe('내 프로필 탭과 캐시', () => {
 
     await act(() => router.navigate({ to: '/sns/me' }))
     await waitFor(() => expect(cellsIn()).toEqual(['새로 쓴 글', '사진 2장 게시물', '산책 코스 추천받아요']))
+    expect(postCount()).toBe('3')
   })
 })
 

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '@aechak/api'
-import { seedAccount } from '@/testing/msw/server'
+import { seedAccount, seedSns } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(path: string) {
@@ -30,6 +30,7 @@ describe('/mypage SNS 진입 행', () => {
   })
 
   it('[AC-SNS01-006] 내 SNS 프로필 행으로 들어가면 게시물과 팔로우가 없어도 세 수 0과 저장됨 탭이 보인다', async () => {
+    seedSns({ posts: [] })
     const user = userEvent.setup()
     const router = renderAt('/mypage')
 
