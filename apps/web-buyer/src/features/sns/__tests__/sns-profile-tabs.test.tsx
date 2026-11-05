@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { getMySnsSaves, saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
+import { getMySnsSaves, getSnsProfile, saveSnsPost, setAccessToken, unsaveSnsPost } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_BLOCKER,
@@ -75,6 +75,8 @@ function seedCocoPosts() {
 }
 
 const postTabs = () => within(screen.getByRole('tablist', { name: '게시물 목록' }))
+/** 프로필 머리말의 게시물 수 */
+const postCount = () => screen.getByText('게시물').previousElementSibling?.textContent
 /** 지금 탭의 칸 이름(본문 앞부분이나 종류와 장수) */
 function cellsIn() {
   const list = screen.queryByRole('list', { name: '게시물' })
@@ -367,6 +369,24 @@ describe('내 프로필 탭과 캐시', () => {
     await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
     await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
     expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(true)
+  })
+
+  it('[AC-SNS02-027] 주소로 연 내 프로필에서 글을 지우고 돌아오면 앱과 같은 staleTime에서도 게시물 수가 준다', async () => {
+    // MSW 프로필의 게시물 수는 늘 0이라 지우지 않은 내 원글 수로 답하게 한다.
+    const me = (await getSnsProfile(SNS_ME)).data
+    const myPosts = () => currentSns().posts.filter(p => p.author === SNS_ME && !p.deleted).length
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ data: { ...me, postCount: myPosts() } })))
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_ME}`, 60_000)
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물', '산책 코스 추천받아요']))
+    expect(postCount()).toBe('2')
+
+    await user.click(screen.getByRole('button', { name: '산책 코스 추천받아요' }))
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '삭제' }))
+    await user.click(within(await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
+    await waitFor(() => expect(cellsIn()).toEqual(['사진 2장 게시물']))
+    await waitFor(() => expect(postCount()).toBe('1'))
   })
 
   it('[AC-SNS02-029] 내 글을 고치고 돌아오면 앱과 같은 staleTime에서도 그리드 칸에 바뀐 본문 앞부분이 나온다', async () => {

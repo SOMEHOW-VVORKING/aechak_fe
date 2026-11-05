@@ -215,9 +215,20 @@ export function useDeleteSnsPost() {
         removeGridCell(queryClient, { queryKey: snsKeys.userPostLists }, publicId),
         removeGridCell(queryClient, { queryKey: snsKeys.saves() }, publicId),
       ])
-      return queryClient.invalidateQueries({ queryKey: snsKeys.me })
+      return refetchMyProfiles(queryClient)
     },
   })
+}
+
+/** 게시물 수가 바뀐 내 프로필. 내 프로필(GET /sns/me)과 주소로 연 내 공개 프로필(GET /sns/users/{내 publicId})이다 */
+function refetchMyProfiles(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: snsKeys.me }),
+    queryClient.invalidateQueries({
+      queryKey: snsKeys.profiles,
+      predicate: query => (query.state.data as SnsProfile | undefined)?.isMe === true,
+    }),
+  ])
 }
 
 export interface CreateSnsPostInput {
@@ -246,7 +257,7 @@ export function useCreateSnsPost() {
     mutationFn: async (input: CreateSnsPostInput) => (await createSnsPostWithKey(input)).data,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists, predicate: query => query.meta?.['mine'] === true })
-      return queryClient.invalidateQueries({ queryKey: snsKeys.me })
+      return refetchMyProfiles(queryClient)
     },
   })
 }
