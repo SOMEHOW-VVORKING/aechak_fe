@@ -392,6 +392,12 @@ export function useSnsToggle() {
             })),
           },
         )
+        // 화면에 없는 목록은 받아 둔 행만 고치면 새로 팔로우한 사람이 빠진 채 남는다. 다음에 열 때 다시 읽게 낡은 것으로만 표시한다.
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.follows,
+          refetchType: 'none',
+          predicate: query => query.getObserversCount() === 0,
+        })
       }
       if (kind === 'block') {
         // 차단과 차단 해제는 게시물 상세 응답(403 130001)을 바꾼다. 다음에 열 때 캐시를 믿지 않고 서버에 다시 묻게 한다.

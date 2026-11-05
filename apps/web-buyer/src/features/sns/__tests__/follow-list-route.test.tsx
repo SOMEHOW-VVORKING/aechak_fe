@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -26,10 +26,11 @@ import {
 import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+// staleTime: 앱과 같은 값이면 목록을 다시 열어도 캐시만 쓴다. 닫힌 목록을 낡은 것으로 표시하는 처리를 확인할 때 쓴다.
+function renderAt(path: string, staleTime = 0) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
   // retryDelay 0: SNS 목록은 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, staleTime } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -58,6 +59,21 @@ describe('/sns/users/$publicId/follows 목록', () => {
     expect(await screen.findByRole('button', { name: '몽이아빠 팔로잉' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '초코맘 팔로우' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}/follows`)
+  })
+
+  it('[AC-SNS01-014] 닫아 둔 내 팔로잉 목록은 프로필에서 팔로우하고 돌아오면 다시 읽어 새로 팔로우한 사람이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt(`/sns/users/${SNS_ME}/follows?tab=followings`, 60_000)
+    expect(await screen.findByText('아직 팔로우한 사람이 없어요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/users/$publicId', params: { publicId: SNS_COCO } }))
+    await user.click(await screen.findByRole('button', { name: '팔로우' }))
+    expect(await screen.findByRole('button', { name: '팔로잉' })).toBeInTheDocument()
+
+    await act(() =>
+      router.navigate({ to: '/sns/users/$publicId/follows', params: { publicId: SNS_ME }, search: { tab: 'followings' } }),
+    )
+    expect(await screen.findByRole('button', { name: '코코집사 팔로잉' })).toBeInTheDocument()
   })
 
   it('[AC-SNS01-026] 행 팔로우 응답이 실패로 왔지만 서버는 반영했으면 목록을 다시 읽어 버튼을 맞추고 실패 안내를 띄운다', async () => {
