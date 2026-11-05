@@ -9,6 +9,7 @@ import { reviewHandlers } from './reviews.handlers'
 import { reportHandlers } from './reports.handlers'
 // 검토 큐 목록 핸들러가 쓰는 경로 상수도 그 모듈이 소유한다(승인·반려가 거기서 상품 상태를 바꾼다).
 import { ADMIN_PRODUCT_INSPECTIONS_URL, productHandlers } from './products.handlers'
+import { sellerHandlers } from './sellers.handlers'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-seller의 src/testing/msw 관례를
 // web-admin에 이식했다. 모듈 모킹 대신 네트워크 레벨에서 가로채 실제 HTTP 경로(URL·봉투·에러
@@ -29,6 +30,20 @@ export {
   seedAdminReports,
   type AdminReportWire,
 } from './reports.handlers'
+export {
+  ADMIN_SELLERS_URL,
+  ADMIN_SELLER_DETAIL_URL,
+  ADMIN_SELLER_MEMO_URL,
+  ADMIN_SELLER_RELEASE_URL,
+  ADMIN_SELLER_SUSPEND_URL,
+  SANCTION_HISTORY_LIMIT,
+  currentAdminSeller,
+  lastAdminSellerWrite,
+  makeAdminSellerWire,
+  seedAdminSellers,
+  type AdminSellerWire,
+  type SellerSanctionHistoryWire,
+} from './sellers.handlers'
 export {
   ADMIN_AUDIT_LOGS_URL,
   makeAdminAuditLogWire,
@@ -1247,5 +1262,7 @@ export const handlers = [
   ...noticeHandlers,
   // 신고 핸들러도 같은 이유로 시드 없이 빈 목록으로 답한다 — `/reports`가 nav 테스트에서 열린다.
   ...reportHandlers,
+  // 셀러 관리 핸들러도 시드 없이 빈 목록으로 답한다 — `/sellers`가 nav 테스트에서 열린다.
+  ...sellerHandlers,
 ]
 export const server = setupServer(...handlers)

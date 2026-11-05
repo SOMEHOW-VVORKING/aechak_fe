@@ -18,6 +18,7 @@ import {
   seedAdminProducts,
   seedAdminReports,
   seedAdminReviews,
+  seedAdminSellers,
   server,
 } from '@/testing/msw/server'
 
@@ -51,14 +52,17 @@ const normalizePath = (pathname: string) =>
  * 리뷰도 실연동이 됐다(SCRUM-331). 2026-11-03에는 `GET /admin/audit-logs` 하나가 확인돼 어드민
  * 액션 로그가 실연동이 됐고(SCRUM-318), `/admin/notices` 여섯(목록·초안 생성·상세·수정·게시·내림)이
  * 확인돼 알림/공지 관리도 실연동이 됐다(SCRUM-332). `/admin/reports` 셋(목록·상세·처리)이 확인돼
- * 신고 제재 관리도 실연동이 됐다(SCRUM-241). 2026-11-05에는 `/admin/products` 셋(목록·판매중지·재개)이
- * 확인돼 상품 카탈로그 관리가 실연동이 됐다(SCRUM-363) — 그 화면은 nav에 없던 목데이터
- * '상품 검수 관리'가 **이름·자리·경로를 바꿔 돌아온 것**이라, 준비 중에서 옮겨온 것이 아니라
- * 실연동 분류로 **새로 들어왔다**(그래서 준비 중은 셋 그대로다).
+ * 신고 제재 관리도 실연동이 됐다(SCRUM-241). 2026-11-05에 둘이 함께 실연동으로 옮겼다.
+ * `/admin/sellers` 다섯(목록·상세·판매정지·해제·메모)으로 셀러 관리가(SCRUM-362),
+ * `/admin/products` 셋(목록·판매중지·재개)으로 상품 카탈로그 관리가(SCRUM-363) 열렸다.
+ * 둘의 성격이 다르다 — 셀러 관리는 준비 중에서 **옮겨왔고**, 상품 카탈로그 관리는 nav에 없던
+ * 목데이터 '상품 검수 관리'가 **이름·자리·경로를 바꿔 돌아온 것**이라 실연동 분류로 새로
+ * 들어왔다. 그래서 준비 중은 셋에서 **둘**이 된다(셀러 관리만 빠진다).
  * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
  */
 const LIVE_LABELS = [
   '셀러 입점 심사',
+  '셀러 관리',
   '관리자 관리',
   '일반 회원 관리',
   '상품 카탈로그 관리',
@@ -76,7 +80,7 @@ const LIVE_LABELS = [
  * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
  * 화면에서는 상단 띠로 드러난다(SCRUM-308).
  *
- * 목데이터 화면은 **이 셋이 전부**이고 셋 다 nav에 올라 있다 — nav에 없는 예시 화면은 없다.
+ * 목데이터 화면은 **이 둘이 전부**이고 둘 다 nav에 올라 있다 — nav에 없는 예시 화면은 없다.
  * 한때 하나 있었다('상품 검수 관리' `/products/review`, 같은 '검수' 그룹에 실연동 'AI 검수 큐'가
  * 있어 입구를 내린 것 — SCRUM-313). 그 화면은 2026-11-05에 실연동되면서 이름과 경로를 바꿔
  * nav로 돌아갔고(위 `LIVE_LABELS`의 '상품 카탈로그 관리'), 그래서 지금은 `NAV_DESTINATIONS`와
@@ -84,7 +88,6 @@ const LIVE_LABELS = [
  */
 const PENDING_LABELS = [
   '대시보드',
-  '셀러 관리',
   '채팅 CS 모니터링',
 ] as const
 
@@ -143,6 +146,8 @@ describe('어드민 nav', () => {
     seedAdminAuditLogs()
     seedAdminNotices()
     seedAdminReports()
+    // 셀러 관리도 실연동이라 AC-ADMIN-NAV-010이 `/sellers`를 열면 목록 조회가 나간다.
+    seedAdminSellers()
   })
 
   it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
@@ -244,7 +249,9 @@ describe('어드민 nav', () => {
     // 입점 심사는 서버 대기 수를 숫자로 받는다(꼬리표 자리와 겹치지 않는다).
     expect(await screen.findByRole('button', { name: '셀러 입점 심사 2' })).toBeInTheDocument()
     // 준비 중 항목은 숫자 배지를 받지 않는다 — 상수 배지는 AGENTS.md가 금지한 장식 UI다.
-    expect(screen.getByRole('button', { name: pendingName('셀러 관리') })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: pendingName('채팅 CS 모니터링') }),
+    ).toBeInTheDocument()
   })
 
   /**
@@ -254,7 +261,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 3항목의 목적지에는 띠가 **있어야** 하고, 실연동 12항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 2항목의 목적지에는 띠가 **있어야** 하고, 실연동 13항목에는 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).

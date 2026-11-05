@@ -59,7 +59,8 @@ const PENDING_TAG = '준비 중'
 // 개입), `/admin/reviews` 다섯(목록·상세·블라인드·해제·삭제), 그리고 이번에 확인된
 // `GET /admin/audit-logs` 하나(어드민 액션 로그, SCRUM-318)와 `/admin/notices` 여섯(알림/공지
 // 관리, SCRUM-332 — 목록·초안 생성·상세·수정·게시·내림), `/admin/reports` 셋(신고 제재 관리,
-// SCRUM-241 — 목록·상세·처리)이다.
+// SCRUM-241 — 목록·상세·처리), `/admin/sellers` 다섯(셀러 관리, SCRUM-362 — 목록·상세·판매정지·
+// 해제·메모)이다.
 // seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
 // 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
 // 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -83,12 +84,13 @@ const navGroups: NavGroup[] = [
         label: '셀러 입점 심사',
         icon: <ClipboardCheck className={iconClass} />,
       },
-      // 입점 심사와 별개다 — 승인된 셀러의 계정 조회·제재 API가 admin 모듈에 없다.
+      // `/admin/sellers` 다섯(목록·상세·판매정지·해제·메모)이 생겨 실연동됐다(SCRUM-362) —
+      // 꼬리표를 떼고 화면의 띠도 걷었다. 입점 심사와 별개의 층이다: 여기서 막는 것은 판매이고
+      // 계정 로그인 차단은 '일반 회원 관리'가 users.status로 따로 다룬다.
       {
         key: '/sellers',
         label: '셀러 관리',
         icon: <Store className={iconClass} />,
-        tag: PENDING_TAG,
       },
       // `/admin/members` 넷(목록·상세·제재·해제)이 생겨 실연동됐다 — 꼬리표를 떼고 화면의 띠도 걷었다.
       {

@@ -48,21 +48,6 @@ const isShellBadgeRead = (entry: string) => entry.startsWith(`GET ${ADMIN_APPLIC
 const unexpectedRequests = (requests: readonly string[]) =>
   requests.filter(entry => !isShellBadgeRead(entry))
 
-/**
- * FilterBar와 상세 Drawer의 `<select>`는 라벨이 없다(앞의 FilterSelect/DetailField가 맥락을
- * 준다) — 그래서 **그 안에 있는 옵션 이름**으로 집는다. 못 찾으면 던져서 `!`로 눌러 두지 않는다.
- */
-function selectWithOption(optionName: string): HTMLElement {
-  const found = screen
-    .getAllByRole('combobox')
-    .find(element => within(element).queryByRole('option', { name: optionName }))
-  if (!found) throw new Error(`"${optionName}" 옵션을 가진 select를 찾지 못했다`)
-  return found
-}
-
-const chooseOption = (select: HTMLElement, optionName: string) =>
-  userEvent.setup().selectOptions(select, within(select).getByRole('option', { name: optionName }))
-
 const MOCK_NOTICE_TITLE = '예시 데이터예요'
 const NOT_SAVED = '저장되지 않아요'
 /**
@@ -76,20 +61,22 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
 /**
  * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 3화면.
  *
- * 셋 다 nav에 "준비 중" 꼬리표를 달고 올라 있으므로 `admin-nav.test.tsx`의 분류
+ * 둘 다 nav에 "준비 중" 꼬리표를 달고 올라 있으므로 `admin-nav.test.tsx`의 분류
  * (AC-ADMIN-NAV-004)가 같은 화면의 띠를 nav 쪽에서 한 번 더 본다 — **nav에 없는 예시 화면은
  * 이제 없다.** 한때 그런 화면이 하나 있었다(`/products/review`, SCRUM-313에서 입구를 내렸다):
  * nav 분류에서 빠져 이 파일이 그 화면의 유일한 띠 가드였고, 그래서 SCREENS·WRITE_FLOWS에서
  * 빼면 띠가 사라져도 아무것도 깨지지 않는 자리였다. 그 화면은 2026-11-05에 `/admin/products`
  * 셋에 실연동되면서 이름·자리·경로를 함께 바꿔 nav로 돌아갔다('상품 카탈로그 관리',
  * `/products/catalog`, SCRUM-363) — 그 계약은 `features/product-catalog/__tests__`가 본다.
- * **다시 그런 화면이 생기면 여기 셋에 더하고 이 단락을 되살릴 것.**
+ * 같은 날 셀러 관리도 `/admin/sellers` 다섯에 실연동돼 빠졌다(SCRUM-362).
+ * **다시 nav 없는 예시 화면이 생기면 여기 더하고 이 단락을 되살릴 것.**
  * (일반 회원 관리는 `/admin/members` 넷, 주문 배송 모니터링은 `/admin/orders` 넷, AI 검수 큐는
  *  `/admin/product-inspections` 넷이 생겨 빠졌고, 서비스 문의·클레임·리뷰는 2026-10-30 실측에서
  *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다. 어드민 액션 로그는
  *  2026-11-03 실측의 `GET /admin/audit-logs`로, 알림/공지 관리는 같은 날 실측의 `/admin/notices`
- *  여섯으로, 신고 제재 관리는 같은 날 실측의 `/admin/reports` 셋(목록·상세·처리)으로 빠졌다 —
- *  실연동 화면 계약은 각 feature 의 `__tests__`가 본다. 공지의 대상 필터
+ *  여섯으로, 신고 제재 관리는 같은 날 실측의 `/admin/reports` 셋(목록·상세·처리)으로 빠졌다.
+ *  셀러 관리는 2026-11-05 실측의 `/admin/sellers` 다섯(목록·상세·판매정지·해제·메모)으로
+ *  빠졌다(SCRUM-362) — 실연동 화면 계약은 각 feature 의 `__tests__`가 본다. 공지의 대상 필터
  *  계약(`'all'`이 실제 값인 축의 센티넬)은 여기 있던 AC-ADMIN-MOCK-007을
  *  `features/notices/__tests__`가 서버 필터 단언으로 이어 본다. 신고의 처리 조합 계약은
  *  `features/reports/__tests__`가 본다.)
@@ -109,7 +96,6 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
  */
 const SCREENS = [
   ['대시보드', '/', '확인이 필요한 일'],
-  ['셀러 관리', '/sellers', '냥이상점'],
   ['채팅 CS 모니터링', '/chat-monitoring', 'ROOM-4821'],
 ] as const satisfies readonly (readonly [string, string, string])[]
 
@@ -117,29 +103,18 @@ const SCREENS = [
 const TABLE_SCREENS = SCREENS.filter(([, path]) => path !== '/')
 
 /**
- * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이고,
- * `prefill`은 버튼이 잠겨 있을 때 먼저 골라야 하는 Select 옵션이다.
+ * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이다.
  *
- * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러다(셀러 관리의
- * `handleSaveMemo`와 `handleConfirmSuspend`가 지금 남은 예다). 대표 하나만 누르면 나머지
- * 핸들러에 요청이 들어가도 잡히지 않는다(교차검토 2라운드 지적).
+ * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러이고, 대표 하나만
+ * 누르면 나머지 핸들러에 요청이 들어가도 잡히지 않는다(교차검토 2라운드 지적). 지금 남은 화면은
+ * 액션이 하나뿐이라 그 예가 없지만, 액션이 둘 이상인 예시 화면이 생기면 전부 넣는다.
+ *
+ * 2026-11-05에 둘이 실연동으로 빠졌다 — 셀러 관리의 메모 저장·판매정지(`/admin/sellers`,
+ * SCRUM-362)와 상품 검수 관리의 검수 통과·블라인드 유지·판매 중지(`/admin/products`와 검토 큐,
+ * SCRUM-363)다. 버튼이 잠긴 흐름을 열어 주던 `prefill`도 남은 하나가 쓰지 않아 함께 걷었다 —
+ * 다시 그런 예시 화면이 생기면 되살린다.
  */
 const WRITE_FLOWS = [
-  {
-    screen: '셀러 관리 — 메모 저장',
-    path: '/sellers',
-    openRow: '냥이상점',
-    action: '저장',
-  },
-  {
-    screen: '셀러 관리 — 판매정지',
-    path: '/sellers',
-    openRow: '냥이상점',
-    // 사유·기간이 비면 버튼이 잠긴다(빈 제재 방지) — 둘을 채워 흐름을 끝까지 본다.
-    prefill: ['신고 누적', '7일 정지'],
-    action: '판매정지',
-    confirm: { dialog: "'냥이상점'을 판매정지할까요?", button: '판매정지' },
-  },
   {
     screen: '채팅 CS 모니터링',
     path: '/chat-monitoring',
@@ -212,12 +187,6 @@ describe('어드민 예시 데이터 화면', () => {
       renderAt(flow.path)
 
       await user.click(await screen.findByRole('button', { name: flow.openRow }))
-
-      if ('prefill' in flow && flow.prefill) {
-        for (const optionName of flow.prefill) {
-          await chooseOption(selectWithOption(optionName), optionName)
-        }
-      }
 
       await user.click(await screen.findByRole('button', { name: flow.action }))
 

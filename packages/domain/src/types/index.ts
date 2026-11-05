@@ -461,23 +461,41 @@ export interface SellerApplication {
   internalMemo?: string
 }
 
-export type SellerOperatingStatus = 'active' | 'suspended' | 'on-hold' | 'withdrawn'
+// BE SellerStatus 5값과 1:1. 'on-hold'를 'paused'로 고치고 'withdrawal-requested'를 더했다 —
+// 목업 어휘로는 탈퇴 신청과 탈퇴 완료가 한 값에 접혀 되돌릴 수 있는 상태인지 가릴 수 없다.
+// paused·withdrawn으로 가는 전이 코드는 서버에 아직 없어 그 상태의 셀러는 생기지 않지만,
+// 응답에 실릴 수 있으므로 화면은 다섯 값을 다 읽는다.
+export type SellerOperatingStatus =
+  | 'active'
+  | 'paused'
+  | 'suspended'
+  | 'withdrawal-requested'
+  | 'withdrawn'
 
+// 목업 시절의 cumulativeReports·lastActiveAt·sanctionHistory·suspensionPeriod는 어드민 셀러
+// 응답에 없어서 제거했다(AGENTS 규약 10 — 서버에 없는 필드를 화면이 요구하면 안 된다).
+// 누적 신고는 신고 대상 종류에 셀러가 없어 셀 수 없는 값이고, 최근 접속은 users에 칼럼이 없다.
+// 제재 이력은 목록 행이 아니라 상세 응답이 주므로(행마다 읽으면 N+1) 상세 뷰 타입이 들고 있다.
 export interface SellerAccount {
+  /** DataTable rowKey용 문자열 id. 서버 식별자는 sellerId(= sellers.user_id)다 */
   id: string
+  sellerId: number
   shopName: string
-  representativeNameMasked: string
-  sellerType: 'business' | 'individual'
+  /** 서버가 가려서 내려준 값 — 화면에서 또 가리지 않는다. 입점 신청서가 없으면 null */
+  representativeNameMasked: string | null
+  /** 입점 신청서의 세 유형 그대로. 신청서가 없으면 null(유형을 모른다) */
+  legalType: SellerLegalType | null
   operatingStatus: SellerOperatingStatus
+  /** 판매 상태로 거르지 않은 상품 행 수 */
   productCount: number
+  /** 구매확정 누적(주문 접수 누적이 아니다) */
   cumulativeOrders: number
-  cumulativeReports: number
-  lastActiveAt: string
+  /** 지급 대기 정산 원장 보유 여부 — 금액이 아니다 */
   hasUnsettledAmount: boolean
-  sanctionHistory: HistoryEntry[]
-  suspensionReason?: string
-  suspensionPeriod?: string
-  internalMemo?: string
+  /** 운영 상태가 마지막으로 바뀐 시각(오프셋 없는 LocalDateTime) */
+  statusChangedAt: string
+  /** 현재 정지의 해제 예정 시각. 무기한·비정지는 null이고, 지나도 저절로 풀리지 않는다 */
+  suspensionUntil: string | null
 }
 
 // BE UserStatus(PENDING_ONBOARDING/ACTIVE/RESTRICTED/SUSPENDED/BANNED/WITHDRAWN)를 화면 어휘로
