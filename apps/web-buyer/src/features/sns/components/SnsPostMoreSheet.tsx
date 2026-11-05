@@ -46,7 +46,7 @@ export function SnsPostMoreSheet({
         <>
           <ListItem
             leading={<EyeOff className="size-5" />}
-            title={post.mutedByMe ? '뮤트 해제' : '뮤트하기'}
+            title={post.mutedByMe ? '뮤트 해제' : '이 계정 뮤트하기'}
             onClick={item(onMute)}
           />
           <ListItem leading={<Ban className="size-5" />} title="차단하기" onClick={item(onBlock)} />

@@ -245,7 +245,7 @@ describe('/sns/posts/$publicId 팔로우, 더보기, 공유', () => {
 
     await user.click(await screen.findByRole('button', { name: '더보기' }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '뮤트하기', '차단하기'])
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기'])
   })
 
   it('[AC-SNS02-029] 링크 복사를 누르면 상세 주소를 복사하고 토스트를 보여준다', async () => {
@@ -275,7 +275,7 @@ describe('/sns/posts/$publicId 팔로우, 더보기, 공유', () => {
     renderAt(postPath(SNS_POST_COCO))
 
     await user.click(await screen.findByRole('button', { name: '더보기' }))
-    await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
+    await user.click(await screen.findByRole('button', { name: '이 계정 뮤트하기' }))
     expect(await screen.findByText('뮤트한 계정의 게시물이에요')).toBeInTheDocument()
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
 
@@ -377,7 +377,7 @@ describe('/sns/posts/$publicId 비로그인', () => {
     await user.click(screen.getByRole('button', { name: '둘러보기 계속하기' }))
 
     for (const [item, copy] of [
-      ['뮤트하기', /뮤트는 로그인한 회원만/],
+      ['이 계정 뮤트하기', /뮤트는 로그인한 회원만/],
       ['차단하기', /차단은 로그인한 회원만/],
     ] as const) {
       await user.click(screen.getByRole('button', { name: '더보기' }))
