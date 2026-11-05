@@ -280,6 +280,7 @@ export function SnsFeedScreen({
           className="[&>button]:flex-1"
         />
       </div>
+      {/* 아래 여백(96px)은 글쓰기 버튼(바닥에서 72px)보다 커서 끝까지 내리면 마지막 카드의 버튼이 글쓰기 버튼에 가리지 않는다. */}
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {refreshFailed && <SnsRefetchError onRetry={() => void feed.refetch()} />}
         {body}
