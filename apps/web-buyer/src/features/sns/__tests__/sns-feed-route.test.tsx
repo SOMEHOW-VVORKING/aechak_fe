@@ -448,9 +448,9 @@ describe('/sns/feed 카드', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '차단하기' }))
     const modal = await screen.findByRole('dialog', { name: '차단할까요?' })
     // 리포스트는 말하지 않고 내 쪽에서도 상대 게시물이 보이지 않는다는 점을 알린다.
-    expect(modal).toHaveTextContent(
-      '몽이아빠님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 몽이아빠님은 회원님의 프로필도 볼 수 없어요.',
-    )
+    expect(
+      within(modal).getByText('몽이아빠님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.'),
+    ).toBeInTheDocument()
     await user.click(within(modal).getByRole('button', { name: '차단' }))
 
     expect(await screen.findByText('차단했어요')).toBeInTheDocument()

@@ -20,7 +20,7 @@ const TAB_COPY: Record<
 > = {
   blocks: {
     label: '차단',
-    note: '차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 차단한 계정은 회원님의 프로필도 볼 수 없어요.',
+    note: '차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.',
     empty: '차단한 계정이 없어요',
     action: '차단 해제',
     sub: item => `차단 / ${relationDateLabel(item.createdAt)}`,

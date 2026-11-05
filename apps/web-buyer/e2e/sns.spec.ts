@@ -315,9 +315,9 @@ test('[AC-SNS01-E2E-004] 더보기 시트에서 차단하면 확인 Modal을 거
 
   await sheet.getByText('차단하기').click()
   const modal = page.getByRole('dialog', { name: '차단할까요?' })
-  await expect(modal).toContainText(
-    '보리언니님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 보리언니님은 회원님의 프로필도 볼 수 없어요.',
-  )
+  await expect(
+    modal.getByText('보리언니님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.', { exact: true }),
+  ).toBeVisible()
   expect(calls.toggles).toEqual([]) // 확인 전에는 차단 요청을 보내지 않는다
   await shot(page, 'sns-05-block-confirm')
 
@@ -441,7 +441,7 @@ test('[AC-SNS01-E2E-012] 관리 목록에서 차단 해제를 누르면 확인 M
   await page.getByRole('button', { name: '광고계정 차단 해제' }).click()
   const modal = page.getByRole('dialog', { name: '차단을 해제할까요?' })
   await expect(modal).toContainText(
-    '광고계정님이 회원님의 게시물과 프로필을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.',
+    '광고계정님과 서로의 게시물을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.',
   )
   await expect(modal.getByRole('button', { name: '해제' })).toBeVisible()
   expect(calls.toggles).toEqual([])

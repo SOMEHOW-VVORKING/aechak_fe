@@ -57,9 +57,7 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     expect(screen.getByRole('tab', { name: /차단\s*2/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /뮤트\s*1/ })).toBeInTheDocument()
     expect(
-      screen.getByText(
-        '차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 차단한 계정은 회원님의 프로필도 볼 수 없어요.',
-      ),
+      screen.getByText('차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.'),
     ).toBeInTheDocument()
   })
 
