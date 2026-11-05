@@ -345,14 +345,8 @@ function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
       if (has(state.blocks, viewer, target)) return error(403, 130001)
     }
     if (!has(state[key], viewer, target)) state[key] = [...state[key], rel(viewer, target, now())]
-    // 차단은 두 방향 팔로우와 두 사람이 서로의 글에 한 리포스트를 지운다(차단 해제로 되살아나지 않는다, A12).
-    if (key === 'blocks') {
-      state.follows = without(without(state.follows, viewer, target), target, viewer)
-      const authorOf = (post: string) => state.posts.find(r => r.publicId === post)?.author
-      state.reposts = state.reposts.filter(
-        r => !((r.user === viewer && authorOf(r.post) === target) || (r.user === target && authorOf(r.post) === viewer)),
-      )
-    }
+    // 차단은 두 방향 팔로우만 지우고(차단 해제로 되살아나지 않는다) 리포스트는 남긴다(A12, 2026-11-05 변경).
+    if (key === 'blocks') state.follows = without(without(state.follows, viewer, target), target, viewer)
     return new HttpResponse(null, { status: 201 })
   }
   const off = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {

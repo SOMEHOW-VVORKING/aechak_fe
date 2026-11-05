@@ -130,12 +130,16 @@ describe('리포스트와 저장 켜기, 끄기', () => {
     })
   })
 
-  it('차단하면 두 사람이 서로의 글에 한 리포스트가 지워지고 제3자의 리포스트는 남는다', async () => {
+  it('차단해도 두 사람이 서로의 글에 한 리포스트는 지우지 않는다(A12)', async () => {
     seedSns({
       reposts: [snsAct(SNS_ME, SNS_POST_COCO), snsAct(SNS_COCO, SNS_POST_MINE), snsAct(SNS_MONG, SNS_POST_COCO)],
     })
     await axiosInstance.post(`/sns/users/${SNS_COCO}/block`)
-    expect(currentSns().reposts.map(r => [r.user, r.post])).toEqual([[SNS_MONG, SNS_POST_COCO]])
+    expect(currentSns().reposts.map(r => [r.user, r.post])).toEqual([
+      [SNS_ME, SNS_POST_COCO],
+      [SNS_COCO, SNS_POST_MINE],
+      [SNS_MONG, SNS_POST_COCO],
+    ])
   })
 })
 
