@@ -612,8 +612,12 @@ export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
     // 잃어 바꾼 값을 그대로 둔다. 기다리지 않는다. 기다리면 그사이 누른 다음 요청이 이 조회 뒤로 밀린다.
     onSettled: (_data, _error, _on, seq) => {
       const runs = runsOf(queryClient)
-      if (runs.get(id)?.latest !== seq) return
+      const run = runs.get(id)
+      if (!run || run.latest !== seq) return
       runs.delete(id)
+      // 묶음 중에 새로 시작한 피드 조회(지금 탭 다시 누르기, 포커스 재조회)는 서버 반영 전 값을 받아 왔을 수 있어 서버 값을
+      // 한 번 더 적는다. 같은 값이면 그대로 두어 수가 두 번 바뀌지 않는다.
+      if (run.confirmed !== undefined) setReaction(queryClient, kind, publicId, run.confirmed)
       void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
     },
   })

@@ -162,6 +162,28 @@ describe('리포스트와 저장 버튼', () => {
     expect(repostCount(cardOf('코코집사'))).toBe('1')
   })
 
+  it('[AC-SNS03-022] 리포스트 요청 중에 지금 탭을 다시 눌러 반영 전 피드를 받아도 요청이 끝나면 카드가 켜지고 수가 1 오른다', async () => {
+    server.use(
+      http.post(SNS_REPOST_URL, async () => {
+        await delay(200)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(EXPLORE)
+    await screen.findAllByRole('button', { name: /님의 게시물 보기$/ })
+
+    await user.click(repostIn(cardOf('코코집사')))
+    await user.click(screen.getByRole('tab', { name: '탐색' }))
+    // 다시 읽은 피드는 서버가 리포스트를 반영하기 전 값이다.
+    await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'false'))
+    expect(reactionResponses).toBe(0)
+
+    await waitFor(() => expect(reactionResponses).toBe(1))
+    await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true'))
+    expect(repostCount(cardOf('코코집사'))).toBe('1')
+    expect(reposted(SNS_ME, SNS_POST_COCO)).toBe(true)
+  })
+
   it('[AC-SNS03-023] 내 글의 리포스트 버튼은 상세와 카드에서 잠기고 저장은 된다', async () => {
     const user = userEvent.setup()
     renderAt('/sns/feed')
