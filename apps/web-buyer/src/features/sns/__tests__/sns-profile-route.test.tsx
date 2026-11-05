@@ -12,6 +12,7 @@ import {
   SNS_ME,
   SNS_PROFILE_URL,
   SNS_MONG,
+  SNS_MUTE_URL,
   SNS_MUTUAL,
   SNS_SPAM,
   SNS_TORI,
@@ -293,6 +294,27 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     await user.click(await screen.findByRole('button', { name: '더보기' }))
     await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
     expect(await screen.findByText('뮤트한 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-026] 뮤트 요청 중에는 팔로우 버튼을 잠그고 더보기에 뮤트를 다시 두지 않는다', async () => {
+    let release: () => void = () => {}
+    server.use(
+      http.post(SNS_MUTE_URL, async () => {
+        await new Promise<void>(resolve => (release = resolve))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '팔로우' })).toBeDisabled())
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['차단하기'])
+
+    release()
+    expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeEnabled()
   })
 
   it('[AC-SNS01-026] 차단 요청이 실패하면 화면과 수가 요청 전 그대로이고 실패 안내가 뜨며 다시 보낼 수 있다', async () => {

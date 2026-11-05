@@ -210,7 +210,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
           post={post}
           open={moreOpen}
           onClose={() => setMoreOpen(false)}
-          locked={refreshFailed}
+          // 팔로우, 차단, 뮤트 요청 중에 뮤트를 보내면 앞 요청의 성공, 실패 처리가 사라진다. 끝날 때까지 링크 복사만 둔다.
+          locked={refreshFailed || toggle.isPending}
           onCopyLink={() => void copyLink()}
           onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId } })}
           onDelete={() => setDeleteConfirm(true)}

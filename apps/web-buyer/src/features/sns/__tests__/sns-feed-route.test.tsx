@@ -12,6 +12,7 @@ import {
   SNS_FOLLOWING_FEED_URL,
   SNS_ME,
   SNS_MONG,
+  SNS_MUTE_URL,
   SNS_NEIGHBORS,
   SNS_POPULAR_FEED_URL,
   SNS_POST_COCO,
@@ -437,6 +438,27 @@ describe('/sns/feed 카드', () => {
     expect(screen.getByRole('button', { name: '코코집사님의 게시물 보기' })).toBeInTheDocument()
     // 시트를 연 더보기가 다시 읽는 동안 사라져도 포커스가 body로 떨어지지 않고 앱 바 제목에 있다.
     expect(screen.getByRole('heading', { name: '애착 SNS' })).toHaveFocus()
+  })
+
+  it('[AC-SNS01-026] 뮤트 요청 중에는 다른 카드 더보기에 링크 복사만 두고 그 요청이 실패하면 실패 안내가 나온다', async () => {
+    let release: () => void = () => {}
+    server.use(
+      http.post(SNS_MUTE_URL, async () => {
+        await new Promise<void>(resolve => (release = resolve))
+        return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/sns/feed?tab=explore')
+
+    await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
+    await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '이 계정 뮤트하기' }))
+    await user.click(within(cardOf('코코집사')).getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사'])
+
+    release()
+    expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
   })
 
   it('카드 더보기에서 차단하면 확인을 거쳐 그 사람의 글이 빠지고 포커스는 앱 바 제목으로 간다', async () => {

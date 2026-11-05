@@ -235,7 +235,8 @@ export function SnsProfileScreen({
             }}
           />
           {/* 나를 차단한 계정의 기본 프로필은 차단만 둔다(A7). 신고 항목은 SNS-07에서 붙는다. */}
-          {!profile.blockingMe && (
+          {/* 팔로우, 차단, 뮤트 요청 중에 뮤트를 보내면 앞 요청의 성공, 실패 처리가 사라져 끝날 때까지 두지 않는다. */}
+          {!profile.blockingMe && !toggle.isPending && (
             <ListItem
               leading={<EyeOff className="size-5" />}
               title={profile.mutedByMe ? '뮤트 해제' : '뮤트하기'}
@@ -266,7 +267,10 @@ export function SnsProfileScreen({
       {confirm && profile && (
         <Modal
           open
-          onClose={() => setConfirm(null)}
+          // 요청 중에 닫고 다른 처리를 누르면 그 처리가 이 요청의 성공 처리를 덮어쓴다.
+          onClose={() => {
+            if (!toggle.isPending) setConfirm(null)
+          }}
           title={RELATION_CONFIRM[confirm].title}
           description={RELATION_CONFIRM[confirm].description(profile.nickname)}
           confirmLabel={RELATION_CONFIRM[confirm].confirmLabel}
@@ -427,6 +431,7 @@ export function SnsProfileScreen({
             <FollowButton
               following={profile.following}
               loading={toggle.isPending && toggle.variables?.kind === 'follow'}
+              disabled={toggle.isPending}
               onClick={() => follow(profile)}
               className="flex-1"
             />

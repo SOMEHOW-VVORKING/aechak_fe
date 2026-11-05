@@ -6,7 +6,7 @@ interface SnsPostMoreSheetProps {
   post: SnsPost
   open: boolean
   onClose: () => void
-  /** 다시 조회가 실패해 마지막 내용만 남은 상세는 링크 복사만 둔다(AGENTS.md 6절 7) */
+  /** 다시 조회가 실패해 마지막 내용만 남았거나(AGENTS.md 6절 7) 앞 요청이 끝나지 않은 화면은 링크 복사만 둔다 */
   locked?: boolean
   onCopyLink: () => void
   onEdit: () => void

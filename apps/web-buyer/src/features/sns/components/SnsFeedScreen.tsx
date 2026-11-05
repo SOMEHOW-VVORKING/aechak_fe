@@ -314,7 +314,8 @@ export function SnsFeedScreen({
           post={more.post}
           open={more.open}
           onClose={() => setMore(prev => prev && { ...prev, open: false })}
-          locked={refreshFailed}
+          // 차단, 뮤트 요청 중에 다른 카드에서 뮤트를 보내면 앞 요청의 성공, 실패 처리가 사라진다. 끝날 때까지 링크 복사만 둔다.
+          locked={refreshFailed || toggle.isPending}
           onCopyLink={() => void copyLink(more.post)}
           onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: more.post.publicId } })}
           onDelete={() => setDeleting(more.post)}
