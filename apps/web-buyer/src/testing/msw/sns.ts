@@ -125,7 +125,7 @@ export interface SnsSeed {
   /** 배열 뒤쪽이 최근 행이다. id는 seedSns가 배열 순서대로 다시 매긴다 */
   reposts: SnsActRow[]
   saves: SnsActRow[]
-  /** 이용 제한(RESTRICTED) 사용자. 리포스트와 저장 켜기, 끄기가 403 20013이다 */
+  /** 이용 제한(RESTRICTED) 사용자. 게시, 수정, 삭제와 팔로우, 차단, 뮤트, 리포스트, 저장의 켜기, 끄기가 403 20013이다 */
   restricted: string[]
   /** 첫 페이지 요청 시각. 탐색 피드 7일과 인기 피드 72시간을 여기서 거꾸로 센다 */
   now: string
@@ -332,11 +332,12 @@ function relationList(key: 'blocks' | 'mutes') {
   }
 }
 
-// 켜기(POST 201)와 끄기(DELETE 204). 이미 그 상태여도 같은 코드로 응답한다.
+// 켜기(POST 201)와 끄기(DELETE 204). 이미 그 상태여도 같은 코드로 응답한다. 이용 제한 계정은 둘 다 403 20013이다.
 function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
   const on = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
     const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
+    if (state.restricted.includes(viewer)) return error(403, 20013)
     const target = String(params['publicId'])
     if (!USERS[target]) return unavailable()
     if (target === viewer) return error(400, selfCode)
@@ -352,6 +353,7 @@ function toggle(key: 'follows' | 'blocks' | 'mutes', selfCode: number) {
   const off = ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
     const viewer = viewerOf(request)
     if (viewer == null) return unauthenticated()
+    if (state.restricted.includes(viewer)) return error(403, 20013)
     const target = String(params['publicId'])
     if (!USERS[target]) return unavailable()
     state[key] = without(state[key], viewer, target)
@@ -491,6 +493,7 @@ interface CreateBody {
 async function createPost({ request }: { request: Request }) {
   const viewer = viewerOf(request)
   if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
   const key = request.headers.get('Idempotency-Key')
   if (key == null) return error(400, 90001)
   if (key.trim() === '' || key.length > 100) return error(400, 90004)
@@ -559,6 +562,7 @@ function getPost({ params, request }: { params: Record<string, unknown>; request
 async function updatePost({ params, request }: { params: Record<string, unknown>; request: Request }) {
   const viewer = viewerOf(request)
   if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
   const body = (await request.json()) as { caption?: string | null; hashtags?: string[] }
   if (!('caption' in body) || !Array.isArray(body.hashtags)) return error(400, 90001)
   // 규칙 검사가 게시물 조회보다 먼저다(BE 7).
@@ -578,6 +582,7 @@ async function updatePost({ params, request }: { params: Record<string, unknown>
 function deletePost({ params, request }: { params: Record<string, unknown>; request: Request }) {
   const viewer = viewerOf(request)
   if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
   const row = findPost(params)
   if (!row) return error(404, 130400)
   if (row.author !== viewer) return error(403, 130401)

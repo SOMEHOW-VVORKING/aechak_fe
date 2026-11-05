@@ -17,6 +17,7 @@ import {
   SNS_POST_NOT_MINE,
   snsErrorCode,
   snsKeys,
+  snsPostErrorMessage,
   snsToggleErrorMessage,
   useDeleteSnsPost,
   useSnsFeed,
@@ -232,7 +233,9 @@ export function SnsFeedScreen({
       onError: e => {
         setDeleting(null)
         showToast(
-          snsErrorCode(e) === SNS_POST_NOT_MINE ? '본인 게시물만 삭제할 수 있어요' : '삭제하지 못했어요. 다시 시도해 주세요',
+          snsErrorCode(e) === SNS_POST_NOT_MINE
+            ? '본인 게시물만 삭제할 수 있어요'
+            : snsPostErrorMessage(e, '삭제하지 못했어요. 다시 시도해 주세요'),
           'error',
         )
       },

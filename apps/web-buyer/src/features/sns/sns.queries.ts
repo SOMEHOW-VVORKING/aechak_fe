@@ -262,9 +262,13 @@ export function useCreateSnsPost() {
   })
 }
 
-// 게시와 수정 실패 문구. 게시물 규칙(1304xx)과 해시태그 규칙(1305xx)은 코드별로 알리고 입력은 남긴다.
+// 이용 제한(RESTRICTED) 계정의 SNS 쓰기(20013). 게시, 수정, 삭제와 켜기, 끄기가 같은 문구다.
+const RESTRICTED_COPY = '이용이 제한된 계정이라 이 기능을 사용할 수 없어요'
+
+// 게시, 수정, 삭제 실패 문구. 게시물 규칙(1304xx)과 해시태그 규칙(1305xx)은 코드별로 알리고 입력은 남긴다.
 // 키와 요청 형식 오류(100002, 100003, 90001, 90004)와 서버 오류는 일반 실패 문구다.
 const POST_ERROR_COPY: Record<number, string> = {
+  [SNS_ACCOUNT_RESTRICTED]: RESTRICTED_COPY,
   130402: '캡션이나 사진, 영상 중 하나는 있어야 해요',
   130403: '캡션은 2,200자까지 쓸 수 있어요',
   130404: '사진은 10장까지, 영상은 1개만 올릴 수 있어요',
@@ -449,7 +453,7 @@ export function snsToggleErrorMessage(error: unknown): string {
     case SNS_REPOST_OWN_POST:
       return '내 게시물은 리포스트할 수 없어요'
     case SNS_ACCOUNT_RESTRICTED:
-      return '이용이 제한된 계정이라 이 기능을 사용할 수 없어요'
+      return RESTRICTED_COPY
     default:
       return '요청을 처리하지 못했어요. 다시 시도해 주세요'
   }

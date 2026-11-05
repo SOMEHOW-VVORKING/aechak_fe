@@ -8,6 +8,7 @@ import { setAccessToken } from '@aechak/api'
 import { logout } from '@/shared/auth'
 import {
   PRESIGNED_URL,
+  SNS_ME,
   SNS_POSTS_URL,
   currentSns,
   expireSnsUploads,
@@ -288,6 +289,16 @@ describe('/sns/posts/new 실패와 다시 시도', () => {
     await user.type(await screen.findByLabelText('캡션'), '빠르게')
     await user.click(publishButton())
     expect(await screen.findByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument()
+  })
+
+  it('이용 제한 계정이 게시하면 이용 제한 안내가 나오고 입력이 남는다(403 20013)', async () => {
+    seedSns({ restricted: [SNS_ME] })
+    const user = userEvent.setup()
+    renderAt('/sns/posts/new')
+    await user.type(await screen.findByLabelText('캡션'), '제한된 계정의 글')
+    await user.click(publishButton())
+    expect(await screen.findByText('이용이 제한된 계정이라 이 기능을 사용할 수 없어요')).toBeInTheDocument()
+    expect(screen.getByLabelText('캡션')).toHaveValue('제한된 계정의 글')
   })
 
   it('빈도 제한은 HTTP 429로 본다. develop의 90006(404 경로 없음)은 일반 실패 안내다', async () => {
