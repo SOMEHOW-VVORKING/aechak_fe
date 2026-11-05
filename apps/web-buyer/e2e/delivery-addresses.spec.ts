@@ -14,7 +14,9 @@ import type {
 // Allow-Credentials가 필요하고, PATCH/DELETE와 application/json 본문은 프리플라이트를 부르므로
 // OPTIONS 방어가 필수다. 글롭에 origin을 박아 호스트를 가른다 — `**/api/v1/...`로 두면 요청이 seller·
 // admin 호스트로 잘못 나가도 같은 스텁이 받아 주어 배포에서만 드러나는 오배치를 놓친다.
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
