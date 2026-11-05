@@ -200,10 +200,7 @@ function ProductCatalogPage() {
 
   // 운영자 막음 필터는 서버 조건이 없다(스펙에 명시) — 현재 페이지 안에서만 거르고 그 사실을
   // 표 아래에서 밝힌다(입점 심사의 판매자 유형 필터와 같은 처리).
-  const rows = useMemo(
-    () => (blockedOnly ? list.items.filter(item => item.adminSaleSuspended) : list.items),
-    [list.items, blockedOnly],
-  )
+  const rows = blockedOnly ? list.items.filter(item => item.adminSaleSuspended) : list.items
 
   const totalPages = Math.max(1, Math.ceil(list.totalCount / DEFAULT_PAGE_SIZE))
   const lastPage = totalPages - 1
@@ -274,6 +271,20 @@ function ProductCatalogPage() {
     setAction(next)
     setReason('')
   }
+
+  /**
+   * 처리가 끝나면 그 행에서 고를 수 없게 되는 조작이 생긴다(막은 뒤의 중지, 푼 뒤의 재개) —
+   * 그대로 두면 라디오에 **아무것도 선택되지 않은** 상태가 남고, 운영자가 사유를 다시 채우면
+   * 서버가 409로 거절할 조작을 또 보내게 된다. 그래서 그 행의 기본값으로 되돌린다.
+   *
+   * 선택이 유효한 동안에는 아무 state도 건드리지 않으므로, 재조회마다 새 객체가 와도 루프가
+   * 돌지 않는다.
+   */
+  useEffect(() => {
+    if (shownRow == null || actionsFor(shownRow).includes(action)) return
+    setAction(shownRow.adminSaleSuspended ? 'resume' : 'suspend')
+    setReason('')
+  }, [shownRow, action])
 
   const reasonRequired = action === 'reject' || action === 'suspend'
   // 조회가 실패한 동안에는 처리를 잠근다(AGENTS 6-7) — 재조회 실패에도 직전 데이터가 남아 있어
