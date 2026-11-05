@@ -374,6 +374,25 @@ describe('/sns/feed 카드', () => {
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('button', { name: '몽이아빠님의 게시물 보기' })).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: '코코집사님의 게시물 보기' })).toBeInTheDocument()
+    // 시트를 연 더보기가 다시 읽는 동안 사라져도 포커스가 body로 떨어지지 않고 앱 바 제목에 있다.
+    expect(screen.getByRole('heading', { name: '애착 SNS' })).toHaveFocus()
+  })
+
+  it('카드 더보기에서 차단하면 확인을 거쳐 그 사람의 글이 빠지고 포커스는 앱 바 제목으로 간다', async () => {
+    const user = userEvent.setup()
+    renderAt('/sns/feed?tab=explore')
+
+    await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
+    await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '차단하기' }))
+    const modal = await screen.findByRole('dialog', { name: '차단할까요?' })
+    await user.click(within(modal).getByRole('button', { name: '차단' }))
+
+    expect(await screen.findByText('차단했어요')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '몽이아빠님의 게시물 보기' })).not.toBeInTheDocument())
+    expect(await screen.findByRole('button', { name: '코코집사님의 게시물 보기' })).toBeInTheDocument()
+    // Modal을 연 더보기가 사라져도 포커스가 body로 떨어지지 않는다.
+    expect(screen.getByRole('heading', { name: '애착 SNS' })).toHaveFocus()
   })
 
   it('카드에서 내 글을 지우면 확인을 거쳐 그 카드가 피드에서 빠진다', async () => {
@@ -390,6 +409,7 @@ describe('/sns/feed 카드', () => {
     expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
     expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(true)
     expect(requestsTo('following')).toHaveLength(1)
+    expect(screen.getByRole('heading', { name: '애착 SNS' })).toHaveFocus()
   })
 })
 

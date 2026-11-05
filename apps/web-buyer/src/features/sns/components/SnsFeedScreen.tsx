@@ -99,6 +99,8 @@ export function SnsFeedScreen({
   const remove = useDeleteSnsPost()
   const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
   const listRef = useRef<HTMLDivElement>(null)
+  // 차단, 뮤트, 삭제가 끝나면 그 처리를 연 카드가 사라져 포커스가 body로 떨어진다. 늘 남는 앱 바 제목으로 먼저 옮긴다.
+  const titleRef = useRef<HTMLHeadingElement>(null)
   // 더보기 시트는 닫히는 동안에도 마지막 대상을 그린다. 확인 Modal의 타겟도 화면이 소유한다(AGENTS.md 4절).
   const [more, setMore] = useState<{ post: SnsPost; open: boolean } | null>(null)
   const [confirm, setConfirm] = useState<FeedConfirm | null>(null)
@@ -167,7 +169,10 @@ export function SnsFeedScreen({
         toggle.mutate(
           { kind: 'mute', publicId: post.author.publicId, on: true },
           {
-            onSuccess: () => showToast('뮤트했어요'),
+            onSuccess: () => {
+              titleRef.current?.focus()
+              showToast('뮤트했어요')
+            },
             onError: e => showToast(snsToggleErrorMessage(e), 'error'),
           },
         ),
@@ -182,6 +187,7 @@ export function SnsFeedScreen({
       { kind: copy.kind, publicId: confirm.post.author.publicId, on: copy.on },
       {
         onSuccess: () => {
+          titleRef.current?.focus()
           setConfirm(null)
           showToast(copy.done)
         },
@@ -198,6 +204,7 @@ export function SnsFeedScreen({
     if (!deleting) return
     remove.mutate(deleting.publicId, {
       onSuccess: () => {
+        titleRef.current?.focus()
         setDeleting(null)
         showToast('게시물을 삭제했어요')
       },
@@ -258,7 +265,7 @@ export function SnsFeedScreen({
     <div className="relative flex h-full flex-col">
       <div className="flex-none bg-surface-base">
         <div className="flex h-14 items-center px-4">
-          <h1 className="text-heading font-bold tracking-tight text-text-primary">애착 SNS</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="text-heading outline-none font-bold tracking-tight text-text-primary">애착 SNS</h1>
         </div>
         <Tabs
           tabs={FEED_TABS}
