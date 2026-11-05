@@ -81,7 +81,7 @@ export function SnsRelationsScreen() {
         tabs={(['blocks', 'mutes'] as const).map(key => ({
           key,
           label: TAB_COPY[key].label,
-          badge: lists[key].data?.totalCount,
+          badge: lists[key].data?.totalCount.toLocaleString('ko-KR'),
         }))}
         activeKey={tab}
         onSelect={key => setTab(key as RelationKind)}

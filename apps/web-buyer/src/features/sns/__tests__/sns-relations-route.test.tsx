@@ -9,6 +9,7 @@ import {
   SNS_ME,
   SNS_MONG,
   SNS_MUTE_URL,
+  SNS_MY_BLOCKS_URL,
   SNS_MY_MUTES_URL,
   SNS_NEIGHBORS,
   SNS_SPAM,
@@ -235,5 +236,18 @@ describe('/mypage/sns-relations 비로그인', () => {
     } finally {
       server.events.removeAllListeners()
     }
+  })
+})
+
+describe('/mypage/sns-relations 탭 수', () => {
+  it('탭 수는 프로필 머리말처럼 천 단위를 쉼표로 나눈다', async () => {
+    server.use(
+      http.get(SNS_MY_BLOCKS_URL, () =>
+        HttpResponse.json({ data: { items: [], totalCount: 12345, nextCursor: null, hasNext: false } }),
+      ),
+    )
+    renderAt('/mypage/sns-relations')
+
+    expect(await screen.findByRole('tab', { name: /차단\s*12,345/ })).toBeInTheDocument()
   })
 })

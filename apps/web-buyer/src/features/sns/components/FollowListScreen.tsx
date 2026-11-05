@@ -178,8 +178,8 @@ export function FollowListScreen({
     <div className="flex flex-col pb-6">
       <Tabs
         tabs={[
-          { key: 'followers', label: '팔로워', badge: counts.followers },
-          { key: 'followings', label: '팔로잉', badge: counts.followings },
+          { key: 'followers', label: '팔로워', badge: counts.followers?.toLocaleString('ko-KR') },
+          { key: 'followings', label: '팔로잉', badge: counts.followings?.toLocaleString('ko-KR') },
         ]}
         activeKey={tab}
         onSelect={key => onTabChange(key as FollowDirection)}

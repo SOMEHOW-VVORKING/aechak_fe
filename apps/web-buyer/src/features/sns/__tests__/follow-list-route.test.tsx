@@ -11,6 +11,7 @@ import {
   SNS_COCO,
   SNS_FOLLOWERS_URL,
   SNS_FOLLOW_URL,
+  SNS_PROFILE_URL,
   currentSns,
   SNS_ME,
   SNS_NEIGHBORS,
@@ -271,5 +272,35 @@ describe('/sns/users/$publicId/follows 비로그인', () => {
     expect(await screen.findByText(/팔로워\/팔로잉 목록은 로그인한 회원만 볼 수 있어요/)).toBeInTheDocument()
     expect(listRequests).toEqual([])
     server.events.removeAllListeners()
+  })
+})
+
+describe('/sns/users/$publicId/follows 탭 수', () => {
+  it('탭 수는 프로필 머리말처럼 천 단위를 쉼표로 나눈다', async () => {
+    server.use(
+      http.get(SNS_PROFILE_URL, () =>
+        HttpResponse.json({
+          data: {
+            publicId: SNS_COCO,
+            nickname: '코코집사',
+            profileImageUrl: null,
+            bio: null,
+            pets: [],
+            postCount: 0,
+            followerCount: 128000,
+            followingCount: 1234,
+            isMe: false,
+            following: false,
+            blockedByMe: false,
+            mutedByMe: false,
+            blockingMe: false,
+          },
+        }),
+      ),
+    )
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+
+    expect(await screen.findByRole('tab', { name: /팔로워\s*128,000/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /팔로잉\s*1,234/ })).toBeInTheDocument()
   })
 })

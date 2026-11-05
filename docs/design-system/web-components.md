@@ -912,11 +912,11 @@ pathname을 넘길 때는 꼬리 슬래시·하위 경로를 직접 정규화할
 
 | prop | 타입 | 기본값 |
 |---|---|---|
-| `tabs` | `{ key: string; label: string; badge?: number }[]` | **필수** |
+| `tabs` | `{ key: string; label: string; badge?: number \| string }[]` | **필수** |
 | `activeKey` | `string` | **필수** |
 | `onSelect` | `(key: string) => void` | **필수** |
 
-페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`).
+페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`). `badge`는 받은 값을 그대로 그리므로 천 단위 구분(`toLocaleString('ko-KR')`)은 호출부가 문자열로 넘긴다.
 
 ---
 
