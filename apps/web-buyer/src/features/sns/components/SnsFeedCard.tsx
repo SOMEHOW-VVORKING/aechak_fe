@@ -53,12 +53,15 @@ export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked
           <Avatar name={post.author.nickname} src={post.author.profileImageUrl ?? undefined} size="lg" />
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-label font-semibold text-text-primary">{post.author.nickname}</span>
+              {/* 좁은 폭에서는 펫 태그가 먼저 줄어 작성자 닉네임을 끝까지 보인다. */}
+              <span className="max-w-full flex-none truncate text-label font-semibold text-text-primary">
+                {post.author.nickname}
+              </span>
               {/* 게시할 때의 대표 펫. 나이는 게시일 기준이고 생년월이 없으면 품종만, 펫이 없거나 지웠으면 비운다(A5). */}
               {post.pet && (
-                <span className="flex flex-none items-center gap-1 text-caption text-text-secondary">
-                  <PawPrint className="size-3" />
-                  {petTagLabel(post.pet, postDate(post.createdAt))}
+                <span className="flex min-w-0 items-center gap-1 overflow-hidden text-caption text-text-secondary">
+                  <PawPrint className="size-3 flex-none" />
+                  <span className="truncate">{petTagLabel(post.pet, postDate(post.createdAt))}</span>
                 </span>
               )}
             </span>
