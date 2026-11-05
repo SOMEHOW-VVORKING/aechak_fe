@@ -126,6 +126,22 @@ describe('BottomSheet', () => {
     await user.tab()
     expect(screen.getByRole('button', { name: '보내기' })).toHaveFocus()
   })
+
+  it('[AC-DS-BOTTOMSHEET-007] 제목 없이 ariaLabel을 주면 그 이름의 dialog이고 제목이 있으면 제목이 이름이다', () => {
+    const { rerender } = render(
+      <BottomSheet open onClose={() => {}} ariaLabel="게시물 더보기">
+        <button type="button">링크 복사</button>
+      </BottomSheet>,
+    )
+    expect(screen.getByRole('dialog', { name: '게시물 더보기' })).toBeInTheDocument()
+
+    rerender(
+      <BottomSheet open onClose={() => {}} title="정렬 기준" ariaLabel="게시물 더보기">
+        <button type="button">링크 복사</button>
+      </BottomSheet>,
+    )
+    expect(screen.getByRole('dialog', { name: '정렬 기준' })).toBeInTheDocument()
+  })
 })
 
 describe('Modal', () => {

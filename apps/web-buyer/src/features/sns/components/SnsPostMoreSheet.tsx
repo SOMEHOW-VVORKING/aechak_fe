@@ -34,7 +34,7 @@ export function SnsPostMoreSheet({
     action()
   }
   return (
-    <BottomSheet open={open} onClose={onClose}>
+    <BottomSheet open={open} onClose={onClose} ariaLabel="게시물 더보기">
       <ListItem leading={<Link2 className="size-5" />} title="링크 복사" onClick={item(onCopyLink)} />
       {post.isMine && !locked && (
         <>

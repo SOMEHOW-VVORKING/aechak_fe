@@ -123,7 +123,7 @@ export function LoginGate({ open, feature, onClose, resume }: LoginGateProps) {
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose}>
+    <BottomSheet open={open} onClose={onClose} ariaLabel="로그인이 필요해요">
       <div className="flex flex-col items-center gap-3 pb-1 text-center">
         <span className="flex size-14 items-center justify-center rounded-full bg-brand-subtle text-brand">
           <Lock className="size-7" />

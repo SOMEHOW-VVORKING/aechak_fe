@@ -225,7 +225,7 @@ export function SnsProfileScreen({
       {content}
 
       {profile && (
-        <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)}>
+        <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} ariaLabel="프로필 더보기">
           <ListItem
             leading={<Ban className="size-5" />}
             title="차단하기"

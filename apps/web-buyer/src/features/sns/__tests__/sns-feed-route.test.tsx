@@ -430,7 +430,7 @@ describe('/sns/feed 카드', () => {
 
     await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
     await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
-    const sheet = screen.getByRole('dialog')
+    const sheet = screen.getByRole('dialog', { name: '게시물 더보기' })
     expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기'])
 
     await user.click(within(sheet).getByRole('button', { name: '이 계정 뮤트하기' }))

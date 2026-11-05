@@ -5,6 +5,8 @@ export interface BottomSheetProps {
   onClose: () => void
   children: ReactNode
   title?: string
+  /** 제목을 그리지 않는 시트(비회원 안내, 더보기 메뉴)의 접근성 이름. title이 있으면 title이 이름이다. */
+  ariaLabel?: string
   showGrabber?: boolean
   /** 시트 최대 높이(px). 미지정 시 뷰포트의 90%. */
   maxHeight?: number
@@ -20,6 +22,7 @@ export function BottomSheet({
   onClose,
   children,
   title,
+  ariaLabel,
   showGrabber = true,
   maxHeight,
   className = '',
@@ -106,6 +109,7 @@ export function BottomSheet({
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
+      aria-label={title ? undefined : ariaLabel}
     >
       {/* Scrim — fade in/out */}
       <div

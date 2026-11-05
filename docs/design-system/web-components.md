@@ -105,6 +105,7 @@ import 경로: `@aechak/design-system/web`
 | `onClose` | `() => void` | **필수** |
 | `children` | `ReactNode` | **필수** |
 | `title` | `string` | — |
+| `ariaLabel` | `string` | — (`title`이 있으면 무시) |
 | `showGrabber` | `boolean` | `true` |
 | `maxHeight` | `number` (px) | — (미지정 시 뷰포트 90%) |
 | `className` | `string` | — |
@@ -113,6 +114,9 @@ import 경로: `@aechak/design-system/web`
 쓴다. 스크림 클릭·ESC로 닫히고 포커스 트랩·바디 스크롤 잠금은 `Modal`/`Drawer`와 동일한 패턴. 옆에서
 나오는 패널이 필요하면 `Drawer`를 쓸 것 (`BottomSheet` ≠ `Drawer`). 네이티브 `BottomSheet`의 `visible`
 대신 `Modal`/`Drawer`와 맞춘 `open`을 쓴다.
+
+`title`을 그리지 않는 시트(비회원 게이트, 더보기 메뉴)는 `ariaLabel`로 dialog의 접근성 이름을 준다. 이름이
+없으면 스크린리더가 시트를 이름 없는 대화상자로 읽는다.
 
 ---
 
