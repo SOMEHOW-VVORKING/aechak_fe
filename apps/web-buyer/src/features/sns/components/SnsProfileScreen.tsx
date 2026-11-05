@@ -281,6 +281,8 @@ export function SnsProfileScreen({
         open={toast.open}
         message={toast.message}
         variant={toast.variant}
+        // 하단 탭바를 덮지 않게 탭바 위에 띄운다.
+        aboveActionBar
         onClose={() => setToast(prev => ({ ...prev, open: false }))}
       />
     </MobileScreen>
