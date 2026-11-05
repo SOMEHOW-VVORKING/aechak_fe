@@ -21,7 +21,7 @@ export const RELATION_CONFIRM: Record<
     on: true,
     title: '차단할까요?',
     description: nickname =>
-      `${nickname}님은 회원님의 게시물과 프로필을 볼 수 없고 서로 팔로우가 해제돼요.`,
+      `${nickname}님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. ${nickname}님은 회원님의 프로필도 볼 수 없어요.`,
     confirmLabel: '차단',
     danger: true,
     done: '차단했어요',

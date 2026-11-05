@@ -413,7 +413,7 @@ describe('비로그인 리포스트와 저장', () => {
     const router = await loginAndReturn(guestRouter)
     const modal = await screen.findByRole('dialog', { name: '차단할까요?' })
     expect(router.state.location.search).toEqual({ tab: 'explore' })
-    expect(within(modal).getByText(/^몽이아빠님은/)).toBeInTheDocument()
+    expect(within(modal).getByText(/^몽이아빠님과 서로의 게시물을/)).toBeInTheDocument()
     await user.click(within(modal).getByRole('button', { name: '차단' }))
     expect(await screen.findByText('차단했어요')).toBeInTheDocument()
     expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_MONG)).toBe(true)

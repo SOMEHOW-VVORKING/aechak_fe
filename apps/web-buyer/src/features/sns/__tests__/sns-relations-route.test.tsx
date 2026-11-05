@@ -55,6 +55,11 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     ])
     expect(screen.getByRole('tab', { name: /차단\s*2/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /뮤트\s*1/ })).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 차단한 계정은 회원님의 프로필도 볼 수 없어요.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('[AC-SNS01-022] 차단 해제는 확인 모달을 거치고 해제하면 행이 빠지고 탭 수가 1 준다', async () => {

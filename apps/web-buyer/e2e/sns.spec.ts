@@ -315,7 +315,9 @@ test('[AC-SNS01-E2E-004] 더보기 시트에서 차단하면 확인 Modal을 거
 
   await sheet.getByText('차단하기').click()
   const modal = page.getByRole('dialog', { name: '차단할까요?' })
-  await expect(modal).toContainText('보리언니님은 회원님의 게시물과 프로필을 볼 수 없고 서로 팔로우가 해제돼요.')
+  await expect(modal).toContainText(
+    '보리언니님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요. 보리언니님은 회원님의 프로필도 볼 수 없어요.',
+  )
   expect(calls.toggles).toEqual([]) // 확인 전에는 차단 요청을 보내지 않는다
   await shot(page, 'sns-05-block-confirm')
 
