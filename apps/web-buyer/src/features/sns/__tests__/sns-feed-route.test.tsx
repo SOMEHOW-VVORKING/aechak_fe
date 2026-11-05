@@ -29,10 +29,12 @@ import {
 import { setListEndInView } from '@/testing/intersection'
 import { routeTree } from '../../../routeTree.gen'
 
+let queryClient: QueryClient
+
 function renderAt(path: string, staleTime = 0) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
   // retryDelay 0: 피드 조회는 5xx를 한 번 더 보내는데(retryTransient) 그 재시도를 1초 기다리지 않게 한다.
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, staleTime } } })
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, staleTime } } })
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -334,6 +336,24 @@ describe('/sns/feed 이어 불러오기', () => {
     await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\//))
     act(() => router.history.back())
     await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'explore' }))
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    expect(listOf().scrollTop).toBe(0)
+  })
+
+  it('상세에 있는 동안 피드 캐시가 지워졌으면 돌아와서 새로 받은 첫 페이지를 맨 위에서 연다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed', 60_000)
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    const listOf = () => cards()[0]!.closest('ul')!.parentElement!
+    listOf().scrollTop = 500
+    fireEvent.scroll(listOf())
+
+    await user.click(cards()[0]!)
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/sns\/posts\//))
+    queryClient.removeQueries({ queryKey: ['sns', 'feed'] })
+    act(() => router.history.back())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/feed'))
     await waitFor(() => expect(cards().length).toBeGreaterThan(0))
     expect(listOf().scrollTop).toBe(0)
   })

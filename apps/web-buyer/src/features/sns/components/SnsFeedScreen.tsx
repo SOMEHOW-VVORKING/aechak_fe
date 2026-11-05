@@ -143,12 +143,14 @@ export function SnsFeedScreen({
     }
   }, [loggedIn, items])
 
-  // 받아 둔 카드를 처음 그린 때 한 번만 되살린다. 받아 둔 피드가 없으면 첫 페이지가 그려진 뒤 되살린다.
+  // 받아 둔 카드를 처음 그린 때 한 번만 되살린다. 캐시가 지워져 첫 페이지를 새로 받았으면 보던 카드가 아니라 맨 위에서 연다.
+  const hadCache = useRef(items != null)
   const restored = useRef(false)
   useLayoutEffect(() => {
     if (restored.current || !items) return
     restored.current = true
-    if (listRef.current && lastScroll?.kind === kind) listRef.current.scrollTop = lastScroll.top
+    if (!hadCache.current) lastScroll = null
+    else if (listRef.current && lastScroll?.kind === kind) listRef.current.scrollTop = lastScroll.top
   }, [items, kind])
 
   const selectTab = (next: SnsFeedKind) => {
