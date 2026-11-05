@@ -389,18 +389,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       )}
 
       {/* 사진은 작성자가 정한 순서대로 넘겨 본다(P2). 텍스트 게시물은 미디어 자리가 없다(A20). */}
-      {post.photoUrls.length > 0 && (
-        <div className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {post.photoUrls.map((url, i) => (
-            <img
-              key={url}
-              src={url}
-              alt={`사진 ${i + 1}/${post.photoUrls.length}`}
-              className="aspect-square w-full flex-none snap-center bg-surface-sunken object-cover"
-            />
-          ))}
-        </div>
-      )}
+      {post.photoUrls.length > 0 && <PhotoCarousel urls={post.photoUrls} />}
       {post.video && (
         <video
           src={post.video.url}
@@ -453,5 +442,45 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         {post.edited && <span>수정됨</span>}
       </p>
     </article>,
+  )
+}
+
+// 사진을 넘겨 보는 칸과 몇 번째 장인지 알리는 점. 상품 상세 ImageCarousel과 같은 모양이다(feature 사이 import가 막혀
+// 옮겨 적었다). 현재 장은 가로 스크롤 위치로 정한다.
+function PhotoCarousel({ urls }: { urls: string[] }) {
+  const [active, setActive] = useState(0)
+  return (
+    <div className="relative">
+      <div
+        className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={e => {
+          const el = e.currentTarget
+          setActive(Math.round(el.scrollLeft / el.clientWidth))
+        }}
+      >
+        {urls.map((url, i) => (
+          <img
+            key={url}
+            src={url}
+            alt={`사진 ${i + 1}/${urls.length}`}
+            className="aspect-square w-full flex-none snap-center bg-surface-sunken object-cover"
+          />
+        ))}
+      </div>
+      {/* 장수는 사진 대체 글자가 알려 점은 화면 읽기에서 뺀다. */}
+      {urls.length > 1 && (
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-3 flex justify-center gap-1.5">
+          {urls.map((url, i) => (
+            <span
+              key={url}
+              className={[
+                'size-1.5 rounded-full transition-colors',
+                i === active ? 'bg-surface-inverse' : 'bg-surface-inverse/30',
+              ].join(' ')}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

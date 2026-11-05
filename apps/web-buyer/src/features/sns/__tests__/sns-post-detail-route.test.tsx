@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -88,6 +88,22 @@ describe('/sns/posts/$publicId 게시물 영역', () => {
       '#산책',
       '#골든리트리버',
     ])
+  })
+
+  it('[AC-SNS02-009] 사진이 여러 장이면 아래 점이 넘긴 위치의 장을 표시한다', async () => {
+    renderAt(postPath(SNS_POST_COCO))
+
+    const photos = await screen.findAllByRole('img', { name: /^사진/ })
+    const strip = photos[0]!.parentElement!
+    const dots = () =>
+      Array.from(strip.nextElementSibling?.children ?? []).map(dot => dot.classList.contains('bg-surface-inverse'))
+    expect(dots()).toEqual([true, false])
+
+    // jsdom은 레이아웃이 없어 칸 폭과 가로 위치를 직접 준다.
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 400 })
+    strip.scrollLeft = 400
+    fireEvent.scroll(strip)
+    expect(dots()).toEqual([false, true])
   })
 
   it('[AC-SNS02-016] 캡션 없는 사진 게시물은 캡션 자리 없이 미디어와 해시태그만 보인다', async () => {
