@@ -18,6 +18,7 @@ import {
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_POST_NO_CAPTION,
+  SNS_POST_URL,
   SNS_SPAM,
   SNS_TORI,
   currentSns,
@@ -576,6 +577,24 @@ describe('/sns/feed 받아 둔 카드', () => {
     expect(within(card).getByText('수정됨')).toBeInTheDocument()
     expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
     expect(requestsTo('following')).toHaveLength(1)
+  })
+
+  it('[AC-SNS02-029] 고친 뒤 상세를 다시 읽지 못하면 돌아온 피드를 다시 읽어 고치기 전 캡션 대신 바뀐 캡션이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed', 60_000)
+    expect(await screen.findByText('산책 코스 추천받아요')).toBeInTheDocument()
+
+    await act(() => router.navigate({ to: '/sns/posts/$publicId/edit', params: { publicId: SNS_POST_MINE } }))
+    const caption = await screen.findByLabelText('캡션')
+    server.use(http.get(SNS_POST_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    await user.clear(caption)
+    await user.type(caption, '산책 코스 정리했어요')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/feed'))
+    expect(await screen.findByText('산책 코스 정리했어요')).toBeInTheDocument()
+    expect(screen.queryByText('산책 코스 추천받아요')).not.toBeInTheDocument()
+    expect(requestsTo('following')).toHaveLength(2)
   })
 
   it('다시 읽기가 실패하면 받아 둔 카드 위에 실패 안내를 두고 반응 버튼과 더보기의 쓰기 항목을 잠근다', async () => {

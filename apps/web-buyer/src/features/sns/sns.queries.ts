@@ -164,8 +164,11 @@ export function useUpdateSnsPost(publicId: string) {
     onSuccess: async () => {
       await refetchPost()
       // 수정은 로그인한 작성자만 해서 로그인 응답 상세를 읽는다. 피드는 다시 읽으면 보던 위치를 잃어 그 카드만 바꾼다.
-      const post = queryClient.getQueryData<SnsPost>([...snsKeys.post(publicId), true])
-      if (post) {
+      const detailKey = [...snsKeys.post(publicId), true]
+      const post = queryClient.getQueryData<SnsPost>(detailKey)
+      // invalidateQueries는 다시 읽기 실패를 알리지 않고 상세에는 고치기 전 내용이 남는다. 그 내용을 적으면 피드가 새로 받은
+      // 것으로 표시돼 다시 읽지 않는다. 다시 읽지 못했으면 피드를 낡은 것으로만 표시해 다음에 열 때 다시 읽는다.
+      if (post && queryClient.getQueryState(detailKey)?.isInvalidated === false) {
         const { caption, hashtags, edited } = post
         queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
           mapPages(data, items =>
@@ -174,6 +177,8 @@ export function useUpdateSnsPost(publicId: string) {
             ),
           ),
         )
+      } else {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
       }
       // 프로필 탭 칸의 본문 앞부분(captionPreview)은 서버가 잘라 주므로 칸은 고치지 않고 다음에 열 때 다시 읽는다.
       void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists })
