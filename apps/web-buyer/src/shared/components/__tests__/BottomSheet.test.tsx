@@ -164,4 +164,11 @@ describe('Modal', () => {
     await user.tab({ shift: true })
     expect(confirm).toHaveFocus()
   })
+
+  it('[AC-DS-MODAL-002] 요청 중인 확인 버튼은 스피너를 그려도 이름이 남고 잠겨 있다', () => {
+    render(<Modal open onClose={() => {}} title="게시물을 삭제할까요?" confirmLabel="삭제" onConfirm={() => {}} loading />)
+    const confirm = screen.getByRole('button', { name: '삭제' })
+    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-busy', 'true')
+  })
 })

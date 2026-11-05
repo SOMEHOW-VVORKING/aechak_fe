@@ -136,7 +136,11 @@ export function Modal({
               aria-busy={loading || undefined}
             >
               {loading ? (
-                <span className="inline-block size-4 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+                <>
+                  <span className="inline-block size-4 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+                  {/* 스피너만 남기면 요청 중인 버튼의 이름이 사라진다. Button처럼 글자를 남기되 화면에서는 스피너만 보인다. */}
+                  <span className="sr-only">{confirmLabel}</span>
+                </>
               ) : (
                 confirmLabel
               )}
