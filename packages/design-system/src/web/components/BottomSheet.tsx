@@ -29,9 +29,8 @@ export function BottomSheet({
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
-  useEffect(() => {
-    if (open) setMounted(true)
-  }, [open])
+  // 렌더 중에 맞춘다. effect로 맞추면 open이 켜진 첫 커밋에 패널이 없어 포커스 이동과 트랩 effect가 패널을 찾지 못한다.
+  if (open && !mounted) setMounted(true)
 
   // Restore focus on close
   useEffect(() => {
