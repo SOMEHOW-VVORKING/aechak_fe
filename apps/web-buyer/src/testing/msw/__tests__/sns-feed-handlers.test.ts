@@ -225,6 +225,35 @@ describe('탐색 피드', () => {
     expect(ids(await feed('explore', { size: 50 })).at(-1)).toBe(OLD_POST)
   })
 
+  it('기간을 넓힐지는 첫 페이지에서 정하고 다음 페이지는 7일 안의 글이 늘어도 다시 세지 않고 7일이 지난 글을 잇는다', async () => {
+    const recent = Array.from({ length: 19 }, (_, i) =>
+      snsPost(`01JF9W3Q6R8T2V4X7Z9B1C31${String(i).padStart(2, '0')}`, SNS_COCO, { createdAt: '2026-10-23T09:00:00' }),
+    )
+    const OLDER_POST = '01JF9W3Q6R8T2V4X7Z9B1C3OLA'
+    seedSns({
+      posts: [
+        ...recent,
+        snsPost(OLD_POST, SNS_COCO, { createdAt: '2026-10-16T09:00:00' }),
+        snsPost(OLDER_POST, SNS_COCO, { createdAt: '2026-10-15T09:00:00' }),
+        snsPost(SNS_POST_TORI, SNS_TORI, { createdAt: '2026-10-23T10:00:00' }),
+      ],
+    })
+    // 뮤트한 토리의 글을 빼면 7일 안의 글이 19개라 첫 페이지가 기간을 넓힌다.
+    const first = await feed('explore', { size: 20 })
+    expect(ids(first)).toEqual([...recent.map(p => p.publicId).sort().reverse(), OLD_POST])
+
+    // 뮤트를 풀어 7일 안의 글이 20개가 돼도 다음 페이지는 첫 페이지에서 넓힌 대로 남은 지난 글을 싣는다.
+    await axiosInstance.delete(`/sns/users/${SNS_TORI}/mute`)
+    const next = await feed('explore', { size: 20, cursor: first.nextCursor })
+    expect(ids(next)).toEqual([OLDER_POST])
+    expect(next.hasNext).toBe(false)
+    // 넓히기 자리에 w나 빈 값이 아닌 값이 든 커서는 그대로 400 90002다.
+    expect(await failureOf(feed('explore', { cursor: first.nextCursor!.replace(/^ex\|w\|/, 'ex|x|') }))).toEqual({
+      status: 400,
+      errorCode: 90002,
+    })
+  })
+
   it('로그인이면 내 글, 팔로우한 사용자, 차단 관계, 뮤트한 사용자의 글을 뺀다', async () => {
     seedSns({ follows: [snsRelation(SNS_ME, SNS_MONG)] })
     expect(ids(await feed('explore'))).toEqual([SNS_POST_VIDEO, SNS_POST_COCO])

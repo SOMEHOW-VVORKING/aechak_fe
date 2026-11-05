@@ -616,7 +616,8 @@ function searchHashtags({ request }: { request: Request }) {
 
 // ── SNS-03 리포스트, 저장, 피드, 프로필 탭 ─────────────────────────────────────────────────
 // 계약(sns.yaml 0.4.0 SNS-03 초안)의 판정 순서, 노출 규칙, 커서 범위를 흉내 낸다. 커서는 `태그|범위|기준|마지막`이다.
-// 태그나 범위(목록 주인)가 다르거나 모양이 깨졌거나 마지막 항목을 찾지 못하면 400 90002다. 피드 커서는 범위가 비어 있다.
+// 태그나 범위(목록 주인)가 다르거나 모양이 깨졌거나 마지막 항목을 찾지 못하면 400 90002다. 피드 커서는 범위가 비어 있고
+// 탐색 피드만 그 자리에 첫 페이지에서 기간을 넓혔는지(w)를 남긴다.
 
 /** 리포스트와 저장 행. id는 seedSns가 다시 매긴다 */
 export const snsAct = (user: string, post: string, createdAt = '2026-10-23T10:00:00'): SnsActRow => ({
@@ -771,10 +772,12 @@ function followingFeed({ request }: { request: Request }) {
 }
 
 // 탐색 피드(Q3, P4, R1-17). 기준 시각부터 7일 안의 원글을 최신순으로 싣고 7일 안의 글이 20개에 못 미치면 7일이 지난 글을 잇는다.
-// 리포스트는 나오지 않는다.
+// BE처럼 넓힐지는 첫 페이지에서 한 번 정해 커서에 남기고 다음 페이지는 7일 안의 글을 다시 세지 않는다. 리포스트는 나오지 않는다.
 function exploreFeed({ request }: { request: Request }) {
   const viewer = viewerOf(request)
-  const query = listQuery(request, 'ex', '')
+  // 커서의 범위 자리가 첫 페이지에서 정한 넓히기다. w도 빈 값도 아니면 listQuery가 400 90002로 거절한다.
+  const widenedByCursor = new URL(request.url).searchParams.get('cursor')?.split('|')[1] === 'w'
+  const query = listQuery(request, 'ex', widenedByCursor ? 'w' : '')
   if (query.error) return query.error
   const anchor = query.cursor?.anchor ?? state.now
   if (Number.isNaN(epoch(anchor))) return error(400, 90002)
@@ -783,7 +786,8 @@ function exploreFeed({ request }: { request: Request }) {
     row => shownTo(row, viewer) && (viewer == null || (row.author !== viewer && !has(state.follows, viewer, row.author))),
   )
   const inWindow = candidates.filter(row => epoch(row.createdAt) >= from)
-  let rows = (inWindow.length < MIN_FEED_POSTS ? candidates : inWindow)
+  const widened = query.cursor ? widenedByCursor : inWindow.length < MIN_FEED_POSTS
+  let rows = (widened ? candidates : inWindow)
     .map(row => ({ row, time: row.createdAt, publicId: row.publicId }))
     .sort(newerFirst)
   if (query.cursor) {
@@ -795,7 +799,7 @@ function exploreFeed({ request }: { request: Request }) {
     rows,
     query.size,
     item => feedItem(item.row, viewer),
-    last => `ex||${anchor}|${last.publicId}`,
+    last => `ex|${widened ? 'w' : ''}|${anchor}|${last.publicId}`,
   )
 }
 
