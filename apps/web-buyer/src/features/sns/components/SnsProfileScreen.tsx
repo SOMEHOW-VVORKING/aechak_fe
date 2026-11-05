@@ -320,18 +320,26 @@ export function SnsProfileScreen({
     )
   }
 
+  // 다시 읽기가 실패하면 받아 둔 프로필은 두고 위에 알린다. 팔로우와 차단 해제 버튼은 잠그지 않는다(AC-SNS01-026).
+  const refetchNotice = isRefetchError && (
+    <SnsRefetchError message="프로필을 다시 불러오지 못했어요." onRetry={() => void refetch()} />
+  )
+
   // 나를 차단한 계정의 기본 프로필(A7, R2-06): 닉네임만 오고 이미지, 수, 소개글, 펫은 null이다. 기본 프로필 사진과
   // 닉네임만 그리고 팔로우와 공유 버튼, 탭은 두지 않는다. 서로 차단이면 blockedByMe도 true라 차단 해제 버튼을 함께 둔다.
   if (profile.blockingMe) {
     return screen(
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <Avatar name={profile.nickname} size="xl" />
-        <p className="text-subheading font-semibold text-text-primary">{profile.nickname}</p>
-        {profile.blockedByMe && (
-          <Button variant="secondary" onClick={() => setConfirm('unblockMutual')}>
-            차단 해제
-          </Button>
-        )}
+      <div className="flex h-full flex-col">
+        {refetchNotice}
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+          <Avatar name={profile.nickname} size="xl" />
+          <p className="text-subheading font-semibold text-text-primary">{profile.nickname}</p>
+          {profile.blockedByMe && (
+            <Button variant="secondary" onClick={() => setConfirm('unblockMutual')}>
+              차단 해제
+            </Button>
+          )}
+        </div>
       </div>,
     )
   }
@@ -339,15 +347,18 @@ export function SnsProfileScreen({
   // 내가 차단한 계정(P11): 닉네임과 이미지만 오고 수, 소개글, 펫은 null이다. 안내와 차단 해제 버튼만 그린다.
   if (profile.blockedByMe) {
     return screen(
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />
-        <div className="flex flex-col gap-1">
-          <p className="text-subheading font-semibold text-text-primary">차단한 계정이에요</p>
-          <p className="text-body-sm text-text-secondary">차단을 해제하면 프로필을 다시 볼 수 있어요.</p>
+      <div className="flex h-full flex-col">
+        {refetchNotice}
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+          <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />
+          <div className="flex flex-col gap-1">
+            <p className="text-subheading font-semibold text-text-primary">차단한 계정이에요</p>
+            <p className="text-body-sm text-text-secondary">차단을 해제하면 프로필을 다시 볼 수 있어요.</p>
+          </div>
+          <Button variant="secondary" onClick={() => setConfirm('unblock')}>
+            차단 해제
+          </Button>
         </div>
-        <Button variant="secondary" onClick={() => setConfirm('unblock')}>
-          차단 해제
-        </Button>
       </div>,
     )
   }
@@ -368,11 +379,8 @@ export function SnsProfileScreen({
 
   return screen(
     <div className="flex flex-col">
-      {/* 다시 읽기가 실패하면 받아 둔 프로필은 두고 위에 알린다. 팔로우 버튼은 잠그지 않는다(AC-SNS01-026). 탭 목록이
-          사라진 뒤의 실패는 탭 자리의 다시 시도가 알린다. */}
-      {isRefetchError && !gridGone && (
-        <SnsRefetchError message="프로필을 다시 불러오지 못했어요." onRetry={() => void refetch()} />
-      )}
+      {/* 탭 목록이 사라진 뒤의 실패는 탭 자리의 다시 시도가 알린다. */}
+      {!gridGone && refetchNotice}
       <div className="flex flex-col gap-3 px-4 pb-4 pt-2">
         <div className="flex items-center gap-4">
           <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />

@@ -173,6 +173,24 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     await waitFor(() => expect(screen.queryByText(/프로필을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
     expect(screen.getByText('코코와 삽니다')).toBeInTheDocument()
   })
+
+  it.each([
+    ['내가 차단한 계정', SNS_SPAM, '차단한 계정이에요', true],
+    ['나를 차단한 계정', SNS_BLOCKER, '차단러', false],
+  ])('[AC-SNS01-026] %s의 프로필도 다시 읽기가 실패하면 받아 둔 화면 위에 실패 안내를 둔다', async (_, publicId, shown, unblock) => {
+    seedSns({ blocks: [...currentSns().blocks, snsRelation(SNS_ME, SNS_SPAM)] })
+    renderAt(`/sns/users/${publicId}`, new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } }))
+    // 나를 차단한 계정은 앱바 제목에도 닉네임이 나온다
+    expect((await screen.findAllByText(shown)).length).toBeGreaterThan(0)
+
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/프로필을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getAllByText(shown).length).toBeGreaterThan(0)
+    if (unblock) expect(screen.getByRole('button', { name: '차단 해제' })).toBeEnabled()
+  })
 })
 
 describe('/sns/users/$publicId 팔로우', () => {
