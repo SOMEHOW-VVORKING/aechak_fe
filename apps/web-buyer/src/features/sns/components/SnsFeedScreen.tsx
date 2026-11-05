@@ -148,9 +148,14 @@ export function SnsFeedScreen({
       void queryClient.resetQueries({ queryKey: snsKeys.feed(kind, loggedIn) })
       return
     }
+    // 다른 탭도 맨 위에서 연다. 스크롤 칸은 탭이 바뀌어도 같은 요소라 받아 둔 탭이 이전 탭의 깊이에서 열린다.
+    const open = () => {
+      if (listRef.current) listRef.current.scrollTop = 0
+      onTabChange(next)
+    }
     // 비로그인이 팔로잉을 누르면 로그인 안내 시트를 열고 로그인 뒤 이 피드로 돌아온다(A9).
-    if (next === 'following') requireAuth('feed', () => onTabChange(next), BACK_TO_FEED)
-    else onTabChange(next)
+    if (next === 'following') requireAuth('feed', open, BACK_TO_FEED)
+    else open()
   }
 
   const copyLink = async (post: SnsPost) => {

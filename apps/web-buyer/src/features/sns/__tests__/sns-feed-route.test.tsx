@@ -296,6 +296,19 @@ describe('/sns/feed 이어 불러오기', () => {
     await waitFor(() => expect(cards()).toHaveLength(20))
     expect(requestsTo('explore').map(url => url.searchParams.has('cursor'))).toEqual([false, true, false])
   })
+
+  it('다른 탭으로 바꾸면 이전 탭의 스크롤 위치가 아니라 맨 위에서 연다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    renderAt('/sns/feed', 60_000)
+    await waitFor(() => expect(cards().length).toBeGreaterThan(0))
+    const list = cards()[0]!.closest('ul')!.parentElement!
+    list.scrollTop = 500
+
+    await user.click(screen.getByRole('tab', { name: '인기' }))
+    expect(screen.getByRole('tab', { name: '인기' })).toHaveAttribute('aria-selected', 'true')
+    expect(list.scrollTop).toBe(0)
+  })
 })
 
 describe('/sns/feed 카드', () => {
