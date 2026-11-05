@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { BottomSheet } from '@aechak/design-system/web'
+import { BottomSheet, Modal } from '@aechak/design-system/web'
 
 describe('BottomSheet', () => {
   it('[AC-DS-BOTTOMSHEET-001] open이면 제목과 내용을 dialog로 렌더링한다', () => {
@@ -75,6 +75,43 @@ describe('BottomSheet', () => {
       expect(opener).toHaveFocus()
       fireEvent.transitionEnd(dialog.querySelector('[tabindex="-1"]')!)
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    }
+  })
+
+  // 시트를 닫지 않고 그 위에 확인 Modal을 여는 경우. 두 오버레이의 포커스 트랩이 모두 document에서 keydown을 받는다.
+  function SheetWithConfirm() {
+    const [open, setOpen] = useState(false)
+    const [confirm, setConfirm] = useState(false)
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          시트 열기
+        </button>
+        <BottomSheet open={open} onClose={() => setOpen(false)} title="더보기">
+          <button type="button" onClick={() => setConfirm(true)}>
+            신고하기
+          </button>
+        </BottomSheet>
+        <Modal open={confirm} onClose={() => setConfirm(false)} title="신고할까요?" onConfirm={() => {}}>
+          <textarea aria-label="사유" />
+        </Modal>
+      </>
+    )
+  }
+
+  it('[AC-DS-BOTTOMSHEET-005] 열린 시트 위에 확인 Modal을 열면 Tab이 Modal 안의 항목을 차례로 돈다', async () => {
+    const user = userEvent.setup()
+    render(<SheetWithConfirm />)
+    await user.click(screen.getByRole('button', { name: '시트 열기' }))
+    await user.click(screen.getByRole('button', { name: '신고하기' }))
+
+    const modal = await screen.findByRole('dialog', { name: '신고할까요?' })
+    const reason = within(modal).getByRole('textbox', { name: '사유' })
+    const cancel = within(modal).getByRole('button', { name: '취소' })
+    const confirm = within(modal).getByRole('button', { name: '확인' })
+    for (const expected of [reason, cancel, confirm, reason]) {
+      await user.tab()
+      expect(expected).toHaveFocus()
     }
   })
 })

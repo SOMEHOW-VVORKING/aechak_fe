@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Drawer } from '@aechak/design-system/web'
+import { Drawer, Modal } from '@aechak/design-system/web'
 
 describe('Drawer', () => {
   // 닫힌 채 마운트돼 있던 Drawer를 여는 경우와 닫았다가 다시 여는 경우. jsdom은 onTransitionEnd를 쏘지 않아
@@ -45,6 +45,43 @@ describe('Drawer', () => {
       expect(opener).toHaveFocus()
       fireEvent.transitionEnd(dialog.querySelector('[tabindex="-1"]')!)
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    }
+  })
+
+  // 어드민 상세 Drawer에서 확인 Modal을 여는 경우. 두 오버레이의 포커스 트랩이 모두 document에서 keydown을 받는다.
+  function DrawerWithConfirm() {
+    const [open, setOpen] = useState(false)
+    const [confirm, setConfirm] = useState(false)
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          상세 열기
+        </button>
+        <Drawer open={open} onClose={() => setOpen(false)} title="상세">
+          <button type="button" onClick={() => setConfirm(true)}>
+            반려
+          </button>
+        </Drawer>
+        <Modal open={confirm} onClose={() => setConfirm(false)} title="반려할까요?" onConfirm={() => {}}>
+          <textarea aria-label="사유" />
+        </Modal>
+      </>
+    )
+  }
+
+  it('[AC-DS-DRAWER-002] 열린 Drawer 위에 확인 Modal을 열면 Tab이 Modal 안의 항목을 차례로 돈다', async () => {
+    const user = userEvent.setup()
+    render(<DrawerWithConfirm />)
+    await user.click(screen.getByRole('button', { name: '상세 열기' }))
+    await user.click(screen.getByRole('button', { name: '반려' }))
+
+    const modal = await screen.findByRole('dialog', { name: '반려할까요?' })
+    const reason = within(modal).getByRole('textbox', { name: '사유' })
+    const cancel = within(modal).getByRole('button', { name: '취소' })
+    const confirm = within(modal).getByRole('button', { name: '확인' })
+    for (const expected of [reason, cancel, confirm, reason]) {
+      await user.tab()
+      expect(expected).toHaveFocus()
     }
   })
 })
