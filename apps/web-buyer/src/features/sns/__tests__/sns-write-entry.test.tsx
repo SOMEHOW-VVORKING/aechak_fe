@@ -79,7 +79,7 @@ describe('SNS 탭 글쓰기', () => {
       ),
     )
     seedSns({ viewer: SNS_ME })
-    const router = renderAt('/login/complete?status=ACTIVE')
+    const router = renderAt('/login/complete?status=ACTIVE&isNew=false')
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/sns/posts/new'))
     expect(await screen.findByLabelText('캡션')).toBeInTheDocument()

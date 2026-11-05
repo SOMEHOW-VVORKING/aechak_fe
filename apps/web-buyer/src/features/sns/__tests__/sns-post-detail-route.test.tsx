@@ -421,7 +421,7 @@ describe('/sns/posts/$publicId 로그인 뒤 다시 실행(A26)', () => {
       ),
     )
     seedSns({ viewer: SNS_ME, ...seed })
-    return renderAt('/login/complete?status=ACTIVE')
+    return renderAt('/login/complete?status=ACTIVE&isNew=false')
   }
 
   const pressFollow = async (user: ReturnType<typeof userEvent.setup>) => {

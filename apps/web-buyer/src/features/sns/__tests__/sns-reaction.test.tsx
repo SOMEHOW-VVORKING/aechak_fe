@@ -308,7 +308,7 @@ describe('비로그인 리포스트와 저장', () => {
       ),
     )
     seedSns({ viewer: SNS_ME, ...seed })
-    return renderAt('/login/complete?status=ACTIVE')
+    return renderAt('/login/complete?status=ACTIVE&isNew=false')
   }
 
   it('[AC-SNS03-047] 카드에서 저장을 누르고 로그인을 마치면 같은 탭으로 돌아와 확인 없이 한 번 저장된다', async () => {
