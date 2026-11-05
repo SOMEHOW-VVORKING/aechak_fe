@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -153,6 +153,25 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
 
     expect(await screen.findByRole('button', { name: '팔로우' })).toBeInTheDocument()
     expect(stat('팔로워')).toBe('1')
+  })
+
+  it('[AC-SNS01-026] 프로필 다시 읽기가 실패하면 받아 둔 프로필과 켜진 팔로우 버튼 위에 실패 안내를 두고 다시 시도하면 안내가 사라진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`, new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } }))
+    expect(await screen.findByText('코코와 삽니다')).toBeInTheDocument()
+
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/프로필을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByText('코코와 삽니다')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeEnabled()
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByText(/프로필을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
+    expect(screen.getByText('코코와 삽니다')).toBeInTheDocument()
   })
 })
 

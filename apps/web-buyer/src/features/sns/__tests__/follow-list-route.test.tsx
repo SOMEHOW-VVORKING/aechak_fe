@@ -134,6 +134,25 @@ describe('/sns/users/$publicId/follows 목록', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '초코맘 팔로우' })).toBeEnabled())
   })
 
+  it('[AC-SNS01-026] 목록 다시 읽기가 실패하면 받아 둔 행과 켜진 팔로우 버튼 위에 실패 안내를 두고 다시 시도하면 안내가 사라진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+    await screen.findByText('몽이아빠')
+
+    server.use(http.get(SNS_FOLLOWERS_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/목록을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(rows()).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '몽이아빠 팔로우' })).toBeEnabled()
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByText(/목록을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
+    expect(rows()).toHaveLength(2)
+  })
+
   it('[AC-SNS01-015] 행을 누르면 그 사용자 프로필로 가고 본인 행은 내 프로필로 가며 본인 행에는 팔로우 버튼이 없다', async () => {
     seedSns({ follows: [snsRelation(SNS_MONG, SNS_COCO), snsRelation(SNS_ME, SNS_COCO)] })
     const user = userEvent.setup()
@@ -259,6 +278,29 @@ describe('/sns/users/$publicId/follows 목록', () => {
     await screen.findByText('이웃1')
     expect(rows()).toHaveLength(25)
     expect(screen.getByRole('tab', { name: /팔로워\s*25/ })).toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-017] 다음 페이지가 실패하면 받은 행을 두고 더보기 위에 실패 안내를 두며 더보기로 다시 부른다', async () => {
+    seedSns({ follows: SNS_NEIGHBORS.map(id => snsRelation(id, SNS_COCO)) })
+    server.use(
+      http.get(SNS_FOLLOWERS_URL, ({ request }) =>
+        new URL(request.url).searchParams.has('cursor')
+          ? HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
+          : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}/follows`)
+    await screen.findByText('이웃25')
+
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(await screen.findByText('다음 목록을 불러오지 못했어요')).toBeInTheDocument()
+    expect(rows()).toHaveLength(20)
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    await screen.findByText('이웃1')
+    expect(screen.queryByText('다음 목록을 불러오지 못했어요')).not.toBeInTheDocument()
   })
 })
 

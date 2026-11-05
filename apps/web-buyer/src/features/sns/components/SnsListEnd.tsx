@@ -14,12 +14,19 @@ export function SnsListError({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-/** 받아 둔 목록의 다시 읽기 실패. 목록은 두고 위에 알린다(AGENTS.md 6절 7). 문구는 상세의 같은 안내와 같다 */
-export function SnsRefetchError({ onRetry }: { onRetry: () => void }) {
+/** 받아 둔 목록의 다시 읽기 실패. 목록은 두고 위에 알린다(AGENTS.md 6절 7). 기본 문구는 상세의 같은 안내와 같다 */
+export function SnsRefetchError({
+  onRetry,
+  message = '게시물을 다시 불러오지 못했어요.',
+}: {
+  onRetry: () => void
+  /** 게시물이 아닌 목록(팔로우, 차단/뮤트)과 프로필의 문구 */
+  message?: string
+}) {
   return (
     <div className="px-4 py-2">
       <Alert variant="error">
-        게시물을 다시 불러오지 못했어요.{' '}
+        {message}{' '}
         <button type="button" onClick={onRetry} className="font-semibold underline">
           다시 시도
         </button>

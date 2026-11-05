@@ -34,7 +34,7 @@ import {
 import { RELATION_CONFIRM, type RelationConfirm } from '../sns.copy'
 import { petTagLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
-import { SnsListError } from './SnsListEnd'
+import { SnsListError, SnsRefetchError } from './SnsListEnd'
 import { SnsPostGrid, SnsPostTabs, type SnsPostTabItem } from './SnsPostGrid'
 
 // 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만(R3-02).
@@ -71,7 +71,7 @@ export function SnsProfileScreen({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const goBack = useSafeBack({ to: '/sns' })
-  const { data: profile, error, isPending, refetch } = useSnsProfile(publicId)
+  const { data: profile, error, isPending, isRefetchError, refetch } = useSnsProfile(publicId)
   // 저장됨은 내 프로필에만 있다. 다른 사람 프로필에 주소로 들어오면 그리드를 그린다.
   const activeTab: SnsProfileTab = tab === 'saved' && profile?.isMe === false ? 'grid' : tab
   const grid = useSnsPostGrid(profile, activeTab)
@@ -368,6 +368,11 @@ export function SnsProfileScreen({
 
   return screen(
     <div className="flex flex-col">
+      {/* 다시 읽기가 실패하면 받아 둔 프로필은 두고 위에 알린다. 팔로우 버튼은 잠그지 않는다(AC-SNS01-026). 탭 목록이
+          사라진 뒤의 실패는 탭 자리의 다시 시도가 알린다. */}
+      {isRefetchError && !gridGone && (
+        <SnsRefetchError message="프로필을 다시 불러오지 못했어요." onRetry={() => void refetch()} />
+      )}
       <div className="flex flex-col gap-3 px-4 pb-4 pt-2">
         <div className="flex items-center gap-4">
           <Avatar name={profile.nickname} src={profile.profileImageUrl ?? undefined} size="xl" />
