@@ -8,7 +8,7 @@ export interface ImageLightboxProps {
   alt?: string
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 // 리뷰 사진 등 단일 이미지를 크게 보는 라이트박스. 스크림 클릭/닫기 버튼/ESC로 닫힌다.
 // position:fixed지만 __root의 폰 프레임 translateZ containing block 안에서 배치돼

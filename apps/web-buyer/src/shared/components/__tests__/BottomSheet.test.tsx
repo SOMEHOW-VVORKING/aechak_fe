@@ -114,4 +114,38 @@ describe('BottomSheet', () => {
       expect(expected).toHaveFocus()
     }
   })
+
+  it('[AC-DS-BOTTOMSHEET-006] 첫 항목이 비활성 textarea여도 Tab이 다음 켜진 항목으로 포커스를 옮긴다', async () => {
+    const user = userEvent.setup()
+    render(
+      <BottomSheet open onClose={() => {}} title="신고 사유">
+        <textarea aria-label="사유" disabled />
+        <button type="button">보내기</button>
+      </BottomSheet>,
+    )
+    await user.tab()
+    expect(screen.getByRole('button', { name: '보내기' })).toHaveFocus()
+  })
+})
+
+describe('Modal', () => {
+  it('[AC-DS-MODAL-001] 앞에 비활성 select와 input이 있어도 Tab과 Shift+Tab이 켜진 버튼 사이를 돈다', async () => {
+    const user = userEvent.setup()
+    render(
+      <Modal open onClose={() => {}} title="지역을 고를까요?" onConfirm={() => {}}>
+        <select aria-label="지역" disabled>
+          <option>서울</option>
+        </select>
+        <input aria-label="상세 주소" disabled />
+      </Modal>,
+    )
+    const cancel = screen.getByRole('button', { name: '취소' })
+    const confirm = screen.getByRole('button', { name: '확인' })
+    for (const expected of [cancel, confirm, cancel]) {
+      await user.tab()
+      expect(expected).toHaveFocus()
+    }
+    await user.tab({ shift: true })
+    expect(confirm).toHaveFocus()
+  })
 })

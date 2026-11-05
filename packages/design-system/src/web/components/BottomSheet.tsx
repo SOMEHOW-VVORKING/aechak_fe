@@ -11,7 +11,7 @@ export interface BottomSheetProps {
   className?: string
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 // 하단에서 올라오는 시트. web에는 side `Drawer`만 있어 옵션/필터 시트·비회원 게이트 등에
 // 쓸 하단 시트를 새로 추가한 것 — 스크림/ESC/포커스 트랩/스크롤 잠금 패턴은 `Modal`/`Drawer`와 동일.
