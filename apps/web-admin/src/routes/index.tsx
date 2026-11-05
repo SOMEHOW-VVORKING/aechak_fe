@@ -98,8 +98,8 @@ function DashboardRoute() {
   if (!data) return null
 
   // 카드와 같은 집계를 그대로 쓴다 — 줄의 숫자를 따로 만들면 운영자가 들어간 화면에서 어긋난다.
-  // 목적지는 그 수를 실제로 보여주는 화면이어야 한다(`검수 대기 상품`이 `/products/review`로
-  // 가면 예시 12행이 깔린 준비 중 화면에 떨어진다).
+  // 목적지는 그 수를 실제로 보여주는 화면이어야 한다(`검수 대기 상품`을 '상품 카탈로그
+  // 관리'로 보내면 모수가 다른 전수 목록에 떨어진다 — 그 수를 주는 쪽은 검토 큐다).
   const todoItems: AdminDashboardTodo[] = [
     {
       key: 'inspections',
@@ -185,8 +185,9 @@ function DashboardRoute() {
           label="검수 대기 상품"
           value={countLabel(pendingInspections)}
           icon={<PackageSearch className="size-full" />}
-          // `/products/review`가 아니라 AI 검수 큐로 보낸다 — 이 수를 주는 경로가
-          // `GET /admin/product-inspections`이고 그 행을 보여주는 화면이 저기다.
+          // 상품 카탈로그 관리가 아니라 AI 검수 큐로 보낸다 — 이 수를 주는 경로가
+          // `GET /admin/product-inspections`이고 그 행만 보여주는 화면이 저기다(카탈로그는
+          // 큐에 올라온 적 없는 상품까지 담아 모수가 다르다).
           onClick={() => openScreen('/products/ai-queue')}
         />
       </div>
