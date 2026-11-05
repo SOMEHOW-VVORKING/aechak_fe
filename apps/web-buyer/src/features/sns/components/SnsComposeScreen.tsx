@@ -345,6 +345,11 @@ function AttachmentTile({
   const busy = item.status === 'processing' || item.status === 'uploading'
   const iconButton =
     'flex size-6 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-focus-ring'
+  // 빼기와 순서 버튼은 보이는 원(24px)을 그대로 두고 누르는 자리만 칸 모서리에서 40px로 넓힌다(앱 아이콘 버튼 크기).
+  // 칸이 96px라 세 버튼의 자리는 겹치지 않는다.
+  const cornerButton = 'group absolute flex size-10 p-1 disabled:opacity-40 focus-visible:outline-none'
+  const cornerCircle =
+    'flex size-6 items-center justify-center rounded-full bg-black/55 text-white group-focus-visible:shadow-focus-ring'
   return (
     <li className="relative size-24 overflow-hidden rounded-card bg-surface-sunken">
       {item.previewUrl && <img src={item.previewUrl} alt={label} className="size-full object-cover" />}
@@ -383,31 +388,37 @@ function AttachmentTile({
         aria-label={`${label} 빼기`}
         disabled={locked}
         onClick={onRemove}
-        className={`absolute right-1 top-1 ${iconButton}`}
+        className={`right-0 top-0 items-start justify-end ${cornerButton}`}
       >
-        <X className="size-3.5" />
+        <span className={cornerCircle}>
+          <X className="size-3.5" />
+        </span>
       </button>
       {!video && count > 1 && (
-        <span className="absolute inset-x-1 bottom-1 flex justify-between">
+        <>
           <button
             type="button"
             aria-label={`${label} 앞으로`}
             disabled={locked || index === 0}
             onClick={() => onMove(-1)}
-            className={iconButton}
+            className={`bottom-0 left-0 items-end justify-start ${cornerButton}`}
           >
-            <ChevronLeft className="size-3.5" />
+            <span className={cornerCircle}>
+              <ChevronLeft className="size-3.5" />
+            </span>
           </button>
           <button
             type="button"
             aria-label={`${label} 뒤로`}
             disabled={locked || index === count - 1}
             onClick={() => onMove(1)}
-            className={iconButton}
+            className={`bottom-0 right-0 items-end justify-end ${cornerButton}`}
           >
-            <ChevronRight className="size-3.5" />
+            <span className={cornerCircle}>
+              <ChevronRight className="size-3.5" />
+            </span>
           </button>
-        </span>
+        </>
       )}
     </li>
   )
