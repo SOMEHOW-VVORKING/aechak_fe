@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -6,12 +6,16 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { SELLER_APPLICATION_QUERY_KEY, SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
 import {
+  MSW_PHONE_CODE,
+  PHONE_VERIFICATIONS_CONFIRM_URL,
+  PHONE_VERIFICATIONS_URL,
   SELLER_APPLICATIONS_URL,
   SELLER_STORE_URL,
   currentSellerApplication,
   currentStore,
   makeApplicationWire,
   makeStoreWire,
+  seedPhoneVerification,
   seedSellerApplication,
   seedStoreSettings,
   server,
@@ -40,6 +44,7 @@ function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: 
 describe('/store-settings (실서버 계약 — MSW)', () => {
   beforeEach(() => {
     seedSellerApplication(null)
+    seedPhoneVerification()
   })
 
   it('[AC-STORE-ROUTE-001] 신청 이력이 없으면(404/10100) 신규 신청 폼을 보여준다', async () => {
@@ -444,5 +449,120 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
         currentSellerApplication()?.documents.some(doc => doc.documentType === 'BANKBOOK_COPY'),
       ).toBe(true)
     })
+  })
+
+  /**
+   * BE requirePhoneVerified()가 임시저장부터 403/10103으로 막는다. 예전엔 셀러 화면이 "구매자 앱
+   * 마이페이지에서 인증한 뒤 다시 시도해 주세요"로 안내했는데, 셀러센터만 쓰는 운영자에게는
+   * 갈 수 없는 곳을 가리키는 거짓이었다 — 이제 같은 화면에서 인증한다(SCRUM-287).
+   */
+  it('[AC-STORE-ROUTE-020] 인증 블록이 신청 폼 앞에 있고, 번호 발송 → 코드 확인까지 이 화면에서 끝난다', async () => {
+    const sent: string[] = []
+    const confirmed: { phoneNumber: string; code: string }[] = []
+    server.use(
+      http.post(PHONE_VERIFICATIONS_URL, async ({ request }) => {
+        const body = (await request.json()) as { phoneNumber: string }
+        sent.push(body.phoneNumber)
+        return HttpResponse.json({ data: { expiresInSeconds: 180, resendCooldownSeconds: 60 } })
+      }),
+      http.post(PHONE_VERIFICATIONS_CONFIRM_URL, async ({ request }) => {
+        confirmed.push((await request.json()) as { phoneNumber: string; code: string })
+        return HttpResponse.json({
+          data: {
+            status: 'ACTIVE',
+            nickname: '애착상회',
+            profileImageUrl: null,
+            profileImageKey: null,
+            bio: null,
+            email: null,
+            phoneNumber: '010-****-5678',
+            isPhoneVerified: true,
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    // 인증 블록이 신청 폼(판매자 유형)보다 앞에 있어야 한다 — 다 채운 뒤 403으로 막히지 않게.
+    const section = await screen.findByText('휴대폰 본인 인증')
+    const legalType = screen.getByText('판매자 유형')
+    expect(section.compareDocumentPosition(legalType) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 인증번호를 받기 전에는 코드 칸이 없다.
+    expect(screen.queryByLabelText('인증번호')).not.toBeInTheDocument()
+
+    // 앞뒤 공백은 화면이 떼고 보낸다(BE @Pattern은 trim하지 않는다).
+    await user.type(screen.getByLabelText('휴대폰 번호'), ' 010-1234-5678 ')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    await screen.findByLabelText('인증번호')
+    expect(sent).toEqual(['010-1234-5678'])
+
+    await user.type(screen.getByLabelText('인증번호'), MSW_PHONE_CODE)
+    await user.click(screen.getByRole('button', { name: '인증 확인' }))
+
+    expect(await screen.findByText(/인증됐어요/)).toBeInTheDocument()
+    expect(confirmed).toEqual([{ phoneNumber: '010-1234-5678', code: MSW_PHONE_CODE }])
+    // 인증 여부를 묻지 않는다 — '이미 인증한 것을 구분하지 않고 다시 인증'이 이 화면의 계약이다.
+    expect(screen.queryByLabelText('휴대폰 번호')).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-021] 코드가 틀리면(30005) 서버 판정을 인증번호 칸에 인라인으로 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    await user.type(await screen.findByLabelText('인증번호'), '000000')
+    await user.click(screen.getByRole('button', { name: '인증 확인' }))
+
+    expect(await screen.findByText('인증번호가 올바르지 않아요.')).toBeInTheDocument()
+    expect(screen.queryByText(/인증됐어요/)).not.toBeInTheDocument()
+    // 틀렸다고 칸을 닫지 않는다 — 다시 입력하거나 재발송할 수 있어야 한다.
+    expect(screen.getByRole('button', { name: '인증번호 재발송' })).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-022] 미인증 저장(403/10103)은 같은 화면의 인증 블록을 가리킨다', async () => {
+    server.use(
+      http.post(SELLER_APPLICATIONS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 10103, message: '휴대폰 본인 인증이 필요합니다.' },
+          { status: 403 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.click(await screen.findByRole('button', { name: '임시저장' }))
+
+    expect(await screen.findByText(/아래 휴대폰 본인 인증을 끝낸 뒤/)).toBeInTheDocument()
+    // 셀러센터만 쓰는 운영자를 갈 수 없는 곳으로 보내지 않는다.
+    expect(screen.queryByText(/구매자 앱/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 인증 블록은 BE requirePhoneVerified()가 걸리는 단계(none/draft/rejected)에만 둘 이유가 있다.
+   * 승인 뒤 이 화면은 스토어 운영 설정이고 심사 중에는 저장·제출 자체가 없어, 거기 인증 칸이
+   * 뜨면 할 일이 없는 입력을 시키는 거짓 안내가 된다. 배치를 고치다 블록이 isFormStage 밖으로
+   * 나가도 다른 단언은 전부 통과하므로(순서 단언도 그대로 참이다) 부재를 따로 못 박는다.
+   */
+  it('[AC-STORE-ROUTE-023] 승인·심사 단계 화면에는 인증 블록이 없다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    renderAt('/store-settings')
+
+    // 스토어 운영 설정이 떠 있는 것까지 확인한 뒤에 부재를 묻는다(렌더 전 통과를 막는다).
+    expect(await screen.findByRole('button', { name: '저장' })).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('휴대폰 번호')).not.toBeInTheDocument()
+
+    cleanup()
+    seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('심사 대기 중이에요')).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
   })
 })

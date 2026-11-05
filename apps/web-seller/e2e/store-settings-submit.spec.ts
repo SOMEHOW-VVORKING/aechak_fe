@@ -611,7 +611,7 @@ test('[AC-STORE-E2E-009] 임시저장이 403/10103으로 거절되면 submit이 
   await expect(
     page
       .getByRole('alert')
-      .filter({ hasText: '휴대폰 본인 인증이 필요해요. 구매자 앱 마이페이지에서 인증한 뒤 다시 시도해 주세요.' }),
+      .filter({ hasText: '휴대폰 본인 인증이 필요해요. 아래 휴대폰 본인 인증을 끝낸 뒤 다시 시도해 주세요.' }),
   ).toBeVisible()
   expect(recorded.calls.filter(call => call === 'POST /seller-applications')).toHaveLength(1)
   expect(recorded.calls.filter(call => call === 'POST /seller-applications/submit')).toHaveLength(0)
