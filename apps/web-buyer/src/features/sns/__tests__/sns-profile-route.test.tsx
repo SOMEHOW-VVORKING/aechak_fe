@@ -10,6 +10,7 @@ import {
   SNS_BLOCK_URL,
   SNS_COCO,
   SNS_ME,
+  SNS_ME_URL,
   SNS_PROFILE_URL,
   SNS_MONG,
   SNS_MUTE_URL,
@@ -22,7 +23,7 @@ import {
   server,
   snsRelation,
 } from '@/testing/msw/server'
-import { setAccessToken } from '@aechak/api'
+import { getMySnsProfile, setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(
@@ -92,6 +93,25 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     expect(screen.queryByRole('button', { name: '팔로우' })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '저장됨' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-002] 프로필 수정에서 닉네임을 바꾸고 돌아오면 앱과 같은 staleTime에서도 내 SNS 프로필에 바뀐 닉네임이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me', new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } }))
+    expect(await screen.findByRole('button', { name: '프로필 수정' })).toBeInTheDocument()
+    // SNS MSW는 계정 닉네임을 따로 들고 있어 저장한 뒤의 내 SNS 프로필을 직접 돌려준다.
+    const me = (await getMySnsProfile()).data
+    server.use(http.get(SNS_ME_URL, () => HttpResponse.json({ data: { ...me, nickname: '보리누나' } })))
+
+    await user.click(screen.getByRole('button', { name: '프로필 수정' }))
+    const nickname = await screen.findByLabelText('닉네임')
+    await waitFor(() => expect(nickname).not.toHaveValue(''))
+    await user.clear(nickname)
+    await user.type(nickname, '보리누나')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/me'), { timeout: 3000 })
+    expect((await screen.findAllByText('보리누나')).length).toBeGreaterThan(0)
   })
 
   it('[AC-SNS01-002][AC-SNS03-037] 다른 사용자 프로필에는 저장됨 탭이 없고 그리드, 영상, 리포스트 탭만 보인다', async () => {
