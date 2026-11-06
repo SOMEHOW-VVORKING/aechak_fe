@@ -168,7 +168,6 @@ test('[AC-SNS-RPT-E2E-001] 게시물 더보기의 신고하기로 사유와 상�
 
   await sheet.getByRole('button', { name: '신고 제출' }).click()
   await expect(page.getByText('신고가 접수되었습니다')).toBeVisible()
-  await expect(page.getByText('검토 후 정책에 따라 처리돼요.')).toBeVisible()
   await expect(sheet).toBeHidden()
   await shot(page, 'sns-report-04-success-toast')
   expect(reports).toEqual([

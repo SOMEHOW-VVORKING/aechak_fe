@@ -90,7 +90,6 @@ describe('SNS 게시물 신고', () => {
     await user.click(submitButton())
 
     expect(await screen.findByText('신고가 접수되었습니다')).toBeInTheDocument()
-    expect(screen.getByText('검토 후 정책에 따라 처리돼요.')).toBeInTheDocument()
     expect(reportBodies).toEqual([
       { targetType: 'SNS_POST', targetId: SNS_POST_COCO, reasonCode: 'SPAM', reasonText: null },
     ])

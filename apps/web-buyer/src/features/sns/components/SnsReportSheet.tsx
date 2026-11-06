@@ -41,9 +41,9 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
   const [reason, setReason] = useState<SnsReportReason | ''>('')
   const [detail, setDetail] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ open: boolean; title: string; sub?: string; variant: 'info' | 'error' }>({
+  const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'info' | 'error' }>({
     open: false,
-    title: '',
+    message: '',
     variant: 'info',
   })
   // 시트를 열 때마다 입력을 비운다. 렌더 중에 맞춰 열린 첫 화면부터 빈 입력이다. 대상은 부르는 화면이 렌더마다 새로
@@ -75,12 +75,12 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
       {
         onSuccess: () => {
           onClose()
-          setToast({ open: true, title: '신고가 접수되었습니다', sub: '검토 후 정책에 따라 처리돼요.', variant: 'info' })
+          setToast({ open: true, message: '신고가 접수되었습니다', variant: 'info' })
         },
         onError: e => {
           if (isAlreadyReported(e) || isFinalReportError(e)) {
             onClose()
-            setToast({ open: true, title: snsReportErrorMessage(e), variant: isAlreadyReported(e) ? 'info' : 'error' })
+            setToast({ open: true, message: snsReportErrorMessage(e), variant: isAlreadyReported(e) ? 'info' : 'error' })
           } else setError(snsReportErrorMessage(e))
         },
       },
@@ -143,12 +143,7 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
       <AppToast
         open={toast.open}
         variant={toast.variant}
-        message={
-          <span className="flex flex-col">
-            <span>{toast.title}</span>
-            {toast.sub && <span className="mt-0.5 text-caption font-normal opacity-80">{toast.sub}</span>}
-          </span>
-        }
+        message={toast.message}
         aboveActionBar={toastAboveActionBar}
         onClose={() => setToast(prev => ({ ...prev, open: false }))}
       />
