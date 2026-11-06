@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Ban, Bookmark, EyeOff, Grid3x3, MoreHorizontal, PawPrint, Repeat2, SquarePlay, UserX } from 'lucide-react'
+import { Ban, Bookmark, EyeOff, Grid3x3, MoreHorizontal, PawPrint, Repeat2, Siren, SquarePlay, UserX } from 'lucide-react'
 import {
   Avatar,
   BottomSheet,
@@ -36,6 +36,7 @@ import { petTagLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsListError, SnsRefetchError } from './SnsListEnd'
 import { SnsPostGrid, SnsPostTabs, type SnsPostTabItem } from './SnsPostGrid'
+import { SnsReportSheet } from './SnsReportSheet'
 
 // 프로필 탭(A22, design 6절 9번). 아이콘 탭이고 빈 문구는 SNS-01 탭 틀의 문구다. 저장됨은 본인만(R3-02).
 const POST_TABS: (SnsPostTabItem<SnsProfileTab> & { empty: string })[] = [
@@ -80,6 +81,7 @@ export function SnsProfileScreen({
   const loggedIn = useIsLoggedIn()
   const mutateToggle = toggle.mutate
   const [moreOpen, setMoreOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   // 확인 Modal의 타겟은 라우트(이 화면)가 소유한다. Modal은 자체 mutation을 만들지 않는다.
   const [confirm, setConfirm] = useState<RelationConfirm | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
@@ -117,6 +119,7 @@ export function SnsProfileScreen({
 
   // 로그인 뒤 다시 실행(A26). 로그인 안내 시트에서 남긴 행동을 이 프로필을 다시 읽은 뒤 한 번만 꺼낸다.
   // 팔로우는 확인 없이 켜기 요청을 보내고(이미 팔로우 중이어도 201) 차단, 뮤트는 확인 Modal이나 시트만 다시 연다.
+  // 신고는 차단 관계와 상관없이 신고 시트만 다시 열고 제출하지 않는다(P11, A26).
   useEffect(() => {
     if (!publicId || !loggedIn) return
     if (unavailable) {
@@ -129,6 +132,10 @@ export function SnsProfileScreen({
     if (!pending) return
     if (profile.isMe) {
       void navigate({ to: '/sns/me', replace: true })
+      return
+    }
+    if (pending.kind === 'report') {
+      setReportOpen(true)
       return
     }
     if (profile.blockedByMe) return
@@ -196,7 +203,8 @@ export function SnsProfileScreen({
     )
   }
 
-  const showMore = profile != null && !unavailable && !profile.isMe && !profile.blockedByMe
+  // 내가 차단한 계정의 안내에도 더보기를 두어 신고할 수 있게 한다(P11). 그때 시트에는 신고만 있다.
+  const showMore = profile != null && !unavailable && !profile.isMe
 
   // 본문만 분기하고 Modal, 시트, 토스트는 어느 분기에서도 함께 렌더한다(차단 직후 본문이 바뀌어도 토스트가 남는다).
   const screen = (content: ReactNode) => (
@@ -226,17 +234,19 @@ export function SnsProfileScreen({
 
       {profile && (
         <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} ariaLabel="프로필 더보기">
-          <ListItem
-            leading={<Ban className="size-5" />}
-            title="차단하기"
-            onClick={() => {
-              setMoreOpen(false)
-              requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId: profile.publicId })
-            }}
-          />
-          {/* 나를 차단한 계정의 기본 프로필은 차단만 둔다(A7). 신고 항목은 SNS-07에서 붙는다. */}
+          {!profile.blockedByMe && (
+            <ListItem
+              leading={<Ban className="size-5" />}
+              title="차단하기"
+              onClick={() => {
+                setMoreOpen(false)
+                requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId: profile.publicId })
+              }}
+            />
+          )}
+          {/* 나를 차단한 계정의 기본 프로필은 차단과 신고만 둔다(A7, P11). */}
           {/* 팔로우, 차단, 뮤트 요청 중에 뮤트를 보내면 앞 요청의 성공, 실패 처리가 사라져 끝날 때까지 두지 않는다. */}
-          {!profile.blockingMe && !toggle.isPending && (
+          {!profile.blockingMe && !profile.blockedByMe && !toggle.isPending && (
             <ListItem
               leading={<EyeOff className="size-5" />}
               title={profile.mutedByMe ? '뮤트 해제' : '뮤트하기'}
@@ -261,8 +271,31 @@ export function SnsProfileScreen({
               }}
             />
           )}
+          <ListItem
+            leading={<Siren className="size-5" />}
+            title="신고하기"
+            onClick={() => {
+              setMoreOpen(false)
+              requireAuth('snsReport', () => setReportOpen(true), { kind: 'report', publicId: profile.publicId })
+            }}
+          />
         </BottomSheet>
       )}
+      <SnsReportSheet
+        target={
+          profile
+            ? {
+                type: 'SNS_USER',
+                publicId: profile.publicId,
+                nickname: profile.nickname,
+                profileImageUrl: profile.profileImageUrl,
+              }
+            : null
+        }
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        toastAboveActionBar
+      />
 
       {confirm && profile && (
         <Modal

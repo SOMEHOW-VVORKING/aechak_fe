@@ -22,14 +22,26 @@ export type GateFeature =
   | 'block'
   | 'mute'
   | 'report'
+  | 'snsReport'
   | 'feed'
   | 'repost'
   | 'save'
 
 // SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
 // 글쓰기(write)는 SNS 게시물 작성이다(SNS-02 design 6절 10번). feed는 비로그인이 누른 팔로잉 피드 탭이다(SNS-03 A9).
-// repost, save는 게시물 리포스트와 저장이다(SNS-03 design 6절 5번).
-const SNS_FEATURES = new Set<GateFeature>(['follow', 'follows', 'block', 'mute', 'write', 'feed', 'repost', 'save'])
+// repost, save는 게시물 리포스트와 저장이다(SNS-03 design 6절 5번). snsReport는 SNS 게시물과 사용자 신고다(SNS-07).
+// 상품 신고(report)는 로그인 뒤 이어서 하지 않아 SNS 문구를 쓰지 않는다.
+const SNS_FEATURES = new Set<GateFeature>([
+  'follow',
+  'follows',
+  'block',
+  'mute',
+  'write',
+  'feed',
+  'repost',
+  'save',
+  'snsReport',
+])
 
 /** 로그인 뒤 다시 실행할 행동. 게이트가 열린 화면의 경로와 함께 sessionStorage에 남긴다. */
 export interface GateResume {
@@ -52,6 +64,7 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   block: '차단은 로그인한 회원만 이용할 수 있어요.',
   mute: '뮤트는 로그인한 회원만 이용할 수 있어요.',
   report: '신고는 로그인한 회원만 이용할 수 있어요.',
+  snsReport: '신고는 로그인한 회원만 이용할 수 있어요.',
   feed: '팔로잉 피드는 로그인한 회원만 볼 수 있어요.',
   repost: '리포스트는 로그인한 회원만 이용할 수 있어요.',
   save: '저장은 로그인한 회원만 이용할 수 있어요.',

@@ -283,7 +283,10 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(screen.getByRole('button', { name: '차단 해제' })).toBeInTheDocument()
     expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
     expect(screen.queryByText('코코와 삽니다')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /팔로우|팔로잉|더보기|공유/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /팔로우|팔로잉|공유/ })).not.toBeInTheDocument()
+    // 차단한 계정 안내의 더보기에는 신고만 있다(SNS-07 P11).
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getAllByRole('button').map(b => b.textContent)).toEqual(['신고하기'])
     // 서로 팔로우하던 사이였어도 두 방향 팔로우가 지워진다.
     expect(currentSns().follows.filter(r => [r.from, r.to].includes(SNS_COCO) && [r.from, r.to].includes(SNS_ME))).toEqual([])
   })
@@ -368,7 +371,7 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
     await waitFor(() => expect(screen.getByRole('button', { name: '팔로우' })).toBeDisabled())
     await user.click(screen.getByRole('button', { name: '더보기' }))
-    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['차단하기'])
+    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['차단하기', '신고하기'])
 
     release()
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
@@ -441,10 +444,9 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
     expect(await screen.findByText('차단했어요')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '차단 해제' })).toBeInTheDocument()
     await expectBasicProfile('차단러')
-    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
     expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_BLOCKER)).toBe(true)
-    // Modal을 연 더보기가 사라져도 포커스가 body로 떨어지지 않고 뒤로 가기 버튼에 있다.
-    expect(screen.getByRole('button', { name: '뒤로 가기' })).toHaveFocus()
+    // 본문이 바뀌어도 포커스가 body로 떨어지지 않고 신고를 위해 남은 더보기로 돌아온다.
+    expect(screen.getByRole('button', { name: '더보기' })).toHaveFocus()
   })
 
   it('[AC-SNS01-030] 서로 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임, 차단 해제 버튼만 보여준다', async () => {
@@ -455,8 +457,9 @@ describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 �
     // 이미지, 소개글, 펫이 있는 사용자여도 보이지 않고 내가 차단한 계정 안내 문구도 없다.
     expect(screen.queryByText('서로 차단한 사이')).not.toBeInTheDocument()
     expect(screen.queryByText('차단한 계정이에요')).not.toBeInTheDocument()
-    // 더보기에 둘 신고 항목은 SNS-07에서 붙는다.
-    expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
+    // 서로 차단이면 내가 건 차단이 있어 더보기에는 신고만 있다(SNS-07 P11).
+    await userEvent.setup().click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getAllByRole('button').map(b => b.textContent)).toEqual(['신고하기'])
   })
 
   it('[AC-SNS01-024] 서로 차단한 사이에서 차단을 해제해도 상대의 차단이 남아 기본 프로필이 이어진다', async () => {

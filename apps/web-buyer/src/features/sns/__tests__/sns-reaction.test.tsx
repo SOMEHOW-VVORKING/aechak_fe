@@ -472,7 +472,7 @@ describe('비로그인 리포스트와 저장', () => {
 
     await loginAndReturn(guestRouter)
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기'])
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기', '신고하기'])
     await user.click(within(sheet).getByRole('button', { name: '이 계정 뮤트하기' }))
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
     expect(currentSns().mutes.some(r => r.from === SNS_ME && r.to === SNS_MONG)).toBe(true)

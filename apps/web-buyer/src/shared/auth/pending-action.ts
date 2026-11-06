@@ -6,8 +6,9 @@
  * follow, repost, save는 켜기 요청으로 다시 보내고 block, mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다.
  * compose는 대상 없는 글쓰기다(publicId는 빈 문자열). 돌아온 SNS 탭이 작성 화면을 다시 연다(SNS-02 A26).
  * repost, save의 대상은 게시물 publicId다(SNS-03 design 6절 10번).
+ * report는 신고 시트만 다시 열고 자동으로 제출하지 않는다. 대상은 게시물이나 사용자 publicId다(SNS-07 A26).
  */
-export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open' | 'compose' | 'repost' | 'save'
+export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open' | 'compose' | 'repost' | 'save' | 'report'
 
 export interface PendingAction {
   kind: PendingActionKind

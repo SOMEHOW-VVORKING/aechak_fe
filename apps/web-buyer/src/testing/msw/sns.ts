@@ -127,8 +127,18 @@ export interface SnsSeed {
   saves: SnsActRow[]
   /** 이용 제한(RESTRICTED) 사용자. 게시, 수정, 삭제와 팔로우, 차단, 뮤트, 리포스트, 저장의 켜기, 끄기가 403 20013이다 */
   restricted: string[]
+  /** 접수된 SNS 신고(SNS-07). 같은 신고자의 같은 대상은 409다. 리뷰 화면 경로로 한 사용자 신고도 여기에 둔다 */
+  reports: SnsReportRow[]
   /** 첫 페이지 요청 시각. 탐색 피드 7일과 인기 피드 72시간을 여기서 거꾸로 센다 */
   now: string
+}
+
+export interface SnsReportRow {
+  reporter: string
+  targetType: 'SNS_POST' | 'SNS_USER'
+  targetId: string
+  reasonCode: string
+  reasonText: string | null
 }
 
 const rel = (from: string, to: string, createdAt = '2026-10-01T09:00:00'): Relation => ({ from, to, createdAt })
@@ -204,6 +214,7 @@ const DEFAULT_SEED = (): SnsSeed => ({
   reposts: [],
   saves: [],
   restricted: [],
+  reports: [],
   // 픽스처 게시물(10월 21일, 22일)이 탐색 7일과 인기 72시간 안에 든다.
   now: '2026-10-24T09:00:00',
 })
@@ -920,7 +931,46 @@ function mySaves({ request }: { request: Request }) {
   return actPage(rows, query, 'sv', viewer)
 }
 
+export const SNS_REPORTS_URL = `${base}/reports`
+const SNS_REPORT_REASONS = ['SPAM', 'ABUSE', 'INAPPROPRIATE', 'FRAUD', 'OTHER']
+
+// 신고 접수(POST /reports)의 SNS 대상 두 종류. 판정 순서는 sns.yaml SNS-T17 계약 그대로다. 다른 대상(PRODUCT, REVIEW, USER)은
+// 이 핸들러가 받지 않고 넘긴다.
+async function submitReport({ request }: { request: Request }) {
+  const body = (await request.clone().json().catch(() => null)) as {
+    targetType?: string
+    targetId?: string
+    reasonCode?: string
+    reasonText?: string | null
+  } | null
+  if (body?.targetType !== 'SNS_POST' && body?.targetType !== 'SNS_USER') return undefined
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  const { targetType, targetId, reasonCode } = body
+  if (typeof targetId !== 'string' || !SNS_REPORT_REASONS.includes(reasonCode ?? '')) return error(400, 90001)
+  if (body.reasonText != null && body.reasonText.length > 500) return error(400, 90001)
+  const reasonText = body.reasonText?.trim() || null
+  const duplicate = state.reports.some(r => r.reporter === viewer && r.targetType === targetType && r.targetId === targetId)
+  if (targetType === 'SNS_POST') {
+    const row = state.posts.find(p => p.publicId === targetId)
+    if (!row || row.deleted || !USERS[row.author] || has(state.blocks, row.author, viewer)) return error(404, 130400)
+    if (has(state.blocks, viewer, row.author)) return error(403, 130001)
+    if (row.author === viewer) return error(400, 130800)
+    if (reasonCode === 'OTHER' && reasonText == null) return error(400, 130801)
+    if (duplicate) return error(409, 130802)
+  } else {
+    // 사용자 신고는 두 사람 사이의 차단을 보지 않는다(P11).
+    if (!USERS[targetId]) return unavailable()
+    if (targetId === viewer) return error(400, 30200)
+    if (reasonCode === 'OTHER' && reasonText == null) return error(400, 30201)
+    if (duplicate) return error(409, 30202)
+  }
+  state.reports.push({ reporter: viewer, targetType, targetId, reasonCode: reasonCode!, reasonText })
+  return new HttpResponse(null, { status: 201 })
+}
+
 export const snsHandlers = [
+  http.post(SNS_REPORTS_URL, submitReport),
   http.get(SNS_ME_URL, ({ request }) => {
     const viewer = viewerOf(request)
     return viewer == null ? unauthenticated() : HttpResponse.json({ data: profile(viewer, viewer) })

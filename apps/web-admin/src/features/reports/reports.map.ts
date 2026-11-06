@@ -13,7 +13,7 @@ import type { HistoryEntry } from '@aechak/domain'
 
 // 와이어 enum·필드는 이 파일 안에 가둔다(AGENTS 6-2). 화면은 아래 view 타입 어휘만 쓴다.
 //
-// 이 화면이 다루는 열거가 **여섯**이다 — 대상 3 · 상태 3 · 접수 사유 8 · 처리 사유 6 ·
+// 이 화면이 다루는 열거가 **여섯**이다 — 대상 4 · 상태 3 · 접수 사유 8 · 처리 사유 6 ·
 // 제재 조치 5 · 제재 사유 4. 값들은 그대로 서버 필터와 요청 본문으로 되돌아가야 하는 불투명한
 // 코드라 FE 소문자 어휘로 다시 이름 짓지 않고, 타입만 feature 이름으로 다시 내보낸다.
 export type ReportTargetTypeValue = ReportTargetType
@@ -24,11 +24,15 @@ export type ReportDecisionReasonValue = ReportDecisionReason
 export type ReportSanctionActionValue = SanctionAction
 export type ReportSanctionReasonValue = SanctionReasonCode
 
-/** 대상 종류 라벨 3값. 경로의 첫 세그먼트이기도 해서 값 자체가 화면 밖으로 나간다. */
+/**
+ * 대상 종류 라벨 4값. 경로의 첫 세그먼트이기도 해서 값 자체가 화면 밖으로 나간다.
+ * SNS 프로필 사용자 신고는 리뷰 화면의 사용자 신고와 같은 USER로 온다.
+ */
 export const REPORT_TARGET_TYPE_LABELS = {
   PRODUCT: '상품',
   REVIEW: '리뷰',
   USER: '회원',
+  SNS_POST: 'SNS 게시물',
 } satisfies Record<ReportTargetTypeValue, string>
 
 /**
@@ -69,7 +73,7 @@ export const REPORT_REASON_LABELS = {
   SPAM: '스팸/도배',
 } satisfies Record<ReportReasonValue, string>
 
-/** 처리 결정 라벨 3값. */
+/** 처리 결정 라벨 3값. SNS 게시물의 비공개 전환은 `decisionLabel`이 게시물 삭제로 바꿔 그린다. */
 export const REPORT_DECISION_LABELS = {
   DISMISS: '제재 없음',
   HIDE_TARGET: '비공개 전환',
@@ -130,13 +134,25 @@ export const REPORT_SANCTION_ACTIONS = (
 /**
  * 비공개 전환을 걸 수 있는 대상 종류.
  *
- * 서버 `ReportTargetType.hasHidableTarget()`이 **리뷰에서만 참**이다 — 사용자는 숨길 콘텐츠가
- * 아니고, 상품은 노출을 되돌릴 수단이 없다(판매 상태는 셀러가 되돌리고 검수 상태는 검수 큐가
- * 신고 결정을 보지 않고 되돌린다). 리뷰가 아닌 대상에 `HIDE_TARGET`을 보내면 400(140002)이라
+ * 서버 `ReportTargetType.hasHidableTarget()`이 **리뷰와 SNS 게시물에서만 참**이다 — 사용자는 숨길
+ * 콘텐츠가 아니고, 상품은 노출을 되돌릴 수단이 없다(판매 상태는 셀러가 되돌리고 검수 상태는 검수
+ * 큐가 신고 결정을 보지 않고 되돌린다). 그 밖의 대상에 `HIDE_TARGET`을 보내면 400(140002)이라
  * 화면이 선택지를 내주지 않는다.
  */
 export const canHideTarget = (targetType: ReportTargetTypeValue): boolean =>
-  targetType === 'REVIEW'
+  targetType === 'REVIEW' || targetType === 'SNS_POST'
+
+/**
+ * SNS 게시물은 블라인드 상태가 없어 비공개 전환이 운영자 삭제다(작성자가 지운 것과 같이 사라진다).
+ * 계정 제재도 그 게시물을 함께 지운다.
+ */
+export const decisionLabel = (
+  targetType: ReportTargetTypeValue,
+  decision: ReportDecisionValue,
+): string =>
+  targetType === 'SNS_POST' && decision === 'HIDE_TARGET'
+    ? '게시물 삭제'
+    : (REPORT_DECISION_LABELS[decision] ?? decision)
 
 /**
  * 제재와 함께 보낼 수 없는 처리 사유 둘.
@@ -179,9 +195,9 @@ export interface AdminReportRow {
   rowKey: string
   targetType: ReportTargetTypeValue
   reportId: number
-  /** 대상을 다시 여는 식별자. 상품은 ULID, 리뷰·사용자는 내부 번호라 뜻이 종류마다 다르다. */
+  /** 대상을 다시 여는 식별자. 상품은 ULID, SNS 게시물은 publicId, 리뷰와 사용자는 내부 번호라 뜻이 종류마다 다르다. */
   targetKey: string
-  /** 상품명·리뷰 본문. **사용자 신고에는 없다** — 그때는 닉네임이 그 자리를 대신한다. */
+  /** 상품명, 리뷰 본문, SNS 게시물 캡션. **사용자 신고와 지운 SNS 게시물에는 없다.** */
   targetName: string | null
   targetOwnerUserId: number
   /** 탈퇴·삭제된 계정은 비어 온다. */
@@ -218,10 +234,13 @@ export const toReportRow = (wire: AdminReportSummary): AdminReportRow => ({
   decidedAt: wire.decidedAt,
 })
 
-/** 대상 이름이 없는 신고(사용자 신고)는 닉네임으로, 그것도 없으면 종류+식별자로 읽게 한다. */
+/**
+ * 대상 이름이 없는 신고(사용자 신고)는 닉네임으로, 그것도 없으면 종류+식별자로 읽게 한다.
+ * 캡션이 없는 SNS 게시물(지운 게시물)은 닉네임으로 떨어지면 회원 신고로 읽혀 종류+식별자로 그린다.
+ */
 export const targetTitle = (row: AdminReportRow): string =>
   row.targetName ??
-  row.targetOwnerNickname ??
+  (row.targetType === 'SNS_POST' ? null : row.targetOwnerNickname) ??
   `${REPORT_TARGET_TYPE_LABELS[row.targetType] ?? row.targetType} ${row.targetKey}`
 
 /** 이미 내려진 결정. 미처리 신고에는 없다. */
@@ -338,7 +357,7 @@ export function decideErrorMessage(error: unknown): string {
   if (errorCode === ALREADY_DECIDED)
     return '이미 처리된 신고예요. 목록을 다시 불러왔어요.'
   if (errorCode === NOT_HIDABLE)
-    return '리뷰 신고에만 비공개 전환을 걸 수 있어요. 다른 결정을 골라 주세요.'
+    return '리뷰와 SNS 게시물 신고에만 비공개 전환을 걸 수 있어요. 다른 결정을 골라 주세요.'
   if (errorCode != null && SANCTION_MISMATCH.includes(errorCode))
     return '처리 결정과 제재 입력이 서로 맞지 않아요. 결정과 사유, 제재 내용을 다시 확인해 주세요.'
   if (errorCode === OTHER_NEEDS_DETAIL)

@@ -19,6 +19,7 @@ import {
   snsKeys,
   snsPostErrorMessage,
   snsToggleErrorMessage,
+  postReportTarget,
   useDeleteSnsPost,
   useSnsFeed,
   useSnsToggle,
@@ -31,6 +32,7 @@ import { SnsFeedCard } from './SnsFeedCard'
 import { SnsListEnd, SnsListError, SnsRefetchError } from './SnsListEnd'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
 import { SnsResumeReaction } from './SnsReactionButton'
+import { SnsReportSheet } from './SnsReportSheet'
 import { SnsWriteFab } from './SnsWriteFab'
 
 // 빈 상태(P5). 팔로잉 피드만 탐색 탭 이동 버튼을 두고 탐색, 인기는 안내 문구만이다. 디자인이 없어 FE가 먼저 썼다.
@@ -108,6 +110,8 @@ export function SnsFeedScreen({
   const [more, setMore] = useState<{ post: SnsPost; open: boolean } | null>(null)
   const [confirm, setConfirm] = useState<FeedConfirm | null>(null)
   const [deleting, setDeleting] = useState<SnsPost | null>(null)
+  // 신고 시트도 닫히는 동안 마지막 대상을 그린다.
+  const [report, setReport] = useState<{ post: SnsPost; open: boolean } | null>(null)
   // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
   const [resume, setResume] = useState<{ kind: SnsReactionKind; publicId: string } | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
@@ -125,21 +129,22 @@ export function SnsFeedScreen({
 
   // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 행동은 피드를 받은 뒤 꺼낸다. 리포스트, 저장은 확인 없이 한 번
   // 켠다. 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다. 차단, 뮤트는 확인이 더
-  // 필요해 그 카드의 확인 Modal이나 더보기 시트만 다시 연다. 로그인한 피드에 그 카드가 없으면(그사이 볼 수 없게 됐거나 내 글)
-  // 열지 않는다.
+  // 필요해 그 카드의 확인 Modal이나 더보기 시트만 다시 연다. 신고는 신고 시트만 다시 열고 제출하지 않는다. 로그인한 피드에
+  // 그 카드가 없으면(그사이 볼 수 없게 됐거나 내 글) 열지 않는다.
   const items = feed.data
   useEffect(() => {
     if (!loggedIn || !items) return
     const pending = peekPendingAction()
     if (!pending) return
     const { kind, publicId } = pending
-    if (kind !== 'repost' && kind !== 'save' && kind !== 'block' && kind !== 'mute') return
+    if (kind !== 'repost' && kind !== 'save' && kind !== 'block' && kind !== 'mute' && kind !== 'report') return
     takePendingAction(publicId)
     const post = items.find(item => item.post.publicId === publicId)?.post
     if (kind === 'repost' || kind === 'save') {
       if (kind === 'save' || !post?.isMine) setResume({ kind, publicId })
     } else if (post && !post.isMine) {
       if (kind === 'block') setConfirm({ kind: 'block', post })
+      else if (kind === 'report') setReport({ post, open: true })
       else setMore({ post, open: true })
     }
   }, [loggedIn, items])
@@ -329,8 +334,21 @@ export function SnsFeedScreen({
               publicId: more.post.publicId,
             })
           }
+          // 리포스트 카드의 more.post는 원글이라 원글을 신고한다(P8).
+          onReport={() =>
+            gate('snsReport', () => setReport({ post: more.post, open: true }), {
+              kind: 'report',
+              publicId: more.post.publicId,
+            })
+          }
         />
       )}
+      <SnsReportSheet
+        target={report && postReportTarget(report.post)}
+        open={report?.open ?? false}
+        onClose={() => setReport(prev => prev && { ...prev, open: false })}
+        toastAboveActionBar
+      />
 
       {confirm && (
         <Modal

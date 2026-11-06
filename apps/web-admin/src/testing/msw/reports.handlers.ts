@@ -13,7 +13,7 @@ export const ADMIN_REPORTS_URL = `${adminBase}/admin/reports`
 export const ADMIN_REPORT_DETAIL_URL = `${ADMIN_REPORTS_URL}/:targetType/:reportId`
 export const ADMIN_REPORT_DECISION_URL = `${ADMIN_REPORT_DETAIL_URL}/decision`
 
-export type WireReportTargetType = 'PRODUCT' | 'REVIEW' | 'USER'
+export type WireReportTargetType = 'PRODUCT' | 'REVIEW' | 'USER' | 'SNS_POST'
 export type WireReportStatus = 'RECEIVED' | 'DISMISSED' | 'SANCTIONED'
 export type WireReportReason =
   | 'ABUSE'
@@ -214,8 +214,8 @@ function validateDecide(row: AdminReportWire, body: DecideBody | null) {
   if (row.status !== 'RECEIVED') {
     return HttpResponse.json(errorBody(140001, '이미 처리된 신고입니다.'), { status: 409 })
   }
-  // 리뷰만 숨길 수 있다 — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다.
-  if (decision === 'HIDE_TARGET' && row.targetType !== 'REVIEW') {
+  // 리뷰와 SNS 게시물만 숨길 수 있다 — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다.
+  if (decision === 'HIDE_TARGET' && row.targetType !== 'REVIEW' && row.targetType !== 'SNS_POST') {
     return HttpResponse.json(errorBody(140002, '비공개 전환할 수 없는 대상입니다.'), {
       status: 400,
     })
@@ -333,6 +333,8 @@ export const reportHandlers = [
           }
     const decision = body!.decision as WireReportDecision
     found.status = decision === 'DISMISS' ? 'DISMISSED' : 'SANCTIONED'
+    // SNS 게시물의 비공개 전환과 계정 제재는 게시물을 운영자 삭제로 지운다. 지운 게시물의 캡션은 null이다.
+    if (found.targetType === 'SNS_POST' && decision !== 'DISMISS') found.targetName = null
     found.decisionRecord = {
       decision,
       reasonCode: body!.reasonCode as WireReportDecisionReason,

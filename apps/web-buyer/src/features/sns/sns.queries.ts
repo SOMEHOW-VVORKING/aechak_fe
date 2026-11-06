@@ -35,6 +35,7 @@ import {
   repostSnsPost,
   saveSnsPost,
   searchSnsHashtags,
+  submitReport,
   unblockUser,
   unfollowUser,
   unmuteUser,
@@ -694,4 +695,91 @@ export function useSnsPostGrid(profile: SnsProfile | undefined, tab: SnsProfileT
   })
   useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
   return query
+}
+
+// ── SNS-07 신고 ─────────────────────────────────────────────────────────────
+
+/** 신고 대상. 게시물은 게시물 publicId(리포스트 카드는 원글), 사용자는 사용자 publicId다 */
+export interface SnsReportTarget {
+  type: 'SNS_POST' | 'SNS_USER'
+  publicId: string
+  nickname: string
+  profileImageUrl: string | null
+  /** 게시물 대상 카드에 한 줄로 보이는 캡션 */
+  caption?: string | null
+}
+
+export type SnsReportReason = 'SPAM' | 'ABUSE' | 'INAPPROPRIATE' | 'FRAUD' | 'OTHER'
+
+export const postReportTarget = (post: SnsPost): SnsReportTarget => ({
+  type: 'SNS_POST',
+  publicId: post.publicId,
+  nickname: post.author.nickname,
+  profileImageUrl: post.author.profileImageUrl,
+  caption: post.caption,
+})
+
+/** 이미 신고한 대상(409). 응답을 받지 못하고 다시 보낸 신고도 이 코드라 접수 확인으로 본다(P6, P15) */
+const ALREADY_REPORTED = [130802, 30202]
+
+export const isAlreadyReported = (error: unknown) => ALREADY_REPORTED.includes(snsErrorCode(error) ?? -1)
+
+/** 다시 보내도 같은 답인 거절. 볼 수 없는 게시물, 차단한 작성자, 볼 수 없는 계정, 본인 게시물, 자기 자신이다 */
+const REPORT_FINAL = [SNS_POST_UNAVAILABLE, SNS_BLOCKED_BY_ME, SNS_UNAVAILABLE, 130800, 30200]
+
+export const isFinalReportError = (error: unknown) => REPORT_FINAL.includes(snsErrorCode(error) ?? -1)
+
+/**
+ * 신고 접수(POST /reports). 공백만 적은 상세 내용은 비운 것으로 보내고 서버도 그렇게 본다(P5).
+ * 게시물이 사라졌거나(130400) 작성자를 차단했으면(130001) 상세를 다시 읽어 화면을 그 안내로 바꾸고 받아 둔 피드는 다음에 열 때
+ * 다시 읽게 낡은 것으로만 표시한다. 계정을 볼 수 없으면(130000) 그 프로필을 다시 읽는다.
+ */
+export function useSubmitSnsReport() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      target,
+      reasonCode,
+      reasonText,
+    }: {
+      target: SnsReportTarget
+      reasonCode: SnsReportReason
+      reasonText: string
+    }) => {
+      const text = reasonText.trim()
+      await submitReport({
+        targetType: target.type,
+        targetId: target.publicId,
+        reasonCode,
+        reasonText: text === '' ? null : text,
+      })
+    },
+    onError: (error, { target }) => {
+      const code = snsErrorCode(error)
+      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.publicId) })
+        void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
+      } else if (code === SNS_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.profile(target.publicId) })
+      }
+    },
+  })
+}
+
+// 신고 실패 문구. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7).
+const REPORT_ERROR_COPY: Record<number, string> = {
+  130802: '이미 신고한 게시물이에요',
+  30202: '이미 신고한 계정이에요',
+  [SNS_POST_UNAVAILABLE]: '삭제된 게시물이에요',
+  [SNS_BLOCKED_BY_ME]: '차단한 계정의 게시물이에요',
+  130800: '내 게시물은 신고할 수 없어요',
+  130801: '기타 사유는 상세 내용을 적어 주세요',
+  30201: '기타 사유는 상세 내용을 적어 주세요',
+  [SNS_UNAVAILABLE]: '볼 수 없는 계정이에요',
+  30200: '나 자신은 신고할 수 없어요',
+}
+
+export function snsReportErrorMessage(error: unknown): string {
+  const code = snsErrorCode(error)
+  return (code != null && REPORT_ERROR_COPY[code]) || '신고를 접수하지 못했어요. 다시 시도해 주세요'
 }

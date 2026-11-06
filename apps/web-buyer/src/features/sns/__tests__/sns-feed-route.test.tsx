@@ -424,14 +424,14 @@ describe('/sns/feed 카드', () => {
     expect(within(mine).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '수정', '삭제'])
   })
 
-  it('[AC-SNS03-050] 다른 사람 글 더보기에는 신고 없이 링크 복사, 뮤트, 차단이 있고 뮤트하면 그 사람의 글이 피드에서 빠진다', async () => {
+  it('[AC-SNS03-050] 다른 사람 글 더보기에는 링크 복사, 뮤트, 차단, 신고가 있고 뮤트하면 그 사람의 글이 피드에서 빠진다', async () => {
     const user = userEvent.setup()
     renderAt('/sns/feed?tab=explore')
 
     await screen.findByRole('button', { name: '몽이아빠님의 게시물 보기' })
     await user.click(within(cardOf('몽이아빠')).getByRole('button', { name: '더보기' }))
     const sheet = screen.getByRole('dialog', { name: '게시물 더보기' })
-    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기'])
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기', '신고하기'])
 
     await user.click(within(sheet).getByRole('button', { name: '이 계정 뮤트하기' }))
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()

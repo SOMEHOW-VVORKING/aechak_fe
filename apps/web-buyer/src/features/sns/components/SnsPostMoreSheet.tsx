@@ -1,4 +1,4 @@
-import { Ban, EyeOff, Link2, Pencil, Trash2 } from 'lucide-react'
+import { Ban, EyeOff, Link2, Pencil, Siren, Trash2 } from 'lucide-react'
 import { BottomSheet, ListItem } from '@aechak/design-system/web'
 import type { SnsPost } from '../sns.queries'
 
@@ -14,10 +14,12 @@ interface SnsPostMoreSheetProps {
   /** 뮤트한 작성자면 뮤트 해제, 아니면 뮤트다. 무엇을 할지는 부르는 화면이 정한다 */
   onMute: () => void
   onBlock: () => void
+  /** 신고 시트를 연다. 리포스트 카드도 원글을 신고한다(P8) */
+  onReport: () => void
 }
 
-// 게시물 더보기 시트(b7-st-2 2-B). 상세와 피드 카드가 같은 항목을 연다(design 6절 4번). 수정과 삭제는 본인 게시물에만
-// 있고 신고는 SNS-07 전까지 숨긴다(P12). 항목을 누르면 시트를 먼저 닫고 동작을 부른다.
+// 게시물 더보기 시트(b7-st-2 2-B). 상세와 피드 카드가 같은 항목을 연다(design 6절 4번). 수정과 삭제는 본인 게시물에만,
+// 뮤트, 차단, 신고는 다른 사람 게시물에만 있다. 항목을 누르면 시트를 먼저 닫고 동작을 부른다.
 export function SnsPostMoreSheet({
   post,
   open,
@@ -28,6 +30,7 @@ export function SnsPostMoreSheet({
   onDelete,
   onMute,
   onBlock,
+  onReport,
 }: SnsPostMoreSheetProps) {
   const item = (action: () => void) => () => {
     onClose()
@@ -50,6 +53,7 @@ export function SnsPostMoreSheet({
             onClick={item(onMute)}
           />
           <ListItem leading={<Ban className="size-5" />} title="차단하기" onClick={item(onBlock)} />
+          <ListItem leading={<Siren className="size-5" />} title="신고하기" onClick={item(onReport)} />
         </>
       )}
     </BottomSheet>
