@@ -32,6 +32,10 @@ export const SNS_COMMENTS_URL = `${base}/sns/posts/:publicId/comments`
 export const SNS_COMMENT_URL = `${base}/sns/comments/:commentPublicId`
 export const SNS_COMMENT_LIKE_URL = `${base}/sns/comments/:commentPublicId/like`
 export const SNS_COMMENT_LIKERS_URL = `${base}/sns/comments/:commentPublicId/likers`
+export const SNS_SEARCH_POSTS_URL = `${base}/sns/search/posts`
+export const SNS_SEARCH_USERS_URL = `${base}/sns/search/users`
+export const SNS_SEARCH_HASHTAGS_URL = `${base}/sns/search/hashtags`
+export const SNS_HASHTAG_POSTS_URL = `${base}/sns/hashtags/:name/posts`
 
 export const SNS_ME = '01JB7XQ2M4K9TR3N5W8YZC6DHF'
 export const SNS_COCO = '01JABCDEF0123456789ABCDEFG'
@@ -1360,6 +1364,152 @@ function deleteComment({ params, request }: { params: Record<string, unknown>; r
   return new HttpResponse(null, { status: 204 })
 }
 
+// ── SNS-06 검색과 해시태그 게시물 목록 ─────────────────────────────────────────────────────
+// 계약(sns.yaml 0.5.0 SNS-06 초안)의 매칭, 정렬, 수 규칙을 흉내 낸다. 커서는 `태그|정렬:검색어|-|다음 위치`이고 정렬이나 검색어가
+// 다르거나 모양이 깨졌으면 400 90002다. 인기순 점수는 인기 피드처럼 리포스트 수 x 3이고 기간 제한이 없다.
+
+const SEARCH_KEYWORD_MAX = 100
+const SEARCH_USER_KEYWORD_MAX = 12
+
+/** 검색어 정규화. 앞뒤 공백을 지우고 NFC로 바꾼 뒤 앞의 # 하나를 뗀다(P2) */
+const normalizeKeyword = (raw: string) => raw.trim().normalize('NFC').replace(/^#/, '')
+
+const searchScore = (row: SnsPostRow) => state.reposts.filter(r => r.post === row.publicId).length * 3
+
+function sortPosts(rows: SnsPostRow[], sort: string) {
+  const newer = (a: SnsPostRow, b: SnsPostRow) =>
+    newerFirst({ time: a.createdAt, publicId: a.publicId }, { time: b.createdAt, publicId: b.publicId })
+  return [...rows].sort(sort === 'LATEST' ? newer : (a, b) => searchScore(b) - searchScore(a) || newer(a, b))
+}
+
+/** keyword와 sort를 검사하고 첫 페이지 여부와 시작 위치를 돌려준다. 실패하면 error */
+function searchQuery(request: Request, tag: string, scope: string) {
+  const url = new URL(request.url)
+  const sort = url.searchParams.get('sort') ?? 'POPULAR'
+  if (sort !== 'POPULAR' && sort !== 'LATEST') return { error: error(400, 90001) }
+  const query = listQuery(request, tag, `${sort}:${scope}`)
+  if (query.error) return { error: query.error }
+  const start = query.cursor == null ? 0 : Number(query.cursor.last)
+  if (!Number.isInteger(start) || start < 0) return { error: error(400, 90002) }
+  return { sort, size: query.size, start, cursorOf: (next: number) => `${tag}|${sort}:${scope}|-|${next}` }
+}
+
+function searchKeyword(request: Request) {
+  const raw = new URL(request.url).searchParams.get('keyword')
+  if (raw == null || raw.length > SEARCH_KEYWORD_MAX) return { error: error(400, 90001), keyword: '' }
+  return { error: null, keyword: normalizeKeyword(raw) }
+}
+
+function offsetPage<T>(rows: T[], start: number, size: number, cursorOf: (next: number) => string, toItem: (row: T) => unknown) {
+  const slice = rows.slice(start, start + size)
+  const hasNext = start + size < rows.length
+  return { items: slice.map(toItem), nextCursor: hasNext ? cursorOf(start + size) : null, hasNext }
+}
+
+// 게시물 검색. 검색어를 공백으로 나눈 단어가 모두 캡션이나 그 글의 해시태그에 들어 있어야 한다(P4). 닉네임으로는 찾지 않는다.
+// totalCount는 지운 글과 탈퇴한 작성자의 글만 뺀 수이고 items는 보는 사람의 차단과 뮤트까지 뺀다(P10).
+function searchPosts({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  const parsed = searchKeyword(request)
+  if (parsed.error) return parsed.error
+  const query = searchQuery(request, 'sp', parsed.keyword)
+  if (query.error) return query.error
+  const words = parsed.keyword.toLowerCase().split(/\s+/).filter(Boolean)
+  const matched =
+    words.length === 0
+      ? []
+      : state.posts.filter(
+          row =>
+            shownTo(row, null) &&
+            words.every(
+              word => (row.caption ?? '').toLowerCase().includes(word) || row.hashtags.some(tag => tag.includes(word)),
+            ),
+        )
+  const visible = sortPosts(
+    matched.filter(row => shownTo(row, viewer)),
+    query.sort,
+  )
+  return HttpResponse.json({
+    data: {
+      ...offsetPage(visible, query.start, query.size, query.cursorOf, row => feedItem(row, viewer)),
+      totalCount: query.start === 0 ? matched.length : null,
+    },
+  })
+}
+
+// 계정 검색. 공백을 뺀 검색어로 닉네임을 찾고 같은 닉네임, 검색어로 시작하는 닉네임, 나머지 순, 같은 묶음은 팔로워 수 순이다(P8).
+// 내가 차단한 사용자는 빠지고 나를 차단한 사용자는 내가 차단했어도 기본 프로필로 나온다(A7, A24). 뮤트한 사용자와 본인은 나온다.
+function searchUsers({ request }: { request: Request }) {
+  const viewer = viewerOf(request)
+  const parsed = searchKeyword(request)
+  if (parsed.error) return parsed.error
+  const keyword = parsed.keyword.replace(/\s+/g, '')
+  const query = searchQuery(request, 'su', keyword)
+  if (query.error) return query.error
+  const followers = (id: string) => state.follows.filter(r => r.to === id).length
+  const rank = (nickname: string) => (nickname === keyword ? 0 : nickname.startsWith(keyword) ? 1 : 2)
+  const ids =
+    keyword === '' || keyword.length > SEARCH_USER_KEYWORD_MAX
+      ? []
+      : Object.keys(USERS)
+          .filter(id => USERS[id]!.nickname.includes(keyword))
+          .filter(id => viewer == null || !has(state.blocks, viewer, id) || has(state.blocks, id, viewer))
+          .sort(
+            (a, b) =>
+              rank(USERS[a]!.nickname) - rank(USERS[b]!.nickname) || followers(b) - followers(a) || compare(a, b),
+          )
+  const item = (id: string) => {
+    const user = USERS[id]!
+    const blockingMe = viewer != null && id !== viewer && has(state.blocks, id, viewer)
+    return {
+      publicId: id,
+      nickname: user.nickname,
+      profileImageUrl: blockingMe ? null : user.profileImageUrl,
+      petSummary: blockingMe || !user.pets[0] ? null : { breedLabel: user.pets[0].breedLabel, activePetCount: user.pets.length },
+      followerCount: blockingMe ? null : followers(id),
+      isMe: id === viewer,
+      following: viewer != null && id !== viewer && !blockingMe && has(state.follows, viewer, id),
+      blockingMe,
+    }
+  }
+  return HttpResponse.json({ data: offsetPage(ids, query.start, query.size, query.cursorOf, item) })
+}
+
+// 해시태그 검색. 공백을 뺀 검색어를 해시태그 표기로 정규화해 이름에 든 태그를 게시글 수 순, 같으면 이름 순으로 준다(P11).
+function searchHashtagSegment({ request }: { request: Request }) {
+  const parsed = searchKeyword(request)
+  if (parsed.error) return parsed.error
+  const keyword = normalizeHashtag(parsed.keyword.replace(/\s+/g, ''))
+  const query = searchQuery(request, 'sh', keyword)
+  if (query.error) return query.error
+  const tags =
+    keyword === '' || keyword.length > HASHTAG_NAME_MAX
+      ? []
+      : Object.entries(hashtagCounts())
+          .filter(([name, count]) => count > 0 && name.includes(keyword))
+          .map(([name, postCount]) => ({ name, postCount }))
+          .sort((a, b) => b.postCount - a.postCount || compare(a.name, b.name))
+  return HttpResponse.json({ data: offsetPage(tags, query.start, query.size, query.cursorOf, tag => tag) })
+}
+
+// 해시태그 게시물 목록. 그 태그와 정확히 같은 태그가 달린 원글이다. 없는 태그는 게시글 수 0과 빈 목록이다(P11).
+function hashtagPosts({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  const name = normalizeHashtag(String(params['name']))
+  const query = searchQuery(request, 'hp', name)
+  if (query.error) return query.error
+  const rows = sortPosts(
+    state.posts.filter(row => row.hashtags.includes(name) && shownTo(row, viewer)),
+    query.sort,
+  )
+  return HttpResponse.json({
+    data: {
+      hashtag: { name, postCount: hashtagCounts()[name] ?? 0 },
+      ...offsetPage(rows, query.start, query.size, query.cursorOf, row => feedItem(row, viewer)),
+    },
+  })
+}
+
 export const snsHandlers = [
   http.post(SNS_REPORTS_URL, submitReport),
   http.get(SNS_ME_URL, ({ request }) => {
@@ -1409,4 +1559,8 @@ export const snsHandlers = [
   http.post(SNS_COMMENT_LIKE_URL, like('comment', true)),
   http.delete(SNS_COMMENT_LIKE_URL, like('comment', false)),
   http.get(SNS_COMMENT_LIKERS_URL, likers('comment')),
+  http.get(SNS_SEARCH_POSTS_URL, searchPosts),
+  http.get(SNS_SEARCH_USERS_URL, searchUsers),
+  http.get(SNS_SEARCH_HASHTAGS_URL, searchHashtagSegment),
+  http.get(SNS_HASHTAG_POSTS_URL, hashtagPosts),
 ]
