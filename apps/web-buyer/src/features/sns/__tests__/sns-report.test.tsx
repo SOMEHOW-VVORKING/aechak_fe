@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -28,6 +28,7 @@ import {
   snsRelation,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
+import { snsKeys, useSubmitSnsReport } from '../sns.queries'
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
@@ -614,5 +615,32 @@ describe('로그인 뒤 댓글 신고 다시 열기', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('댓글을 찾을 수 없어요')
     expect(screen.queryByRole('dialog', { name: '신고하기' })).toBeNull()
+  })
+})
+
+describe('댓글 신고 거절 뒤 캐시', () => {
+  it('[AC-SNS-RPT-014] 게시물이 사라져(130400) 댓글 신고가 거절되면 받아 둔 피드를 다시 읽지 않고 낡은 것으로만 표시한다', async () => {
+    server.use(http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 130400, message: '' }, { status: 404 })))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const feedKey = [...snsKeys.feeds, 'following']
+    queryClient.setQueryData(feedKey, { pages: [], pageParams: [] })
+    const { result } = renderHook(() => useSubmitSnsReport(), {
+      wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+    })
+
+    result.current.mutate({
+      target: {
+        type: 'SNS_COMMENT',
+        publicId: SNS_COMMENT_MONG,
+        nickname: '몽이아빠',
+        profileImageUrl: null,
+        postPublicId: SNS_POST_COCO,
+      },
+      reasonCode: 'SPAM',
+      reasonText: '',
+    })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(queryClient.getQueryState(feedKey)?.isInvalidated).toBe(true)
   })
 })

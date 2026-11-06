@@ -863,6 +863,7 @@ export function useSubmitSnsReport() {
         })
         if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
           void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.postPublicId) })
+          void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
         }
       } else if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
         void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.publicId) })
