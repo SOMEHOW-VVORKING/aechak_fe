@@ -15352,7 +15352,7 @@ export function useGetFollowingsSuspense<
 }
 
 /**
- * 이미 팔로우 중이어도 201. 404 130000(볼 수 없음), 403 130001(내가 차단), 400 130300(본인).
+ * 이미 팔로우 중이어도 201. 404 130000(볼 수 없음), 403 130001(내가 차단), 400 130300(본인). 1분 30건과 1일 300건을 넘으면 429 90012.
  * @summary 팔로우(멱등 켜기)
  */
 export const followUser = (publicId: string, signal?: AbortSignal) => {
@@ -15420,7 +15420,7 @@ export const useFollowUser = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 팔로우하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * 팔로우하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012.
  * @summary 언팔로우(멱등 끄기)
  */
 export const unfollowUser = (publicId: string) => {
@@ -15488,7 +15488,7 @@ export const useUnfollowUser = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 이미 차단 중이어도 201. 두 방향 팔로우를 지운다. 404 130000(볼 수 없음), 400 130100(본인).
+ * 이미 차단 중이어도 201. 두 방향 팔로우를 지운다. 404 130000(볼 수 없음), 400 130100(본인). 1분 30건을 넘으면 429 90012.
  * @summary 차단(멱등 켜기)
  */
 export const blockUser = (publicId: string, signal?: AbortSignal) => {
@@ -15556,7 +15556,7 @@ export const useBlockUser = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 차단 때 지운 팔로우는 되살리지 않는다. 차단하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * 차단 때 지운 팔로우는 되살리지 않는다. 차단하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012.
  * @summary 차단 해제(멱등 끄기)
  */
 export const unblockUser = (publicId: string) => {
@@ -15624,7 +15624,7 @@ export const useUnblockUser = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 이미 뮤트 중이어도 201. 팔로우와 수는 바꾸지 않는다. 404 130000(볼 수 없음), 400 130200(본인).
+ * 이미 뮤트 중이어도 201. 팔로우와 수는 바꾸지 않는다. 404 130000(볼 수 없음), 400 130200(본인). 1분 30건을 넘으면 429 90012.
  * @summary 뮤트(멱등 켜기)
  */
 export const muteUser = (publicId: string, signal?: AbortSignal) => {
@@ -15692,7 +15692,7 @@ export const useMuteUser = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 뮤트하지 않은 상태여도 204. 없는 publicId만 404 130000이다.
+ * 뮤트하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012.
  * @summary 뮤트 해제(멱등 끄기)
  */
 export const unmuteUser = (publicId: string) => {
