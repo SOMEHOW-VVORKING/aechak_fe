@@ -498,3 +498,23 @@ test('[AC-SNS01-E2E-014] 서로 차단한 프로필은 기본 프로필과 차�
   await expect(page.getByRole('dialog', { name: '차단을 해제할까요?' })).toBeVisible()
   expect(calls.toggles).toEqual([])
 })
+
+test('[AC-SNS01-E2E-015] 팔로우가 429 90012면 잠시 후 다시 시도해 달라는 토스트가 뜨고 버튼은 팔로우 그대로다', async ({
+  page,
+}) => {
+  await stubSns(page)
+  // 나중에 등록한 라우트가 먼저 확인된다. 팔로우 켜기만 빈도 제한 응답으로 바꾼다.
+  await page.route(`${API}/sns/users/*/follow`, route =>
+    route.request().method() === 'POST'
+      ? fulfill(route, 429, { errorCode: 90012, message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' })
+      : fulfill(route, 204),
+  )
+  await page.goto(profileUrl)
+
+  await page.getByRole('button', { name: '팔로우', exact: true }).click()
+
+  await expect(page.getByText('잠시 후 다시 시도해 주세요')).toBeVisible()
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '128 팔로워' })).toBeVisible()
+  await shot(page, 'sns-18-follow-rate-limited')
+})

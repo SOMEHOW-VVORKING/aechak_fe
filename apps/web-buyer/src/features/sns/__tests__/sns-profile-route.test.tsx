@@ -9,6 +9,7 @@ import {
   SNS_BLOCKER,
   SNS_BLOCK_URL,
   SNS_COCO,
+  SNS_FOLLOW_URL,
   SNS_ME,
   SNS_ME_URL,
   SNS_PROFILE_URL,
@@ -265,6 +266,24 @@ describe('/sns/users/$publicId 팔로우', () => {
     await user.click(await screen.findByRole('button', { name: '차단하기' }))
     expect(await screen.findByText(/차단은 로그인한 회원만 이용할 수 있어요/)).toBeInTheDocument()
     expect(screen.queryByText('차단할까요?')).not.toBeInTheDocument()
+  })
+})
+
+describe('/sns/users/$publicId 요청 빈도 제한', () => {
+  it('[A27] 팔로우가 429 90012면 잠시 후 다시 시도해 달라는 안내가 뜨고 버튼과 수가 그대로다', async () => {
+    server.use(
+      http.post(SNS_FOLLOW_URL, () =>
+        HttpResponse.json({ errorCode: 90012, message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' }, { status: 429 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '팔로우' }))
+
+    expect(await screen.findByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeInTheDocument()
+    expect(stat('팔로워')).toBe('2')
   })
 })
 
