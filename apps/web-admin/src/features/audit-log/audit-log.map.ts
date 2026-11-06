@@ -18,7 +18,7 @@ export type AuditTargetType = AdminAuditTargetType
 export type AuditResult = AdminAuditResult
 
 /**
- * 액션 한글 라벨 17값.
+ * 액션 한글 라벨 18값.
  *
  * 열에는 서버 `actionLabel`을 그대로 쓴다 — FE 표로 덮으면 서버가 열거를 늘린 날 빈 칸이 되거나
  * 틀린 한글이 찍힌다. 이 표가 있어야 하는 이유는 **필터 옵션**이다: 옵션은 데이터가 오기 전에
@@ -35,6 +35,7 @@ export const AUDIT_ACTION_LABELS = {
   CLAIM_INTERVENED: '클레임 개입',
   MEMBER_SANCTIONED: '회원 이용 제한',
   MEMBER_SANCTION_RELEASED: '회원 이용 제한 해제',
+  MEMBER_PROFILE_RESET: '회원 프로필 초기화',
   INQUIRY_ANSWERED: '문의 답변',
   REVIEW_BLINDED: '리뷰 블라인드',
   REVIEW_UNBLINDED: '리뷰 블라인드 해제',

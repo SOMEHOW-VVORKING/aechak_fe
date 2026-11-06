@@ -4011,7 +4011,7 @@ paths:
     get:
       summary: "어드민 회원 상세"
       description: >-
-        가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다.
+        가입일·상태, 현재 프로필 이미지와 소개글, 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다.
         404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다**
         (관리자는 이 경로의 대상이 아니다).
       operationId: "getAdminMemberDetail"
@@ -4093,6 +4093,28 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ReleaseSanctionRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/members/{userId}/profile/reset:
+    post:
+      summary: "어드민 회원 프로필 초기화"
+      description: >-
+        신고된 회원의 프로필 이미지를 기본 이미지로 되돌리고 소개글을 비운다. 닉네임은 바꾸지 않는다.
+        제재가 아니라 계정 상태와 제재 이력은 그대로이고 회원은 그 뒤에 다시 바꿀 수 있다.
+        제재 중인 계정도 대상이다. 이미 비어 있어도 204다. 본문은 없다.
+        404 errorCode 30000 — 없는 계정과 관리자 계정.
+        409 errorCode 30024 — 프로필이 없는 계정(온보딩 전, 탈퇴).
+      operationId: "resetAdminMemberProfile"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         "204":
           description: "No Content"
@@ -9943,10 +9965,18 @@ components:
           description: "조치 시각(오프셋 없는 LocalDateTime)"
     AdminMemberDetailData:
       type: object
-      required: [member, sanctions]
+      required: [member, profileImageUrl, bio, sanctions]
       properties:
         member:
           $ref: "#/components/schemas/AdminMemberSummary"
+        profileImageUrl:
+          type: string
+          nullable: true
+          description: "현재 프로필 이미지 주소. 기본 이미지이거나 프로필이 없는 계정이면 null"
+        bio:
+          type: string
+          nullable: true
+          description: "현재 소개글. 비었거나 프로필이 없는 계정이면 null"
         sanctions:
           type: array
           items:
@@ -12531,12 +12561,12 @@ components:
     AdminAuditAction:
       type: string
       description: >-
-        감사되는 운영 액션 17종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'·
+        감사되는 운영 액션 18종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'·
         '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
       enum:
         [SELLER_APPLICATION_APPROVED, SELLER_APPLICATION_REJECTED, ADMIN_PROMOTED, ADMIN_DEMOTED,
          PRODUCT_INSPECTION_APPROVED, PRODUCT_INSPECTION_REJECTED, CLAIM_INTERVENED,
-         MEMBER_SANCTIONED, MEMBER_SANCTION_RELEASED, INQUIRY_ANSWERED, REVIEW_BLINDED,
+         MEMBER_SANCTIONED, MEMBER_SANCTION_RELEASED, MEMBER_PROFILE_RESET, INQUIRY_ANSWERED, REVIEW_BLINDED,
          REVIEW_UNBLINDED, REVIEW_DELETED, ORDER_DISPATCH_NUDGED, NOTICE_UPDATED,
          NOTICE_PUBLISHED, NOTICE_UNPUBLISHED]
     AdminAuditTargetType:
