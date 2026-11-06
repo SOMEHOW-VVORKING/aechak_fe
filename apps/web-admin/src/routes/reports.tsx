@@ -6,6 +6,7 @@ import {
   CheckCircle,
   Clock,
   Image,
+  MessageCircle,
   MessageSquare,
   Newspaper,
   User,
@@ -76,7 +77,7 @@ import { usePendingWriteExitGuard } from '@/shared/hooks/usePendingWriteExitGuar
 // 저장되어 상세로 다시 읽히는 기록일 뿐이라, "안내를 보냅니다"로 적으면 거짓이 된다.
 // ③ 대상/작성자 검색창 — 서버에 keyword 파라미터가 없다. 메모리 검색으로 남기면 불러온 페이지
 // 안에서만 걸러지고 운영자는 걸러진 전체를 봤다고 읽는다(2절 금지의 동작 안 하는 필터).
-// 대상 종류는 채팅이 빠져 넷이다(서버 열거가 PRODUCT, REVIEW, USER, SNS_POST다).
+// 대상 종류는 채팅이 빠져 다섯이다(서버 열거가 PRODUCT, REVIEW, USER, SNS_POST, SNS_COMMENT다).
 export const Route = createFileRoute('/reports')({
   component: ReportsPage,
 })
@@ -86,6 +87,11 @@ const targetTypeMeta: Record<ReportTargetTypeValue, StatusMeta> = {
   REVIEW: { label: REPORT_TARGET_TYPE_LABELS.REVIEW, variant: 'neutral', icon: MessageSquare },
   USER: { label: REPORT_TARGET_TYPE_LABELS.USER, variant: 'neutral', icon: User },
   SNS_POST: { label: REPORT_TARGET_TYPE_LABELS.SNS_POST, variant: 'neutral', icon: Newspaper },
+  SNS_COMMENT: {
+    label: REPORT_TARGET_TYPE_LABELS.SNS_COMMENT,
+    variant: 'neutral',
+    icon: MessageCircle,
+  },
 }
 
 /**
@@ -179,8 +185,33 @@ const snsPostDecisionModalMeta: DecisionModalMeta = {
   },
 }
 
+// SNS 댓글도 둘 다 댓글을 운영자 삭제로 지운다. 대댓글이 있으면 삭제된 댓글 안내로 남는다.
+const snsCommentDecisionModalMeta: DecisionModalMeta = {
+  ...decisionModalMeta,
+  HIDE_TARGET: {
+    title: '댓글을 삭제할까요?',
+    description:
+      '작성자가 지운 것과 같이 내용이 사라지고 되돌릴 수 없어요. 작성자 계정에는 제재가 걸리지 않아요.',
+    confirmLabel: '댓글 삭제',
+    confirmVariant: 'danger',
+  },
+  SANCTION_ACCOUNT: {
+    ...decisionModalMeta.SANCTION_ACCOUNT,
+    description:
+      '대상자 계정에 고른 제재가 걸리고 댓글도 삭제돼요. 삭제한 댓글과 영구 정지, 탈퇴 처리는 되돌릴 수 없어요.',
+  },
+}
+
 const decisionModalMetaFor = (targetType: ReportTargetTypeValue) =>
-  targetType === 'SNS_POST' ? snsPostDecisionModalMeta : decisionModalMeta
+  targetType === 'SNS_POST'
+    ? snsPostDecisionModalMeta
+    : targetType === 'SNS_COMMENT'
+      ? snsCommentDecisionModalMeta
+      : decisionModalMeta
+
+/** 운영자 삭제로 지워지는 SNS 대상의 이름. 그 밖의 대상은 null이다. */
+const snsDeletedNounFor = (targetType: ReportTargetTypeValue | undefined) =>
+  targetType === 'SNS_POST' ? '게시물' : targetType === 'SNS_COMMENT' ? '댓글' : null
 
 function makeReportColumns(
   onOpenDetail: (row: AdminReportRow) => void,
@@ -292,7 +323,7 @@ function ReportsPage() {
   }
 
   const hidable = report != null && canHideTarget(report.report.targetType)
-  const snsPost = report?.report.targetType === 'SNS_POST'
+  const snsNoun = snsDeletedNounFor(report?.report.targetType)
   const modalMeta = decisionModalMetaFor(report?.report.targetType ?? 'REVIEW')
   const decided = report?.decision ?? null
   const reasonOptions = decisionReasonsFor(decision).map(value => ({
@@ -522,18 +553,20 @@ function ReportsPage() {
                       {
                         value: 'HIDE_TARGET',
                         label: decisionLabel(report.report.targetType, 'HIDE_TARGET'),
-                        // 리뷰와 SNS 게시물이 아닌 대상에 보내면 400(140002)이다 — 고를 수 없게 두고 이유를 적는다.
-                        caption: snsPost
-                          ? '게시물만 운영자 삭제'
+                        // 리뷰와 SNS 게시물, 댓글이 아닌 대상에 보내면 400(140002)이다 — 고를 수 없게 두고 이유를 적는다.
+                        caption: snsNoun
+                          ? `${snsNoun}만 운영자 삭제`
                           : hidable
                             ? '대상만 비노출'
-                            : '리뷰와 SNS 게시물 신고에만 걸 수 있어요',
+                            : '리뷰와 SNS 게시물, 댓글 신고에만 걸 수 있어요',
                         disabled: !hidable,
                       },
                       {
                         value: 'SANCTION_ACCOUNT',
                         label: REPORT_DECISION_LABELS.SANCTION_ACCOUNT,
-                        caption: snsPost ? '대상자 계정에 제재하고 게시물 삭제' : '대상자 계정에 제재',
+                        caption: snsNoun
+                          ? `대상자 계정에 제재하고 ${snsNoun} 삭제`
+                          : '대상자 계정에 제재',
                       },
                     ]}
                   />
