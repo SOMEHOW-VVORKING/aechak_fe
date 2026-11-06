@@ -66,6 +66,8 @@ const POST: SnsPostDetailResult = {
   isMine: false,
   following: false,
   mutedByMe: false,
+  reposted: false,
+  saved: false,
 }
 
 const MY_POST: SnsPostDetailResult = {
@@ -277,7 +279,9 @@ test('[AC-SNS02-E2E-001] 비로그인으로 공유 링크를 열면 사진, 캡�
   // 게시일(2026-10-22) 기준 나이다.
   await expect(page.getByText('골든리트리버 / 5살')).toBeVisible()
   await expect(page.getByText('2026.10.22 오후 2:14')).toBeVisible()
-  await expect(page.getByText(/저장/)).toHaveCount(0)
+  // 리포스트 수는 버튼에 함께 그리고 저장 버튼은 수 없이 아이콘만 그린다(A23).
+  await expect(page.getByRole('button', { name: /^리포스트/ })).toHaveAccessibleName('리포스트 3')
+  await expect(page.getByRole('button', { name: '저장' })).toHaveText('')
   await shot(page, 'sns-post-01-detail-guest')
 
   await page.getByRole('button', { name: '팔로우', exact: true }).click()

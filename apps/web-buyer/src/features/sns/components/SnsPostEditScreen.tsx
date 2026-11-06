@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useBlocker, useNavigate } from '@tanstack/react-router'
 import { FileX, Hash } from 'lucide-react'
-import { Alert, Button, MobileScreen, Skeleton } from '@aechak/design-system/web'
+import { Alert, Button, MobileScreen, Modal, Skeleton } from '@aechak/design-system/web'
 import { LoginGate, useSessionState } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
@@ -24,7 +24,8 @@ interface EditForm {
 }
 
 // 게시물 수정. 캡션과 해시태그만 고치고 사진과 영상은 바꿀 수 없게 그린다(P8). 본인 게시물이 아니면 상세로 보낸다.
-// 비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 시트를 연다(design 6절 10번).
+// 비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 시트를 연다(design 6절 10번). 고친 내용이 있으면 나가기 전에
+// 작성 화면과 같은 확인을 거친다.
 export function SnsPostEditScreen({ publicId }: { publicId: string }) {
   const navigate = useNavigate()
   const goBack = useSafeBack({ to: '/sns/posts/$publicId', params: { publicId } })
@@ -43,6 +44,9 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
   // 다른 기기에서 지운 게시물을 저장하면 130400이 온다(AC-SNS02-028).
   const [deleted, setDeleted] = useState(false)
   const [toast, setToast] = useState({ open: false, message: '' })
+  // 나가기 확인의 응답. true면 머물고 false면 나간다(useBlocker의 shouldBlockFn이 기다린다).
+  const [leaveConfirm, setLeaveConfirm] = useState<((stay: boolean) => void) | null>(null)
+  const leavingRef = useRef(false)
 
   // 폼은 처음 받은 상세로 한 번만 채운다. 다시 채우면 저장 뒤 다시 읽는 사이 입력이 되돌아간다(AGENTS.md 7절).
   useEffect(() => {
@@ -64,6 +68,34 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
   const hasMedia = post != null && (post.photoUrls.length > 0 || post.video != null)
   // 텍스트 게시물의 캡션을 모두 지우면 내용이 없는 게시물이 되어 저장할 수 없다(P1).
   const canSave = form != null && !update.isPending && !refreshFailed && (text !== '' || hasMedia)
+  // 저장된 게시물과 캡션이나 해시태그가 다를 때만 묻는다. 삭제된 게시물은 저장할 곳이 없어 묻지 않는다.
+  const dirty =
+    !unavailable &&
+    form != null &&
+    post != null &&
+    (text !== (post.caption ?? '') || form.hashtags.join('\n') !== post.hashtags.join('\n'))
+
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const savingRef = useRef(false)
+  savingRef.current = update.isPending
+
+  // 블로커는 함수가 바뀔 때마다 다시 등록되므로 ref만 읽는 고정 함수로 둔다.
+  const shouldBlockFn = useCallback(({ next }: { next: { pathname: string } }) => {
+    // 세션 만료와 온보딩 이동은 막지 않는다. 막으면 인증이 끊긴 화면에 남는다.
+    if (leavingRef.current || next.pathname.startsWith('/onboarding')) return false
+    // 저장 중에는 묻지 않고 머문다. 나가도 저장은 서버에서 끝나 저장되지 않는다는 안내가 거짓이 된다.
+    if (savingRef.current) return true
+    if (!dirtyRef.current) return false
+    return new Promise<boolean>(resolve => setLeaveConfirm(() => resolve))
+  }, [])
+  const enableBeforeUnload = useCallback(() => dirtyRef.current, [])
+  useBlocker({ shouldBlockFn, enableBeforeUnload })
+
+  const answerLeave = (stay: boolean) => {
+    leaveConfirm?.(stay)
+    setLeaveConfirm(null)
+  }
 
   const save = () => {
     if (!form || !canSave) return
@@ -71,7 +103,10 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
     update.mutate(
       { caption: text === '' ? null : text, hashtags: form.hashtags },
       {
-        onSuccess: goBack,
+        onSuccess: () => {
+          leavingRef.current = true
+          goBack()
+        },
         onError: e => {
           if (snsErrorCode(e) === SNS_POST_UNAVAILABLE) {
             setDeleted(true)
@@ -87,22 +122,40 @@ export function SnsPostEditScreen({ publicId }: { publicId: string }) {
     )
   }
 
+  // 나가기 확인은 해시태그 모달을 연 채 이동해도 보여야 한다. 블로커가 이 응답을 기다린다.
+  const leaveModal = leaveConfirm && (
+    <Modal
+      open
+      onClose={() => answerLeave(true)}
+      title="수정을 취소할까요?"
+      description="수정한 내용은 저장되지 않아요."
+      confirmLabel="나가기"
+      cancelLabel="계속 수정"
+      confirmVariant="danger"
+      onConfirm={() => answerLeave(false)}
+    />
+  )
+
   if (pickerOpen && form) {
     return (
-      <SnsHashtagPicker
-        initial={form.hashtags}
-        onCancel={closePicker}
-        onDone={hashtags => {
-          setForm({ ...form, hashtags })
-          closePicker()
-        }}
-      />
+      <>
+        <SnsHashtagPicker
+          initial={form.hashtags}
+          onCancel={closePicker}
+          onDone={hashtags => {
+            setForm({ ...form, hashtags })
+            closePicker()
+          }}
+        />
+        {leaveModal}
+      </>
     )
   }
 
   const screen = (content: ReactNode, actions?: ReactNode) => (
     <MobileScreen header={<BackAppBar onBack={goBack} title="게시물 수정" actions={actions} />}>
       {content}
+      {leaveModal}
       <LoginGate open={guest} feature="write" onClose={goBack} resume={{ kind: 'open', publicId: '' }} />
       <AppToast
         open={toast.open}

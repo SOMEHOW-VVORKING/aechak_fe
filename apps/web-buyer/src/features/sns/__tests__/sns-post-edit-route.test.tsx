@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setAccessToken } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
+  SNS_ME,
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_POST_MINE_PHOTO,
@@ -159,6 +160,19 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     expect(caption).toHaveValue('욕설 욕설')
   })
 
+  it('이용 제한 계정이 저장하면 이용 제한 안내가 나오고 입력이 남는다(403 20013)', async () => {
+    seedSns({ restricted: [SNS_ME] })
+    const user = userEvent.setup()
+    renderAt(editPath(SNS_POST_MINE))
+    const caption = await screen.findByLabelText('캡션')
+
+    await user.clear(caption)
+    await user.type(caption, '고친 글')
+    await user.click(saveButton())
+    expect(await screen.findByText('이용이 제한된 계정이라 이 기능을 사용할 수 없어요')).toBeInTheDocument()
+    expect(caption).toHaveValue('고친 글')
+  })
+
   it('저장 중에는 해시태그 칩을 뺄 수 없다', async () => {
     let release = () => {}
     const held = new Promise<void>(resolve => {
@@ -179,6 +193,43 @@ describe('/sns/posts/$publicId/edit 수정', () => {
     release()
     await waitFor(() => expect(router.state.location.pathname).toBe(`/sns/posts/${SNS_POST_MINE_PHOTO}`))
     expect(patchBodies).toEqual([{ caption: '보리 생일', hashtags: ['생일'] }])
+  })
+
+  it('고친 내용이 있으면 뒤로 가기와 다른 화면 이동이 취소 확인을 거치고 계속 수정하면 입력이 남는다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt(editPath(SNS_POST_MINE_PHOTO))
+    const caption = await screen.findByLabelText('캡션')
+    await user.type(caption, ' 축하해')
+
+    await user.click(screen.getByRole('button', { name: '뒤로 가기' }))
+    const modal = await screen.findByRole('dialog', { name: '수정을 취소할까요?' })
+    expect(modal).toHaveTextContent('수정한 내용은 저장되지 않아요.')
+    await user.click(within(modal).getByRole('button', { name: '계속 수정' }))
+    expect(router.state.location.pathname).toBe(editPath(SNS_POST_MINE_PHOTO))
+    expect(screen.getByLabelText('캡션')).toHaveValue('보리 생일 축하해')
+
+    // 메모리 히스토리는 뒤로 가기에 블로커를 돌리지 않아 다른 화면으로의 이동으로 확인한다(작성 화면 테스트와 같다).
+    void router.navigate({ to: '/market' })
+    await user.click(await screen.findByRole('button', { name: '나가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/market'))
+    expect(patchBodies).toHaveLength(0)
+  })
+
+  it('해시태그만 고쳐도 취소 확인을 거치고 고친 것이 없으면 확인 없이 나간다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt(editPath(SNS_POST_MINE_PHOTO))
+    await screen.findByLabelText('캡션')
+    await user.click(screen.getByRole('button', { name: '#생일 빼기' }))
+    void router.navigate({ to: '/market' })
+    expect(await screen.findByText('수정을 취소할까요?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '계속 수정' }))
+
+    cleanup()
+    const clean = renderAt(editPath(SNS_POST_MINE_PHOTO))
+    await screen.findByLabelText('캡션')
+    await act(() => clean.navigate({ to: '/market' }))
+    expect(clean.state.location.pathname).toBe('/market')
+    expect(screen.queryByText('수정을 취소할까요?')).not.toBeInTheDocument()
   })
 
   it('본인 게시물이 아니면 수정 화면 대신 상세로 보낸다', async () => {
@@ -271,5 +322,18 @@ describe('/sns/posts/$publicId 내 게시물 더보기', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/sns'))
     expect(screen.queryByText('삭제하지 못했어요. 다시 시도해 주세요')).not.toBeInTheDocument()
+  })
+
+  it('이용 제한 계정이 지우면 이용 제한 안내가 나오고 상세에 머문다(403 20013)', async () => {
+    seedSns({ restricted: [SNS_ME] })
+    const user = userEvent.setup()
+    const router = renderAt(`/sns/posts/${SNS_POST_MINE}`)
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '삭제' }))
+    await user.click(within(screen.getByRole('dialog', { name: '게시물을 삭제할까요?' })).getByRole('button', { name: '삭제' }))
+
+    expect(await screen.findByText('이용이 제한된 계정이라 이 기능을 사용할 수 없어요')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe(`/sns/posts/${SNS_POST_MINE}`)
+    expect(currentSns().posts.find(p => p.publicId === SNS_POST_MINE)?.deleted).toBe(false)
   })
 })

@@ -19,6 +19,7 @@ import {
 } from '../sns.queries'
 import { petSummaryLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
+import { SnsRefetchError } from './SnsListEnd'
 
 const DEBOUNCE_MS = 300
 
@@ -160,6 +161,10 @@ export function FollowListScreen({
         </ul>
         {list.hasNextPage && (
           <div className="px-4 pt-2">
+            {/* 다음 페이지가 실패하면 받은 행은 두고 더보기 위에 알린다. 더보기가 다시 시도다. */}
+            {list.isFetchNextPageError && (
+              <p className="pb-2 text-center text-body-sm text-text-secondary">다음 목록을 불러오지 못했어요</p>
+            )}
             <Button
               variant="secondary"
               fullWidth
@@ -178,8 +183,8 @@ export function FollowListScreen({
     <div className="flex flex-col pb-6">
       <Tabs
         tabs={[
-          { key: 'followers', label: '팔로워', badge: counts.followers },
-          { key: 'followings', label: '팔로잉', badge: counts.followings },
+          { key: 'followers', label: '팔로워', badge: counts.followers?.toLocaleString('ko-KR') },
+          { key: 'followings', label: '팔로잉', badge: counts.followings?.toLocaleString('ko-KR') },
         ]}
         activeKey={tab}
         onSelect={key => onTabChange(key as FollowDirection)}
@@ -188,6 +193,10 @@ export function FollowListScreen({
       <div className="p-4">
         <SearchInput value={keyword} onChange={setKeyword} placeholder="닉네임 검색" aria-label="닉네임 검색" />
       </div>
+      {/* 다시 읽기가 실패하면 받아 둔 행은 두고 위에 알린다. 팔로우 버튼은 잠그지 않는다(AC-SNS01-026). */}
+      {list.isRefetchError && (
+        <SnsRefetchError message="목록을 다시 불러오지 못했어요." onRetry={() => void list.refetch()} />
+      )}
       {body}
     </div>,
   )

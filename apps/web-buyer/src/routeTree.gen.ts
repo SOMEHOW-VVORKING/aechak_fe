@@ -19,6 +19,7 @@ import { Route as SearchIndexRouteImport } from './routes/search/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as SnsMeRouteImport } from './routes/sns/me'
+import { Route as SnsFeedRouteImport } from './routes/sns/feed'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings/notifications'
 import { Route as SettingsInquiryRouteImport } from './routes/settings/inquiry'
@@ -107,6 +108,11 @@ const TabsIndexRoute = TabsIndexRouteImport.update({
 const SnsMeRoute = SnsMeRouteImport.update({
   id: '/sns/me',
   path: '/sns/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsFeedRoute = SnsFeedRouteImport.update({
+  id: '/sns/feed',
+  path: '/sns/feed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
@@ -341,6 +347,7 @@ export interface FileRoutesByFullPath {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/orders/': typeof OrdersIndexRoute
   '/search/': typeof SearchIndexRoute
@@ -391,6 +398,7 @@ export interface FileRoutesByTo {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/': typeof TabsIndexRoute
   '/orders': typeof OrdersIndexRoute
@@ -444,6 +452,7 @@ export interface FileRoutesById {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/_tabs/': typeof TabsIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -498,6 +507,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/orders/'
     | '/search/'
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/'
     | '/orders'
@@ -600,6 +611,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/_tabs/'
     | '/orders/'
@@ -649,6 +661,7 @@ export interface RootRouteChildren {
   SettingsInquiryRoute: typeof SettingsInquiryRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SnsFeedRoute: typeof SnsFeedRoute
   SnsMeRoute: typeof SnsMeRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
   SearchIndexRoute: typeof SearchIndexRoute
@@ -741,6 +754,13 @@ declare module '@tanstack/react-router' {
       path: '/sns/me'
       fullPath: '/sns/me'
       preLoaderRoute: typeof SnsMeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/feed': {
+      id: '/sns/feed'
+      path: '/sns/feed'
+      fullPath: '/sns/feed'
+      preLoaderRoute: typeof SnsFeedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/privacy': {
@@ -1070,6 +1090,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsInquiryRoute: SettingsInquiryRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SnsFeedRoute: SnsFeedRoute,
   SnsMeRoute: SnsMeRoute,
   OrdersIndexRoute: OrdersIndexRoute,
   SearchIndexRoute: SearchIndexRoute,

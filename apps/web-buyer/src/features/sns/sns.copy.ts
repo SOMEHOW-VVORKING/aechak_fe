@@ -20,8 +20,7 @@ export const RELATION_CONFIRM: Record<
     kind: 'block',
     on: true,
     title: '차단할까요?',
-    description: nickname =>
-      `${nickname}님은 회원님의 게시물과 프로필을 볼 수 없고 서로 팔로우가 해제돼요.`,
+    description: nickname => `${nickname}님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.`,
     confirmLabel: '차단',
     danger: true,
     done: '차단했어요',
@@ -31,7 +30,7 @@ export const RELATION_CONFIRM: Record<
     on: false,
     title: '차단을 해제할까요?',
     description: nickname =>
-      `${nickname}님이 회원님의 게시물과 프로필을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.`,
+      `${nickname}님과 서로의 게시물을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.`,
     confirmLabel: '해제',
     danger: false,
     done: '차단을 해제했어요',

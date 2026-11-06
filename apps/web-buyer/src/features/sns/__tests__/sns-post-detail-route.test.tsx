@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -90,6 +90,22 @@ describe('/sns/posts/$publicId 게시물 영역', () => {
     ])
   })
 
+  it('[AC-SNS02-009] 사진이 여러 장이면 아래 점이 넘긴 위치의 장을 표시한다', async () => {
+    renderAt(postPath(SNS_POST_COCO))
+
+    const photos = await screen.findAllByRole('img', { name: /^사진/ })
+    const strip = photos[0]!.parentElement!
+    const dots = () =>
+      Array.from(strip.nextElementSibling?.children ?? []).map(dot => dot.classList.contains('bg-surface-inverse'))
+    expect(dots()).toEqual([true, false])
+
+    // jsdom은 레이아웃이 없어 칸 폭과 가로 위치를 직접 준다.
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 400 })
+    strip.scrollLeft = 400
+    fireEvent.scroll(strip)
+    expect(dots()).toEqual([false, true])
+  })
+
   it('[AC-SNS02-016] 캡션 없는 사진 게시물은 캡션 자리 없이 미디어와 해시태그만 보인다', async () => {
     renderAt(postPath(SNS_POST_NO_CAPTION))
 
@@ -133,14 +149,15 @@ describe('/sns/posts/$publicId 게시물 영역', () => {
     expect(screen.queryByText(/골든리트리버|말티즈 \//)).not.toBeInTheDocument()
   })
 
-  it('[AC-SNS02-018] 좋아요, 댓글, 리포스트 수가 보이고 저장 수는 작성자에게도 보이지 않는다', async () => {
+  it('[AC-SNS02-018][AC-SNS03-020] 좋아요, 댓글, 리포스트 수가 보이고 저장 수는 작성자에게도 보이지 않는다', async () => {
     renderAt(postPath(SNS_POST_MINE))
 
     expect(await screen.findByText('리포스트')).toBeInTheDocument()
     expect([count('좋아요'), count('댓글'), count('리포스트')]).toEqual(['0', '0', '0'])
-    expect(screen.queryByText(/저장/)).not.toBeInTheDocument()
-    // 액션 바에서 누를 수 있는 것은 공유뿐이다(G-C2).
-    expect(screen.queryByRole('button', { name: /좋아요|댓글|리포스트/ })).not.toBeInTheDocument()
+    // 저장 버튼은 아이콘만 그린다.
+    expect(screen.getByRole('button', { name: '저장' }).textContent).toBe('')
+    // 좋아요와 댓글 버튼은 SNS-04가 붙인다(G-C2).
+    expect(screen.queryByRole('button', { name: /좋아요|댓글/ })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS02-024] 수정한 게시물에는 수정됨 표시가 붙는다', async () => {
@@ -222,13 +239,13 @@ describe('/sns/posts/$publicId 팔로우, 더보기, 공유', () => {
     expect(await screen.findByRole('button', { name: '팔로우' })).toBeInTheDocument()
   })
 
-  it('[AC-SNS02-026] 다른 사람 게시물 더보기에는 링크 복사, 뮤트, 차단이 있고 수정, 삭제, 신고가 없다', async () => {
+  it('[AC-SNS02-026] 다른 사람 게시물 더보기에는 링크 복사, 뮤트, 차단, 신고가 있고 수정, 삭제가 없다', async () => {
     const user = userEvent.setup()
     renderAt(postPath(SNS_POST_COCO))
 
     await user.click(await screen.findByRole('button', { name: '더보기' }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '뮤트하기', '차단하기'])
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기', '신고하기'])
   })
 
   it('[AC-SNS02-029] 링크 복사를 누르면 상세 주소를 복사하고 토스트를 보여준다', async () => {
@@ -258,7 +275,7 @@ describe('/sns/posts/$publicId 팔로우, 더보기, 공유', () => {
     renderAt(postPath(SNS_POST_COCO))
 
     await user.click(await screen.findByRole('button', { name: '더보기' }))
-    await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
+    await user.click(await screen.findByRole('button', { name: '이 계정 뮤트하기' }))
     expect(await screen.findByText('뮤트한 계정의 게시물이에요')).toBeInTheDocument()
     expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
 
@@ -360,7 +377,7 @@ describe('/sns/posts/$publicId 비로그인', () => {
     await user.click(screen.getByRole('button', { name: '둘러보기 계속하기' }))
 
     for (const [item, copy] of [
-      ['뮤트하기', /뮤트는 로그인한 회원만/],
+      ['이 계정 뮤트하기', /뮤트는 로그인한 회원만/],
       ['차단하기', /차단은 로그인한 회원만/],
     ] as const) {
       await user.click(screen.getByRole('button', { name: '더보기' }))
@@ -420,7 +437,7 @@ describe('/sns/posts/$publicId 로그인 뒤 다시 실행(A26)', () => {
       ),
     )
     seedSns({ viewer: SNS_ME, ...seed })
-    return renderAt('/login/complete?status=ACTIVE')
+    return renderAt('/login/complete?status=ACTIVE&isNew=false')
   }
 
   const pressFollow = async (user: ReturnType<typeof userEvent.setup>) => {

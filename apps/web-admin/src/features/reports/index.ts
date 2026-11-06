@@ -13,6 +13,7 @@ export {
 } from './reports.queries'
 export {
   canHideTarget,
+  decisionLabel,
   decideErrorMessage,
   decisionReasonsFor,
   detailErrorMessage,

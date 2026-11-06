@@ -47,7 +47,9 @@ export function HashtagChips({
               aria-label={`#${tag} 빼기`}
               disabled={disabled}
               onClick={() => onRemove(tag)}
-              className="flex size-5 items-center justify-center rounded-full disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-focus-ring"
+              // 보이는 원(20px)은 두고 누르는 자리만 사방 10px씩 넓혀 40px로 둔다. 칩 밖으로는 칩 사이 간격(8px)보다 덜
+              // 나가 이웃 칩과 버튼의 누르는 자리와 겹치지 않는다.
+              className="relative flex size-5 items-center justify-center rounded-full before:absolute before:-inset-2.5 before:content-[''] disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-focus-ring"
             >
               <X className="size-3.5" />
             </button>
@@ -155,7 +157,13 @@ export function SnsHashtagPicker({
             className="min-w-0 flex-1 bg-transparent text-body text-text-primary outline-none placeholder:text-text-placeholder"
           />
           {input !== '' && (
-            <button type="button" aria-label="입력 지우기" onClick={() => setInput('')} className="text-icon-muted">
+            // 누르는 자리를 40px로 두고 아이콘은 전과 같은 자리에 오게 오른쪽 여백만큼 당긴다.
+            <button
+              type="button"
+              aria-label="입력 지우기"
+              onClick={() => setInput('')}
+              className="-mr-3 flex size-10 flex-none items-center justify-center text-icon-muted"
+            >
               <X className="size-[18px]" />
             </button>
           )}

@@ -30,6 +30,21 @@ export function postDate(createdAt: string): Date {
   return new Date(year!, month! - 1, day!)
 }
 
+/**
+ * 피드 카드의 상대 시각. createdAt은 오프셋 없는 KST라 KST로 읽어 지금과 뺀다(기기 시간대로 해석하지 않는다).
+ * 일주일이 지나면 날짜를 쓴다.
+ */
+export function relativeTimeLabel(createdAt: string, now = Date.now()): string {
+  const minutes = Math.floor((now - Date.parse(`${createdAt}+09:00`)) / 60_000)
+  if (minutes < 1) return '방금 전'
+  if (minutes < 60) return `${minutes}분 전`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}시간 전`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}일 전`
+  return createdAt.slice(0, 10).replaceAll('-', '.')
+}
+
 /** 상세의 게시 시각. `2026.10.22 오후 2:14` */
 export function postDateLabel(createdAt: string): string {
   const [date = '', time = ''] = createdAt.split('T')

@@ -58,7 +58,7 @@ function completeLogin(viewerSeed: Parameters<typeof seedSns>[0] = {}, status = 
     ),
   )
   seedSns({ viewer: SNS_ME, ...viewerSeed })
-  return renderAt(`/login/complete?status=${status}`)
+  return renderAt(`/login/complete?status=${status}&isNew=${status === 'PENDING_ONBOARDING'}`)
 }
 
 const pressFollow = async (user: ReturnType<typeof userEvent.setup>) => {

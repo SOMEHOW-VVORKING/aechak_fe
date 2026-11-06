@@ -13,6 +13,8 @@ import {
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { relationDateLabel } from '../sns.format'
+import { SnsRefetchError } from './SnsListEnd'
+import { SnsReportSheet } from './SnsReportSheet'
 
 const TAB_COPY: Record<
   RelationKind,
@@ -20,7 +22,7 @@ const TAB_COPY: Record<
 > = {
   blocks: {
     label: '차단',
-    note: '차단한 계정은 회원님의 게시물/프로필을 볼 수 없고 서로 팔로우가 해제돼요.',
+    note: '차단한 계정과는 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.',
     empty: '차단한 계정이 없어요',
     action: '차단 해제',
     sub: item => `차단 / ${relationDateLabel(item.createdAt)}`,
@@ -37,7 +39,7 @@ const TAB_COPY: Record<
 
 // 차단/뮤트 관리(b7-st-8). 들어오면 두 목록의 첫 페이지를 함께 불러 탭 수를 채운다.
 // 행을 눌러도 프로필로 가지 않는다(H2). 상대가 나중에 나를 차단하면 그 프로필이 기본 프로필(blockingMe)로 바뀌어
-// 차단 사실이 드러나기 때문이다.
+// 차단 사실이 드러나기 때문이다. 그래서 차단한 계정의 신고는 프로필이 아니라 이 목록의 행에서 연다(P11).
 export function SnsRelationsScreen() {
   const goBack = useSafeBack({ to: '/mypage' })
   const lists: Record<RelationKind, ReturnType<typeof useRelationList>> = {
@@ -48,6 +50,8 @@ export function SnsRelationsScreen() {
   const [tab, setTab] = useState<RelationKind>('blocks')
   // 확인 Modal의 타겟은 라우트(이 화면)가 소유한다.
   const [target, setTarget] = useState<{ kind: RelationKind; item: SnsRelationItem } | null>(null)
+  // 신고 시트는 닫히는 동안에도 마지막 행을 그린다.
+  const [report, setReport] = useState<{ item: SnsRelationItem; open: boolean } | null>(null)
   const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -81,7 +85,7 @@ export function SnsRelationsScreen() {
         tabs={(['blocks', 'mutes'] as const).map(key => ({
           key,
           label: TAB_COPY[key].label,
-          badge: lists[key].data?.totalCount,
+          badge: lists[key].data?.totalCount.toLocaleString('ko-KR'),
         }))}
         activeKey={tab}
         onSelect={key => setTab(key as RelationKind)}
@@ -97,6 +101,10 @@ export function SnsRelationsScreen() {
       </p>
       <div className="border-t border-border-subtle" />
 
+      {/* 다시 읽기가 실패하면 받아 둔 행은 두고 위에 알린다. 해제 버튼은 잠그지 않는다(AC-SNS01-026). */}
+      {list.isRefetchError && (
+        <SnsRefetchError message="목록을 다시 불러오지 못했어요." onRetry={() => void list.refetch()} />
+      )}
       {list.isPending ? (
         <div className="flex flex-col gap-3 p-4">
           <Skeleton className="h-12" />
@@ -125,6 +133,16 @@ export function SnsRelationsScreen() {
                   <p className="truncate text-body font-medium text-text-primary">{item.nickname}</p>
                   <p className="truncate text-caption text-text-tertiary">{copy.sub(item)}</p>
                 </div>
+                {tab === 'blocks' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`${item.nickname} 신고`}
+                    onClick={() => setReport({ item, open: true })}
+                  >
+                    신고
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
@@ -138,6 +156,10 @@ export function SnsRelationsScreen() {
           </ul>
           {list.hasNextPage && (
             <div className="px-4 pt-2">
+              {/* 다음 페이지가 실패하면 받은 행은 두고 더보기 위에 알린다. 더보기가 다시 시도다. */}
+              {list.isFetchNextPageError && (
+                <p className="pb-2 text-center text-body-sm text-text-secondary">다음 목록을 불러오지 못했어요</p>
+              )}
               <Button
                 variant="secondary"
                 fullWidth
@@ -162,6 +184,18 @@ export function SnsRelationsScreen() {
           loading={toggle.isPending}
         />
       )}
+      <SnsReportSheet
+        target={
+          report && {
+            type: 'SNS_USER',
+            publicId: report.item.publicId,
+            nickname: report.item.nickname,
+            profileImageUrl: report.item.profileImageUrl,
+          }
+        }
+        open={report?.open ?? false}
+        onClose={() => setReport(prev => prev && { ...prev, open: false })}
+      />
       <AppToast
         open={toast.open}
         message={toast.message}

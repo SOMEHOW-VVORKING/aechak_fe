@@ -1,20 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import {
-  Ban,
-  EyeOff,
-  FileX,
-  Heart,
-  Link2,
-  MessageCircle,
-  MoreHorizontal,
-  PawPrint,
-  Pencil,
-  Repeat2,
-  Share2,
-  Trash2,
-} from 'lucide-react'
-import { Alert, Avatar, BottomSheet, Button, ListItem, MobileScreen, Modal, Skeleton } from '@aechak/design-system/web'
+import { Ban, EyeOff, FileX, Heart, MessageCircle, MoreHorizontal, PawPrint, Share2 } from 'lucide-react'
+import { Alert, Avatar, Button, MobileScreen, Modal, Skeleton } from '@aechak/design-system/web'
 import { LoginGate, takePendingAction, useIsLoggedIn, useLoginGate } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
@@ -25,15 +12,21 @@ import {
   SNS_POST_NOT_MINE,
   SNS_POST_UNAVAILABLE,
   snsErrorCode,
+  snsPostErrorMessage,
   snsToggleErrorMessage,
+  postReportTarget,
   useDeleteSnsPost,
   useSnsPost,
   useSnsToggle,
   type SnsPost,
+  type SnsReactionKind,
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { petTagLabel, postDate, postDateLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
+import { SnsPostMoreSheet } from './SnsPostMoreSheet'
+import { SnsReactionButton, SnsResumeReaction } from './SnsReactionButton'
+import { SnsReportSheet } from './SnsReportSheet'
 
 interface ToastState {
   open: boolean
@@ -44,8 +37,8 @@ interface ToastState {
 /** 상세 확인 Modal. 차단은 확인 뒤 상세를 닫고, 뮤트 해제는 확인 뒤 상세에 머문다 */
 type PostConfirm = 'block' | 'unmute'
 
-// 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 세 수와 공유만 그린다. 좋아요, 댓글,
-// 리포스트, 저장 버튼은 그 API를 만드는 SNS-03, SNS-04 FE가 붙인다(G-C2). 신고는 SNS-07 전까지 숨긴다.
+// 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 좋아요와 댓글 수, 리포스트와 저장 버튼(SNS-03),
+// 공유를 그린다. 좋아요와 댓글 버튼은 그 API를 만드는 SNS-04 FE가 붙인다(G-C2). 신고는 더보기 시트에서 연다(SNS-07).
 // author는 카드나 프로필에서 들어와 작성자를 알 때만 온다. 내가 차단한 작성자의 게시물(403 130001)은 응답에
 // 작성자가 없어서 이 값이 있을 때만 프로필 이동을 보여준다(G4).
 export function SnsPostDetailScreen({ publicId, author }: { publicId: string; author?: string }) {
@@ -54,13 +47,16 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const { data: post, error, isPending, refetch } = useSnsPost(publicId)
   const toggle = useSnsToggle()
   const mutateToggle = toggle.mutate
-  const remove = useDeleteSnsPost(publicId)
+  const remove = useDeleteSnsPost()
   const { gateOpen, gateFeature, gateResume, requireAuth, closeGate } = useLoginGate()
   const loggedIn = useIsLoggedIn()
   const [moreOpen, setMoreOpen] = useState(false)
   // 확인 Modal의 타겟은 화면이 소유하고 Modal은 자체 mutation을 만들지 않는다(AGENTS.md 4절).
   const [confirm, setConfirm] = useState<PostConfirm | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
+  const [resume, setResume] = useState<SnsReactionKind | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
@@ -76,6 +72,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   // 로그인 뒤 다시 실행(A26, design 6절 11번). 상세에서 남긴 행동은 게시물 publicId로 꺼낸다. 실패 응답에는
   // 작성자가 없어 작성자 publicId로 남기면 꺼낼 수 없고 나중에 그 프로필에서 확인 없이 팔로우가 나간다.
   // 볼 수 없게 됐으면 실행하지 않고 안내만 남긴다. 그 작성자 본인으로 로그인했으면 실행하지 않고 버린다.
+  // 리포스트와 저장은 확인 없이 한 번 켠다. 저장은 내 글도 되고(AC-SNS03-032) 리포스트는 내 글이면 버린다.
+  // 신고는 사유가 필요해 시트만 다시 열고 제출하지 않는다(A26).
   useEffect(() => {
     if (!loggedIn) return
     if (unavailable || blockedByMe) {
@@ -84,7 +82,9 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
     }
     if (!post) return
     const pending = takePendingAction(publicId)
-    if (!pending || post.isMine) return
+    if (!pending) return
+    if (pending.kind === 'save' || (pending.kind === 'repost' && !post.isMine)) setResume(pending.kind)
+    if (post.isMine) return
     if (pending.kind === 'follow') {
       mutateToggle(
         { kind: 'follow', publicId: post.author.publicId, on: true },
@@ -92,6 +92,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
+    else if (pending.kind === 'report') setReportOpen(true)
   }, [publicId, loggedIn, unavailable, blockedByMe, post, mutateToggle])
 
   const postUrl = `${window.location.origin}/sns/posts/${publicId}`
@@ -166,7 +167,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
 
   // 삭제는 확인을 거친다. 다른 기기에서 이미 지운 게시물도 지운 것으로 보고 이전 화면으로 간다(AC-SNS02-027).
   const handleDelete = () =>
-    remove.mutate(undefined, {
+    remove.mutate(publicId, {
       onSuccess: () => {
         setDeleteConfirm(false)
         goBack()
@@ -174,7 +175,9 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       onError: e => {
         setDeleteConfirm(false)
         showToast(
-          snsErrorCode(e) === SNS_POST_NOT_MINE ? '본인 게시물만 삭제할 수 있어요' : '삭제하지 못했어요. 다시 시도해 주세요',
+          snsErrorCode(e) === SNS_POST_NOT_MINE
+            ? '본인 게시물만 삭제할 수 있어요'
+            : snsPostErrorMessage(e, '삭제하지 못했어요. 다시 시도해 주세요'),
           'error',
         )
       },
@@ -211,59 +214,25 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       {content}
 
       {post && (
-        <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)}>
-          <ListItem
-            leading={<Link2 className="size-5" />}
-            title="링크 복사"
-            onClick={() => {
-              setMoreOpen(false)
-              void copyLink()
-            }}
-          />
-          {/* 수정과 삭제는 본인 게시물에만 있고 신고는 SNS-07 전까지 숨긴다(P12). */}
-          {post.isMine && !refreshFailed && (
-            <>
-              <ListItem
-                leading={<Pencil className="size-5" />}
-                title="수정"
-                onClick={() => {
-                  setMoreOpen(false)
-                  void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId } })
-                }}
-              />
-              <ListItem
-                leading={<Trash2 className="size-5" />}
-                title="삭제"
-                onClick={() => {
-                  setMoreOpen(false)
-                  setDeleteConfirm(true)
-                }}
-              />
-            </>
-          )}
-          {!post.isMine && !refreshFailed && (
-            <>
-              <ListItem
-                leading={<EyeOff className="size-5" />}
-                title={post.mutedByMe ? '뮤트 해제' : '뮤트하기'}
-                onClick={() => {
-                  setMoreOpen(false)
-                  if (post.mutedByMe) setConfirm('unmute')
-                  else mute(post)
-                }}
-              />
-              <ListItem
-                leading={<Ban className="size-5" />}
-                title="차단하기"
-                onClick={() => {
-                  setMoreOpen(false)
-                  requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId })
-                }}
-              />
-            </>
-          )}
-        </BottomSheet>
+        <SnsPostMoreSheet
+          post={post}
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          // 팔로우, 차단, 뮤트 요청 중에 뮤트를 보내면 앞 요청의 성공, 실패 처리가 사라진다. 끝날 때까지 링크 복사만 둔다.
+          locked={refreshFailed || toggle.isPending}
+          onCopyLink={() => void copyLink()}
+          onEdit={() => void navigate({ to: '/sns/posts/$publicId/edit', params: { publicId } })}
+          onDelete={() => setDeleteConfirm(true)}
+          onMute={() => (post.mutedByMe ? setConfirm('unmute') : mute(post))}
+          onBlock={() => requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId })}
+          onReport={() => requireAuth('snsReport', () => setReportOpen(true), { kind: 'report', publicId })}
+        />
       )}
+      <SnsReportSheet
+        target={post ? postReportTarget(post) : null}
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+      />
 
       {confirm && post && (
         <Modal
@@ -296,6 +265,9 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         />
       )}
 
+      {resume && (
+        <SnsResumeReaction key={resume} kind={resume} publicId={publicId} onError={message => showToast(message, 'error')} />
+      )}
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} resume={gateResume} />
       <AppToast
         open={toast.open}
@@ -363,8 +335,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const counts = [
     { label: '좋아요', value: post.likeCount, icon: <Heart className="size-5" /> },
     { label: '댓글', value: post.commentCount, icon: <MessageCircle className="size-5" /> },
-    { label: '리포스트', value: post.repostCount, icon: <Repeat2 className="size-5" /> },
   ]
+  const reactionError = (message: string) => showToast(message, 'error')
 
   return screen(
     <article className="flex flex-col gap-3 pb-6 pt-2">
@@ -432,18 +404,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       )}
 
       {/* 사진은 작성자가 정한 순서대로 넘겨 본다(P2). 텍스트 게시물은 미디어 자리가 없다(A20). */}
-      {post.photoUrls.length > 0 && (
-        <div className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {post.photoUrls.map((url, i) => (
-            <img
-              key={url}
-              src={url}
-              alt={`사진 ${i + 1}/${post.photoUrls.length}`}
-              className="aspect-square w-full flex-none snap-center bg-surface-sunken object-cover"
-            />
-          ))}
-        </div>
-      )}
+      {post.photoUrls.length > 0 && <PhotoCarousel urls={post.photoUrls} />}
       {post.video && (
         <video
           src={post.video.url}
@@ -456,7 +417,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         />
       )}
 
-      {/* 세 수만 보여주고 저장 수는 작성자에게도 보여주지 않는다(A23). 누를 수 있는 버튼은 공유뿐이다. */}
+      {/* 좋아요, 댓글, 리포스트 수를 보여주고 저장 수는 작성자에게도 보여주지 않는다(A23). 저장은 맨 끝에 둔다(b7-st-2). */}
       <div className="flex items-center gap-4 px-4 text-text-secondary">
         {counts.map(count => (
           <span key={count.label} className="flex items-center gap-1">
@@ -465,14 +426,30 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
             <span className="text-body-sm tabular-nums">{count.value.toLocaleString('ko-KR')}</span>
           </span>
         ))}
+        <SnsReactionButton
+          kind="repost"
+          post={post}
+          requireAuth={requireAuth}
+          onError={reactionError}
+          disabled={refreshFailed}
+        />
         <button
           type="button"
           aria-label="공유"
           onClick={() => void share()}
-          className="ml-auto flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
+          className="flex size-10 items-center justify-center rounded-full text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
         >
           <Share2 className="size-5" />
         </button>
+        <div className="ml-auto">
+          <SnsReactionButton
+            kind="save"
+            post={post}
+            requireAuth={requireAuth}
+            onError={reactionError}
+            disabled={refreshFailed}
+          />
+        </div>
       </div>
 
       <p className="flex gap-2 px-4 text-caption text-text-tertiary">
@@ -480,5 +457,45 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         {post.edited && <span>수정됨</span>}
       </p>
     </article>,
+  )
+}
+
+// 사진을 넘겨 보는 칸과 몇 번째 장인지 알리는 점. 상품 상세 ImageCarousel과 같은 모양이다(feature 사이 import가 막혀
+// 옮겨 적었다). 현재 장은 가로 스크롤 위치로 정한다.
+function PhotoCarousel({ urls }: { urls: string[] }) {
+  const [active, setActive] = useState(0)
+  return (
+    <div className="relative">
+      <div
+        className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={e => {
+          const el = e.currentTarget
+          setActive(Math.round(el.scrollLeft / el.clientWidth))
+        }}
+      >
+        {urls.map((url, i) => (
+          <img
+            key={url}
+            src={url}
+            alt={`사진 ${i + 1}/${urls.length}`}
+            className="aspect-square w-full flex-none snap-center bg-surface-sunken object-cover"
+          />
+        ))}
+      </div>
+      {/* 장수는 사진 대체 글자가 알려 점은 화면 읽기에서 뺀다. */}
+      {urls.length > 1 && (
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-3 flex justify-center gap-1.5">
+          {urls.map((url, i) => (
+            <span
+              key={url}
+              className={[
+                'size-1.5 rounded-full transition-colors',
+                i === active ? 'bg-surface-inverse' : 'bg-surface-inverse/30',
+              ].join(' ')}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

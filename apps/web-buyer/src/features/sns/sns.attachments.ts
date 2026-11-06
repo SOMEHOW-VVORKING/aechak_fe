@@ -222,6 +222,10 @@ export function useSnsAttachments({ onNotice }: { onNotice: (message: string) =>
     const fresh = items.map(item =>
       item.kind === 'photo' ? { ...item, key: undefined } : { ...item, key: undefined, thumbnailKey: undefined },
     )
+    // 지워진 키는 상태에서도 뺀다. 남기면 다시 올리기가 실패한 뒤의 다시 시도가 그 키를 보고 영상 올리기를 건너뛴다.
+    for (const item of fresh) {
+      patch(item.id, item.kind === 'photo' ? { key: undefined } : { key: undefined, thumbnailKey: undefined })
+    }
     const results = await Promise.allSettled(fresh.map(upload))
     const failed = fresh.filter((_, i) => results[i]!.status === 'rejected')
     failed.forEach(item => patch(item.id, { status: 'failed' }))

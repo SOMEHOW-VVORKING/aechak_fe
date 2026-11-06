@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { axiosInstance, errorResponse, setAccessToken } from '@aechak/api'
 import {
   SNS_BANNED_WORD,
+  SNS_COCO,
   SNS_ME,
   SNS_POST_BLOCKER,
   SNS_POST_COCO,
@@ -256,6 +257,24 @@ describe('PATCH와 DELETE /sns/posts/{publicId}', () => {
       status: 403,
       errorCode: 130401,
     })
+  })
+})
+
+describe('이용 제한 계정', () => {
+  it('게시, 수정, 삭제와 팔로우, 차단, 뮤트의 켜기와 끄기가 모두 403 20013이고 아무것도 바뀌지 않는다', async () => {
+    seedSns({ restricted: [SNS_ME] })
+    const before = currentSns()
+    const restricted = { status: 403, errorCode: 20013 }
+    expect(await failureOf(createPost({ caption: '글' }))).toEqual(restricted)
+    expect(
+      await failureOf(axiosInstance.patch(`/sns/posts/${SNS_POST_MINE}`, { caption: '바꾼 캡션', hashtags: [] })),
+    ).toEqual(restricted)
+    expect(await failureOf(axiosInstance.delete(`/sns/posts/${SNS_POST_MINE}`))).toEqual(restricted)
+    for (const action of ['follow', 'block', 'mute']) {
+      expect(await failureOf(axiosInstance.post(`/sns/users/${SNS_COCO}/${action}`))).toEqual(restricted)
+      expect(await failureOf(axiosInstance.delete(`/sns/users/${SNS_COCO}/${action}`))).toEqual(restricted)
+    }
+    expect(currentSns()).toEqual(before)
   })
 })
 
