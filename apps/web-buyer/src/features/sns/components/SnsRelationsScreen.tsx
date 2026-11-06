@@ -36,7 +36,8 @@ const TAB_COPY: Record<
 }
 
 // 차단/뮤트 관리(b7-st-8). 들어오면 두 목록의 첫 페이지를 함께 불러 탭 수를 채운다.
-// 행을 눌러도 프로필로 가지 않는다(H2). 상대가 나중에 나를 차단하면 그 프로필이 404라 차단 사실이 드러나기 때문이다.
+// 행을 눌러도 프로필로 가지 않는다(H2). 상대가 나중에 나를 차단하면 그 프로필이 기본 프로필(blockingMe)로 바뀌어
+// 차단 사실이 드러나기 때문이다.
 export function SnsRelationsScreen() {
   const goBack = useSafeBack({ to: '/mypage' })
   const lists: Record<RelationKind, ReturnType<typeof useRelationList>> = {

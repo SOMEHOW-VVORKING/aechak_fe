@@ -38,7 +38,10 @@ export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
 
-/** 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전, 나를 차단). 차단 사실을 드러내지 않으려고 한 코드로 온다(A7). */
+/**
+ * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
+ * 프로필 조회는 나를 차단한 사용자를 200 blockingMe=true 기본 프로필로 준다(R2-06).
+ */
 export const SNS_UNAVAILABLE = 130000
 /** 내가 차단한 사용자의 팔로워, 팔로잉 목록과 팔로우 요청 */
 export const SNS_BLOCKED_BY_ME = 130001

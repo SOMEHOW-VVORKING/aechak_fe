@@ -23,6 +23,8 @@ export const SNS_SPAM = '01JD5G7HJK8M2N4PQ6RSTV9WXY'
 export const SNS_TORI = '01JF8H2JK4M6N8PQ2RSTV5WXYZ'
 /** 나(SNS_ME)를 차단한 사용자 */
 export const SNS_BLOCKER = '01JG9J3KM5N7P9QR3STV6WXYZA'
+/** 나(SNS_ME)와 서로 차단한 사용자 */
+export const SNS_MUTUAL = '01JH4K6MN8P2QR5ST7VW9XYZAB'
 
 interface SnsUserFixture {
   nickname: string
@@ -55,6 +57,12 @@ const USERS: Record<string, SnsUserFixture> = {
   [SNS_SPAM]: { nickname: '광고계정01', profileImageUrl: null, bio: null, pets: [] },
   [SNS_TORI]: { nickname: '토리네', profileImageUrl: null, bio: null, pets: [] },
   [SNS_BLOCKER]: { nickname: '차단러', profileImageUrl: null, bio: null, pets: [] },
+  [SNS_MUTUAL]: {
+    nickname: '맞차단러',
+    profileImageUrl: 'https://cdn.aechak.com/users/profile/mutual.webp',
+    bio: '서로 차단한 사이',
+    pets: [{ breedLabel: '비숑', birthYearMonth: '2022-04' }],
+  },
 }
 
 /** 페이지 크기(20)를 넘는 목록을 만들 때 쓰는 사용자 25명(닉네임 이웃1~이웃25) */
@@ -83,7 +91,12 @@ const DEFAULT_SEED = (): SnsSeed => ({
   viewer: SNS_ME,
   // 배열 뒤쪽이 최근 관계다.
   follows: [rel(SNS_CHOCO, SNS_COCO), rel(SNS_MONG, SNS_COCO), rel(SNS_COCO, SNS_MONG)],
-  blocks: [rel(SNS_ME, SNS_SPAM, '2026-06-12T10:00:00'), rel(SNS_BLOCKER, SNS_ME)],
+  blocks: [
+    rel(SNS_ME, SNS_MUTUAL, '2026-06-01T10:00:00'),
+    rel(SNS_ME, SNS_SPAM, '2026-06-12T10:00:00'),
+    rel(SNS_BLOCKER, SNS_ME),
+    rel(SNS_MUTUAL, SNS_ME),
+  ],
   mutes: [rel(SNS_ME, SNS_TORI, '2026-06-20T10:00:00')],
 })
 
@@ -114,20 +127,24 @@ const unauthenticated = () => error(401, 20004)
 function profile(target: string, viewer: string | null) {
   const user = USERS[target]!
   const blockedByMe = viewer != null && has(state.blocks, viewer, target)
+  // 나를 차단한 사용자(서로 차단 포함)는 404가 아니라 nickname만 채운 기본 프로필이다(sns.yaml 0.3.0, R2-06).
+  const blockingMe = viewer != null && has(state.blocks, target, viewer)
+  const hidden = blockedByMe || blockingMe
   const counted = (pick: (r: Relation) => boolean) => state.follows.filter(pick).length
   return {
     publicId: target,
     nickname: user.nickname,
-    profileImageUrl: user.profileImageUrl,
-    bio: blockedByMe ? null : user.bio,
-    pets: blockedByMe ? null : user.pets,
-    postCount: blockedByMe ? null : 0,
-    followerCount: blockedByMe ? null : counted(r => r.to === target),
-    followingCount: blockedByMe ? null : counted(r => r.from === target),
+    profileImageUrl: blockingMe ? null : user.profileImageUrl,
+    bio: hidden ? null : user.bio,
+    pets: hidden ? null : user.pets,
+    postCount: hidden ? null : 0,
+    followerCount: hidden ? null : counted(r => r.to === target),
+    followingCount: hidden ? null : counted(r => r.from === target),
     isMe: viewer === target,
     following: viewer != null && has(state.follows, viewer, target),
     blockedByMe,
     mutedByMe: viewer != null && has(state.mutes, viewer, target),
+    blockingMe,
   }
 }
 
@@ -243,7 +260,6 @@ export const snsHandlers = [
     const target = String(params['publicId'])
     const viewer = viewerOf(request)
     if (!USERS[target]) return unavailable()
-    if (viewer != null && viewer !== target && has(state.blocks, target, viewer)) return unavailable()
     return HttpResponse.json({ data: profile(target, viewer) })
   }),
   http.post(SNS_FOLLOW_URL, follow),

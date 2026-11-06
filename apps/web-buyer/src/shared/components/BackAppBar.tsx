@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { ChevronLeft } from 'lucide-react'
 
 interface BackAppBarProps {
@@ -9,13 +9,16 @@ interface BackAppBarProps {
   children?: ReactNode
   /** 우측 액션(공유 등). */
   actions?: ReactNode
+  /** 뒤로가기 버튼 ref. 본문이 바뀌어 포커스를 둘 곳이 사라진 화면이 이 버튼으로 포커스를 옮긴다. */
+  backRef?: Ref<HTMLButtonElement>
 }
 
 // 뒤로가기 앱바 — 상세/검색/검색결과/찜 등 full-bleed(탭바 없는) 화면 상단.
-export function BackAppBar({ onBack, title, children, actions }: BackAppBarProps) {
+export function BackAppBar({ onBack, title, children, actions, backRef }: BackAppBarProps) {
   return (
     <div className="flex h-14 items-center gap-2 px-2">
       <button
+        ref={backRef}
         type="button"
         onClick={onBack}
         aria-label="뒤로 가기"
