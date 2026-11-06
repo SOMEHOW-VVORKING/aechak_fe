@@ -887,8 +887,13 @@ export function useSnsLike(publicId: string) {
       // 좋아요한 사람은 다음에 열 때 다시 읽는다.
       void queryClient.invalidateQueries({ queryKey: snsKeys.likers(publicId) })
     },
-    onError: (_error, _on, before) => {
+    onError: (error, _on, before) => {
       if (before) restoreLikes(queryClient, publicId, before)
+      // 그사이 볼 수 없게 된 글이면 상세를 다시 읽어 삭제된 게시물이나 차단 안내로 바꾼다
+      const code = snsErrorCode(error)
+      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+      }
     },
     // 요청 중에 새로 시작한 조회는 반영 전 값을 들고 올 수 있어 멈추고 다시 읽는다. 받는 중이 아니던 캐시는 그대로 둔다.
     onSettled: () => {

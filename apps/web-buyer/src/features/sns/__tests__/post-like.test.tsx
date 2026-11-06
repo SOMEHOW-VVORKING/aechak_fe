@@ -181,6 +181,22 @@ describe('게시물 좋아요 버튼', () => {
     expect(likeCount(cardOf('코코집사'))).toBe('0')
   })
 
+  it('[AC-SNS04-004] 상세에서 그사이 지워진 게시물이면 상세를 다시 읽어 삭제된 게시물 안내로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+    const article = await screen.findByRole('article')
+    seedSns({
+      ...currentSns(),
+      posts: currentSns().posts.map(p =>
+        p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p,
+      ),
+    })
+
+    await user.click(likeIn(article))
+    await waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
+    expect(screen.getAllByText('삭제된 게시물이에요').length).toBeGreaterThan(0)
+  })
+
   it('[AC-SNS04-037] 이용 제한 계정은 이용이 제한된 계정이라는 안내다', async () => {
     seedSns({ restricted: [SNS_ME] })
     const user = userEvent.setup()
@@ -238,6 +254,20 @@ describe('비로그인 좋아요', () => {
     )
     expect(likeCount(screen.getByRole('article'))).toBe('1')
     expect(likeRequests).toEqual([`POST /api/v1/sns/posts/${SNS_POST_COCO}/like`])
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS04-006] 로그인하는 사이 지워진 게시물이면 좋아요를 보내지 않고 삭제된 게시물 안내를 보여준다', async () => {
+    asGuest()
+    const user = userEvent.setup()
+    const guestRouter = renderAt(postPath(SNS_POST_COCO))
+    await user.click(likeIn(await screen.findByRole('article')))
+    const posts = currentSns().posts.map(p => (p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p))
+
+    const router = await loginAndReturn(guestRouter, { posts })
+    await waitFor(() => expect(router.state.location.pathname).toBe(postPath(SNS_POST_COCO)))
+    expect(await screen.findByText('삭제된 게시물이에요')).toBeInTheDocument()
+    expect(likeRequests).toEqual([])
     expect(sessionStorage.length).toBe(0)
   })
 
