@@ -1402,16 +1402,19 @@ export const SubmitReportRequestTargetType = {
   PRODUCT: 'PRODUCT',
   REVIEW: 'REVIEW',
   USER: 'USER',
+  SNS_POST: 'SNS_POST',
+  SNS_USER: 'SNS_USER',
 } as const
 
 export interface SubmitReportRequest {
   targetType: SubmitReportRequestTargetType
-  /** PRODUCT는 상품 productId(ULID), REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id */
+  /** PRODUCT는 상품 productId(ULID), REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id, SNS_POST는 게시물 publicId, SNS_USER는 사용자 publicId */
   targetId: string
-  /** PRODUCT는 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER. REVIEW와 USER는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER */
+  /** PRODUCT는 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER. REVIEW, USER, SNS_POST, SNS_USER는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER */
   reasonCode: string
   /**
-   * 상세 사유. 상품 신고는 500자까지
+   * 상세 사유. 500자까지이고 OTHER이면 필수다. 공백만 보내면 비운 것으로 본다
+   * @maxLength 500
    * @nullable
    */
   reasonText?: string | null
@@ -5729,7 +5732,7 @@ export interface SaveNoticeRequest {
 }
 
 /**
- * 신고 대상의 종류(be ReportTargetType). 신고 행이 어느 표에서 왔는지를 가리고 **상세·조치 경로의 첫 세그먼트**다 — 세 신고 표가 각자 AUTO_INCREMENT라 번호만으로는 행을 가릴 수 없다. 비공개 전환(HIDE_TARGET)은 REVIEW에서만 받는다 (be hasHidableTarget — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다)
+ * 신고 대상의 종류(be ReportTargetType). 신고 행이 어느 표에서 왔는지를 가리고 **상세·조치 경로의 첫 세그먼트**다 — 세 신고 표가 각자 AUTO_INCREMENT라 번호만으로는 행을 가릴 수 없다. 비공개 전환(HIDE_TARGET)은 REVIEW와 SNS_POST에서만 받는다 (be hasHidableTarget — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다). SNS_POST의 비공개 전환과 계정 제재는 게시물을 운영자 삭제로 지운다
  */
 export type ReportTargetType = (typeof ReportTargetType)[keyof typeof ReportTargetType]
 
@@ -5738,6 +5741,7 @@ export const ReportTargetType = {
   PRODUCT: 'PRODUCT',
   REVIEW: 'REVIEW',
   USER: 'USER',
+  SNS_POST: 'SNS_POST',
 } as const
 
 /**
@@ -5770,7 +5774,7 @@ export const ReportReasonCode = {
 } as const
 
 /**
- * 운영자의 처리 결정. HIDE_TARGET은 리뷰 신고에만 보낼 수 있고(아니면 400 errorCode 140002) SANCTION_ACCOUNT일 때만 `sanction`을 함께 보낸다
+ * 운영자의 처리 결정. HIDE_TARGET은 리뷰와 SNS 게시물 신고에만 보낼 수 있고(아니면 400 errorCode 140002) SANCTION_ACCOUNT일 때만 `sanction`을 함께 보낸다
  */
 export type ReportDecisionType = (typeof ReportDecisionType)[keyof typeof ReportDecisionType]
 
@@ -5808,15 +5812,15 @@ export type AdminReportSummaryDecision = ReportDecisionType | null
 export type AdminReportSummaryDecisionReasonCode = ReportDecisionReason | null
 
 /**
- * 목록·상세의 신고 한 건. `targetKey`와 `targetName`이 **따로** 와서 화면이 복합 문자열을 조립할 필요가 없다 — targetKey는 대상을 다시 여는 식별자(상품은 ULID, 리뷰·사용자는 내부 번호)고 targetName은 상품명·리뷰 본문이다
+ * 목록·상세의 신고 한 건. `targetKey`와 `targetName`이 **따로** 와서 화면이 복합 문자열을 조립할 필요가 없다 — targetKey는 대상을 다시 여는 식별자(상품은 ULID, 리뷰·사용자는 내부 번호)고 targetName은 상품명, 리뷰 본문, SNS 게시물 캡션이다
  */
 export interface AdminReportSummary {
   targetType: ReportTargetType
   reportId: number
-  /** 상품은 공개 식별자(ULID), 리뷰와 사용자는 내부 id다 — 종류마다 뜻이 다르다 */
+  /** 상품은 공개 식별자(ULID), SNS 게시물은 게시물 publicId, 리뷰와 사용자는 내부 id다 — 종류마다 뜻이 다르다 */
   targetKey: string
   /**
-   * 상품명·리뷰 본문. **사용자 신고에는 없다**(닉네임이 그 자리를 대신한다)
+   * 상품명, 리뷰 본문, SNS 게시물 캡션. **사용자 신고에는 없다**(닉네임이 그 자리를 대신한다). 지운 SNS 게시물은 null이다
    * @nullable
    */
   targetName: string | null
@@ -9664,7 +9668,7 @@ export function useGetProductReviewSummarySuspense<
 }
 
 /**
- * 상품, 리뷰, 사용자를 신고한다. targetType에 따라 targetId와 reasonCode를 해석한다. PRODUCT는 상품 productId(ULID)와 사유 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER를 받는다. REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id를 받고 사유는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER다. OTHER는 reasonText가 있어야 한다. 성공은 201이고 바디가 없다.
+ * 상품, 리뷰, 사용자를 신고한다. targetType에 따라 targetId와 reasonCode를 해석한다. PRODUCT는 상품 productId(ULID)와 사유 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER를 받는다. REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id를 받고 사유는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER다. SNS_POST는 게시물 publicId, SNS_USER는 사용자 publicId를 받고 사유는 SPAM, ABUSE, INAPPROPRIATE, FRAUD, OTHER다. 리포스트 카드에서 신고하면 원글 publicId를 보낸다. OTHER는 reasonText가 있어야 하고 공백만 보낸 값은 비운 것으로 본다. 성공은 201이고 바디가 없다.
  * @summary 신고 접수
  */
 export const submitReport = (submitReportRequest: SubmitReportRequest, signal?: AbortSignal) => {
