@@ -10,11 +10,12 @@ import {
   useDeleteRecentKeyword,
   useSearchLanding,
 } from '../search.queries'
+import type { SearchTab } from '../search.mock'
 import { KeywordChip } from './KeywordChip'
 
-// 검색 입력/최근 검색어(b3-st-2). 로그인 사용자는 서버의 최근·추천 검색어를 조회하고,
-// 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다.
-export function SearchScreen() {
+// 검색 입력/최근 검색어(b3-st-2, b12-st-1). 로그인 사용자는 서버의 최근·추천 검색어를 조회하고,
+// 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다. tab은 검색을 연 화면이 정한 결과 탭이다.
+export function SearchScreen({ tab }: { tab?: Exclude<SearchTab, 'all'> }) {
   const navigate = useNavigate()
   const sessionState = useSessionState()
   const isLoggedIn = sessionState === 'member'
@@ -29,7 +30,7 @@ export function SearchScreen() {
   const submit = (keyword: string) => {
     const q = keyword.trim()
     if (!q) return
-    navigate({ to: '/search/results', search: { q } })
+    navigate({ to: '/search/results', search: { q, ...(tab && { tab }) } })
   }
 
   const goBack = useSafeBack({ to: '/' })
@@ -42,7 +43,7 @@ export function SearchScreen() {
             value={query}
             onChange={setQuery}
             onClear={() => setQuery('')}
-            placeholder="상품, 브랜드 검색"
+            placeholder="상품/계정/해시태그 검색"
             autoFocus
             onKeyDown={e => {
               if (e.key === 'Enter') submit(query)

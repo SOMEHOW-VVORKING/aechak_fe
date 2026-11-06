@@ -37,8 +37,11 @@ import {
   muteUser,
   repostSnsPost,
   saveSnsPost,
+  searchSnsHashtagSegment,
   searchSnsHashtags,
   submitReport,
+  searchSnsPosts,
+  searchSnsUsers,
   unblockUser,
   unfollowUser,
   unlikeSnsPost,
@@ -50,6 +53,7 @@ import {
   type SnsFeedPageResult,
   type SnsLikerListResult,
   type SnsHashtagPostPageResult,
+  type SnsHashtagResult,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
@@ -59,7 +63,11 @@ import {
   type SnsProfileResult,
   type SnsRelationItemResult,
   type SnsRelationPageResult,
+  type SnsSearchHashtagPageResult,
+  type SnsSearchPostPageResult,
   type SnsSearchSortParameter,
+  type SnsSearchUserItemResult,
+  type SnsSearchUserPageResult,
   type SnsUserItemResult,
   type SnsUserPageResult,
 } from '@aechak/api'
@@ -92,6 +100,8 @@ export type SnsLikeState = Pick<SnsPostDetailResult, 'liked' | 'likeCount'>
 export type SnsSearchSegment = 'posts' | 'users' | 'hashtags'
 /** 게시물 검색과 해시태그 게시물 목록의 정렬. 기본은 인기순이다(P6) */
 export type SnsSearchSort = SnsSearchSortParameter
+export type SnsSearchUser = SnsSearchUserItemResult
+export type SnsHashtag = SnsHashtagResult
 
 /**
  * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
@@ -146,10 +156,16 @@ export const snsKeys = {
   // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
   likerLists: ['sns', 'likers'] as const,
   likers: (publicId: string) => ['sns', 'likers', 'post', publicId] as const,
-  // 해시태그 게시물 목록은 피드 카드와 같은 항목이라 feeds 아래에 둔다. 리포스트, 저장, 수정, 삭제, 차단과 뮤트가
+  // 게시물 검색과 해시태그 게시물 목록은 피드 카드와 같은 항목이라 feeds 아래에 둔다. 리포스트, 저장, 수정, 삭제, 차단과 뮤트가
   // 피드 카드에 하는 갱신을 그대로 받는다. 네 번째 자리가 세션 상태인 것도 피드와 같다.
+  searchPosts: (keyword: string, sort: SnsSearchSort, size: number, loggedIn: boolean) =>
+    ['sns', 'feed', 'search', loggedIn, keyword, sort, size] as const,
   hashtagPosts: (name: string, sort: SnsSearchSort, loggedIn: boolean) =>
     ['sns', 'feed', 'hashtag', loggedIn, name, sort] as const,
+  // 계정 검색은 팔로우 목록과 같은 행 모양이라 follows 아래에 둔다. 팔로우하면 그 행 버튼만 바뀌고 차단하면 다시 읽는다.
+  searchUsers: (keyword: string, size: number, loggedIn: boolean) =>
+    ['sns', 'follows', 'search', keyword, size, loggedIn] as const,
+  searchHashtags: (keyword: string, size: number) => ['sns', 'search-hashtags', keyword, size] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -929,7 +945,17 @@ export function useSnsLikers(publicId: string, enabled: boolean) {
   })
 }
 
-// ── SNS-06 해시태그 게시물 목록 ───────────────────────────────────────────────
+// ── SNS-06 검색, 해시태그 게시물 목록 ───────────────────────────────────────────
+
+/**
+ * 검색어를 서버에 보낼지. 서버는 앞뒤 공백을 지우고 앞의 # 하나를 뗀 뒤 찾고 남는 글자가 없으면 빈 결과라 부르지 않는다
+ * (sns.yaml SNS-06 FE 2). 검색어 자체는 입력한 그대로 보낸다.
+ */
+export const snsSearchable = (keyword: string) => keyword.trim().replace(/^#/, '').trim() !== ''
+
+/** 검색어가 #으로 시작하면 SNS 탭을 해시태그 세그먼트로 연다(P2) */
+export const defaultSnsSearchSegment = (keyword: string): SnsSearchSegment =>
+  keyword.startsWith('#') ? 'hashtags' : 'posts'
 
 /** 검색 라우트의 search(`?seg=&sort=`). 모르는 값은 버리고 기본값을 쓴다 */
 export function snsSearchSearch(search: Record<string, unknown>): { seg?: SnsSearchSegment; sort?: SnsSearchSort } {
@@ -938,13 +964,109 @@ export function snsSearchSearch(search: Record<string, unknown>): { seg?: SnsSea
   return { ...(seg && { seg }), ...(sort && { sort }) }
 }
 
+// 계정과 해시태그는 내리는 사이 팔로워 수나 게시글 수가 바뀌면 같은 행이 다시 올 수 있다. 먼저 받은 자리 하나만 남긴다(FE 5).
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    if (seen.has(key(item))) return false
+    seen.add(key(item))
+    return true
+  })
+}
+
 const nextCursor = (last: { hasNext: boolean; nextCursor: string | null }) =>
   last.hasNext ? (last.nextCursor ?? undefined) : undefined
 
+const selectSearchPosts = (data: InfiniteData<SnsSearchPostPageResult>) => ({
+  items: selectFeedItems(data),
+  totalCount: data.pages[0]?.totalCount ?? 0,
+})
+const selectSearchUsers = (data: InfiniteData<SnsSearchUserPageResult>) =>
+  uniqueBy(data.pages.flatMap(page => page.items), item => item.publicId)
+const selectSearchHashtags = (data: InfiniteData<SnsSearchHashtagPageResult>) =>
+  uniqueBy(data.pages.flatMap(page => page.items), item => item.name)
 const selectHashtagPosts = (data: InfiniteData<SnsHashtagPostPageResult>) => ({
   hashtag: data.pages[0]!.hashtag,
   items: selectFeedItems(data),
 })
+
+/**
+ * 게시물 검색(GET /sns/search/posts). 전체 탭 SNS 섹션은 인기순 5개, 게시물 세그먼트는 고른 정렬로 부른다. totalCount는 첫
+ * 페이지 값이고 보이는 글보다 클 수 있다(P10). 로그인 사용자의 첫 페이지는 서버가 최근 검색어에 기록해서 onSearched로 검색
+ * 화면이 최근 검색어를 다시 읽게 한다(R1-32).
+ */
+export function useSnsSearchPosts(
+  keyword: string,
+  sort: SnsSearchSort,
+  { size = PAGE_SIZE, enabled = true, onSearched }: { size?: number; enabled?: boolean; onSearched?: () => void } = {},
+) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.searchPosts(keyword, sort, size, loggedIn), [keyword, sort, size, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) => {
+      const page = (await searchSnsPosts({ keyword, sort, cursor: pageParam, size }, signal)).data
+      if (pageParam === undefined) onSearched?.()
+      return page
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchPosts,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 계정 검색(GET /sns/search/users). 비로그인 응답과 로그인 응답의 관계 필드가 달라 세션 상태를 키에 넣는다 */
+export function useSnsSearchUsers(keyword: string, { size = PAGE_SIZE, enabled = true }: { size?: number; enabled?: boolean } = {}) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.searchUsers(keyword, size, loggedIn), [keyword, size, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) => (await searchSnsUsers({ keyword, cursor: pageParam, size }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchUsers,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 해시태그 검색(GET /sns/search/hashtags). 게시글 수는 보는 사람과 관계없이 같다(P10) */
+export function useSnsSearchHashtags(
+  keyword: string,
+  { size = PAGE_SIZE, enabled = true }: { size?: number; enabled?: boolean } = {},
+) {
+  const queryKey = useMemo(() => snsKeys.searchHashtags(keyword, size), [keyword, size])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await searchSnsHashtagSegment({ keyword, cursor: pageParam, size }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchHashtags,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 전체 탭 SNS 섹션의 미리보기 수(b12-st-2) */
+export const SNS_SECTION_SIZE = 5
+
+/**
+ * 통합 검색 SNS 탭 옆 결과 수. 전체 탭 SNS 섹션과 같은 조회(인기순 5개)의 totalCount라 전체 탭에서는 요청이 늘지 않는다(FE 1).
+ * 막아 둔 동안에는 받아 둔 수만 쓴다.
+ */
+export function useSnsSearchCount(keyword: string, { enabled, onSearched }: { enabled: boolean; onSearched?: () => void }) {
+  const posts = useSnsSearchPosts(keyword, 'POPULAR', { size: SNS_SECTION_SIZE, enabled, onSearched })
+  return snsSearchable(keyword) ? posts.data?.totalCount : 0
+}
 
 /** 해시태그 게시물 목록(GET /sns/hashtags/{name}/posts). 헤더의 게시글 수는 첫 페이지 값이다. 최근 검색어에 기록하지 않는다 */
 export function useSnsHashtagPosts(name: string, sort: SnsSearchSort) {

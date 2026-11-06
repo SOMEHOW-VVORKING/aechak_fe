@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteAllRecentKeywords,
@@ -63,6 +64,12 @@ export const useSearchLanding = (enabled = true) =>
     enabled,
     retry: false,
   })
+
+/** 최근 검색어를 다시 읽게 한다. 상품 검색처럼 SNS 게시물 검색 첫 페이지도 서버가 최근 검색어에 기록한다(SNS-06 R1-32) */
+export function useRefreshRecentKeywords() {
+  const queryClient = useQueryClient()
+  return useCallback(() => void queryClient.invalidateQueries({ queryKey: landingKey }), [queryClient])
+}
 
 // 검색 결과 필터의 카테고리 선택지. catalog의 useCategoryTree와 같은 캐시 키를 써 중복 조회를 막는다.
 // /categories는 인증 필요라 로그인 사용자만 조회한다(비회원은 카테고리 필터 없이 전체 검색).
@@ -150,7 +157,7 @@ function selectSearchResults(data: { pages: SearchPage[] }): SearchResult {
   }
 }
 
-export const useSearchResults = (query: string, filters: SearchFilters, sort: ResultSort) => {
+export const useSearchResults = (query: string, filters: SearchFilters, sort: ResultSort, enabled = true) => {
   const queryClient = useQueryClient()
   return useInfiniteQuery({
     queryKey: ['search', 'results', query, filters, sort],
@@ -163,6 +170,6 @@ export const useSearchResults = (query: string, filters: SearchFilters, sort: Re
     getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
     select: selectSearchResults,
     // 검색어는 라우트(validateSearch)가 이미 trim해 넘긴다. 빈 검색어는 서버(@NotBlankUnicode)보다 앞서 호출하지 않는다.
-    enabled: query !== '',
+    enabled: enabled && query !== '',
   })
 }

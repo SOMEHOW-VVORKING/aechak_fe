@@ -104,10 +104,21 @@ describe('/sns/feed 탭', () => {
     expect(requestsTo('following')).toHaveLength(0)
   })
 
-  it('[AC-SNS03-049] 앱 바는 제목만 보여주고 검색과 알림 버튼이 없다', async () => {
+  it('[AC-SNS03-049] 앱 바는 제목과 검색 버튼을 보여주고 알림 버튼은 없다', async () => {
     renderAt('/sns/feed')
     expect(await screen.findByRole('heading', { name: '애착 SNS' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /검색|알림/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /알림/ })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS06-003] 앱 바의 검색은 SNS 탭이 열리는 통합 검색으로 간다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/feed')
+    await user.click(await screen.findByRole('button', { name: '검색' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/search'))
+    expect(router.state.location.search).toEqual({ tab: 'sns' })
+    await user.type(screen.getByRole('searchbox'), '산책{Enter}')
+    await waitFor(() => expect(router.state.location.search).toEqual({ q: '산책', tab: 'sns' }))
+    expect(await screen.findByRole('tab', { name: '게시물' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('[AC-SNS03-002][AC-SNS03-004] 로그인은 팔로잉 탭으로 열리고 내 글과 팔로우한 사람의 리포스트가 리포스트 표시와 함께 나온다', async () => {

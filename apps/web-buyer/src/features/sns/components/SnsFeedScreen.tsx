@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import { useRouterState } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { Search } from 'lucide-react'
 import { EmptyState, Tabs } from '@aechak/design-system/web'
 import { LoginGate, useIsLoggedIn, useLoginGate, type GateResume, type UseLoginGate } from '@/shared/auth'
 import { SNS_SERVER_AVAILABLE } from '@/shared/sns-availability'
@@ -26,7 +27,8 @@ export function snsFeedSearch(search: Record<string, unknown>): { tab?: SnsFeedK
 let lastScroll: { kind: SnsFeedKind; top: number } | null = null
 
 // SNS 피드(b7-st-1). /sns/feed와 하단 SNS 탭(SNS_SERVER_AVAILABLE일 때)이 같은 화면을 그린다(design 6절 1번).
-// 앱 바는 제목만 그린다. 검색과 알림 버튼은 SNS-06, SNS-05가 그 화면과 함께 붙인다. 탭은 눌러서만 바꾼다.
+// 앱 바는 제목과 검색 버튼을 그린다. 검색은 SNS 탭이 열린 통합 검색이다(CRQ-SRCH-07). 알림 버튼은 SNS-05가 그 화면과 함께
+// 붙인다. 탭은 눌러서만 바꾼다.
 export function SnsFeedScreen({
   tab,
   onTabChange,
@@ -34,6 +36,7 @@ export function SnsFeedScreen({
   tab?: SnsFeedKind
   onTabChange: (tab: SnsFeedKind) => void
 }) {
+  const navigate = useNavigate()
   const pathname = useRouterState({ select: s => s.location.pathname })
   const queryClient = useQueryClient()
   const loggedIn = useIsLoggedIn()
@@ -96,8 +99,16 @@ export function SnsFeedScreen({
   return (
     <div className="relative flex h-full flex-col">
       <div className="flex-none bg-surface-base">
-        <div className="flex h-14 items-center px-4">
+        <div className="flex h-14 items-center justify-between px-4">
           <h1 ref={titleRef} tabIndex={-1} className="text-heading outline-none font-bold tracking-tight text-text-primary">애착 SNS</h1>
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/search', search: { tab: 'sns' } })}
+            aria-label="검색"
+            className="rounded-full p-0.5 text-icon focus-visible:outline-none focus-visible:shadow-focus-ring"
+          >
+            <Search className="size-[22px]" />
+          </button>
         </div>
         <Tabs
           tabs={FEED_TABS}
