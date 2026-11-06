@@ -47,3 +47,10 @@ export function clampCaption(prev: string, next: string): string {
 export function hasHashWord(text: string): boolean {
   return /#[^\s#]/u.test(text)
 }
+
+// 댓글 글자 규칙(SNS-04 A8, design 6절 5번). 캡션과 같은 정리 뒤 코드 포인트로 센다.
+export const COMMENT_MAX = 500
+
+export function commentLength(text: string): number {
+  return captionLength(text)
+}

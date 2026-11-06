@@ -14,6 +14,7 @@ import {
 import {
   blockUser,
   customInstance,
+  deleteSnsComment,
   deleteSnsPost,
   errorResponse,
   followUser,
@@ -27,7 +28,9 @@ import {
   getSnsFollowingFeed,
   getSnsHashtagPosts,
   getSnsPopularFeed,
+  getSnsComment,
   getSnsPost,
+  getSnsPostComments,
   getSnsPostLikers,
   getSnsProfile,
   getSnsUserPosts,
@@ -48,7 +51,11 @@ import {
   unmuteUser,
   unrepostSnsPost,
   unsaveSnsPost,
+  updateSnsComment,
   updateSnsPost,
+  type SnsCommentItemResult,
+  type SnsCommentPageResult,
+  type SnsCommentResponse,
   type SnsFeedItemResult,
   type SnsFeedPageResult,
   type SnsLikerListResult,
@@ -85,6 +92,7 @@ export type SnsFeedItem = SnsFeedItemResult
 export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type SnsGridItem = SnsPostGridItemResult
 export type SnsLikerList = SnsLikerListResult
+export type SnsComment = SnsCommentItemResult
 /** 프로필 게시물 탭. 저장됨은 내 프로필에만 있다 */
 export type SnsProfileTab = 'grid' | 'video' | 'repost' | 'saved'
 export type SnsUserPostTab = Exclude<SnsProfileTab, 'saved'>
@@ -166,6 +174,13 @@ export const snsKeys = {
   searchUsers: (keyword: string, size: number, loggedIn: boolean) =>
     ['sns', 'follows', 'search', keyword, size, loggedIn] as const,
   searchHashtags: (keyword: string, size: number) => ['sns', 'search-hashtags', keyword, size] as const,
+  // 댓글 목록은 비로그인 응답과 로그인 응답의 보는 사람 필드(isMine)와 숨김이 달라 세션 상태를 키에 넣는다.
+  commentLists: ['sns', 'comments'] as const,
+  comments: (postPublicId: string, loggedIn: boolean) =>
+    ['sns', 'comments', postPublicId, loggedIn] as const,
+  // 알림으로 연 댓글 하나와 최상위 댓글(로그인 전용)
+  commentThread: (commentPublicId: string) =>
+    ['sns', 'comments', 'thread', commentPublicId] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -429,8 +444,15 @@ const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
     snsKeys.relations('blocks'),
     // 차단 관계인 사용자는 좋아요한 사람에서 빠진다(A24).
     snsKeys.likerLists,
+    // 댓글 작성자를 차단하면 그 사용자의 댓글과 그 아래 대댓글이 빠진다(P10).
+    snsKeys.commentLists,
   ],
-  mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes'), snsKeys.posts],
+  mute: publicId => [
+    snsKeys.profile(publicId),
+    snsKeys.relations('mutes'),
+    snsKeys.posts,
+    snsKeys.commentLists,
+  ],
 }
 
 // 켜기와 끄기는 화면에서 수를 직접 더하지 않고 성공 뒤 서버 값을 다시 읽는다.
@@ -1086,4 +1108,184 @@ export function useSnsHashtagPosts(name: string, sort: SnsSearchSort) {
   })
   useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
   return query
+}
+
+// ── SNS-04 댓글 ─────────────────────────────────────────────────────────────
+
+export const SNS_COMMENT_UNAVAILABLE = 130700
+export const SNS_COMMENT_BLOCKED = 130704
+export const SNS_COMMENT_REPLY_CLOSED = 130705
+
+/**
+ * 댓글 목록(GET /sns/posts/{publicId}/comments). 비로그인도 된다. 한 페이지는 최상위 댓글 20개와 그 아래 보이는 대댓글 전부이고
+ * items가 이미 스레드 순서라 그대로 이어 붙인다. 다른 게시물의 커서나 낡은 커서(90002)면 첫 페이지부터 다시 읽는다.
+ */
+export function useSnsComments(postPublicId: string, enabled: boolean) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.comments(postPublicId, loggedIn), [postPublicId, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await getSnsPostComments(postPublicId, { cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    retry: retryTransient,
+    enabled,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 알림으로 연 댓글과 그 최상위 댓글(GET /sns/comments/{commentPublicId}). 로그인 전용이라 비로그인이면 부르지 않는다 */
+export function useSnsCommentThread(commentPublicId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: snsKeys.commentThread(commentPublicId ?? ''),
+    queryFn: async ({ signal }) => (await getSnsComment(commentPublicId!, signal)).data,
+    retry: retryTransient,
+    enabled: enabled && commentPublicId != null,
+  })
+}
+
+export interface CreateSnsCommentInput {
+  content: string
+  /** 답글달기를 누른 댓글. 대댓글이면 서버가 그 최상위 댓글 아래 붙인다 */
+  parentPublicId: string | null
+  /** 그 입력의 모든 게시 시도에 같은 값을 보낸다(design 6절 5번) */
+  idempotencyKey: string
+}
+
+type CommentPages = InfiniteData<SnsCommentPageResult>
+
+/**
+ * 받아 둔 목록에 방금 쓴 댓글을 넣는다. 대댓글은 그 스레드 끝에, 최상위 댓글은 끝까지 불러온 목록의 끝에 넣는다.
+ * 더 불러올 페이지가 남았으면 넣지 않고 false다. 그때는 화면이 목록 아래 따로 붙여 보여준다(design 6절 7번).
+ */
+function insertComment(queryClient: QueryClient, postPublicId: string, item: SnsComment): boolean {
+  let inserted = false
+  queryClient.setQueriesData<CommentPages>(
+    { queryKey: [...snsKeys.commentLists, postPublicId] },
+    data => {
+      if (!data) return data
+      const pages = data.pages.map(page => ({ ...page, items: [...page.items] }))
+      if (item.parentPublicId) {
+        // 스레드는 페이지 사이에서 나뉘지 않는다. 최상위 댓글이 든 페이지에서 그 스레드의 마지막 항목 뒤에 넣는다.
+        const page = pages.find(p => p.items.some(i => i.publicId === item.parentPublicId))
+        if (!page) return data
+        let last = -1
+        page.items.forEach((i, index) => {
+          if (i.publicId === item.parentPublicId || i.parentPublicId === item.parentPublicId)
+            last = index
+        })
+        page.items.splice(last + 1, 0, item)
+      } else {
+        const lastPage = pages[pages.length - 1]
+        if (!lastPage || lastPage.hasNext) return data
+        lastPage.items.push(item)
+      }
+      inserted = true
+      return { ...data, pages }
+    },
+  )
+  return inserted
+}
+
+/**
+ * 댓글 작성. Idempotency-Key 헤더는 생성 fetcher가 만들지 않아 customInstance로 붙인다. 성공하면 받은 항목을 목록에 넣고
+ * 상세의 commentCount는 보는 사람별 값이라 다시 읽는다. 같은 키 재요청으로 온 항목이 ACTIVE가 아니면 넣지 않고 목록을 다시 읽는다.
+ * 넣었는지는 결과의 inserted로 알린다. mutate 콜백이 받도록 mutationFn 안에서 넣는다.
+ */
+export function useCreateSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CreateSnsCommentInput) => {
+      const item = (
+        await customInstance<SnsCommentResponse>({
+          url: `/sns/posts/${postPublicId}/comments`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': input.idempotencyKey },
+          data: { content: input.content, parentPublicId: input.parentPublicId },
+        })
+      ).data
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) })
+      if (item.status !== 'ACTIVE') {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+        return { item, inserted: true }
+      }
+      return { item, inserted: insertComment(queryClient, postPublicId, item) }
+    },
+  })
+}
+
+/** 받아 둔 목록과 알림으로 연 댓글에서 같은 publicId 항목을 바꾼다 */
+function replaceComment(queryClient: QueryClient, item: SnsComment) {
+  queryClient.setQueriesData<CommentPages>({ queryKey: snsKeys.commentLists }, data => {
+    if (!data || !('pages' in data)) return data
+    return {
+      ...data,
+      pages: data.pages.map(page => ({
+        ...page,
+        items: page.items.map(i => (i.publicId === item.publicId ? item : i)),
+      })),
+    }
+  })
+  queryClient.setQueryData(
+    snsKeys.commentThread(item.publicId),
+    (data: { comment: SnsComment; parent: SnsComment | null } | undefined) =>
+      data && { ...data, comment: item },
+  )
+}
+
+/** 댓글 수정(PATCH). 200의 항목으로 같은 publicId 항목을 바꾼다. 그사이 지운 댓글(130700)이면 목록을 다시 읽는다 */
+export function useUpdateSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      commentPublicId,
+      content,
+    }: {
+      commentPublicId: string
+      content: string
+    }) => (await updateSnsComment(commentPublicId, { content })).data,
+    onSuccess: item => replaceComment(queryClient, item),
+    onError: error => {
+      if (snsErrorCode(error) === SNS_COMMENT_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+      }
+    },
+  })
+}
+
+/**
+ * 댓글 삭제(DELETE). 이미 지운 댓글도 204다. 안내 문구로 남을지 사라질지는 서버가 정하므로 목록과 상세를 다시 읽는다.
+ */
+export function useDeleteSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (commentPublicId: string) => deleteSnsComment(commentPublicId),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] }),
+        queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        }),
+        queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) }),
+      ]),
+  })
+}
+
+// 댓글 쓰기 실패 문구. 130702와 130703은 게시 버튼이 미리 막으므로 일반 실패 문구다(design 6절 8번).
+const COMMENT_ERROR_COPY: Record<number, string> = {
+  [SNS_COMMENT_UNAVAILABLE]: '댓글을 찾을 수 없어요',
+  [SNS_COMMENT_BLOCKED]: '부적절한 표현이 있어 등록할 수 없어요',
+  [SNS_COMMENT_REPLY_CLOSED]: '답글을 달 수 없는 댓글이에요',
+  [SNS_POST_UNAVAILABLE]: '삭제된 게시물이에요',
+  [SNS_BLOCKED_BY_ME]: '차단한 계정이에요',
+  [SNS_ACCOUNT_RESTRICTED]: RESTRICTED_COPY,
+}
+
+export function snsCommentErrorMessage(error: unknown, fallback: string): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
+  const code = snsErrorCode(error)
+  return (code != null && COMMENT_ERROR_COPY[code]) || fallback
 }

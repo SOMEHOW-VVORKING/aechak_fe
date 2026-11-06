@@ -41,6 +41,38 @@ describe('pending-action(A26 대기 행동 보관)', () => {
     expect(sessionStorage.length).toBe(0)
   })
 
+  it('[AC-SNS04-017] 댓글 대기 행동은 게시물 publicId로 꺼내고 targetPublicId를 함께 돌려준다', () => {
+    const reply = '01JG2K7M9P1R3T5V7X9Z1B3D5F'
+    savePendingAction({
+      kind: 'comment',
+      publicId: COCO,
+      targetPublicId: reply,
+      returnTo: `/sns/posts/${COCO}`,
+    })
+
+    expect(takePendingAction(COCO)).toMatchObject({
+      kind: 'comment',
+      publicId: COCO,
+      targetPublicId: reply,
+    })
+  })
+
+  it('[AC-SNS04-017] targetPublicId가 문자열이 아니면 깨진 값으로 보고 지운다', () => {
+    sessionStorage.setItem(
+      'aechak.pendingAction',
+      JSON.stringify({
+        kind: 'commentBlock',
+        publicId: COCO,
+        targetPublicId: 7,
+        returnTo: '/sns',
+        createdAt: Date.now(),
+      }),
+    )
+
+    expect(peekPendingAction()).toBeNull()
+    expect(sessionStorage.length).toBe(0)
+  })
+
   it('[AC-SNS01-011] sessionStorage 접근이 막혀도 던지지 않는다', () => {
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('SecurityError')

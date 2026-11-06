@@ -28,6 +28,7 @@ export type GateFeature =
   | 'save'
   | 'like'
   | 'likers'
+  | 'comment'
 
 // SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
 // 글쓰기(write)는 SNS 게시물 작성이다(SNS-02 design 6절 10번). feed는 비로그인이 누른 팔로잉 피드 탭이다(SNS-03 A9).
@@ -45,12 +46,14 @@ const SNS_FEATURES = new Set<GateFeature>([
   'snsReport',
   'like',
   'likers',
+  'comment',
 ])
 
 /** 로그인 뒤 다시 실행할 행동. 게이트가 열린 화면의 경로와 함께 sessionStorage에 남긴다. */
 export interface GateResume {
   kind: PendingActionKind
   publicId: string
+  targetPublicId?: string
   /** 로그인 뒤 돌아갈 경로를 게이트가 열린 화면의 경로 대신 정할 때 쓴다 */
   returnTo?: string
 }
@@ -74,6 +77,7 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   save: '저장은 로그인한 회원만 이용할 수 있어요.',
   like: '좋아요는 로그인한 회원만 이용할 수 있어요.',
   likers: '좋아요한 사람 목록은 로그인한 회원만 볼 수 있어요.',
+  comment: '댓글은 로그인한 회원만 쓸 수 있어요.',
 }
 
 export interface UseLoginGate {
