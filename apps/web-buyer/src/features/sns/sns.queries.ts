@@ -27,6 +27,7 @@ import {
   getSnsFollowingFeed,
   getSnsPopularFeed,
   getSnsPost,
+  getSnsPostLikers,
   getSnsProfile,
   getSnsUserPosts,
   getSnsUserReposts,
@@ -44,6 +45,7 @@ import {
   updateSnsPost,
   type SnsFeedItemResult,
   type SnsFeedPageResult,
+  type SnsLikerListResult,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
@@ -58,7 +60,7 @@ import {
 } from '@aechak/api'
 import { useIsLoggedIn } from '@/shared/auth'
 
-// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭)을
+// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭), SNS-04(좋아요)를
 // spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체
 // useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
 
@@ -69,6 +71,7 @@ export type SnsPost = SnsPostDetailResult
 export type SnsFeedItem = SnsFeedItemResult
 export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type SnsGridItem = SnsPostGridItemResult
+export type SnsLikerList = SnsLikerListResult
 /** 프로필 게시물 탭. 저장됨은 내 프로필에만 있다 */
 export type SnsProfileTab = 'grid' | 'video' | 'repost' | 'saved'
 export type SnsUserPostTab = Exclude<SnsProfileTab, 'saved'>
@@ -125,6 +128,9 @@ export const snsKeys = {
     ['sns', 'user-posts', publicId, tab, loggedIn] as const,
   // 저장됨은 로그인한 나만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
   saves: () => ['sns', 'saves'] as const,
+  // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
+  likerLists: ['sns', 'likers'] as const,
+  likers: (publicId: string) => ['sns', 'likers', 'post', publicId] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -381,7 +387,14 @@ const TOGGLE_FETCHERS: Record<SnsToggleKind, [(id: string) => Promise<unknown>, 
 // 대신 다음에 열 때 다시 읽도록 게시물 캐시를 낡은 것으로만 표시한다(아래 onSuccess).
 const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
   follow: () => [snsKeys.profiles, snsKeys.me, snsKeys.posts],
-  block: publicId => [snsKeys.profile(publicId), snsKeys.me, snsKeys.follows, snsKeys.relations('blocks')],
+  block: publicId => [
+    snsKeys.profile(publicId),
+    snsKeys.me,
+    snsKeys.follows,
+    snsKeys.relations('blocks'),
+    // 차단 관계인 사용자는 좋아요한 사람에서 빠진다(A24).
+    snsKeys.likerLists,
+  ],
   mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes'), snsKeys.posts],
 }
 
@@ -406,6 +419,13 @@ export function useSnsToggle() {
               ...page,
               items: page.items.map(item => (item.publicId === publicId ? { ...item, following: on } : item)),
             })),
+          },
+        )
+        // 좋아요한 사람 행의 팔로우 버튼도 바꾼다(design 6절 6번). 한 번에 받는 목록이라 다시 읽지 않는다.
+        queryClient.setQueriesData<SnsLikerList>({ queryKey: snsKeys.likerLists }, data =>
+          data && {
+            ...data,
+            items: data.items.map(item => (item.publicId === publicId ? { ...item, following: on } : item)),
           },
         )
         // 화면에 없는 목록은 받아 둔 행만 고치면 새로 팔로우한 사람이 빠진 채 남는다. 다음에 열 때 다시 읽게 낡은 것으로만 표시한다.
@@ -434,7 +454,7 @@ export function useSnsToggle() {
       void refetch([
         ...REFETCH_AFTER[kind](publicId),
         // 성공 때는 행을 남기려고 목록을 다시 읽지 않지만, 실패하면 목록 행도 서버 값으로 맞춘다.
-        ...(kind === 'follow' ? [snsKeys.follows] : []),
+        ...(kind === 'follow' ? [snsKeys.follows, snsKeys.likerLists] : []),
       ])
     },
   })
@@ -782,4 +802,16 @@ const REPORT_ERROR_COPY: Record<number, string> = {
 export function snsReportErrorMessage(error: unknown): string {
   const code = snsErrorCode(error)
   return (code != null && REPORT_ERROR_COPY[code]) || '신고를 접수하지 못했어요. 다시 시도해 주세요'
+}
+
+// ── SNS-04 좋아요 ──────────────────────────────────────────────────────────
+
+/** 좋아요한 사람(GET /sns/posts/{publicId}/likers). 로그인 전용이라 비로그인이면 부르지 않는다. 최근 100명을 한 번에 받는다 */
+export function useSnsLikers(publicId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: snsKeys.likers(publicId),
+    queryFn: async ({ signal }) => (await getSnsPostLikers(publicId, signal)).data,
+    retry: retryTransient,
+    enabled,
+  })
 }
