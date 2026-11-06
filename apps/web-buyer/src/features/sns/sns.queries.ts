@@ -29,6 +29,7 @@ import {
   getSnsHashtagPosts,
   getSnsPopularFeed,
   getSnsComment,
+  getSnsCommentLikers,
   getSnsPost,
   getSnsPostComments,
   getSnsPostLikers,
@@ -36,6 +37,7 @@ import {
   getSnsUserPosts,
   getSnsUserReposts,
   getSnsUserVideos,
+  likeSnsComment,
   likeSnsPost,
   muteUser,
   repostSnsPost,
@@ -47,6 +49,7 @@ import {
   searchSnsUsers,
   unblockUser,
   unfollowUser,
+  unlikeSnsComment,
   unlikeSnsPost,
   unmuteUser,
   unrepostSnsPost,
@@ -163,7 +166,8 @@ export const snsKeys = {
   like: (target: SnsLikeTarget, publicId: string) => ['sns', 'like', target, publicId] as const,
   // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
   likerLists: ['sns', 'likers'] as const,
-  likers: (publicId: string) => ['sns', 'likers', 'post', publicId] as const,
+  likers: (publicId: string, target: SnsLikeTarget = 'post') =>
+    ['sns', 'likers', target, publicId] as const,
   // 게시물 검색과 해시태그 게시물 목록은 피드 카드와 같은 항목이라 feeds 아래에 둔다. 리포스트, 저장, 수정, 삭제, 차단과 뮤트가
   // 피드 카드에 하는 갱신을 그대로 받는다. 네 번째 자리가 세션 상태인 것도 피드와 같다.
   searchPosts: (keyword: string, sort: SnsSearchSort, size: number, loggedIn: boolean) =>
@@ -866,7 +870,7 @@ export function snsReportErrorMessage(error: unknown): string {
 // ── SNS-04 좋아요 ──────────────────────────────────────────────────────────
 
 /** 좋아요 상태와 수를 바꾼다. 수를 주지 않으면 상태가 바뀔 때만 1 올리거나 내린다 */
-function withLike(post: SnsPost, liked: boolean, likeCount?: number): SnsPost {
+function withLike<T extends SnsLikeState>(post: T, liked: boolean, likeCount?: number): T {
   const count = likeCount ?? (post.liked === liked ? post.likeCount : Math.max(0, post.likeCount + (liked ? 1 : -1)))
   return post.liked === liked && post.likeCount === count ? post : { ...post, liked, likeCount: count }
 }
@@ -957,11 +961,15 @@ export function useSnsLike(publicId: string) {
   }
 }
 
-/** 좋아요한 사람(GET /sns/posts/{publicId}/likers). 로그인 전용이라 비로그인이면 부르지 않는다. 최근 100명을 한 번에 받는다 */
-export function useSnsLikers(publicId: string, enabled: boolean) {
+/**
+ * 게시물이나 댓글 좋아요한 사람(GET /sns/posts/{publicId}/likers, /sns/comments/{commentPublicId}/likers). 로그인 전용이라
+ * 비로그인이면 부르지 않는다. 최근 100명을 한 번에 받는다
+ */
+export function useSnsLikers(publicId: string, enabled: boolean, target: SnsLikeTarget = 'post') {
   return useQuery({
-    queryKey: snsKeys.likers(publicId),
-    queryFn: async ({ signal }) => (await getSnsPostLikers(publicId, signal)).data,
+    queryKey: snsKeys.likers(publicId, target),
+    queryFn: async ({ signal }) =>
+      (await (target === 'post' ? getSnsPostLikers : getSnsCommentLikers)(publicId, signal)).data,
     retry: retryTransient,
     enabled,
   })
@@ -1249,6 +1257,88 @@ function replaceComment(queryClient: QueryClient, item: SnsComment) {
     (data: { comment: SnsComment; parent: SnsComment | null } | undefined) =>
       data && { ...data, comment: item },
   )
+}
+
+type CommentThread = { comment: SnsComment; parent: SnsComment | null }
+type CommentCache = CommentPages | CommentThread
+
+/** 댓글 목록 페이지나 알림으로 연 댓글 캐시에서 그 댓글 항목을 바꾼다 */
+function mapComment(
+  data: CommentCache | undefined,
+  publicId: string,
+  map: (item: SnsComment) => SnsComment,
+): CommentCache | undefined {
+  if (!data) return data
+  const one = (item: SnsComment) => (item.publicId === publicId ? map(item) : item)
+  if ('pages' in data) {
+    return { ...data, pages: data.pages.map(page => ({ ...page, items: page.items.map(one) })) }
+  }
+  return { comment: one(data.comment), parent: data.parent && one(data.parent) }
+}
+
+function findComment(data: CommentCache | undefined, publicId: string): SnsComment | undefined {
+  if (!data) return undefined
+  const items = 'pages' in data ? data.pages.flatMap(page => page.items) : [data.comment, data.parent]
+  return items.find(item => item?.publicId === publicId) ?? undefined
+}
+
+/**
+ * 댓글 좋아요 켜기(POST 201)와 끄기(DELETE 200). 게시물 좋아요와 같은 즉시 반영, 요청 잠금, 되돌리기이고 응답의 likeCount를
+ * 그 댓글이 든 목록 페이지와 알림으로 연 댓글 캐시에 쓴다. 그사이 볼 수 없게 된 댓글(130700)이면 목록을 다시 읽고 게시물을
+ * 볼 수 없게 됐으면 상세를 다시 읽는다. 안내는 부른 화면이 띄운다.
+ */
+export function useSnsCommentLike(postPublicId: string, commentPublicId: string) {
+  const queryClient = useQueryClient()
+  const mutationKey = snsKeys.like('comment', commentPublicId)
+  const filters: QueryFilters = {
+    queryKey: snsKeys.commentLists,
+    predicate: query => findComment(query.state.data as CommentCache | undefined, commentPublicId) != null,
+  }
+  const setLike = (liked: boolean, likeCount?: number) =>
+    queryClient.setQueriesData<CommentCache>(filters, data =>
+      mapComment(data, commentPublicId, item => withLike(item, liked, likeCount)),
+    )
+  const { mutate } = useMutation({
+    mutationKey,
+    mutationFn: async (on: boolean) =>
+      (await (on ? likeSnsComment : unlikeSnsComment)(commentPublicId)).data.likeCount,
+    // 받는 중인 조회가 끝나며 누르기 전 값으로 덮어쓰지 않게 멈춘 뒤 바꾼다. 캐시마다 받은 시각이 달라 값을 따로 남긴다.
+    onMutate: async on => {
+      await queryClient.cancelQueries(filters)
+      const before = queryClient
+        .getQueriesData<CommentCache>(filters)
+        .flatMap(([key, data]): Array<[QueryKey, SnsLikeState]> => {
+          const item = findComment(data, commentPublicId)
+          return item ? [[key, { liked: item.liked, likeCount: item.likeCount }]] : []
+        })
+      setLike(on)
+      return before
+    },
+    onSuccess: (likeCount, on) => {
+      setLike(on, likeCount)
+      void queryClient.invalidateQueries({ queryKey: snsKeys.likers(commentPublicId, 'comment') })
+    },
+    onError: (error, _on, before) => {
+      for (const [key, { liked, likeCount }] of before ?? []) {
+        queryClient.setQueryData<CommentCache>(key, data =>
+          mapComment(data, commentPublicId, item => withLike(item, liked, likeCount)),
+        )
+      }
+      if (snsErrorCode(error) === SNS_COMMENT_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        })
+      }
+      refetchPostIfGone(queryClient, postPublicId, error)
+    },
+    // 요청 중에 새로 시작한 조회는 반영 전 값을 들고 올 수 있어 멈추고 다시 읽는다.
+    onSettled: () => void removeFromLists(queryClient, filters, data => data),
+  })
+  return (on: boolean, options?: Parameters<typeof mutate>[1]) => {
+    if (queryClient.isMutating({ mutationKey }) === 0) mutate(on, options)
+  }
 }
 
 /** 댓글 수정(PATCH). 200의 항목으로 같은 publicId 항목을 바꾼다. 그사이 지운 댓글(130700)이면 목록을 다시 읽는다 */

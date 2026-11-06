@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, MoreHorizontal } from 'lucide-react'
+import { Heart, MessageCircle, MoreHorizontal } from 'lucide-react'
 import { Alert, Avatar, BottomSheet, Button, Modal, Skeleton } from '@aechak/design-system/web'
 import { useIsLoggedIn, useSessionState, type GateFeature, type GateResume } from '@/shared/auth'
 import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
@@ -14,6 +14,7 @@ import {
   snsToggleErrorMessage,
   useCreateSnsComment,
   useDeleteSnsComment,
+  useSnsCommentLike,
   useSnsCommentThread,
   useSnsComments,
   useSnsToggle,
@@ -34,9 +35,9 @@ function randomId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
 }
 
-/** 로그인 뒤 다시 열 댓글 입력창이나 댓글 작성자 차단(A26) */
+/** 로그인 뒤 다시 열 댓글 입력창이나 댓글 작성자 차단, 다시 켤 댓글 좋아요(A26) */
 export interface SnsCommentResume {
-  kind: 'comment' | 'commentBlock'
+  kind: 'comment' | 'commentBlock' | 'commentLike'
   targetPublicId?: string
 }
 
@@ -173,7 +174,8 @@ export function SnsCommentList({
   const resumeThread = useSnsCommentThread(resumeTarget, loggedIn)
   const ready = comments.data != null
   useEffect(() => {
-    if (!resume) return
+    // 댓글 좋아요는 아래 ResumeCommentLike가 목록을 받은 뒤 한 번 보낸다
+    if (!resume || resume.kind === 'commentLike') return
     if (resume.kind === 'comment') {
       if (resumeTarget != null) {
         if (resumeThread.isPending) return
@@ -288,6 +290,15 @@ export function SnsCommentList({
     <SnsCommentRow
       key={item.publicId}
       item={item}
+      likeButton={
+        <CommentLikeButton
+          postPublicId={post.publicId}
+          item={item}
+          requireAuth={requireAuth}
+          notify={notify}
+          disabled={stale}
+        />
+      }
       // 고정 영역의 같은 댓글에는 편집창을 열지 않는다
       editing={actions && editing === item.publicId}
       saving={update.isPending}
@@ -385,6 +396,14 @@ export function SnsCommentList({
         </ul>
       )}
 
+      {resume?.kind === 'commentLike' && resume.targetPublicId && ready && (
+        <ResumeCommentLike
+          postPublicId={post.publicId}
+          commentPublicId={resume.targetPublicId}
+          notify={notify}
+        />
+      )}
+
       {comments.hasNextPage && (
         <div className="px-4 py-2">
           <Button
@@ -450,6 +469,7 @@ export function SnsCommentList({
 
 function SnsCommentRow({
   item,
+  likeButton,
   editing,
   saving,
   onReply,
@@ -460,6 +480,7 @@ function SnsCommentRow({
   onLongPress,
 }: {
   item: SnsComment
+  likeButton: ReactNode
   editing: boolean
   saving: boolean
   onReply?: () => void
@@ -571,6 +592,7 @@ function SnsCommentRow({
           </div>
         )}
       </div>
+      {!editing && likeButton}
       {/* 길게 누르기를 쓸 수 없는 화면 읽기와 키보드 사용자를 위한 메뉴 버튼. 포커스를 받을 때만 보인다 */}
       {onLongPress && !item.isMine && (
         <button
@@ -584,6 +606,88 @@ function SnsCommentRow({
       )}
     </div>
   )
+}
+
+const commentLikeErrorMessage = (error: unknown) =>
+  snsCommentErrorMessage(error, snsToggleErrorMessage(error))
+
+/**
+ * 댓글 좋아요 버튼과 수(design 6절 2번). 하트는 켜고 끄고 수는 댓글 좋아요한 사람을 연다. 자기 댓글에도 누를 수 있다(R1-19).
+ * 안내 문구 항목에는 그리지 않는다(R1-20). 비로그인은 로그인 안내 시트를 열고 로그인 뒤 그 댓글에 켜기를 한 번 보낸다.
+ */
+function CommentLikeButton({
+  postPublicId,
+  item,
+  requireAuth,
+  notify,
+  disabled,
+}: {
+  postPublicId: string
+  item: SnsComment
+  requireAuth: RequireAuth
+  notify: Notify
+  disabled: boolean
+}) {
+  const navigate = useNavigate()
+  const like = useSnsCommentLike(postPublicId, item.publicId)
+  const press = () =>
+    requireAuth(
+      'like',
+      () => like(!item.liked, { onError: e => notify(commentLikeErrorMessage(e), 'error') }),
+      { kind: 'commentLike', publicId: postPublicId, targetPublicId: item.publicId },
+    )
+  const openLikers = () =>
+    requireAuth(
+      'likers',
+      () =>
+        void navigate({
+          to: '/sns/comments/$commentPublicId/likers',
+          params: { commentPublicId: item.publicId },
+        }),
+      { kind: 'open', publicId: postPublicId, returnTo: `/sns/comments/${item.publicId}/likers` },
+    )
+  return (
+    <div className="-mr-2 -mt-1.5 flex flex-none flex-col items-center">
+      <button
+        type="button"
+        aria-label="댓글 좋아요"
+        aria-pressed={item.liked}
+        disabled={disabled}
+        onClick={press}
+        className={`flex size-8 items-center justify-center rounded-full focus-visible:outline-none focus-visible:shadow-focus-ring disabled:text-text-disabled ${item.liked ? 'text-social-active' : 'text-social-idle'}`}
+      >
+        <Heart className="size-4" fill={item.liked ? 'currentColor' : 'none'} />
+      </button>
+      <button
+        type="button"
+        onClick={openLikers}
+        className="-mt-1.5 rounded-full px-1 text-caption tabular-nums text-text-tertiary focus-visible:outline-none focus-visible:shadow-focus-ring"
+      >
+        <span className="sr-only">댓글 좋아요한 사람</span> {item.likeCount.toLocaleString('ko-KR')}
+      </button>
+    </div>
+  )
+}
+
+/** 로그인 뒤 다시 실행(A26). 비로그인으로 누른 댓글 좋아요를 켜기 요청으로 한 번 보낸다. 이미 좋아요했어도 201이라 그대로다 */
+function ResumeCommentLike({
+  postPublicId,
+  commentPublicId,
+  notify,
+}: {
+  postPublicId: string
+  commentPublicId: string
+  notify: Notify
+}) {
+  const like = useSnsCommentLike(postPublicId, commentPublicId)
+  // StrictMode가 effect를 두 번 실행해도 한 번만 보낸다.
+  const sent = useRef(false)
+  useEffect(() => {
+    if (sent.current) return
+    sent.current = true
+    like(true, { onError: e => notify(commentLikeErrorMessage(e), 'error') })
+  }, [like, notify])
+  return null
 }
 
 /** 글자 수 카운터. 넘으면 오류 색으로 넘은 만큼을 알린다. 입력은 자르지 않는다(design 6절 5번) */
