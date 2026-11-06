@@ -79,7 +79,7 @@ export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked
       </header>
 
       {post.caption && (
-        <p className="line-clamp-5 whitespace-pre-line break-words text-body leading-relaxed text-text-primary">
+        <p className="line-clamp-5 whitespace-pre-line break-keep break-words text-body leading-relaxed text-text-primary">
           {post.caption}
         </p>
       )}

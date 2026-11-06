@@ -389,7 +389,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       )}
 
       {post.caption && (
-        <p className="whitespace-pre-line break-words px-4 text-body leading-relaxed text-text-primary">
+        <p className="whitespace-pre-line break-keep break-words px-4 text-body leading-relaxed text-text-primary">
           {post.caption}
         </p>
       )}
