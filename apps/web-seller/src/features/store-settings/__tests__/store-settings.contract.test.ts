@@ -103,8 +103,16 @@ describe('store-settings.contract — 에러코드 문구', () => {
     return { response: { status, data: { errorCode, message } } }
   }
 
-  it('[AC-SELLER-APP-009] 10103(휴대폰 미인증)은 선행 조건 안내를 준다', () => {
-    expect(sellerApplicationErrorMessage(axiosLikeError(403, 10103))).toContain('휴대폰 본인 인증')
+  /**
+   * 예전 문구는 "구매자 앱 마이페이지에서 인증한 뒤 다시 시도해 주세요"였다 — 이제 같은 화면의
+   * 인증 블록에서 인증할 수 있으므로 다른 앱으로 보내는 안내는 거짓이다(SCRUM-287).
+   */
+  it('[AC-SELLER-APP-009] 10103(휴대폰 미인증)은 다른 앱이 아니라 같은 화면의 인증 블록을 가리킨다', () => {
+    const message = sellerApplicationErrorMessage(axiosLikeError(403, 10103))
+    expect(message).toContain('휴대폰 본인 인증')
+    expect(message).toContain('아래 휴대폰 본인 인증을 끝낸 뒤')
+    expect(message).not.toContain('구매자 앱')
+    expect(message).not.toContain('마이페이지')
   })
 
   it('[AC-SELLER-APP-010] 10105(필수 미비)는 서버 message의 부족 목록만 뽑아 해요체 안내로 바꾼다', () => {
