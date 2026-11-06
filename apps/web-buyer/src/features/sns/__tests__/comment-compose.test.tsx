@@ -289,3 +289,78 @@ describe('비로그인 댓글', () => {
     expect(screen.queryByText(/님에게 답글 남기는 중/)).toBeNull()
   })
 })
+
+describe('목록 아래에 붙인 댓글', () => {
+  async function postBelowUnloadedPage(user: ReturnType<typeof userEvent.setup>) {
+    const roots = Array.from({ length: 21 }, (_, i) =>
+      snsComment(`01KB${String(i).padStart(22, '0')}`, SNS_POST_COCO, SNS_MONG, {
+        content: `댓글 ${i + 1}`,
+      }),
+    )
+    seedSns({ viewer: SNS_ME, comments: roots })
+    renderAt(postPath)
+    await within(await screen.findByRole('region', { name: '댓글' })).findByText('댓글 20')
+    await user.type(input(), '방금 쓴 댓글')
+    await user.click(submit())
+    await waitFor(() => expect(rowTexts().at(-1)).toContain('방금 쓴 댓글'))
+  }
+  const lastRow = () => within(section()).getAllByRole('listitem').at(-1)!
+
+  it('[AC-SNS04-034] 고치면 붙인 댓글도 바뀐 내용과 수정됨을 그린다', async () => {
+    const user = userEvent.setup()
+    await postBelowUnloadedPage(user)
+
+    await user.click(within(lastRow()).getByRole('button', { name: '수정' }))
+    const editor = screen.getByRole('textbox', { name: '댓글 수정' })
+    await user.clear(editor)
+    await user.type(editor, '고친 댓글')
+    await user.click(within(editor.closest('li')!).getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(lastRow()).toHaveTextContent('고친 댓글'))
+    expect(lastRow()).toHaveTextContent('수정됨')
+  })
+
+  it('[AC-SNS04-034] 지우면 붙인 댓글이 목록에서 빠진다', async () => {
+    const user = userEvent.setup()
+    await postBelowUnloadedPage(user)
+
+    await user.click(within(lastRow()).getByRole('button', { name: '삭제' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '삭제' }))
+
+    await waitFor(() => expect(within(section()).queryByText('방금 쓴 댓글')).toBeNull())
+    expect(rowTexts()).toHaveLength(20)
+  })
+
+  it('[AC-SNS04-034] 붙인 댓글에 단 답글은 그 아래에 바로 보인다', async () => {
+    const user = userEvent.setup()
+    await postBelowUnloadedPage(user)
+
+    await user.click(within(lastRow()).getByRole('button', { name: '답글달기' }))
+    await user.type(input(), '내 댓글에 단 답글')
+    await user.click(submit())
+
+    await waitFor(() => expect(lastRow()).toHaveTextContent('내 댓글에 단 답글'))
+    expect(rowTexts().at(-2)).toContain('방금 쓴 댓글')
+  })
+})
+
+describe('게시물을 볼 수 없게 된 뒤의 댓글', () => {
+  it('[AC-SNS04-022] 그사이 지운 게시물에 댓글을 쓰면 상세가 삭제된 게시물 안내로 바뀐다', async () => {
+    const user = userEvent.setup()
+    await openDetail()
+    seedSns({
+      ...currentSns(),
+      posts: currentSns().posts.map(p =>
+        p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p,
+      ),
+    })
+
+    await user.type(input(), '늦은 댓글')
+    await user.click(submit())
+
+    // 토스트와 상세 안내가 같은 문구다. 상세가 바뀌면 댓글 영역과 입력창이 사라진다.
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '댓글 입력' })).toBeNull())
+    expect(screen.queryByRole('region', { name: '댓글' })).toBeNull()
+    expect(screen.getByText('게시물이 삭제되어 더 이상 볼 수 없어요.')).toBeInTheDocument()
+  })
+})

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, MoreHorizontal } from 'lucide-react'
 import { Alert, Avatar, BottomSheet, Button, Modal, Skeleton } from '@aechak/design-system/web'
-import { useIsLoggedIn, type GateFeature, type GateResume } from '@/shared/auth'
+import { useIsLoggedIn, useSessionState, type GateFeature, type GateResume } from '@/shared/auth'
 import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
 import {
   SNS_COMMENT_REPLY_CLOSED,
@@ -62,6 +62,44 @@ export function useSnsCommentDraft() {
     setReplyTo,
     appended,
     addAppended: (item: SnsComment) => setAppended(prev => [...prev, item]),
+    /** 붙인 댓글을 고친 응답으로 바꾼다 */
+    replaceAppended: (item: SnsComment) =>
+      setAppended(prev => prev.map(i => (i.publicId === item.publicId ? item : i))),
+    /** 붙인 댓글을 지운다. 붙인 대댓글이 남은 최상위 댓글은 서버처럼 안내 문구로 남긴다 */
+    removeAppended: (publicId: string) =>
+      setAppended(prev => {
+        const hasReplies = prev.some(i => i.parentPublicId === publicId)
+        return prev.flatMap(i => {
+          if (i.publicId !== publicId) {
+            return i.parentPublicId === publicId ? [{ ...i, replyable: false }] : [i]
+          }
+          return hasReplies
+            ? [
+                {
+                  ...i,
+                  status: 'DELETED' as const,
+                  author: null,
+                  content: null,
+                  replyable: false,
+                  isMine: false,
+                },
+              ]
+            : []
+        })
+      }),
+    /** 붙인 최상위 댓글에 단 대댓글을 그 스레드 끝에 넣는다. 부모가 붙인 댓글이 아니면 false다 */
+    insertAppendedReply: (item: SnsComment) => {
+      if (!appended.some(i => i.publicId === item.parentPublicId)) return false
+      setAppended(prev => {
+        let last = -1
+        prev.forEach((i, index) => {
+          if (i.publicId === item.parentPublicId || i.parentPublicId === item.parentPublicId)
+            last = index
+        })
+        return [...prev.slice(0, last + 1), item, ...prev.slice(last + 1)]
+      })
+      return true
+    },
     inputRef,
     ensureKey: () => (key.current ??= randomId()),
     /** 게시가 끝나면 입력과 키를 비운다. 같은 문장을 다시 쓰면 새 댓글이다(P2) */
@@ -83,6 +121,7 @@ const PLACEHOLDER_COPY: Record<'DELETED' | 'WITHDRAWN', string> = {
 }
 
 const LONG_PRESS_MS = 500
+const MOVE_TOLERANCE_PX = 10
 
 /**
  * 댓글 목록(b7-st-2 2-A). 비로그인도 본다(A9). 오래된순이고 대댓글은 한 단계 들여쓴다. 헤더의 수는 상세 commentCount다.
@@ -107,8 +146,11 @@ export function SnsCommentList({
   onResumeDone: () => void
 }) {
   const loggedIn = useIsLoggedIn()
+  const queryClient = useQueryClient()
+  // 세션 확인 전(unknown)인 회원도 알림으로 연 댓글을 부른다. 만료된 세션의 401은 전역 인증 처리가 맡는다.
+  const pinnable = useSessionState() !== 'guest'
   const comments = useSnsComments(post.publicId, true)
-  const pinned = useSnsCommentThread(pinnedCommentId, loggedIn)
+  const pinned = useSnsCommentThread(pinnedCommentId, pinnable)
   const toggle = useSnsToggle()
   const update = useUpdateSnsComment(post.publicId)
   const remove = useDeleteSnsComment(post.publicId)
@@ -122,6 +164,8 @@ export function SnsCommentList({
   const items = comments.data?.pages.flatMap(page => page.items) ?? []
   const loadedIds = new Set(items.map(i => i.publicId))
   const extra = draft.appended.filter(i => !loadedIds.has(i.publicId))
+  // 받아 둔 행이 있는데 다시 조회가 실패하면 낡은 행으로 하는 처리(답글, 수정, 삭제, 차단)를 잠근다(AGENTS.md 6절 7).
+  const stale = comments.isError && items.length > 0
 
   // 로그인 뒤 다시 실행(A26). 입력창만 다시 열고 댓글은 보내지 않는다. 답글달기였으면 단건으로 그 댓글을 다시 읽어 아직 답글을
   // 달 수 있을 때만 그 답글 입력창을 연다. 차단은 그 작성자의 댓글이 아직 보일 때만 확인 시트를 다시 연다. 볼 수 없게 됐으면 안내만 한다.
@@ -194,6 +238,10 @@ export function SnsCommentList({
       { kind: 'block', publicId: blockTarget.publicId, on: true },
       {
         onSuccess: () => {
+          // 게시물 작성자를 차단했으면 상세를 다시 읽어 차단 안내로 바꾼다.
+          if (blockTarget.publicId === post.author.publicId) {
+            void queryClient.invalidateQueries({ queryKey: snsKeys.post(post.publicId) })
+          }
           setBlockTarget(null)
           notify(RELATION_CONFIRM.block.done)
         },
@@ -209,7 +257,10 @@ export function SnsCommentList({
     update.mutate(
       { commentPublicId: item.publicId, content },
       {
-        onSuccess: () => setEditing(null),
+        onSuccess: updated => {
+          draft.replaceAppended(updated)
+          setEditing(null)
+        },
         onError: e => {
           // 금지어가 많으면 고친 내용을 남긴다. 그사이 지운 댓글이면 목록을 다시 읽고 수정을 닫는다.
           if (snsErrorCode(e) === SNS_COMMENT_UNAVAILABLE) setEditing(null)
@@ -222,6 +273,7 @@ export function SnsCommentList({
     if (!deleteTarget) return
     remove.mutate(deleteTarget, {
       onSuccess: () => {
+        draft.removeAppended(deleteTarget)
         setDeleteTarget(null)
         notify('댓글을 삭제했어요')
       },
@@ -232,11 +284,12 @@ export function SnsCommentList({
     })
   }
 
-  const row = (item: SnsComment, actions = true) => (
+  const row = (item: SnsComment, actions = !stale) => (
     <SnsCommentRow
       key={item.publicId}
       item={item}
-      editing={editing === item.publicId}
+      // 고정 영역의 같은 댓글에는 편집창을 열지 않는다
+      editing={actions && editing === item.publicId}
       saving={update.isPending}
       onReply={actions && item.replyable ? () => reply(item) : undefined}
       onEdit={actions && item.isMine ? () => setEditing(item.publicId) : undefined}
@@ -257,7 +310,7 @@ export function SnsCommentList({
         <span className="text-caption text-text-tertiary">오래된순</span>
       </div>
 
-      {pinnedCommentId && loggedIn && (
+      {pinnedCommentId && pinnable && (
         <div className="mx-4 my-2 rounded-card bg-surface-sunken py-1">
           {pinned.data ? (
             <div aria-label="알림으로 연 댓글" role="group">
@@ -266,6 +319,17 @@ export function SnsCommentList({
             </div>
           ) : snsErrorCode(pinned.error) === SNS_COMMENT_UNAVAILABLE ? (
             <p className="px-3 py-2 text-body-sm text-text-secondary">댓글을 찾을 수 없어요</p>
+          ) : pinned.isError ? (
+            <p className="px-3 py-2 text-body-sm text-text-secondary">
+              댓글을 불러오지 못했어요.{' '}
+              <button
+                type="button"
+                onClick={() => void pinned.refetch()}
+                className="font-semibold underline"
+              >
+                다시 시도
+              </button>
+            </p>
           ) : pinned.isFetching ? (
             <Skeleton variant="text" className="mx-3 my-2 w-2/3" />
           ) : null}
@@ -298,6 +362,20 @@ export function SnsCommentList({
         </div>
       ) : (
         <ul className="flex flex-col">
+          {stale && (
+            <li className="px-4 py-2">
+              <Alert variant="error">
+                댓글을 다시 불러오지 못했어요.{' '}
+                <button
+                  type="button"
+                  onClick={() => void comments.refetch()}
+                  className="font-semibold underline"
+                >
+                  다시 시도
+                </button>
+              </Alert>
+            </li>
+          )}
           {items.map(item => (
             <li key={item.publicId}>{row(item)}</li>
           ))}
@@ -393,6 +471,9 @@ function SnsCommentRow({
 }) {
   const navigate = useNavigate()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pressed = useRef<{ x: number; y: number } | null>(null)
+  // 길게 누르기로 메뉴를 열었으면 손을 뗄 때 이어지는 click을 한 번 막는다
+  const fired = useRef(false)
   const indent = item.parentPublicId != null ? 'pl-14' : 'pl-4'
 
   if (item.status !== 'ACTIVE' || !item.author) {
@@ -409,6 +490,7 @@ function SnsCommentRow({
   const cancelPress = () => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
+    pressed.current = null
   }
   const pressHandlers = onLongPress
     ? {
@@ -417,13 +499,30 @@ function SnsCommentRow({
           cancelPress()
           onLongPress()
         },
-        onPointerDown: () => {
+        onPointerDown: (e: React.PointerEvent) => {
           cancelPress()
-          timer.current = setTimeout(onLongPress, LONG_PRESS_MS)
+          fired.current = false
+          pressed.current = { x: e.clientX, y: e.clientY }
+          timer.current = setTimeout(() => {
+            fired.current = true
+            onLongPress()
+          }, LONG_PRESS_MS)
+        },
+        // 스크롤처럼 손가락이 움직이면 길게 누르기가 아니다
+        onPointerMove: (e: React.PointerEvent) => {
+          const start = pressed.current
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > MOVE_TOLERANCE_PX)
+            cancelPress()
         },
         onPointerUp: cancelPress,
         onPointerLeave: cancelPress,
         onPointerCancel: cancelPress,
+        onClickCapture: (e: React.MouseEvent) => {
+          if (!fired.current) return
+          fired.current = false
+          e.preventDefault()
+          e.stopPropagation()
+        },
       }
     : {}
 
@@ -472,6 +571,17 @@ function SnsCommentRow({
           </div>
         )}
       </div>
+      {/* 길게 누르기를 쓸 수 없는 화면 읽기와 키보드 사용자를 위한 메뉴 버튼. 포커스를 받을 때만 보인다 */}
+      {onLongPress && !item.isMine && (
+        <button
+          type="button"
+          aria-label="댓글 메뉴"
+          onClick={onLongPress}
+          className="sr-only flex-none rounded-full text-icon focus:not-sr-only focus:flex focus:size-8 focus:items-center focus:justify-center focus-visible:shadow-focus-ring"
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
+      )}
     </div>
   )
 }
@@ -568,11 +678,12 @@ export function SnsCommentComposer({
       {
         onSuccess: ({ item, inserted }) => {
           if (!inserted) {
-            if (item.parentPublicId)
+            if (!item.parentPublicId) draft.addAppended(item)
+            else if (!draft.insertAppendedReply(item)) {
               void queryClient.invalidateQueries({
                 queryKey: [...snsKeys.commentLists, post.publicId],
               })
-            else draft.addAppended(item)
+            }
           }
           draft.reset()
         },

@@ -1160,33 +1160,39 @@ type CommentPages = InfiniteData<SnsCommentPageResult>
  * 받아 둔 목록에 방금 쓴 댓글을 넣는다. 대댓글은 그 스레드 끝에, 최상위 댓글은 끝까지 불러온 목록의 끝에 넣는다.
  * 더 불러올 페이지가 남았으면 넣지 않고 false다. 그때는 화면이 목록 아래 따로 붙여 보여준다(design 6절 7번).
  */
-function insertComment(queryClient: QueryClient, postPublicId: string, item: SnsComment): boolean {
-  let inserted = false
-  queryClient.setQueriesData<CommentPages>(
-    { queryKey: [...snsKeys.commentLists, postPublicId] },
-    data => {
-      if (!data) return data
-      const pages = data.pages.map(page => ({ ...page, items: [...page.items] }))
-      if (item.parentPublicId) {
-        // 스레드는 페이지 사이에서 나뉘지 않는다. 최상위 댓글이 든 페이지에서 그 스레드의 마지막 항목 뒤에 넣는다.
-        const page = pages.find(p => p.items.some(i => i.publicId === item.parentPublicId))
-        if (!page) return data
-        let last = -1
-        page.items.forEach((i, index) => {
-          if (i.publicId === item.parentPublicId || i.parentPublicId === item.parentPublicId)
-            last = index
-        })
-        page.items.splice(last + 1, 0, item)
-      } else {
-        const lastPage = pages[pages.length - 1]
-        if (!lastPage || lastPage.hasNext) return data
-        lastPage.items.push(item)
-      }
-      inserted = true
-      return { ...data, pages }
-    },
-  )
-  return inserted
+function insertComment(
+  queryClient: QueryClient,
+  postPublicId: string,
+  loggedIn: boolean,
+  item: SnsComment,
+): boolean {
+  // 지금 세션의 목록에만 넣는다. 다른 세션 키의 목록은 보는 사람 필드가 달라 낡은 것으로만 표시한다.
+  const key = snsKeys.comments(postPublicId, loggedIn)
+  void queryClient.invalidateQueries({
+    queryKey: [...snsKeys.commentLists, postPublicId],
+    predicate: query => query.queryKey[3] !== loggedIn,
+    refetchType: 'none',
+  })
+  const data = queryClient.getQueryData<CommentPages>(key)
+  if (!data) return false
+  const pages = data.pages.map(page => ({ ...page, items: [...page.items] }))
+  if (item.parentPublicId) {
+    // 스레드는 페이지 사이에서 나뉘지 않는다. 최상위 댓글이 든 페이지에서 그 스레드의 마지막 항목 뒤에 넣는다.
+    const page = pages.find(p => p.items.some(i => i.publicId === item.parentPublicId))
+    if (!page) return false
+    let last = -1
+    page.items.forEach((i, index) => {
+      if (i.publicId === item.parentPublicId || i.parentPublicId === item.parentPublicId)
+        last = index
+    })
+    page.items.splice(last + 1, 0, item)
+  } else {
+    const lastPage = pages[pages.length - 1]
+    if (!lastPage || lastPage.hasNext) return false
+    lastPage.items.push(item)
+  }
+  queryClient.setQueryData<CommentPages>(key, { ...data, pages })
+  return true
 }
 
 /**
@@ -1196,6 +1202,7 @@ function insertComment(queryClient: QueryClient, postPublicId: string, item: Sns
  */
 export function useCreateSnsComment(postPublicId: string) {
   const queryClient = useQueryClient()
+  const loggedIn = useIsLoggedIn()
   return useMutation({
     mutationFn: async (input: CreateSnsCommentInput) => {
       const item = (
@@ -1211,9 +1218,18 @@ export function useCreateSnsComment(postPublicId: string) {
         void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
         return { item, inserted: true }
       }
-      return { item, inserted: insertComment(queryClient, postPublicId, item) }
+      return { item, inserted: insertComment(queryClient, postPublicId, loggedIn, item) }
     },
+    onError: error => refetchPostIfGone(queryClient, postPublicId, error),
   })
+}
+
+/** 게시물을 볼 수 없게 됐으면(130400, 130001) 상세를 다시 읽어 삭제된 게시물이나 차단 안내로 바꾼다 */
+function refetchPostIfGone(queryClient: QueryClient, postPublicId: string, error: unknown) {
+  const code = snsErrorCode(error)
+  if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+    void queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) })
+  }
 }
 
 /** 받아 둔 목록과 알림으로 연 댓글에서 같은 publicId 항목을 바꾼다 */
@@ -1251,6 +1267,7 @@ export function useUpdateSnsComment(postPublicId: string) {
       if (snsErrorCode(error) === SNS_COMMENT_UNAVAILABLE) {
         void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
       }
+      refetchPostIfGone(queryClient, postPublicId, error)
     },
   })
 }
