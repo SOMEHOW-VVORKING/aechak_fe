@@ -164,9 +164,12 @@ describe('리포스트와 저장 버튼', () => {
   })
 
   it('[AC-SNS03-022] 리포스트 요청 중에 지금 탭을 다시 눌러 반영 전 피드를 받아도 요청이 끝나면 카드가 켜지고 수가 1 오른다', async () => {
+    // 느린 러너에서도 피드를 다시 읽는 동안 리포스트가 끝나지 않게 직접 놓아줄 때까지 붙잡는다.
+    let releasePost!: () => void
+    const postHeld = new Promise<void>(resolve => (releasePost = resolve))
     server.use(
       http.post(SNS_REPOST_URL, async () => {
-        await delay(200)
+        await postHeld
       }),
     )
     const user = userEvent.setup()
@@ -179,6 +182,7 @@ describe('리포스트와 저장 버튼', () => {
     await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'false'))
     expect(reactionResponses).toBe(0)
 
+    releasePost()
     await waitFor(() => expect(reactionResponses).toBe(1))
     await waitFor(() => expect(repostIn(cardOf('코코집사'))).toHaveAttribute('aria-pressed', 'true'))
     expect(repostCount(cardOf('코코집사'))).toBe('1')
