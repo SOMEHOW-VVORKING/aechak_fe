@@ -122,9 +122,12 @@ describe('리포스트와 저장 버튼', () => {
     ['리포스트', SNS_REPOST_URL, repostIn],
     ['저장', SNS_SAVE_URL, saveIn],
   ] as const)('[AC-SNS03-025] %s 요청이 실패하면 버튼과 수가 되돌아가고 실패 토스트가 나온다', async (_, url, button) => {
+    // 실패 응답을 붙잡아 두고 바로 켜진 모습을 본 뒤 보낸다. 느린 CI에서 짧은 지연은 클릭이 끝나기 전에 되돌려졌다.
+    let release = () => {}
+    const held = new Promise<void>(resolve => (release = resolve))
     server.use(
       http.post(url, async () => {
-        await delay(30)
+        await held
         return HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })
       }),
     )
@@ -134,6 +137,7 @@ describe('리포스트와 저장 버튼', () => {
 
     await user.click(button(article))
     expect(button(article)).toHaveAttribute('aria-pressed', 'true')
+    release()
 
     expect(await screen.findByText('요청을 처리하지 못했어요. 다시 시도해 주세요')).toBeInTheDocument()
     expect(button(article)).toHaveAttribute('aria-pressed', 'false')

@@ -24,6 +24,7 @@ import {
 import { RELATION_CONFIRM } from '../sns.copy'
 import { petTagLabel, postDate, postDateLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
+import { SnsCommentComposer, SnsCommentList, useSnsCommentDraft, type SnsCommentResume } from './SnsComments'
 import { SnsLikeButton, SnsResumeLike } from './SnsLikeButton'
 import { SnsHashtagLinks } from './SnsHashtagLinks'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
@@ -40,10 +41,10 @@ interface ToastState {
 type PostConfirm = 'block' | 'unmute'
 
 // 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 좋아요 버튼과 수(SNS-04), 댓글 수, 리포스트와 저장
-// 버튼(SNS-03), 공유를 그린다. 댓글 버튼은 그 API를 만드는 SNS-04 FE가 붙인다(G-C2). 신고는 더보기 시트에서 연다(SNS-07).
+// 버튼(SNS-03), 공유를 그린다. 그 아래 댓글 목록과 하단 입력바를 둔다(SNS-04). 신고는 더보기 시트에서 연다(SNS-07).
 // author는 카드나 프로필에서 들어와 작성자를 알 때만 온다. 내가 차단한 작성자의 게시물(403 130001)은 응답에
-// 작성자가 없어서 이 값이 있을 때만 프로필 이동을 보여준다(G4).
-export function SnsPostDetailScreen({ publicId, author }: { publicId: string; author?: string }) {
+// 작성자가 없어서 이 값이 있을 때만 프로필 이동을 보여준다(G4). comment는 알림으로 열었을 때 고정할 댓글이다.
+export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: string; author?: string; comment?: string }) {
   const navigate = useNavigate()
   const goBack = useSafeBack({ to: '/sns' })
   const { data: post, error, isPending, refetch } = useSnsPost(publicId)
@@ -59,6 +60,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const [reportOpen, setReportOpen] = useState(false)
   // 로그인 뒤 다시 켤 리포스트, 저장, 좋아요(A26). 정해지면 SnsResumeReaction이나 SnsResumeLike가 한 번 보낸다.
   const [resume, setResume] = useState<SnsReactionKind | 'like' | null>(null)
+  const [commentResume, setCommentResume] = useState<SnsCommentResume | null>(null)
+  const draft = useSnsCommentDraft()
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
@@ -87,6 +90,11 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
     if (!pending) return
     if (pending.kind === 'save' || pending.kind === 'like' || (pending.kind === 'repost' && !post.isMine)) {
       setResume(pending.kind)
+    }
+    // 댓글 입력과 댓글 작성자 차단은 내 게시물에서도 된다. 댓글 목록이 불러와진 뒤 SnsCommentList가 연다.
+    if (pending.kind === 'comment' || pending.kind === 'commentBlock') {
+      setCommentResume({ kind: pending.kind, targetPublicId: pending.targetPublicId })
+      return
     }
     if (post.isMine) return
     if (pending.kind === 'follow') {
@@ -192,8 +200,8 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
 
   const showMore = post != null && !unavailable && !blockedByMe
 
-  // 본문만 분기하고 시트, Modal, 토스트는 어느 분기에서도 함께 렌더한다.
-  const screen = (content: ReactNode) => (
+  // 본문만 분기하고 시트, Modal, 토스트는 어느 분기에서도 함께 렌더한다. below는 게시물 아래 댓글 목록이다.
+  const screen = (content: ReactNode, below?: ReactNode) => (
     <MobileScreen
       header={
         <BackAppBar
@@ -214,8 +222,14 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
           }
         />
       }
+      footer={
+        post &&
+        !unavailable &&
+        !blockedByMe && <SnsCommentComposer post={post} draft={draft} requireAuth={requireAuth} notify={showToast} />
+      }
     >
       {content}
+      {below}
 
       {post && (
         <SnsPostMoreSheet
@@ -340,7 +354,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   const reactionError = (message: string) => showToast(message, 'error')
 
   return screen(
-    <article className="flex flex-col gap-3 pb-6 pt-2">
+    <article className="flex flex-col gap-3 pb-4 pt-2">
       <header className="flex items-center gap-3 px-4">
         <button
           type="button"
@@ -449,6 +463,15 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         {post.edited && <span>수정됨</span>}
       </p>
     </article>,
+    <SnsCommentList
+      post={post}
+      draft={draft}
+      requireAuth={requireAuth}
+      notify={showToast}
+      pinnedCommentId={comment}
+      resume={commentResume}
+      onResumeDone={() => setCommentResume(null)}
+    />,
   )
 }
 

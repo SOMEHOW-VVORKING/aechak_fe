@@ -158,6 +158,7 @@ async function stubSns(page: Page, { member = true }: { member?: boolean } = {})
   await page.route(`${API}/sns/posts/*/likers`, route =>
     fulfill(route, 200, { data: LIKERS[new URL(route.request().url()).pathname.split('/').at(-2)!] }),
   )
+  await page.route(`${API}/sns/posts/*/comments*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
   return likes
 }
 

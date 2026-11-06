@@ -127,6 +127,7 @@ async function stubSns(page: Page) {
   )
   await page.route(`${API}/sns/feeds/*`, route => fulfill(route, 200, { data: FOLLOWING }))
   await page.route(`${API}/sns/posts/*`, route => fulfill(route, 200, { data: POST }))
+  await page.route(`${API}/sns/posts/*/comments*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
   await page.route(`${API}/sns/users/*`, route => fulfill(route, 200, { data: BORI_PROFILE }))
   await page.route(`${API}/sns/users/*/{posts,videos,reposts}*`, route => fulfill(route, 200, { data: EMPTY_GRID }))
   await page.route(`${API}/sns/me/blocks*`, route => fulfill(route, 200, { data: BLOCKS }))

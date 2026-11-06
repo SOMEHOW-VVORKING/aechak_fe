@@ -162,6 +162,8 @@ async function stubSns(page: Page, opts: StubOptions = {}) {
     return fulfill(route, 200, { data: post })
   })
 
+  await page.route(`${API}/sns/posts/*/comments*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
+
   await page.route(`${API}/sns/posts`, route => {
     if (route.request().method() === 'OPTIONS') return fulfill(route, 204)
     calls.creates.push({
