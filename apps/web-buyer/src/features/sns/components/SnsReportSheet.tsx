@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Alert, Avatar, BottomSheet, Button, StatusPill, Textarea } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { RadioList } from '@/shared/components/RadioList'
@@ -37,6 +37,7 @@ interface SnsReportSheetProps {
 // 요청 중에는 닫지 않는다. 닫히면 react-query가 호출별 성공, 실패 처리를 실행하지 않아 결과를 알릴 수 없다.
 export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: SnsReportSheetProps) {
   const submit = useSubmitSnsReport()
+  const reasonHeadingId = useId()
   const [reason, setReason] = useState<SnsReportReason | ''>('')
   const [detail, setDetail] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -107,13 +108,18 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
             </div>
 
             <div className="flex flex-col gap-1">
-              <p className="text-subheading font-semibold text-text-primary">신고 사유를 선택해 주세요</p>
+              <p id={reasonHeadingId} className="text-subheading font-semibold text-text-primary">
+                신고 사유를 선택해 주세요
+              </p>
               <p className="break-keep text-body-sm text-text-secondary">
                 커뮤니티 가이드 위반이 의심되는 {isPost ? '게시물' : '계정'}을 알려주세요. 신고자는 비공개로 보호돼요.
               </p>
             </div>
 
-            <RadioList name="sns-report-reason" options={REASONS} value={reason} onChange={setReason} />
+            {/* 공용 RadioList는 묶음 역할을 두지 않아 이 시트에서 사유 묶음의 이름과 필수를 붙인다. */}
+            <div role="radiogroup" aria-labelledby={reasonHeadingId} aria-required="true">
+              <RadioList name="sns-report-reason" options={REASONS} value={reason} onChange={setReason} />
+            </div>
 
             <Textarea
               label={`상세 내용 ${reason === 'OTHER' ? '(필수)' : '(선택)'}`}

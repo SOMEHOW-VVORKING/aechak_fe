@@ -72,6 +72,9 @@ describe('SNS 게시물 신고', () => {
     expect(within(sheet).getByText('오늘 코코랑 한강 산책')).toBeInTheDocument()
     expect(within(sheet).getByText('SNS')).toBeInTheDocument()
     expect(within(sheet).getByText('신고 사유를 선택해 주세요')).toBeInTheDocument()
+    const reasons = within(sheet).getByRole('radiogroup', { name: '신고 사유를 선택해 주세요' })
+    expect(reasons).toHaveAttribute('aria-required', 'true')
+    expect(within(reasons).getAllByRole('radio')).toHaveLength(5)
     expect(within(sheet).getByText(/신고자는 비공개로 보호돼요/)).toBeInTheDocument()
     expect(within(sheet).getAllByRole('radio').map(r => r.closest('label')?.textContent)).toEqual([
       '스팸/광고',
