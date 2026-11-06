@@ -10,6 +10,9 @@ import { petAge } from '@/shared/pet'
 import {
   SNS_BLOCKER,
   SNS_COCO,
+  SNS_COMMENT_DELETED,
+  SNS_COMMENT_MONG,
+  SNS_COMMENT_URL,
   SNS_FANS,
   SNS_ME,
   SNS_MONG,
@@ -24,6 +27,9 @@ import {
   currentSns,
   seedSns,
   server,
+  snsComment,
+  snsExampleCommentLikes,
+  snsExampleComments,
   snsLike,
   snsRelation,
 } from '@/testing/msw/server'
@@ -219,6 +225,81 @@ describe('/sns/posts/$publicId/likers', () => {
     logout()
     seedSns({ viewer: null })
     renderAt(likersPath(SNS_POST_COCO))
+
+    expect(
+      await screen.findByText(/좋아요한 사람 목록은 로그인한 회원만 볼 수 있어요/),
+    ).toBeInTheDocument()
+    expect(likersRequests).toBe(0)
+  })
+})
+
+describe('/sns/comments/$commentPublicId/likers', () => {
+  const commentLikersPath = (publicId: string) => `/sns/comments/${publicId}/likers`
+  const COMMENT_ON_DELETED = '01JG2KCE6G8J0M2P4R6T8V0X2B'
+  const COMMENT_ON_SPAM = '01JG2KDF7H9K1N3Q5S7W9Y1A3C'
+
+  beforeEach(() => {
+    seedSns({
+      comments: [
+        ...snsExampleComments(),
+        snsComment(COMMENT_ON_DELETED, SNS_POST_DELETED, SNS_MONG),
+        snsComment(COMMENT_ON_SPAM, SNS_POST_SPAM, SNS_MONG),
+      ],
+      likes: snsExampleCommentLikes(),
+    })
+  })
+
+  it('[AC-SNS04-009] 위에 대상 댓글 카드가 나오고 100명 이하면 표시한 인원 안내가 나온다', async () => {
+    renderAt(commentLikersPath(SNS_COMMENT_MONG))
+
+    const card = await screen.findByRole('group', { name: '좋아요한 댓글' })
+    expect(within(card).getByText('몽이아빠')).toBeInTheDocument()
+    expect(within(card).getByText('코코 표정 너무 좋네요')).toBeInTheDocument()
+    expect(await screen.findByText('좋아요한 2명을 표시했어요')).toBeInTheDocument()
+    expect(rows()).toHaveLength(2)
+    expect(within(rowOf('보리언니')).getByText('나')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS04-009] 대상 댓글 단건 조회만 실패하면 카드 자리에 안내와 다시 시도가 나오고 목록은 그대로다', async () => {
+    let fail = true
+    server.use(
+      http.get(SNS_COMMENT_URL, () =>
+        fail ? HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 }) : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(commentLikersPath(SNS_COMMENT_MONG))
+
+    expect(await screen.findByText('댓글을 불러오지 못했어요.')).toBeInTheDocument()
+    expect(screen.getByText('좋아요한 2명을 표시했어요')).toBeInTheDocument()
+
+    fail = false
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('group', { name: '좋아요한 댓글' })).toBeInTheDocument()
+  })
+
+  it('[AC-SNS04-014] 좋아요가 없으면 첫 좋아요를 권하는 빈 상태가 나온다', async () => {
+    seedSns({ ...currentSns(), likes: [] })
+    renderAt(commentLikersPath(SNS_COMMENT_MONG))
+
+    expect(await screen.findByText('아직 좋아요가 없어요')).toBeInTheDocument()
+    expect(screen.getByText('이 댓글에 가장 먼저 좋아요를 남겨보세요.')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['지운 댓글', SNS_COMMENT_DELETED, '댓글을 찾을 수 없어요'],
+    ['지워진 게시물의 댓글', COMMENT_ON_DELETED, '삭제된 게시물이에요'],
+    ['내가 차단한 작성자의 게시물에 달린 댓글', COMMENT_ON_SPAM, '차단한 계정의 게시물이에요'],
+  ])('[AC-SNS04-036] %s은 목록 자리에 안내가 나온다', async (_, publicId, title) => {
+    renderAt(commentLikersPath(publicId))
+    expect(await screen.findByText(title)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: '좋아요한 댓글' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS04-007] 주소로 들어온 비로그인에게는 요청 없이 로그인 안내 시트가 열린다', async () => {
+    logout()
+    seedSns({ ...currentSns(), viewer: null })
+    renderAt(commentLikersPath(SNS_COMMENT_MONG))
 
     expect(
       await screen.findByText(/좋아요한 사람 목록은 로그인한 회원만 볼 수 있어요/),

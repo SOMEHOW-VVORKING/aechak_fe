@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Ban, FileX, Heart, Info } from 'lucide-react'
+import { Ban, FileX, Heart, Info, MessageCircle } from 'lucide-react'
 import {
   Avatar,
   EmptyState,
@@ -16,30 +16,44 @@ import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   SNS_BLOCKED_BY_ME,
+  SNS_COMMENT_UNAVAILABLE,
   SNS_POST_UNAVAILABLE,
   snsErrorCode,
   snsToggleErrorMessage,
+  useSnsCommentThread,
   useSnsLikers,
   useSnsToggle,
+  type SnsLikeTarget,
   type SnsLikerList,
 } from '../sns.queries'
-import { petTagLabel } from '../sns.format'
+import { petTagLabel, relativeTimeLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsListError, SnsRefetchError } from './SnsListEnd'
 
 type Liker = SnsLikerList['items'][number]
 
-// 게시물 좋아요한 사람(b7-st-9 9-A, 9-C). 로그인 사용자만 본다(A9). 상단 수는 빠진 사용자도 센 전체 수이고 행은 최근에 누른
-// 순서로 100명까지다. 닉네임 검색은 받은 행 안에서만 한다(P7). 하단 안내는 보여준 행 기준이다(R3-09).
-export function SnsLikersScreen({ publicId }: { publicId: string }) {
+// 게시물과 댓글 좋아요한 사람(b7-st-9 9-A, 9-B, 9-C). 로그인 사용자만 본다(A9). 상단 수는 빠진 사용자도 센 전체 수이고 행은
+// 최근에 누른 순서로 100명까지다. 닉네임 검색은 받은 행 안에서만 한다(P7). 하단 안내는 보여준 행 기준이다(R3-09).
+// 댓글이면 publicId는 댓글 publicId이고 위에 대상 댓글 카드를 단건 조회로 그린다.
+export function SnsLikersScreen({
+  publicId,
+  target = 'post',
+}: {
+  publicId: string
+  target?: SnsLikeTarget
+}) {
   const navigate = useNavigate()
   // 세션을 아직 모르는 회원을 막지 않도록 비로그인이 확실할 때만 막는다
   const guest = useSessionState() === 'guest'
-  const goBack = useSafeBack({ to: '/sns/posts/$publicId', params: { publicId } })
+  // 댓글 응답에는 게시물 publicId가 없어 주소로 바로 들어왔으면 피드로 돌아간다
+  const goBack = useSafeBack(
+    target === 'post' ? { to: '/sns/posts/$publicId', params: { publicId } } : { to: '/sns/feed' },
+  )
   const [keyword, setKeyword] = useState('')
   const [errorToast, setErrorToast] = useState<string | null>(null)
   // 비로그인이면 목록을 부르지 않고 로그인 안내 시트만 연다.
-  const likers = useSnsLikers(publicId, !guest)
+  const likers = useSnsLikers(publicId, !guest, target)
+  const thread = useSnsCommentThread(target === 'comment' ? publicId : undefined, !guest)
   const toggle = useSnsToggle()
 
   const openProfile = (item: Liker) =>
@@ -84,6 +98,15 @@ export function SnsLikersScreen({ publicId }: { publicId: string }) {
       />,
     )
   }
+  if (code === SNS_COMMENT_UNAVAILABLE) {
+    return screen(
+      <ScreenEmptyState
+        icon={<MessageCircle className="size-6" />}
+        title="댓글을 찾을 수 없어요"
+        description="댓글이 삭제되었거나 볼 수 없는 댓글이에요."
+      />,
+    )
+  }
   if (code === SNS_BLOCKED_BY_ME) {
     return screen(
       <ScreenEmptyState
@@ -119,7 +142,7 @@ export function SnsLikersScreen({ publicId }: { publicId: string }) {
       <EmptyState
         icon={<Heart className="size-6" />}
         title="아직 좋아요가 없어요"
-        description="이 게시물에 가장 먼저 좋아요를 남겨보세요."
+        description={`이 ${target === 'post' ? '게시물' : '댓글'}에 가장 먼저 좋아요를 남겨보세요.`}
       />
     )
   } else if (data.items.length === 0) {
@@ -194,8 +217,42 @@ export function SnsLikersScreen({ publicId }: { publicId: string }) {
     )
   }
 
+  const comment = thread.data?.comment
   return screen(
     <div className="flex flex-col pb-6">
+      {comment?.author && (
+        <div
+          role="group"
+          aria-label="좋아요한 댓글"
+          className="mx-4 mt-3 flex items-start gap-3 rounded-card border border-border-subtle p-3"
+        >
+          <Avatar
+            name={comment.author.nickname}
+            src={comment.author.profileImageUrl ?? undefined}
+            size="sm"
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <p className="flex items-center gap-2 text-caption">
+              <span className="truncate font-semibold text-text-primary">
+                {comment.author.nickname}
+              </span>
+              <span className="flex-none tabular-nums text-text-tertiary">
+                {relativeTimeLabel(comment.createdAt)}
+              </span>
+            </p>
+            <p className="line-clamp-3 whitespace-pre-line break-words text-body-sm text-text-primary">
+              {comment.content}
+            </p>
+          </div>
+        </div>
+      )}
+      {/* 단건 조회만 실패했으면 어느 댓글인지 알 수 없어 카드 자리에 알린다 */}
+      {target === 'comment' && !comment && thread.isError && (
+        <SnsRefetchError
+          message="댓글을 불러오지 못했어요."
+          onRetry={() => void thread.refetch()}
+        />
+      )}
       <p className="flex items-center gap-1.5 px-4 pb-2.5 pt-3.5 text-label text-text-primary">
         <Heart
           className={`size-4 ${data.likeCount > 0 ? 'text-social-active' : 'text-icon-muted'}`}

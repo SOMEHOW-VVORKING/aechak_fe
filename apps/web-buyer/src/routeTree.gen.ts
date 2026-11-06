@@ -61,6 +61,7 @@ import { Route as SnsPostsPublicIdIndexRouteImport } from './routes/sns/posts/$p
 import { Route as SnsUsersPublicIdFollowsRouteImport } from './routes/sns/users/$publicId/follows'
 import { Route as SnsPostsPublicIdLikersRouteImport } from './routes/sns/posts/$publicId/likers'
 import { Route as SnsPostsPublicIdEditRouteImport } from './routes/sns/posts/$publicId/edit'
+import { Route as SnsCommentsCommentPublicIdLikersRouteImport } from './routes/sns/comments/$commentPublicId/likers'
 import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/products/$productId/inquiries/new'
 
 const WishlistRoute = WishlistRouteImport.update({
@@ -322,6 +323,12 @@ const SnsPostsPublicIdEditRoute = SnsPostsPublicIdEditRouteImport.update({
   path: '/sns/posts/$publicId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsCommentsCommentPublicIdLikersRoute =
+  SnsCommentsCommentPublicIdLikersRouteImport.update({
+    id: '/sns/comments/$commentPublicId/likers',
+    path: '/sns/comments/$commentPublicId/likers',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProductsProductIdInquiriesNewRoute =
   ProductsProductIdInquiriesNewRouteImport.update({
     id: '/products/$productId/inquiries/new',
@@ -377,6 +384,7 @@ export interface FileRoutesByFullPath {
   '/products/$productId/': typeof ProductsProductIdIndexRoute
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
   '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
@@ -431,6 +439,7 @@ export interface FileRoutesByTo {
   '/products/$productId': typeof ProductsProductIdIndexRoute
   '/settings/notices': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
   '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
@@ -487,6 +496,7 @@ export interface FileRoutesById {
   '/products/$productId/': typeof ProductsProductIdIndexRoute
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
   '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
@@ -543,6 +553,7 @@ export interface FileRouteTypes {
     | '/products/$productId/'
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
     | '/sns/posts/$publicId/edit'
     | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/products/$productId'
     | '/settings/notices'
     | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
     | '/sns/posts/$publicId/edit'
     | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
@@ -652,6 +664,7 @@ export interface FileRouteTypes {
     | '/products/$productId/'
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
     | '/sns/posts/$publicId/edit'
     | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
@@ -703,6 +716,7 @@ export interface RootRouteChildren {
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
   SettingsNoticesIndexRoute: typeof SettingsNoticesIndexRoute
   ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
+  SnsCommentsCommentPublicIdLikersRoute: typeof SnsCommentsCommentPublicIdLikersRoute
   SnsPostsPublicIdEditRoute: typeof SnsPostsPublicIdEditRoute
   SnsPostsPublicIdLikersRoute: typeof SnsPostsPublicIdLikersRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
@@ -1076,6 +1090,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SnsPostsPublicIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/comments/$commentPublicId/likers': {
+      id: '/sns/comments/$commentPublicId/likers'
+      path: '/sns/comments/$commentPublicId/likers'
+      fullPath: '/sns/comments/$commentPublicId/likers'
+      preLoaderRoute: typeof SnsCommentsCommentPublicIdLikersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/$productId/inquiries/new': {
       id: '/products/$productId/inquiries/new'
       path: '/products/$productId/inquiries/new'
@@ -1148,6 +1169,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
   SettingsNoticesIndexRoute: SettingsNoticesIndexRoute,
   ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
+  SnsCommentsCommentPublicIdLikersRoute: SnsCommentsCommentPublicIdLikersRoute,
   SnsPostsPublicIdEditRoute: SnsPostsPublicIdEditRoute,
   SnsPostsPublicIdLikersRoute: SnsPostsPublicIdLikersRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,

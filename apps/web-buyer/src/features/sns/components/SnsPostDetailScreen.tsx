@@ -91,8 +91,8 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
     if (pending.kind === 'save' || pending.kind === 'like' || (pending.kind === 'repost' && !post.isMine)) {
       setResume(pending.kind)
     }
-    // 댓글 입력과 댓글 작성자 차단은 내 게시물에서도 된다. 댓글 목록이 불러와진 뒤 SnsCommentList가 연다.
-    if (pending.kind === 'comment' || pending.kind === 'commentBlock') {
+    // 댓글 입력, 댓글 작성자 차단, 댓글 좋아요는 내 게시물에서도 된다. 댓글 목록이 불러와진 뒤 SnsCommentList가 연다.
+    if (pending.kind === 'comment' || pending.kind === 'commentBlock' || pending.kind === 'commentLike') {
       setCommentResume({ kind: pending.kind, targetPublicId: pending.targetPublicId })
       return
     }
