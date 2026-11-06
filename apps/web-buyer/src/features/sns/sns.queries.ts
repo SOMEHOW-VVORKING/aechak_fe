@@ -449,12 +449,14 @@ export function useSnsToggle() {
       }
       await refetch(REFETCH_AFTER[kind](publicId))
       // 차단, 뮤트와 그 해제 뒤에는 숨었던 글이 다시 나오고 새로 숨을 글이 빠져야 해서 받아 둔 피드, 프로필 탭, 저장됨을
-      // 지운다(design 6절 7번). 열린 목록은 이 mutation을 쓰는 화면이 다시 그릴 때 첫 페이지부터 다시 읽는다. 팔로우는
+      // 지운다(design 6절 7번). 열린 목록은 지우지 않고 비워 첫 페이지부터 다시 읽는다. 지우면 그 목록을 그리는 화면이 다시
+      // 그려질 때까지 지운 목록을 들고 있는데, 목록을 그리는 화면과 이 mutation을 쓰는 화면이 다를 수 있다. 팔로우는
       // 다음 페이지부터 반영된다(G3).
       if (kind !== 'follow') {
-        queryClient.removeQueries({ queryKey: snsKeys.feeds })
-        queryClient.removeQueries({ queryKey: snsKeys.userPostLists })
-        queryClient.removeQueries({ queryKey: snsKeys.saves() })
+        for (const queryKey of [snsKeys.feeds, snsKeys.userPostLists, snsKeys.saves()]) {
+          queryClient.removeQueries({ queryKey, predicate: query => query.getObserversCount() === 0 })
+          void queryClient.resetQueries({ queryKey })
+        }
       }
     },
     // 재조회를 기다리지 않는다. 실패 안내와 행 잠금 해제가 재조회(와 그 재시도)에 묶이지 않게 한다.
