@@ -176,7 +176,7 @@ export interface SnsSeed {
 
 export interface SnsReportRow {
   reporter: string
-  targetType: 'SNS_POST' | 'SNS_USER'
+  targetType: 'SNS_POST' | 'SNS_COMMENT' | 'SNS_USER'
   targetId: string
   reasonCode: string
   reasonText: string | null
@@ -984,7 +984,7 @@ function mySaves({ request }: { request: Request }) {
 export const SNS_REPORTS_URL = `${base}/reports`
 const SNS_REPORT_REASONS = ['SPAM', 'ABUSE', 'INAPPROPRIATE', 'FRAUD', 'OTHER']
 
-// 신고 접수(POST /reports)의 SNS 대상 두 종류. 판정 순서는 sns.yaml SNS-T17 계약 그대로다. 다른 대상(PRODUCT, REVIEW, USER)은
+// 신고 접수(POST /reports)의 SNS 대상 세 종류. 판정 순서는 sns.yaml SNS-T17, SNS-T21 계약 그대로다. 다른 대상(PRODUCT, REVIEW, USER)은
 // 이 핸들러가 받지 않고 넘긴다.
 async function submitReport({ request }: { request: Request }) {
   const body = (await request.clone().json().catch(() => null)) as {
@@ -993,7 +993,8 @@ async function submitReport({ request }: { request: Request }) {
     reasonCode?: string
     reasonText?: string | null
   } | null
-  if (body?.targetType !== 'SNS_POST' && body?.targetType !== 'SNS_USER') return undefined
+  if (body?.targetType !== 'SNS_POST' && body?.targetType !== 'SNS_COMMENT' && body?.targetType !== 'SNS_USER')
+    return undefined
   const viewer = viewerOf(request)
   if (viewer == null) return unauthenticated()
   const { targetType, targetId, reasonCode } = body
@@ -1008,6 +1009,14 @@ async function submitReport({ request }: { request: Request }) {
     if (row.author === viewer) return error(400, 130800)
     if (reasonCode === 'OTHER' && reasonText == null) return error(400, 130801)
     if (duplicate) return error(409, 130802)
+  } else if (targetType === 'SNS_COMMENT') {
+    // 댓글 판정은 댓글 좋아요와 같다. 안내 문구만 남은 댓글도 목록에 보이지 않는 댓글과 같이 130700이다.
+    const found = visibleComment(targetId, viewer)
+    if (found instanceof Response) return found
+    if (found.item.status !== 'ACTIVE') return error(404, 130700)
+    if (found.row.author === viewer) return error(400, 130803)
+    if (reasonCode === 'OTHER' && reasonText == null) return error(400, 130801)
+    if (duplicate) return error(409, 130804)
   } else {
     // 사용자 신고는 두 사람 사이의 차단을 보지 않는다(P11).
     if (!USERS[targetId]) return unavailable()

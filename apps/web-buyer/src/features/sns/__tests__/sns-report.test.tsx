@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -8,11 +8,13 @@ import { setAccessToken } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
+  SNS_COMMENT_MONG,
   SNS_ME,
   SNS_MONG,
   SNS_POST_COCO,
   SNS_POST_MINE,
   SNS_PROFILE_URL,
+  SNS_REPLY_COCO,
   SNS_REPORTS_URL,
   SNS_SPAM,
   WEB_REFRESH_URL,
@@ -20,6 +22,7 @@ import {
   seedSns,
   server,
   snsAct,
+  snsExampleComments,
   snsRelation,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
@@ -59,6 +62,15 @@ afterEach(() => {
 async function openPostReport(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '더보기' }))
   await user.click(within(screen.getByRole('dialog', { name: '게시물 더보기' })).getByRole('button', { name: '신고하기' }))
+  return reportSheet()
+}
+
+const commentSection = () => screen.getByRole('region', { name: '댓글' })
+
+/** 댓글을 길게 눌러 댓글 메뉴를 열고 신고를 누른다 */
+async function openCommentReport(user: ReturnType<typeof userEvent.setup>, content: string) {
+  fireEvent.contextMenu(await within(await screen.findByRole('region', { name: '댓글' })).findByText(content))
+  await user.click(within(await screen.findByRole('dialog', { name: '댓글 메뉴' })).getByRole('button', { name: '신고' }))
   return reportSheet()
 }
 
@@ -373,6 +385,129 @@ describe('SNS 사용자 신고', () => {
   })
 })
 
+describe('SNS 댓글 신고', () => {
+  beforeEach(() => {
+    seedSns({ comments: snsExampleComments() })
+  })
+
+  it('[AC-SNS-RPT-012] 남의 댓글 메뉴의 신고로 작성자와 댓글 내용이 든 대상 카드를 보고 제출하면 접수 토스트가 나온다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    expect(within(sheet).getByText('몽이아빠 님의 댓글')).toBeInTheDocument()
+    expect(within(sheet).getByText('코코 표정 너무 좋네요')).toHaveClass('truncate')
+    expect(within(sheet).getByText(/위반이 의심되는 댓글을 알려주세요/)).toBeInTheDocument()
+    expect(within(sheet).getAllByRole('radio')).toHaveLength(5)
+
+    await user.click(within(sheet).getByText('욕설/혐오 표현'))
+    await user.click(submitButton())
+
+    expect(await screen.findByText('신고가 접수되었습니다')).toBeInTheDocument()
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    expect(reportBodies).toEqual([
+      { targetType: 'SNS_COMMENT', targetId: SNS_COMMENT_MONG, reasonCode: 'ABUSE', reasonText: null },
+    ])
+  })
+
+  it('[AC-SNS-RPT-012] 대댓글은 부모 댓글이 아니라 그 대댓글을 신고한다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '감사해요. 다음에 같이 산책해요')
+    expect(within(sheet).getByText('코코집사 님의 댓글')).toBeInTheDocument()
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByText('신고가 접수되었습니다')).toBeInTheDocument()
+    expect(reportBodies).toEqual([
+      { targetType: 'SNS_COMMENT', targetId: SNS_REPLY_COCO, reasonCode: 'SPAM', reasonText: null },
+    ])
+  })
+
+  it('[AC-SNS-RPT-013] 이미 신고한 댓글은 접수 확인으로 보고 시트를 닫아 이미 신고했다고 알린다', async () => {
+    seedSns({
+      comments: snsExampleComments(),
+      reports: [{ reporter: SNS_ME, targetType: 'SNS_COMMENT', targetId: SNS_COMMENT_MONG, reasonCode: 'SPAM', reasonText: null }],
+    })
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    await user.click(within(sheet).getByText('사기/허위 정보'))
+    await user.click(submitButton())
+
+    expect(await screen.findByText('이미 신고한 댓글이에요')).toBeInTheDocument()
+    expect(screen.getByText('이미 신고한 댓글이에요').closest('[role="alert"]')).toBeNull()
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    expect(currentSns().reports).toHaveLength(1)
+  })
+
+  it('[AC-SNS-RPT-014] 시트를 연 사이 지워진 댓글은 시트를 닫아 알리고 댓글 목록을 다시 읽는다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    seedSns({
+      ...currentSns(),
+      comments: currentSns().comments.map(r => (r.publicId === SNS_COMMENT_MONG ? { ...r, deleted: true, content: null } : r)),
+    })
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('삭제된 댓글이에요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    // 대댓글이 남아 있어 지운 댓글은 안내 문구로 바뀐다.
+    await waitFor(() => expect(within(commentSection()).queryByText('코코 표정 너무 좋네요')).toBeNull())
+    expect(within(commentSection()).getAllByText('삭제된 댓글이에요')).toHaveLength(2)
+  })
+
+  it('[AC-SNS-RPT-014] 시트를 연 사이 게시물이 지워졌으면 시트를 닫아 알리고 상세를 삭제된 게시물 안내로 바꾼다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    seedSns({
+      ...currentSns(),
+      posts: currentSns().posts.map(p => (p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p)),
+    })
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('삭제된 게시물이에요')
+    expect(await screen.findByText('게시물이 삭제되어 더 이상 볼 수 없어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-014] 본인 댓글 신고 거절(130803)은 다시 보내도 같은 답이라 시트를 닫고 알린다', async () => {
+    server.use(http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 130803, message: '' }, { status: 400 })))
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('내 댓글은 신고할 수 없어요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+  })
+
+  it('[AC-SNS-RPT-015] 빈도 제한(429)은 시트와 입력을 두고 잠시 뒤 다시 시도하라고 안내한다', async () => {
+    server.use(http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 90012, message: '' }, { status: 429 })))
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openCommentReport(user, '코코 표정 너무 좋네요')
+    await user.click(within(sheet).getByText('기타'))
+    await user.type(within(sheet).getByLabelText('상세 내용 (필수)'), '같은 말을 반복해요')
+    await user.click(submitButton())
+
+    expect(await within(sheet).findByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument()
+    expect(reportSheet()).not.toHaveClass('pointer-events-none')
+    expect(within(sheet).getByRole('radio', { name: '기타' })).toBeChecked()
+    expect(within(sheet).getByLabelText('상세 내용 (필수)')).toHaveValue('같은 말을 반복해요')
+  })
+})
+
 describe('비로그인 신고', () => {
   beforeEach(() => {
     logout()
@@ -399,6 +534,32 @@ describe('비로그인 신고', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe(postPath(SNS_POST_COCO)))
     expect(await screen.findByText('신고 사유를 선택해 주세요')).toBeInTheDocument()
+    await delay(50)
+    expect(reportBodies).toEqual([])
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('[AC-SNS-RPT-016] 비로그인이 댓글 메뉴의 신고를 누르면 로그인 안내 시트를 열고 로그인 뒤 그 댓글의 신고 시트만 다시 연다', async () => {
+    seedSns({ viewer: null, comments: snsExampleComments() })
+    const user = userEvent.setup()
+    const guestRouter = renderAt(postPath(SNS_POST_COCO))
+    fireEvent.contextMenu(await within(await screen.findByRole('region', { name: '댓글' })).findByText('코코 표정 너무 좋네요'))
+    await user.click(within(await screen.findByRole('dialog', { name: '댓글 메뉴' })).getByRole('button', { name: '신고' }))
+    expect(await screen.findByText(/신고는 로그인한 회원만 이용할 수 있어요/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '로그인 / 회원가입' }))
+    await waitFor(() => expect(guestRouter.state.location.pathname).toBe('/onboarding/login'))
+    cleanup()
+    server.use(
+      http.post(WEB_REFRESH_URL, () =>
+        HttpResponse.json({ data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 } }),
+      ),
+    )
+    seedSns({ viewer: SNS_ME, comments: snsExampleComments() })
+    const router = renderAt('/login/complete?status=ACTIVE&isNew=false')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(postPath(SNS_POST_COCO)))
+    expect(await within(await screen.findByRole('dialog', { name: '신고하기' })).findByText('몽이아빠 님의 댓글')).toBeInTheDocument()
     await delay(50)
     expect(reportBodies).toEqual([])
     expect(sessionStorage.length).toBe(0)

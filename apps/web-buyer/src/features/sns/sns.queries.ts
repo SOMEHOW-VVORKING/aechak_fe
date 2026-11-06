@@ -782,14 +782,16 @@ export function useSnsPostGrid(profile: SnsProfile | undefined, tab: SnsProfileT
 
 // ── SNS-07 신고 ─────────────────────────────────────────────────────────────
 
-/** 신고 대상. 게시물은 게시물 publicId(리포스트 카드는 원글), 사용자는 사용자 publicId다 */
+/** 신고 대상. 게시물은 게시물 publicId(리포스트 카드는 원글), 댓글은 댓글 publicId(대댓글은 그 대댓글), 사용자는 사용자 publicId다 */
 export interface SnsReportTarget {
-  type: 'SNS_POST' | 'SNS_USER'
+  type: 'SNS_POST' | 'SNS_COMMENT' | 'SNS_USER'
   publicId: string
   nickname: string
   profileImageUrl: string | null
-  /** 게시물 대상 카드에 한 줄로 보이는 캡션 */
+  /** 게시물 대상 카드에 한 줄로 보이는 캡션이나 댓글 내용 */
   caption?: string | null
+  /** 댓글이 달린 게시물. 거절되면 그 게시물의 상세와 댓글 목록을 다시 읽는다 */
+  postPublicId?: string
 }
 
 export type SnsReportReason = 'SPAM' | 'ABUSE' | 'INAPPROPRIATE' | 'FRAUD' | 'OTHER'
@@ -802,20 +804,33 @@ export const postReportTarget = (post: SnsPost): SnsReportTarget => ({
   caption: post.caption,
 })
 
+export const commentReportTarget = (comment: SnsComment, postPublicId: string): SnsReportTarget => ({
+  type: 'SNS_COMMENT',
+  publicId: comment.publicId,
+  nickname: comment.author?.nickname ?? '',
+  profileImageUrl: comment.author?.profileImageUrl ?? null,
+  caption: comment.content,
+  postPublicId,
+})
+
 /** 이미 신고한 대상(409). 응답을 받지 못하고 다시 보낸 신고도 이 코드라 접수 확인으로 본다(P6, P15) */
-const ALREADY_REPORTED = [130802, 30202]
+const ALREADY_REPORTED = [130802, 130804, 30202]
 
 export const isAlreadyReported = (error: unknown) => ALREADY_REPORTED.includes(snsErrorCode(error) ?? -1)
 
-/** 다시 보내도 같은 답인 거절. 볼 수 없는 게시물, 차단한 작성자, 볼 수 없는 계정, 본인 게시물, 자기 자신이다 */
-const REPORT_FINAL = [SNS_POST_UNAVAILABLE, SNS_BLOCKED_BY_ME, SNS_UNAVAILABLE, 130800, 30200]
+/**
+ * 다시 보내도 같은 답인 거절. 볼 수 없는 게시물, 차단한 작성자, 볼 수 없는 계정, 볼 수 없는 댓글(130700), 본인 게시물,
+ * 본인 댓글, 자기 자신이다. 130700은 SNS_COMMENT_UNAVAILABLE이 이 파일 아래에서 선언돼 숫자로 적는다.
+ */
+const REPORT_FINAL = [SNS_POST_UNAVAILABLE, SNS_BLOCKED_BY_ME, SNS_UNAVAILABLE, 130700, 130800, 130803, 30200]
 
 export const isFinalReportError = (error: unknown) => REPORT_FINAL.includes(snsErrorCode(error) ?? -1)
 
 /**
  * 신고 접수(POST /reports). 공백만 적은 상세 내용은 비운 것으로 보내고 서버도 그렇게 본다(P5).
  * 게시물이 사라졌거나(130400) 작성자를 차단했으면(130001) 상세를 다시 읽어 화면을 그 안내로 바꾸고 받아 둔 피드는 다음에 열 때
- * 다시 읽게 낡은 것으로만 표시한다. 계정을 볼 수 없으면(130000) 그 프로필을 다시 읽는다.
+ * 다시 읽게 낡은 것으로만 표시한다. 계정을 볼 수 없으면(130000) 그 프로필을 다시 읽는다. 댓글 신고가 다시 보내도 같은 답으로
+ * 거절되면 그 게시물의 댓글 목록과 알림으로 연 댓글을 다시 읽고, 게시물이 사라졌거나 작성자를 차단했으면 상세도 다시 읽는다.
  */
 export function useSubmitSnsReport() {
   const queryClient = useQueryClient()
@@ -839,7 +854,17 @@ export function useSubmitSnsReport() {
     },
     onError: (error, { target }) => {
       const code = snsErrorCode(error)
-      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+      if (target.type === 'SNS_COMMENT') {
+        if (!isFinalReportError(error) || target.postPublicId == null) return
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, target.postPublicId] })
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        })
+        if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+          void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.postPublicId) })
+        }
+      } else if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
         void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.publicId) })
         void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
       } else if (code === SNS_UNAVAILABLE) {
@@ -849,9 +874,12 @@ export function useSubmitSnsReport() {
   })
 }
 
-// 신고 실패 문구. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7).
+// 신고 실패 문구. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7). 댓글도 같다(130700, A15, A16).
 const REPORT_ERROR_COPY: Record<number, string> = {
   130802: '이미 신고한 게시물이에요',
+  130804: '이미 신고한 댓글이에요',
+  130700: '삭제된 댓글이에요',
+  130803: '내 댓글은 신고할 수 없어요',
   30202: '이미 신고한 계정이에요',
   [SNS_POST_UNAVAILABLE]: '삭제된 게시물이에요',
   [SNS_BLOCKED_BY_ME]: '차단한 계정의 게시물이에요',
@@ -863,6 +891,7 @@ const REPORT_ERROR_COPY: Record<number, string> = {
 }
 
 export function snsReportErrorMessage(error: unknown): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
   const code = snsErrorCode(error)
   return (code != null && REPORT_ERROR_COPY[code]) || '신고를 접수하지 못했어요. 다시 시도해 주세요'
 }

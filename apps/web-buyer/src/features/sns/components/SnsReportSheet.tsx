@@ -11,7 +11,7 @@ import {
   type SnsReportTarget,
 } from '../sns.queries'
 
-// 사유 5종(b8-st-1 1-A). 게시물과 사용자 신고가 같이 쓴다(P1). 목업의 가운뎃점과 띄운 슬래시는 카피 규칙대로 붙인 /로 적는다.
+// 사유 5종(b8-st-1 1-A). 게시물, 댓글, 사용자 신고가 같이 쓴다(P1). 목업의 가운뎃점과 띄운 슬래시는 카피 규칙대로 붙인 /로 적는다.
 const REASONS: { value: SnsReportReason; label: string }[] = [
   { value: 'SPAM', label: '스팸/광고' },
   { value: 'ABUSE', label: '욕설/혐오 표현' },
@@ -31,9 +31,9 @@ interface SnsReportSheetProps {
   toastAboveActionBar?: boolean
 }
 
-// 신고 시트(b8-st-1 1-A). 게시물 더보기, 프로필 앱바 더보기, 차단 관리 목록이 같은 시트를 연다(P4).
+// 신고 시트(b8-st-1 1-A). 게시물 더보기, 댓글 메뉴, 프로필 앱바 더보기, 차단 관리 목록이 같은 시트를 연다(P4).
 // 실패하면 시트와 고른 사유, 상세 내용을 그대로 두고 안내한다(P15). 이미 신고한 대상(409)은 접수 확인으로 보고 닫는다(P6).
-// 다시 보내도 같은 답인 거절(볼 수 없는 대상, 차단한 작성자, 내 게시물, 나 자신)은 시트를 닫고 토스트로 알린다.
+// 다시 보내도 같은 답인 거절(볼 수 없는 대상, 차단한 작성자, 내 게시물이나 댓글, 나 자신)은 시트를 닫고 토스트로 알린다.
 // 요청 중에는 닫지 않는다. 닫히면 react-query가 호출별 성공, 실패 처리를 실행하지 않아 결과를 알릴 수 없다.
 export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: SnsReportSheetProps) {
   const submit = useSubmitSnsReport()
@@ -87,7 +87,8 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
     )
   }
 
-  const isPost = target?.type === 'SNS_POST'
+  // 게시물과 댓글은 대상 카드에 내용 한 줄을 붙인다. 사용자는 닉네임만 그린다.
+  const noun = target?.type === 'SNS_POST' ? '게시물' : target?.type === 'SNS_COMMENT' ? '댓글' : null
 
   return (
     <>
@@ -98,9 +99,9 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
               <Avatar name={target.nickname} src={target.profileImageUrl ?? undefined} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-label font-semibold text-text-primary">
-                  {target.nickname} 님{isPost ? '의 게시물' : ''}
+                  {target.nickname} 님{noun ? `의 ${noun}` : ''}
                 </p>
-                {isPost && target.caption && (
+                {noun && target.caption && (
                   <p className="truncate text-caption text-text-tertiary">{target.caption}</p>
                 )}
               </div>
@@ -112,7 +113,7 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
                 신고 사유를 선택해 주세요
               </p>
               <p className="break-keep text-body-sm text-text-secondary">
-                커뮤니티 가이드 위반이 의심되는 {isPost ? '게시물' : '계정'}을 알려주세요. 신고자는 비공개로 보호돼요.
+                커뮤니티 가이드 위반이 의심되는 {noun ?? '계정'}을 알려주세요. 신고자는 비공개로 보호돼요.
               </p>
             </div>
 
