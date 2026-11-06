@@ -186,9 +186,10 @@ export function SnsCommentList({
   const resumeLikeSent = useRef(false)
 
   // 로그인 뒤 다시 실행(A26). 입력창만 다시 열고 댓글은 보내지 않는다. 답글달기였으면 단건으로 그 댓글을 다시 읽어 아직 답글을
-  // 달 수 있을 때만 그 답글 입력창을 연다. 차단은 그 작성자의 댓글이, 신고는 그 댓글이 아직 보일 때만 확인 시트나 신고 시트를 다시 연다.
-  // 볼 수 없게 됐으면 안내만 한다. 신고는 제출하지 않는다.
-  const resumeTarget = resume?.kind === 'comment' ? resume.targetPublicId : undefined
+  // 달 수 있을 때만 그 답글 입력창을 연다. 신고도 단건으로 다시 읽어 아직 보일 때만 신고 시트를 다시 열고 제출하지 않는다.
+  // 차단은 그 작성자의 댓글이 아직 보일 때만 확인 시트를 다시 연다. 볼 수 없게 됐으면 안내만 한다.
+  const resumeTarget =
+    resume?.kind === 'comment' || resume?.kind === 'commentReport' ? resume.targetPublicId : undefined
   const resumeThread = useSnsCommentThread(resumeTarget, loggedIn)
   const ready = comments.data != null
   useEffect(() => {
@@ -212,11 +213,10 @@ export function SnsCommentList({
       }
       draft.focus()
     } else if (resume.kind === 'commentReport') {
-      if (!ready) return
-      // shortcut: 불러온 첫 페이지에서만 그 댓글을 찾는다. 뒤 페이지에만 있으면 찾을 수 없다는 안내가 나온다.
-      const target = items.find(i => i.publicId === resume.targetPublicId)
+      if (resumeTarget != null && resumeThread.isPending) return
+      const target = resumeThread.data?.comment
       if (target?.status === 'ACTIVE' && target.author && !target.isMine) openReport(target)
-      else notify('댓글을 찾을 수 없어요', 'error')
+      else notify(snsCommentErrorMessage(resumeThread.error, '댓글을 찾을 수 없어요'), 'error')
     } else {
       if (!ready) return
       // shortcut: 불러온 첫 페이지에서만 그 작성자를 찾는다. 뒤 페이지에만 댓글이 있으면 찾을 수 없다는 안내가 나온다.

@@ -22,6 +22,7 @@ import {
   seedSns,
   server,
   snsAct,
+  snsComment,
   snsExampleComments,
   snsRelation,
 } from '@/testing/msw/server'
@@ -563,5 +564,45 @@ describe('비로그인 신고', () => {
     await delay(50)
     expect(reportBodies).toEqual([])
     expect(sessionStorage.length).toBe(0)
+  })
+})
+
+describe('로그인 뒤 댓글 신고 다시 열기', () => {
+  /** 로그인 화면으로 떠나기 전에 남긴 댓글 신고 대기 행동 */
+  const pendCommentReport = (targetPublicId: string) =>
+    sessionStorage.setItem(
+      'aechak.pendingAction',
+      JSON.stringify({
+        kind: 'commentReport',
+        publicId: SNS_POST_COCO,
+        targetPublicId,
+        returnTo: postPath(SNS_POST_COCO),
+        createdAt: Date.now(),
+      }),
+    )
+
+  it('[AC-SNS-RPT-016] 첫 페이지 밖의 댓글도 단건으로 다시 읽어 신고 시트를 연다', async () => {
+    // 최상위 댓글 21개라 첫 페이지(20개)에는 마지막 댓글이 없다.
+    const many = Array.from({ length: 21 }, (_, i) =>
+      snsComment(`cm-page-${String(i).padStart(2, '0')}`, SNS_POST_COCO, SNS_MONG, { content: `댓글 ${i}` }),
+    )
+    seedSns({ comments: many })
+    pendCommentReport('cm-page-20')
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await screen.findByRole('dialog', { name: '신고하기' })
+    expect(await within(sheet).findByText('몽이아빠 님의 댓글')).toBeInTheDocument()
+    expect(within(sheet).getByText('댓글 20')).toBeInTheDocument()
+    expect(within(commentSection()).queryByText('댓글 20')).toBeNull()
+    expect(reportBodies).toEqual([])
+  })
+
+  it('[AC-SNS-RPT-016] 그사이 볼 수 없게 된 댓글이면 시트를 열지 않고 찾을 수 없다고 알린다', async () => {
+    seedSns({ comments: snsExampleComments() })
+    pendCommentReport('01KC0000000000000000000404')
+    renderAt(postPath(SNS_POST_COCO))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('댓글을 찾을 수 없어요')
+    expect(screen.queryByRole('dialog', { name: '신고하기' })).toBeNull()
   })
 })
