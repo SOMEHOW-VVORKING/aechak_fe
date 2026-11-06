@@ -256,7 +256,7 @@ test('[AC-SNS06-E2E-001] 홈에서 연 검색은 전체 탭에 SNS 섹션(인기
 
   await expect(page.getByRole('tab', { name: '전체' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tab', { name: /^SNS\s?86$/ })).toBeVisible()
-  await expect(snsSection(page).getByRole('button', { name: /님의 게시물 보기$/ })).toHaveCount(5)
+  await expect(snsSection(page).getByRole('listitem')).toHaveCount(5)
   await expect(snsSection(page).getByText('#산책스타그램 #시바견')).toBeVisible()
   await expect(snsSection(page).getByText('수정됨')).toBeVisible()
   await expect(page.getByRole('region', { name: '마켓 검색 결과' }).getByText('산책 하네스 M')).toBeVisible()

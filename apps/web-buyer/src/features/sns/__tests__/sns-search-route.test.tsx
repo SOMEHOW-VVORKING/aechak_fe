@@ -9,6 +9,7 @@ import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
   SNS_ME,
+  SNS_SEARCH_HASHTAGS_URL,
   SNS_SEARCH_POSTS_URL,
   SNS_SEARCH_USERS_URL,
   WEB_REFRESH_URL,
@@ -81,6 +82,9 @@ describe('SNS 검색 규칙', () => {
     expect(snsSearchable('#')).toBe(false)
     expect(snsSearchable('  # ')).toBe(false)
     expect(snsSearchable('#봄')).toBe(true)
+    // 100자를 넘으면 서버가 400을 주므로 보내지 않는다
+    expect(snsSearchable('가'.repeat(100))).toBe(true)
+    expect(snsSearchable('가'.repeat(101))).toBe(false)
   })
 
   it('[AC-SNS06-002] 게시물이 없을 때 링크는 계정 결과가 있으면 계정, 없으면 해시태그이고 계정 조회 전에는 고르지 않는다', () => {
@@ -95,8 +99,9 @@ describe('/search/results 전체 탭 SNS 섹션', () => {
   it('[AC-SNS06-010] 인기순 5개를 부르고 결과 수를 헤더와 SNS 탭에 보이며 다음 페이지가 없으면 더보기가 없다', async () => {
     renderAt('/search/results?q=산책')
 
-    expect(await within(await section()).findByRole('button', { name: '코코집사님의 게시물 보기' })).toBeInTheDocument()
-    expect(within(await section()).getAllByRole('button', { name: /님의 게시물 보기$/ })).toHaveLength(3)
+    // 행의 접근명은 작성자와 본문 일부라 같은 작성자의 행도 서로 구분된다
+    expect(await within(await section()).findByRole('button', { name: /^코코집사/ })).toBeInTheDocument()
+    expect(within(await section()).getAllByRole('listitem')).toHaveLength(3)
     expect(within(await section()).getByText('3')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'SNS 3' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '전체' })).toHaveAttribute('aria-selected', 'true')
@@ -139,6 +144,33 @@ describe('/search/results 전체 탭 SNS 섹션', () => {
     expect(await within(await section()).findByRole('button', { name: '해시태그 검색 결과 보기' })).toBeInTheDocument()
     expect(within(await section()).getByText('검색 결과가 없어요')).toBeInTheDocument()
     expect(within(await section()).getByText('0')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS06-015] 첫 페이지가 비어도 다음 페이지가 남았으면 결과 없음 대신 더보기를 둔다', async () => {
+    server.use(
+      http.get(SNS_SEARCH_POSTS_URL, () =>
+        HttpResponse.json({ data: { items: [], totalCount: 11, nextCursor: 'next', hasNext: true } }),
+      ),
+    )
+    renderAt('/search/results?q=산책')
+
+    expect(await within(await section()).findByRole('button', { name: 'SNS 결과 11개 더보기' })).toBeInTheDocument()
+    expect(within(await section()).queryByText('검색 결과가 없어요')).not.toBeInTheDocument()
+    expect(requestsTo('/search/users')).toHaveLength(0)
+  })
+
+  it('[AC-SNS06-016] 계정 조회가 실패하면 해시태그 결과가 있어도 링크를 고르지 않는다', async () => {
+    server.use(
+      http.get(SNS_SEARCH_USERS_URL, () => HttpResponse.json({ message: '' }, { status: 500 })),
+      http.get(SNS_SEARCH_HASHTAGS_URL, () =>
+        HttpResponse.json({ data: { items: [{ name: '코코집사', postCount: 1 }], nextCursor: null, hasNext: false } }),
+      ),
+    )
+    renderAt('/search/results?q=코코집사')
+
+    expect(await within(await section()).findByText('검색 결과가 없어요')).toBeInTheDocument()
+    await waitFor(() => expect(requestsTo('/search/hashtags')).toHaveLength(1))
+    expect(within(await section()).queryByRole('button', { name: /검색 결과 보기$/ })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS06-013] SNS 섹션만 실패하면 그 자리에만 다시 시도가 나오고 마켓 섹션은 그대로다', async () => {

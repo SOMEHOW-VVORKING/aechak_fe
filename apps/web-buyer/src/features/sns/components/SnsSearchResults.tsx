@@ -213,10 +213,11 @@ function UsersSegment({ keyword, requireAuth }: { keyword: string; requireAuth: 
                     </button>
                     {!item.isMe && !item.blockingMe && (
                       // 요청 중에는 다른 행 버튼을 잠근다. 한 mutation을 행끼리 나눠 쓰므로 겹치면 앞 요청의 실패 안내가 빠진다.
+                      // 다시 읽기가 실패한 동안에는 낡은 팔로우 상태로 반대 요청을 보내지 않게 잠근다.
                       <FollowButton
                         following={item.following}
                         loading={toggle.isPending && toggle.variables?.publicId === item.publicId}
-                        disabled={toggle.isPending}
+                        disabled={toggle.isPending || users.isRefetchError}
                         onClick={() => follow(item)}
                         ariaLabel={`${item.nickname} ${item.following ? '팔로잉' : '팔로우'}`}
                       />

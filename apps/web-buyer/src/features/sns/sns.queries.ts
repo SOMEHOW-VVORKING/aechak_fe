@@ -949,9 +949,12 @@ export function useSnsLikers(publicId: string, enabled: boolean) {
 
 /**
  * 검색어를 서버에 보낼지. 서버는 앞뒤 공백을 지우고 앞의 # 하나를 뗀 뒤 찾고 남는 글자가 없으면 빈 결과라 부르지 않는다
- * (sns.yaml SNS-06 FE 2). 검색어 자체는 입력한 그대로 보낸다.
+ * (sns.yaml SNS-06 FE 2). 검색어 자체는 입력한 그대로 보낸다. 100자를 넘으면 서버가 400 90001을 주므로 부르지 않고 빈 결과로 그린다.
  */
-export const snsSearchable = (keyword: string) => keyword.trim().replace(/^#/, '').trim() !== ''
+export const snsSearchable = (keyword: string) =>
+  keyword.length <= SNS_SEARCH_KEYWORD_MAX && keyword.trim().replace(/^#/, '').trim() !== ''
+
+const SNS_SEARCH_KEYWORD_MAX = 100
 
 /** 검색어가 #으로 시작하면 SNS 탭을 해시태그 세그먼트로 연다(P2) */
 export const defaultSnsSearchSegment = (keyword: string): SnsSearchSegment =>

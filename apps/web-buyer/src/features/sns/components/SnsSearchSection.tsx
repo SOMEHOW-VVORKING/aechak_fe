@@ -55,7 +55,6 @@ function Row({ post }: { post: SnsPost }) {
             search: { author: post.author.publicId },
           })
         }
-        aria-label={`${post.author.nickname}님의 게시물 보기`}
         className="flex w-full items-center gap-3 px-4 py-2.5 text-left focus-visible:outline-none focus-visible:shadow-focus-ring"
       >
         <Avatar name={post.author.nickname} src={post.author.profileImageUrl ?? undefined} size="md" />
@@ -87,11 +86,12 @@ export function SnsSearchSection({
 }) {
   const searchable = snsSearchable(keyword)
   const posts = useSnsSearchPosts(keyword, 'POPULAR', { size: SNS_SECTION_SIZE, onSearched })
-  const noPosts = posts.data?.items.length === 0
+  // 첫 페이지가 비어도 다음 페이지가 남았으면 보이는 글이 있다(인기순은 페이지마다 차단과 뮤트를 다시 거른다)
+  const noPosts = posts.data?.items.length === 0 && !posts.hasNextPage
   const users = useSnsSearchUsers(keyword, { size: 1, enabled: noPosts })
   const hashtags = useSnsSearchHashtags(keyword, { size: 1, enabled: noPosts })
   const link = noPosts
-    ? snsSectionLink({ settled: !users.isPending, count: users.data?.length ?? 0 }, hashtags.data?.length ?? 0)
+    ? snsSectionLink({ settled: users.isSuccess, count: users.data?.length ?? 0 }, hashtags.data?.length ?? 0)
     : null
   const total = searchable ? posts.data?.totalCount : 0
 
@@ -114,7 +114,7 @@ export function SnsSearchSection({
         </Button>
       </div>
     )
-  } else if (posts.data.items.length === 0) {
+  } else if (noPosts) {
     body = (
       <div className="flex flex-col items-start gap-2 px-4 py-3">
         <p className="text-body-sm text-text-tertiary">검색 결과가 없어요</p>
@@ -133,11 +133,13 @@ export function SnsSearchSection({
   } else {
     body = (
       <>
-        <ul>
-          {posts.data.items.map(item => (
-            <Row key={item.post.publicId} post={item.post} />
-          ))}
-        </ul>
+        {posts.data.items.length > 0 && (
+          <ul>
+            {posts.data.items.map(item => (
+              <Row key={item.post.publicId} post={item.post} />
+            ))}
+          </ul>
+        )}
         {posts.hasNextPage && (
           <button
             type="button"
