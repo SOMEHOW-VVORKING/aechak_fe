@@ -239,6 +239,7 @@ async function stubSns(page: Page, opts: StubOptions = {}) {
       ? fulfill(route, 200, { data: { ...found, following: member && found.following } })
       : fulfill(route, 404, { errorCode: 130400, message: '볼 수 없는 게시물입니다.' })
   })
+  await page.route(`${API}/sns/posts/*/comments*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
 
   await page.route(`${API}/sns/users/*`, route => fulfill(route, 200, { data: BORI_PROFILE }))
   await page.route(`${API}/sns/me`, route => fulfill(route, 200, { data: ME }))
