@@ -20,6 +20,7 @@ import {
   SNS_SPAM,
   SNS_TORI,
   SNS_WITHDRAWN,
+  WEB_REFRESH_URL,
   currentSns,
   seedSns,
   server,
@@ -64,6 +65,16 @@ afterEach(() => {
 })
 
 describe('/sns/posts/$publicId/likers', () => {
+  it('[AC-SNS04-007] 세션을 확인하지 못했으면 로그인 안내 시트를 띄우지 않고 목록을 요청한다', async () => {
+    // 토큰 없이 refresh가 5xx면 세션은 unknown으로 남는다. 요청이 401이면 전역 인증 만료 처리가 맡는다
+    resetAuth()
+    server.use(http.post(WEB_REFRESH_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    renderAt(likersPath(SNS_POST_COCO))
+
+    await waitFor(() => expect(likersRequests).toBe(1))
+    expect(screen.queryByText(/로그인한 회원만/)).not.toBeInTheDocument()
+  })
+
   it('[AC-SNS04-008] 100명을 넘으면 상단에 전체 수와 최근 100명이 나오고 최근 100명까지 볼 수 있다는 안내가 나온다', async () => {
     seedSns({ likes: SNS_FANS.map(fan => snsLike(fan, SNS_POST_COCO)) })
     renderAt(likersPath(SNS_POST_COCO))

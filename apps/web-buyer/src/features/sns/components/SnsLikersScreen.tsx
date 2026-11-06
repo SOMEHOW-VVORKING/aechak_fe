@@ -9,7 +9,7 @@ import {
   Skeleton,
   StatusPill,
 } from '@aechak/design-system/web'
-import { LoginGate, useIsLoggedIn } from '@/shared/auth'
+import { LoginGate, useSessionState } from '@/shared/auth'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
@@ -33,12 +33,13 @@ type Liker = SnsLikerList['items'][number]
 // 순서로 100명까지다. 닉네임 검색은 받은 행 안에서만 한다(P7). 하단 안내는 보여준 행 기준이다(R3-09).
 export function SnsLikersScreen({ publicId }: { publicId: string }) {
   const navigate = useNavigate()
-  const loggedIn = useIsLoggedIn()
+  // 세션을 아직 모르는 회원을 막지 않도록 비로그인이 확실할 때만 막는다
+  const guest = useSessionState() === 'guest'
   const goBack = useSafeBack({ to: '/sns/posts/$publicId', params: { publicId } })
   const [keyword, setKeyword] = useState('')
   const [errorToast, setErrorToast] = useState<string | null>(null)
   // 비로그인이면 목록을 부르지 않고 로그인 안내 시트만 연다.
-  const likers = useSnsLikers(publicId, loggedIn)
+  const likers = useSnsLikers(publicId, !guest)
   const toggle = useSnsToggle()
 
   const openProfile = (item: Liker) =>
@@ -56,7 +57,7 @@ export function SnsLikersScreen({ publicId }: { publicId: string }) {
     <MobileScreen header={<BackAppBar onBack={goBack} title="좋아요" />}>
       {content}
       <LoginGate
-        open={!loggedIn}
+        open={guest}
         feature="likers"
         onClose={goBack}
         resume={{ kind: 'open', publicId }}
@@ -70,7 +71,7 @@ export function SnsLikersScreen({ publicId }: { publicId: string }) {
     </MobileScreen>
   )
 
-  if (!loggedIn) return screen(null)
+  if (guest) return screen(null)
 
   // 게시물이 지워졌거나 작성자가 탈퇴했거나 나를 차단했으면 삭제된 게시물 안내, 내가 작성자를 차단했으면 차단 안내다(AC-SNS04-036).
   const code = snsErrorCode(likers.error)
