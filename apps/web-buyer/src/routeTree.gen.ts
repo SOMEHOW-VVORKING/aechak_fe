@@ -47,6 +47,7 @@ import { Route as SettingsNoticesIndexRouteImport } from './routes/settings/noti
 import { Route as ProductsProductIdIndexRouteImport } from './routes/products/$productId/index'
 import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId/index'
 import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
+import { Route as SnsPostsNewRouteImport } from './routes/sns/posts/new'
 import { Route as SettingsNoticesNoticeIdRouteImport } from './routes/settings/notices/$noticeId'
 import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
@@ -54,7 +55,9 @@ import { Route as OrdersOrderIdClaimRouteImport } from './routes/orders/$orderId
 import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
+import { Route as SnsPostsPublicIdIndexRouteImport } from './routes/sns/posts/$publicId/index'
 import { Route as SnsUsersPublicIdFollowsRouteImport } from './routes/sns/users/$publicId/follows'
+import { Route as SnsPostsPublicIdEditRouteImport } from './routes/sns/posts/$publicId/edit'
 import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/products/$productId/inquiries/new'
 
 const WishlistRoute = WishlistRouteImport.update({
@@ -246,6 +249,11 @@ const MypagePetsIndexRoute = MypagePetsIndexRouteImport.update({
   path: '/mypage/pets/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsNewRoute = SnsPostsNewRouteImport.update({
+  id: '/sns/posts/new',
+  path: '/sns/posts/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsNoticesNoticeIdRoute = SettingsNoticesNoticeIdRouteImport.update({
   id: '/settings/notices/$noticeId',
   path: '/settings/notices/$noticeId',
@@ -281,9 +289,19 @@ const SnsUsersPublicIdIndexRoute = SnsUsersPublicIdIndexRouteImport.update({
   path: '/sns/users/$publicId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsPublicIdIndexRoute = SnsPostsPublicIdIndexRouteImport.update({
+  id: '/sns/posts/$publicId/',
+  path: '/sns/posts/$publicId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SnsUsersPublicIdFollowsRoute = SnsUsersPublicIdFollowsRouteImport.update({
   id: '/sns/users/$publicId/follows',
   path: '/sns/users/$publicId/follows',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsPostsPublicIdEditRoute = SnsPostsPublicIdEditRouteImport.update({
+  id: '/sns/posts/$publicId/edit',
+  path: '/sns/posts/$publicId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsProductIdInquiriesNewRoute =
@@ -333,12 +351,15 @@ export interface FileRoutesByFullPath {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -381,12 +402,15 @@ export interface FileRoutesByTo {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
   '/settings/notices': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesById {
@@ -431,12 +455,15 @@ export interface FileRoutesById {
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
   '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
   '/settings/notices/': typeof SettingsNoticesIndexRoute
   '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -481,12 +508,15 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
+    | '/sns/posts/$publicId/edit'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -529,12 +559,15 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
     | '/settings/notices'
     | '/products/$productId/inquiries/new'
+    | '/sns/posts/$publicId/edit'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId'
     | '/sns/users/$publicId'
   id:
     | '__root__'
@@ -578,12 +611,15 @@ export interface FileRouteTypes {
     | '/products/$productId/report'
     | '/reviews/product/$productId'
     | '/settings/notices/$noticeId'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
     | '/settings/notices/'
     | '/products/$productId/inquiries/new'
+    | '/sns/posts/$publicId/edit'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesById: FileRoutesById
 }
@@ -623,12 +659,15 @@ export interface RootRouteChildren {
   ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
   ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
   SettingsNoticesNoticeIdRoute: typeof SettingsNoticesNoticeIdRoute
+  SnsPostsNewRoute: typeof SnsPostsNewRoute
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
   SettingsNoticesIndexRoute: typeof SettingsNoticesIndexRoute
   ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
+  SnsPostsPublicIdEditRoute: typeof SnsPostsPublicIdEditRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
+  SnsPostsPublicIdIndexRoute: typeof SnsPostsPublicIdIndexRoute
   SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
 }
 
@@ -900,6 +939,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypagePetsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/new': {
+      id: '/sns/posts/new'
+      path: '/sns/posts/new'
+      fullPath: '/sns/posts/new'
+      preLoaderRoute: typeof SnsPostsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/notices/$noticeId': {
       id: '/settings/notices/$noticeId'
       path: '/settings/notices/$noticeId'
@@ -949,11 +995,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SnsUsersPublicIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/$publicId/': {
+      id: '/sns/posts/$publicId/'
+      path: '/sns/posts/$publicId'
+      fullPath: '/sns/posts/$publicId/'
+      preLoaderRoute: typeof SnsPostsPublicIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sns/users/$publicId/follows': {
       id: '/sns/users/$publicId/follows'
       path: '/sns/users/$publicId/follows'
       fullPath: '/sns/users/$publicId/follows'
       preLoaderRoute: typeof SnsUsersPublicIdFollowsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/posts/$publicId/edit': {
+      id: '/sns/posts/$publicId/edit'
+      path: '/sns/posts/$publicId/edit'
+      fullPath: '/sns/posts/$publicId/edit'
+      preLoaderRoute: typeof SnsPostsPublicIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products/$productId/inquiries/new': {
@@ -1020,12 +1080,15 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsProductIdReportRoute: ProductsProductIdReportRoute,
   ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
   SettingsNoticesNoticeIdRoute: SettingsNoticesNoticeIdRoute,
+  SnsPostsNewRoute: SnsPostsNewRoute,
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
   SettingsNoticesIndexRoute: SettingsNoticesIndexRoute,
   ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
+  SnsPostsPublicIdEditRoute: SnsPostsPublicIdEditRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,
+  SnsPostsPublicIdIndexRoute: SnsPostsPublicIdIndexRoute,
   SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
 }
 export const routeTree = rootRouteImport

@@ -17,7 +17,9 @@ export function useSafeBack(fallback: SafeBackFallback): () => void {
   const navigate = useNavigate()
   const router = useRouter()
   return () => {
-    if (window.history.length > 1) router.history.back()
+    // window.history.length는 앱 밖 항목(로그인 공급자, 외부 페이지)까지 세어, 로그인하고 돌아온 화면에서 뒤로 가면
+    // 로그인 화면이 나왔다. 라우터가 앱 안에서 쌓은 항목이 있을 때만 뒤로 간다.
+    if (router.history.canGoBack()) router.history.back()
     else void navigate(fallback as unknown as NavigateArg)
   }
 }

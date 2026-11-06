@@ -1624,6 +1624,124 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnsRelationPageResponse"
+  # SNS-02 게시물과 해시태그. 원천은 spec/contracts/sns.yaml(0.3.0, 2026-10-23 contract 게이트 확정).
+  # 실패는 errorCode로 분기한다. 130400(404 볼 수 없는 게시물), 130001(403 내가 차단한 작성자), 130401(403 남의 게시물),
+  # 130402부터 130407까지(400 게시물 규칙), 130500부터 130502까지(400 해시태그 규칙), 90006(429 빈도 제한, SNS-T19부터).
+  /sns/posts:
+    post:
+      summary: "게시물 작성(Idempotency-Key 필수)"
+      description: >-
+        캡션, 사진(SNS_POST_IMAGE tmp key 0개부터 10개) 또는 영상 하나(SNS_POST_VIDEO key와 썸네일 key), 해시태그로 게시물을 만든다.
+        같은 Idempotency-Key로 이미 게시물이 생겼으면 본문이 달라도 그 publicId로 201이다. 응답이 없거나 4xx, 5xx면 같은 키로 다시 보낸다.
+        헤더가 없으면 400 90001, 비었거나 100자를 넘으면 400 90004다. 없거나 이미 쓴 tmp key는 404 100001,
+        남이 발급받은 key는 403 100002, 다른 용도로 발급받은 key는 400 100003이다.
+      operationId: "createSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: "작성 화면을 열 때 만든 UUID. 그 화면의 모든 게시 시도에 같은 값을 보낸다"
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsPostCreateRequest"
+      responses:
+        "201":
+          description: "Created(같은 키로 이미 생긴 게시물이면 그 publicId)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostCreateResponse"
+  /sns/posts/{publicId}:
+    get:
+      summary: "게시물 상세(비로그인 허용)"
+      description: >-
+        비로그인이면 isMine, following, mutedByMe가 모두 false다. 판정 순서는 없음이나 삭제, 작성자 탈퇴, 작성자가 나를 차단(모두 404 130400),
+        내가 작성자를 차단(403 130001, 본문에 작성자와 내용 없음)이다. 뮤트한 작성자의 게시물은 200과 mutedByMe=true다.
+        토큰을 보냈을 때만 401 20004, 403 20005, 403 20006이 난다.
+      operationId: "getSnsPost"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostDetailResponse"
+    patch:
+      summary: "게시물 수정(캡션과 해시태그 통째 교체)"
+      description: >-
+        caption과 hashtags를 함께 보내 통째로 바꾼다. 둘 중 하나라도 빠지면 400 90001이다. 바뀐 것이 없어도 204이고 edited는 그대로다.
+        규칙 검사(130403, 130405, 130406, 1305xx)가 게시물 조회보다 먼저다. 그 뒤 없거나 삭제된 게시물 404 130400, 남의 게시물 403 130401,
+        첨부 없는 게시물의 캡션을 비우면 400 130402다.
+      operationId: "updateSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsPostUpdateRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+    delete:
+      summary: "게시물 삭제(멱등)"
+      description: "이미 지운 게시물도 204다. 없는 publicId는 404 130400, 남의 게시물은 403 130401이다."
+      operationId: "deleteSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+  /sns/hashtags:
+    get:
+      summary: "해시태그 자동완성과 추천 태그"
+      description: >-
+        검색어를 해시태그 표기 규칙으로 정규화해 status와 함께 돌려준다. 검색어 때문에 400을 내지 않는다(size 범위 밖만 400 90001).
+        EMPTY는 추천 태그, EXISTS는 exact 줄, NEW는 새 해시태그 만들기 줄이고 INVALID, TOO_LONG, BANNED는 추가하지 않는다.
+      operationId: "searchSnsHashtags"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: "모달 입력값 그대로. 서버가 정규화한다"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsHashtagSearchResponse"
   /seller-applications:
     get:
       summary: "내 입점 신청 현황"
@@ -4988,7 +5106,11 @@ components:
           description: "낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다"
     UploadPurpose:
       type: string
-      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT, REVIEW_IMAGE, PRODUCT]
+      description: >-
+        업로드 용도(BE UploadPurpose enum 전체, sns.yaml 0.3.0). 허용 형식은 SELLER_DOCUMENT가 image/png, image/jpeg, image/webp,
+        application/pdf이고 SNS_POST_VIDEO가 video/mp4, video/quicktime이며 나머지 용도는 image/png, image/jpeg, image/webp다.
+        상한(contentLength 필수)은 SNS_POST_IMAGE 10MB(10,485,760바이트), SNS_POST_VIDEO 100MB(104,857,600바이트)이고 나머지 용도는 없다
+      enum: [USER_PROFILE, PET_PROFILE, PRODUCT, SELLER_STORE, SELLER_DOCUMENT, REVIEW_IMAGE, SNS_POST_IMAGE, SNS_POST_VIDEO]
     IssuePresignedUrlRequest:
       type: object
       required: [purpose, contentType]
@@ -4997,11 +5119,18 @@ components:
           $ref: "#/components/schemas/UploadPurpose"
         contentType:
           type: string
+          description: "올릴 파일의 MIME 형식. 용도가 허용하지 않으면 400 100000. PUT할 때 Content-Type을 이 값과 같게 보낸다"
+          example: "image/jpeg"
+        contentLength:
+          type: integer
+          format: int64
+          minimum: 1
           description: >-
-            프로필 사진(USER_PROFILE/PET_PROFILE)과 상품 이미지(PRODUCT)는 image/png·image/jpeg·image/webp,
-            셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000.
-            발급받은 URL에 PUT할 때 Content-Type을 발급 때와 같게 보내야 한다(서명에 박혀 있다)
-          example: "image/png"
+            올릴 파일의 바이트 수. 보내면 용도와 상관없이 1 이상이어야 하고 아니면 400 90001이다.
+            SNS_POST_IMAGE와 SNS_POST_VIDEO는 필수이고 없으면 400 90001, 상한을 넘으면 400 100004다.
+            서버가 이 값을 PUT 서명에 넣으므로 PUT 본문 길이가 다르면 S3가 403으로 거부한다.
+            상한이 없는 기존 용도는 보내지 않아도 되고 보내도 서명에 넣지 않는다
+          example: 1843200
     PresignedUrlResponse:
       type: object
       required: [data]
@@ -10494,6 +10623,191 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    SnsPostCreateRequest:
+      type: object
+      description: "게시 요청. 모든 필드를 생략할 수 있고 생략하면 null이나 빈 배열과 같다"
+      properties:
+        caption:
+          type: string
+          nullable: true
+          description: "서버가 NFC 정규화, \\r\\n 정리, 앞뒤 공백 지우기 뒤 코드 포인트로 세어 2,200자 이하(넘으면 130403). 공백뿐이면 캡션 없음"
+        photoKeys:
+          type: array
+          description: "SNS_POST_IMAGE로 올린 tmp key. 0개부터 10개까지이고 배열 순서가 보여주는 순서다"
+          items:
+            type: string
+        video:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostVideoRequest"
+          nullable: true
+          description: "영상 하나. photoKeys와 함께 보내면 130404다"
+        hashtags:
+          type: array
+          description: "해시태그 칩의 이름. 서버가 정규화하고 같은 태그는 합친다. 합친 뒤 30개를 넘으면 130406"
+          items:
+            type: string
+    SnsPostVideoRequest:
+      type: object
+      required: [key, durationMs]
+      properties:
+        key:
+          type: string
+          description: "SNS_POST_VIDEO로 올린 tmp key"
+        thumbnailKey:
+          type: string
+          nullable: true
+          description: "SNS_POST_IMAGE로 올린 썸네일 tmp key. FE는 언제나 보낸다. 없으면 130404"
+        durationMs:
+          type: integer
+          format: int32
+          minimum: 1
+          description: "FE가 영상 메타데이터에서 읽은 길이(밀리초). 60,000을 넘으면 130407"
+    SnsPostUpdateRequest:
+      type: object
+      required: [caption, hashtags]
+      description: "수정 요청. 두 값을 함께 보내 통째로 바꾼다(caption의 null은 캡션 삭제)"
+      properties:
+        caption:
+          type: string
+          nullable: true
+        hashtags:
+          type: array
+          description: "빈 배열이면 해시태그를 모두 뺀다. 순서만 바꿔도 수정으로 본다"
+          items:
+            type: string
+    SnsPostCreateResult:
+      type: object
+      required: [publicId]
+      properties:
+        publicId:
+          type: string
+    SnsPostCreateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsPostCreateResult"
+    SnsPostAuthorResult:
+      type: object
+      required: [publicId, nickname, profileImageUrl]
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+    SnsPostVideoResult:
+      type: object
+      required: [url, thumbnailUrl, durationMs]
+      properties:
+        url:
+          type: string
+          description: "서버가 변환하지 않은 MP4 또는 MOV 원본"
+        thumbnailUrl:
+          type: string
+        durationMs:
+          type: integer
+          format: int32
+    SnsPostDetailResult:
+      type: object
+      required: [publicId, author, pet, caption, hashtags, photoUrls, video, likeCount, commentCount, repostCount, edited, createdAt, isMine, following, mutedByMe]
+      properties:
+        publicId:
+          type: string
+        author:
+          $ref: "#/components/schemas/SnsPostAuthorResult"
+        pet:
+          allOf:
+            - $ref: "#/components/schemas/SnsPetResult"
+          nullable: true
+          description: "게시할 때의 대표 펫(품종과 생년월은 지금 값). FE가 birthYearMonth와 createdAt으로 게시 당시 나이를 계산한다"
+        caption:
+          type: string
+          nullable: true
+          description: "금지어를 가린 뒤의 캡션. 없으면 null"
+        hashtags:
+          type: array
+          description: "작성자가 단 순서대로 정규화한 해시태그 이름(# 없음)"
+          items:
+            type: string
+        photoUrls:
+          type: array
+          description: "사진 표시용 URL. 첫 항목이 대표 이미지다. 사진 게시물이 아니면 빈 배열"
+          items:
+            type: string
+        video:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostVideoResult"
+          nullable: true
+          description: "영상 게시물이 아니면 null. photoUrls가 비고 video가 null이면 텍스트 게시물이다"
+        likeCount:
+          type: integer
+          format: int64
+        commentCount:
+          type: integer
+          format: int64
+        repostCount:
+          type: integer
+          format: int64
+          description: "저장 수 필드는 없다(누구에게도 보여주지 않는다)"
+        edited:
+          type: boolean
+          description: "캡션이나 해시태그를 고친 적이 있으면 true"
+        createdAt:
+          type: string
+          description: "게시 시각. ISO LocalDateTime(KST, 오프셋 없음)"
+        isMine:
+          type: boolean
+        following:
+          type: boolean
+        mutedByMe:
+          type: boolean
+    SnsPostDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsPostDetailResult"
+    SnsHashtagResult:
+      type: object
+      required: [name, postCount]
+      properties:
+        name:
+          type: string
+          description: "정규화한 태그 이름(# 없음)"
+        postCount:
+          type: integer
+          format: int32
+    SnsHashtagSearchStatus:
+      type: string
+      enum: [EMPTY, EXISTS, NEW, INVALID, TOO_LONG, BANNED]
+    SnsHashtagSearchResult:
+      type: object
+      required: [query, status, exact, items]
+      properties:
+        query:
+          type: string
+          description: "정규화한 검색어. EMPTY면 빈 문자열"
+        status:
+          $ref: "#/components/schemas/SnsHashtagSearchStatus"
+        exact:
+          allOf:
+            - $ref: "#/components/schemas/SnsHashtagResult"
+          nullable: true
+          description: "EXISTS일 때 정확히 같은 이름의 태그. items에는 다시 나오지 않는다"
+        items:
+          type: array
+          description: "추천 태그(EMPTY) 또는 부분 일치 태그. 게시글 수가 많은 순"
+          items:
+            $ref: "#/components/schemas/SnsHashtagResult"
+    SnsHashtagSearchResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsHashtagSearchResult"
     InspectionProgressStep:
       type: string
       enum: [REQUESTED, AI_REVIEWING, ADMIN_REVIEWING, APPROVED, REJECTED]
@@ -11964,6 +12278,13 @@ components:
       in: query
       required: false
       description: "닉네임 부분 일치. 서버가 trim + NFC 정규화하고 검색어로는 400을 내지 않는다"
+      schema:
+        type: string
+    SnsPostPublicId:
+      name: publicId
+      in: path
+      required: true
+      description: "게시물 공개 ID(ULID). 형식 검증 없이 찾지 못하면 404 130400"
       schema:
         type: string
   securitySchemes:
