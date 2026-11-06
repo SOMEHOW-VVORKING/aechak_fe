@@ -4950,6 +4950,100 @@ export interface SnsCommentThreadResponse {
   data: SnsCommentThreadResult
 }
 
+export interface SnsSearchPostPageResult {
+  /** 피드 카드와 같은 모양이고 repostedBy는 늘 null이다. 같은 원글은 한 페이지에 한 번만 나온다 */
+  items: SnsFeedItemResult[]
+  /**
+   * 첫 페이지의 결과 수. 보는 사람의 차단과 뮤트로 바꾸지 않는다. 다음 페이지는 null
+   * @nullable
+   */
+  totalCount: number | null
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsSearchPostPageResponse {
+  data: SnsSearchPostPageResult
+}
+
+/**
+ * 현재 대표 펫과 ACTIVE 펫 수. 펫이 없거나 blockingMe면 null
+ * @nullable
+ */
+export type SnsSearchUserItemResultPetSummary = SnsPetSummaryResult | null
+
+/**
+ * 계정 세그먼트의 사용자 행. 누르면 프로필로 간다
+ */
+export interface SnsSearchUserItemResult {
+  publicId: string
+  nickname: string
+  /**
+   * blockingMe면 null(기본 프로필 사진)
+   * @nullable
+   */
+  profileImageUrl: string | null
+  /**
+   * 현재 대표 펫과 ACTIVE 펫 수. 펫이 없거나 blockingMe면 null
+   * @nullable
+   */
+  petSummary: SnsSearchUserItemResultPetSummary
+  /**
+   * blockingMe면 null
+   * @nullable
+   */
+  followerCount: number | null
+  /** 보는 사람 본인 행이면 true(팔로우 버튼을 숨긴다) */
+  isMe: boolean
+  /** 보는 사람이 이 행 사용자를 팔로우 중이면 true. isMe나 blockingMe면 false */
+  following: boolean
+  /** 이 사용자가 보는 사람을 차단했으면 true. 팔로우 버튼을 숨긴다 */
+  blockingMe: boolean
+}
+
+export interface SnsSearchUserPageResult {
+  items: SnsSearchUserItemResult[]
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsSearchUserPageResponse {
+  data: SnsSearchUserPageResult
+}
+
+export interface SnsSearchHashtagPageResult {
+  items: SnsHashtagResult[]
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsSearchHashtagPageResponse {
+  data: SnsSearchHashtagPageResult
+}
+
+export interface SnsHashtagHeaderResult {
+  /** 정규화한 태그 이름(# 없음) */
+  name: string
+  /** 이 태그가 달린 지우지 않은 게시물 수. 없는 태그는 0 */
+  postCount: number
+}
+
+export interface SnsHashtagPostPageResult {
+  hashtag: SnsHashtagHeaderResult
+  /** 피드 카드와 같은 모양이고 repostedBy는 늘 null이다 */
+  items: SnsFeedItemResult[]
+  /** @nullable */
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export interface SnsHashtagPostPageResponse {
+  data: SnsHashtagPostPageResult
+}
+
 export type InspectionProgressStep =
   (typeof InspectionProgressStep)[keyof typeof InspectionProgressStep]
 
@@ -6209,6 +6303,25 @@ export type SnsPostListCursorParameter = string
  */
 export type SnsCommentCursorParameter = string
 
+/**
+ * 검색창 입력값 그대로. 서버가 앞뒤 공백을 지우고 NFC로 정규화한 뒤 앞의 # 하나를 뗀다. 100자를 넘으면 400 90001
+ */
+export type SnsSearchKeywordParameter = string
+
+export type SnsSearchSortParameter =
+  (typeof SnsSearchSortParameter)[keyof typeof SnsSearchSortParameter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SnsSearchSortParameter = {
+  POPULAR: 'POPULAR',
+  LATEST: 'LATEST',
+} as const
+
+/**
+ * 이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002
+ */
+export type SnsSearchCursorParameter = string
+
 export type HealthCheck200 = {
   status?: string
 }
@@ -6497,6 +6610,77 @@ export type GetSnsPostCommentsParams = {
    * 이전 응답의 nextCursor. 게시물에 묶이고 다른 게시물이나 다른 목록의 커서면 400 90002
    */
   cursor?: SnsCommentCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type SearchSnsPostsParams = {
+  /**
+   * 검색창 입력값 그대로. 서버가 앞뒤 공백을 지우고 NFC로 정규화한 뒤 앞의 # 하나를 뗀다. 100자를 넘으면 400 90001
+   * @maxLength 100
+   */
+  keyword: SnsSearchKeywordParameter
+  /**
+   * POPULAR 인기순(반응 점수, 기간 제한과 감쇠 없음), LATEST 최신순(작성 시각). 모르는 값은 400 90001
+   */
+  sort?: SnsSearchSortParameter
+  /**
+   * 이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002
+   */
+  cursor?: SnsSearchCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type SearchSnsUsersParams = {
+  /**
+   * 검색창 입력값 그대로. 서버가 앞뒤 공백을 지우고 NFC로 정규화한 뒤 앞의 # 하나를 뗀다. 100자를 넘으면 400 90001
+   * @maxLength 100
+   */
+  keyword: SnsSearchKeywordParameter
+  /**
+   * 이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002
+   */
+  cursor?: SnsSearchCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type SearchSnsHashtagSegmentParams = {
+  /**
+   * 검색창 입력값 그대로. 서버가 앞뒤 공백을 지우고 NFC로 정규화한 뒤 앞의 # 하나를 뗀다. 100자를 넘으면 400 90001
+   * @maxLength 100
+   */
+  keyword: SnsSearchKeywordParameter
+  /**
+   * 이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002
+   */
+  cursor?: SnsSearchCursorParameter
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: SnsSizeParameter
+}
+
+export type GetSnsHashtagPostsParams = {
+  /**
+   * POPULAR 인기순(반응 점수, 기간 제한과 감쇠 없음), LATEST 최신순(작성 시각). 모르는 값은 400 90001
+   */
+  sort?: SnsSearchSortParameter
+  /**
+   * 이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002
+   */
+  cursor?: SnsSearchCursorParameter
   /**
    * @minimum 1
    * @maximum 100
@@ -19694,6 +19878,873 @@ export function useGetSnsCommentLikersSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetSnsCommentLikersSuspenseQueryOptions(commentPublicId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 캡션이나 해시태그에 검색어가 든 원글이다. 리포스트는 나오지 않고 로그인이면 차단 관계와 뮤트한 사용자의 글을 뺀다. totalCount는 첫 페이지에만 싣고 보는 사람의 차단과 뮤트로 바꾸지 않아 items보다 클 수 있다. 인기순 커서는 인기 피드처럼 31분이 지나면 400 90002다. 전체 탭 SNS 섹션은 sort=POPULAR, size=5로 부르고 더보기는 hasNext로 고른다.
+ * @summary SNS 검색 게시물 세그먼트와 전체 탭 SNS 섹션(비로그인 허용)
+ */
+export const searchSnsPosts = (params: SearchSnsPostsParams, signal?: AbortSignal) => {
+  return customInstance<SnsSearchPostPageResponse>({
+    url: `/sns/search/posts`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getSearchSnsPostsQueryKey = (params?: SearchSnsPostsParams) => {
+  return [`/sns/search/posts`, ...(params ? [params] : [])] as const
+}
+
+export const getSearchSnsPostsQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsPostsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsPosts>>> = ({ signal }) =>
+    searchSnsPosts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsPosts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsPostsQueryResult = NonNullable<Awaited<ReturnType<typeof searchSnsPosts>>>
+export type SearchSnsPostsQueryError = unknown
+
+export function useSearchSnsPosts<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsPosts>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsPosts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsPosts<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsPosts>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsPosts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsPosts<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 게시물 세그먼트와 전체 탭 SNS 섹션(비로그인 허용)
+ */
+
+export function useSearchSnsPosts<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsPostsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getSearchSnsPostsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsPostsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsPosts>>> = ({ signal }) =>
+    searchSnsPosts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsPosts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsPostsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchSnsPosts>>
+>
+export type SearchSnsPostsSuspenseQueryError = unknown
+
+export function useSearchSnsPostsSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsPostsSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsPostsSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 게시물 세그먼트와 전체 탭 SNS 섹션(비로그인 허용)
+ */
+
+export function useSearchSnsPostsSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsPosts>>,
+  TError = unknown,
+>(
+  params: SearchSnsPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsPostsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 닉네임에 검색어(공백을 뺀 문자열)가 든 사용자다. 닉네임이 같은 계정, 검색어로 시작하는 계정, 나머지 순이고 같은 묶음은 팔로워 수가 많은 순이다. 내가 차단한 사용자는 빠지고 나를 차단한 사용자는 blockingMe=true 기본 프로필로 나온다.
+ * @summary SNS 검색 계정 세그먼트(비로그인 허용)
+ */
+export const searchSnsUsers = (params: SearchSnsUsersParams, signal?: AbortSignal) => {
+  return customInstance<SnsSearchUserPageResponse>({
+    url: `/sns/search/users`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getSearchSnsUsersQueryKey = (params?: SearchSnsUsersParams) => {
+  return [`/sns/search/users`, ...(params ? [params] : [])] as const
+}
+
+export const getSearchSnsUsersQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsUsersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsUsers>>> = ({ signal }) =>
+    searchSnsUsers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsUsers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsUsersQueryResult = NonNullable<Awaited<ReturnType<typeof searchSnsUsers>>>
+export type SearchSnsUsersQueryError = unknown
+
+export function useSearchSnsUsers<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsUsers>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsUsers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsUsers<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsUsers>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsUsers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsUsers<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 계정 세그먼트(비로그인 허용)
+ */
+
+export function useSearchSnsUsers<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsUsersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getSearchSnsUsersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsUsersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsUsers>>> = ({ signal }) =>
+    searchSnsUsers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsUsers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsUsersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchSnsUsers>>
+>
+export type SearchSnsUsersSuspenseQueryError = unknown
+
+export function useSearchSnsUsersSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsUsersSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsUsersSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 계정 세그먼트(비로그인 허용)
+ */
+
+export function useSearchSnsUsersSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsUsers>>,
+  TError = unknown,
+>(
+  params: SearchSnsUsersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsUsers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsUsersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 이름에 검색어(공백을 뺀 뒤 해시태그 표기로 정규화한 값)가 들고 게시글 수가 1 이상인 태그를 게시글 수가 많은 순, 같으면 이름 순으로 준다. 게시글 수는 작성 화면 자동완성과 같은 값이다.
+ * @summary SNS 검색 해시태그 세그먼트(비로그인 허용)
+ */
+export const searchSnsHashtagSegment = (
+  params: SearchSnsHashtagSegmentParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsSearchHashtagPageResponse>({
+    url: `/sns/search/hashtags`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getSearchSnsHashtagSegmentQueryKey = (params?: SearchSnsHashtagSegmentParams) => {
+  return [`/sns/search/hashtags`, ...(params ? [params] : [])] as const
+}
+
+export const getSearchSnsHashtagSegmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsHashtagSegmentQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsHashtagSegment>>> = ({
+    signal,
+  }) => searchSnsHashtagSegment(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsHashtagSegmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchSnsHashtagSegment>>
+>
+export type SearchSnsHashtagSegmentQueryError = unknown
+
+export function useSearchSnsHashtagSegment<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsHashtagSegment>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsHashtagSegment<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+          TError,
+          Awaited<ReturnType<typeof searchSnsHashtagSegment>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsHashtagSegment<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 해시태그 세그먼트(비로그인 허용)
+ */
+
+export function useSearchSnsHashtagSegment<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsHashtagSegmentQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getSearchSnsHashtagSegmentSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getSearchSnsHashtagSegmentQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSnsHashtagSegment>>> = ({
+    signal,
+  }) => searchSnsHashtagSegment(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SearchSnsHashtagSegmentSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchSnsHashtagSegment>>
+>
+export type SearchSnsHashtagSegmentSuspenseQueryError = unknown
+
+export function useSearchSnsHashtagSegmentSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsHashtagSegmentSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSearchSnsHashtagSegmentSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary SNS 검색 해시태그 세그먼트(비로그인 허용)
+ */
+
+export function useSearchSnsHashtagSegmentSuspense<
+  TData = Awaited<ReturnType<typeof searchSnsHashtagSegment>>,
+  TError = unknown,
+>(
+  params: SearchSnsHashtagSegmentParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof searchSnsHashtagSegment>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchSnsHashtagSegmentSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 그 태그와 정확히 같은 태그가 달린 원글이다. 거르는 규칙, 정렬, 커서는 게시물 검색과 같다. hashtag는 매 페이지에 싣고 없는 태그나 글이 모두 지워진 태그는 postCount 0과 빈 목록이다. 최근 검색어에 기록하지 않는다.
+ * @summary 해시태그 게시물 목록(비로그인 허용)
+ */
+export const getSnsHashtagPosts = (
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SnsHashtagPostPageResponse>({
+    url: `/sns/hashtags/${name}/posts`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetSnsHashtagPostsQueryKey = (name?: string, params?: GetSnsHashtagPostsParams) => {
+  return [`/sns/hashtags/${name}/posts`, ...(params ? [params] : [])] as const
+}
+
+export const getGetSnsHashtagPostsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsHashtagPostsQueryKey(name, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsHashtagPosts>>> = ({ signal }) =>
+    getSnsHashtagPosts(name, params, signal)
+
+  return { queryKey, queryFn, enabled: !!name, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsHashtagPostsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsHashtagPosts>>
+>
+export type GetSnsHashtagPostsQueryError = unknown
+
+export function useGetSnsHashtagPosts<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params: undefined | GetSnsHashtagPostsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsHashtagPosts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsHashtagPosts<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+          TError,
+          Awaited<ReturnType<typeof getSnsHashtagPosts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsHashtagPosts<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 해시태그 게시물 목록(비로그인 허용)
+ */
+
+export function useGetSnsHashtagPosts<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsHashtagPostsQueryOptions(name, params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetSnsHashtagPostsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetSnsHashtagPostsQueryKey(name, params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnsHashtagPosts>>> = ({ signal }) =>
+    getSnsHashtagPosts(name, params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSnsHashtagPostsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSnsHashtagPosts>>
+>
+export type GetSnsHashtagPostsSuspenseQueryError = unknown
+
+export function useGetSnsHashtagPostsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params: undefined | GetSnsHashtagPostsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsHashtagPostsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSnsHashtagPostsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 해시태그 게시물 목록(비로그인 허용)
+ */
+
+export function useGetSnsHashtagPostsSuspense<
+  TData = Awaited<ReturnType<typeof getSnsHashtagPosts>>,
+  TError = unknown,
+>(
+  name: string,
+  params?: GetSnsHashtagPostsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getSnsHashtagPosts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSnsHashtagPostsSuspenseQueryOptions(name, params, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,
