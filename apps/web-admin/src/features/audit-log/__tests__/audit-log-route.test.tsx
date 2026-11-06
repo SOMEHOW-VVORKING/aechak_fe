@@ -326,8 +326,8 @@ describe('/audit-log', () => {
       '주문',
       '공지',
     ])
-    // 액션 17값도 같은 이유로 전부 있어야 한다(센티넬 하나를 더해 18개).
-    expect(within(screen.getAllByRole('combobox')[1]!).getAllByRole('option')).toHaveLength(18)
+    // 액션 18값도 같은 이유로 전부 있어야 한다(센티넬 하나를 더해 19개).
+    expect(within(screen.getAllByRole('combobox')[1]!).getAllByRole('option')).toHaveLength(19)
   })
 
   it('[AC-ADM-AUD-007] 대상 식별자는 종류를 앞세워 보여주고 링크로 만들지 않는다', async () => {

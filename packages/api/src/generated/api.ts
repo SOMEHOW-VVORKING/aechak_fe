@@ -3557,6 +3557,16 @@ export interface AdminSanctionHistory {
 
 export interface AdminMemberDetailData {
   member: AdminMemberSummary
+  /**
+   * 현재 프로필 이미지 주소. 기본 이미지이거나 프로필이 없는 계정이면 null
+   * @nullable
+   */
+  profileImageUrl: string | null
+  /**
+   * 현재 소개글. 비었거나 프로필이 없는 계정이면 null
+   * @nullable
+   */
+  bio: string | null
   /** 최신순, 최대 50건 */
   sanctions: AdminSanctionHistory[]
 }
@@ -5734,7 +5744,7 @@ export interface MyProductInquiryListResponse {
 }
 
 /**
- * 감사되는 운영 액션 17종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'· '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
+ * 감사되는 운영 액션 18종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'· '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
  */
 export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAuditAction]
 
@@ -5749,6 +5759,7 @@ export const AdminAuditAction = {
   CLAIM_INTERVENED: 'CLAIM_INTERVENED',
   MEMBER_SANCTIONED: 'MEMBER_SANCTIONED',
   MEMBER_SANCTION_RELEASED: 'MEMBER_SANCTION_RELEASED',
+  MEMBER_PROFILE_RESET: 'MEMBER_PROFILE_RESET',
   INQUIRY_ANSWERED: 'INQUIRY_ANSWERED',
   REVIEW_BLINDED: 'REVIEW_BLINDED',
   REVIEW_UNBLINDED: 'REVIEW_UNBLINDED',
@@ -28124,7 +28135,7 @@ export function useGetAdminMembersSuspense<
 }
 
 /**
- * 가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다** (관리자는 이 경로의 대상이 아니다).
+ * 가입일·상태, 현재 프로필 이미지와 소개글, 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다** (관리자는 이 경로의 대상이 아니다).
  * @summary 어드민 회원 상세
  */
 export const getAdminMemberDetail = (userId: number, signal?: AbortSignal) => {
@@ -28504,6 +28515,83 @@ export const useReleaseAdminMemberSanction = <TError = unknown, TContext = unkno
   TContext
 > => {
   const mutationOptions = getReleaseAdminMemberSanctionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 신고된 회원의 프로필 이미지를 기본 이미지로 되돌리고 소개글을 비운다. 닉네임은 바꾸지 않는다. 제재가 아니라 계정 상태와 제재 이력은 그대로이고 회원은 그 뒤에 다시 바꿀 수 있다. 제재 중인 계정도 대상이다. 이미 비어 있어도 204다. 본문은 없다. 404 errorCode 30000 — 없는 계정과 관리자 계정. 409 errorCode 30024 — 프로필이 없는 계정(온보딩 전, 탈퇴).
+ * @summary 어드민 회원 프로필 초기화
+ */
+export const resetAdminMemberProfile = (userId: number, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/admin/members/${userId}/profile/reset`,
+    method: 'POST',
+    signal,
+  })
+}
+
+export const getResetAdminMemberProfileMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetAdminMemberProfile>>,
+    TError,
+    { userId: number },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetAdminMemberProfile>>,
+  TError,
+  { userId: number },
+  TContext
+> => {
+  const mutationKey = ['resetAdminMemberProfile']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetAdminMemberProfile>>,
+    { userId: number }
+  > = props => {
+    const { userId } = props ?? {}
+
+    return resetAdminMemberProfile(userId)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ResetAdminMemberProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetAdminMemberProfile>>
+>
+
+export type ResetAdminMemberProfileMutationError = unknown
+
+/**
+ * @summary 어드민 회원 프로필 초기화
+ */
+export const useResetAdminMemberProfile = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof resetAdminMemberProfile>>,
+      TError,
+      { userId: number },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof resetAdminMemberProfile>>,
+  TError,
+  { userId: number },
+  TContext
+> => {
+  const mutationOptions = getResetAdminMemberProfileMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
