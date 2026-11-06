@@ -8,6 +8,7 @@ import { setAccessToken } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_COCO,
+  SNS_COMMENT_MINE,
   SNS_COMMENT_MONG,
   SNS_ME,
   SNS_MONG,
@@ -595,6 +596,15 @@ describe('로그인 뒤 댓글 신고 다시 열기', () => {
     expect(within(sheet).getByText('댓글 20')).toBeInTheDocument()
     expect(within(commentSection()).queryByText('댓글 20')).toBeNull()
     expect(reportBodies).toEqual([])
+  })
+
+  it('[AC-SNS-RPT-016] 로그인해 보니 내 댓글이면 시트를 열지 않고 내 댓글은 신고할 수 없다고 알린다', async () => {
+    seedSns({ comments: snsExampleComments() })
+    pendCommentReport(SNS_COMMENT_MINE)
+    renderAt(postPath(SNS_POST_COCO))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('내 댓글은 신고할 수 없어요')
+    expect(screen.queryByRole('dialog', { name: '신고하기' })).toBeNull()
   })
 
   it('[AC-SNS-RPT-016] 그사이 볼 수 없게 된 댓글이면 시트를 열지 않고 찾을 수 없다고 알린다', async () => {

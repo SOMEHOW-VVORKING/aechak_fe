@@ -215,7 +215,9 @@ export function SnsCommentList({
     } else if (resume.kind === 'commentReport') {
       if (resumeTarget != null && resumeThread.isPending) return
       const target = resumeThread.data?.comment
-      if (target?.status === 'ACTIVE' && target.author && !target.isMine) openReport(target)
+      // 비로그인은 isMine이 늘 false라 로그인해 보니 내 댓글일 수 있다.
+      if (target?.isMine) notify('내 댓글은 신고할 수 없어요', 'error')
+      else if (target?.status === 'ACTIVE' && target.author) openReport(target)
       else notify(snsCommentErrorMessage(resumeThread.error, '댓글을 찾을 수 없어요'), 'error')
     } else {
       if (!ready) return
