@@ -9,15 +9,18 @@ import { logout, resetAuth } from '@/shared/auth'
 import {
   SNS_CHOCO,
   SNS_COMMENT_LIKE_URL,
+  SNS_COMMENTS_URL,
   SNS_COMMENT_MINE,
   SNS_COMMENT_MONG,
   SNS_ME,
+  SNS_MONG,
   SNS_POST_COCO,
   SNS_REPLY_COCO,
   WEB_REFRESH_URL,
   currentSns,
   seedSns,
   server,
+  snsComment,
   snsExampleCommentLikes,
   snsExampleComments,
   snsLike,
@@ -47,14 +50,36 @@ const findRow = async (text: string) =>
   (await within(await screen.findByRole('region', { name: '댓글' })).findByText(text)).closest(
     'li',
   )!
-const likeIn = (scope: HTMLElement) => within(scope).getByRole('button', { name: '댓글 좋아요' })
+const likeIn = (scope: HTMLElement) =>
+  within(scope).getByRole('button', { name: /님 댓글 좋아요$/ })
 const likeCount = (scope: HTMLElement) =>
   within(scope)
-    .getByRole('button', { name: /^댓글 좋아요한 사람/ })
-    .textContent?.replace('댓글 좋아요한 사람', '')
+    .getByRole('button', { name: /님 댓글 좋아요한 사람/ })
+    .textContent?.replace(/^.*님 댓글 좋아요한 사람/, '')
     .trim()
 const liked = (user: string, comment: string) =>
   currentSns().likes.some(r => r.user === user && r.target === comment)
+
+// 최상위 댓글이 한 페이지(20개)를 넘게 예시 댓글 뒤에 몽이아빠 댓글 20개를 더한다
+const manyComments = () => [
+  ...snsExampleComments(),
+  ...Array.from({ length: 20 }, (_, i) =>
+    snsComment(`01JG3${String(i).padStart(21, '0')}`, SNS_POST_COCO, SNS_MONG, {
+      content: `더 있는 댓글 ${i}`,
+      createdAt: `2026-10-23T${String(i).padStart(2, '0')}:00:00`,
+    }),
+  ),
+]
+const holdNextPage = () => {
+  let release = () => {}
+  const held = new Promise<void>(resolve => (release = resolve))
+  server.use(
+    http.get(SNS_COMMENTS_URL, async ({ request }) => {
+      if (new URL(request.url).searchParams.get('cursor')) await held
+    }),
+  )
+  return () => release()
+}
 
 const MONG_TEXT = '코코 표정 너무 좋네요'
 const MINE_TEXT = '산책 코스 어디예요?'
@@ -165,9 +190,9 @@ describe('댓글 좋아요 버튼', () => {
     renderAt(postPath())
     const placeholder = await findRow('삭제된 댓글이에요')
 
-    expect(within(placeholder).queryByRole('button', { name: '댓글 좋아요' })).toBeNull()
+    expect(within(placeholder).queryByRole('button', { name: /님 댓글 좋아요$/ })).toBeNull()
     expect(
-      within(rowOf('저도 궁금해요')).getByRole('button', { name: '댓글 좋아요' }),
+      within(rowOf('저도 궁금해요')).getByRole('button', { name: /님 댓글 좋아요$/ }),
     ).toBeInTheDocument()
   })
 
@@ -239,11 +264,38 @@ describe('댓글 좋아요 버튼', () => {
     const router = renderAt(postPath())
 
     await user.click(
-      within(await findRow(MONG_TEXT)).getByRole('button', { name: /^댓글 좋아요한 사람/ }),
+      within(await findRow(MONG_TEXT)).getByRole('button', { name: /님 댓글 좋아요한 사람/ }),
     )
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(`/sns/comments/${SNS_COMMENT_MONG}/likers`),
     )
+  })
+  it('좋아요 요청 중에는 더보기를 잠그고 다음 댓글을 받는 동안에는 좋아요를 잠근다', async () => {
+    seedSns({ ...currentSns(), comments: manyComments() })
+    let releaseLike = () => {}
+    const heldLike = new Promise<void>(resolve => (releaseLike = resolve))
+    server.use(
+      http.post(SNS_COMMENT_LIKE_URL, async () => {
+        await heldLike
+      }),
+    )
+    const release = holdNextPage()
+    const user = userEvent.setup()
+    renderAt(postPath())
+    await findRow(MINE_TEXT)
+
+    await user.click(likeIn(rowOf(MINE_TEXT)))
+    expect(screen.getByRole('button', { name: '댓글 더보기' })).toBeDisabled()
+    releaseLike()
+    await waitFor(() => expect(liked(SNS_ME, SNS_COMMENT_MINE)).toBe(true))
+    await waitFor(() => expect(screen.getByRole('button', { name: '댓글 더보기' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: '댓글 더보기' }))
+    await waitFor(() => expect(likeIn(rowOf(MINE_TEXT))).toBeDisabled())
+    release()
+    await within(list()).findByText('더 있는 댓글 19')
+    expect(likeIn(rowOf(MINE_TEXT))).toBeEnabled()
+    expect(likeIn(rowOf(MINE_TEXT))).toHaveAttribute('aria-pressed', 'true')
   })
 })
 
@@ -317,7 +369,7 @@ describe('비로그인 댓글 좋아요', () => {
     const user = userEvent.setup()
     const guestRouter = renderAt(postPath())
     await user.click(
-      within(await findRow(MONG_TEXT)).getByRole('button', { name: /^댓글 좋아요한 사람/ }),
+      within(await findRow(MONG_TEXT)).getByRole('button', { name: /님 댓글 좋아요한 사람/ }),
     )
     expect(
       await screen.findByText(/좋아요한 사람 목록은 로그인한 회원만 볼 수 있어요/),
@@ -328,5 +380,35 @@ describe('비로그인 댓글 좋아요', () => {
       expect(router.state.location.pathname).toBe(`/sns/comments/${SNS_COMMENT_MONG}/likers`),
     )
     expect(await screen.findByText('좋아요한 2명을 표시했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS04-006] 로그인 뒤 다시 켠 좋아요는 목록을 처음부터 다시 불러와도 한 번만 보낸다', async () => {
+    seedSns({ ...currentSns(), comments: manyComments() })
+    const user = userEvent.setup()
+    const guestRouter = renderAt(postPath())
+    await user.click(likeIn(await findRow(MINE_TEXT)))
+
+    const router = await loginAndReturn(guestRouter)
+    await waitFor(() => expect(router.state.location.pathname).toBe(postPath()))
+    await waitFor(() => expect(liked(SNS_ME, SNS_COMMENT_MINE)).toBe(true))
+    await user.click(likeIn(rowOf(MINE_TEXT)))
+    await waitFor(() => expect(liked(SNS_ME, SNS_COMMENT_MINE)).toBe(false))
+
+    // 낡은 커서(90002)면 목록을 처음부터 다시 읽는다
+    server.use(
+      http.get(SNS_COMMENTS_URL, ({ request }) => {
+        if (new URL(request.url).searchParams.get('cursor')) {
+          return HttpResponse.json({ errorCode: 90002, message: '' }, { status: 400 })
+        }
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '댓글 더보기' }))
+    await waitFor(() => expect(likeIn(rowOf(MINE_TEXT))).toHaveAttribute('aria-pressed', 'false'))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(likeRequests).toEqual([
+      `POST /api/v1/sns/comments/${SNS_COMMENT_MINE}/like`,
+      `DELETE /api/v1/sns/comments/${SNS_COMMENT_MINE}/like`,
+    ])
+    expect(liked(SNS_ME, SNS_COMMENT_MINE)).toBe(false)
   })
 })

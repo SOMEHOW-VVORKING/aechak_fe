@@ -12,6 +12,7 @@ import {
   SNS_COCO,
   SNS_COMMENT_DELETED,
   SNS_COMMENT_MONG,
+  SNS_COMMENT_URL,
   SNS_FANS,
   SNS_ME,
   SNS_MONG,
@@ -257,6 +258,24 @@ describe('/sns/comments/$commentPublicId/likers', () => {
     expect(await screen.findByText('좋아요한 2명을 표시했어요')).toBeInTheDocument()
     expect(rows()).toHaveLength(2)
     expect(within(rowOf('보리언니')).getByText('나')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS04-009] 대상 댓글 단건 조회만 실패하면 카드 자리에 안내와 다시 시도가 나오고 목록은 그대로다', async () => {
+    let fail = true
+    server.use(
+      http.get(SNS_COMMENT_URL, () =>
+        fail ? HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 }) : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(commentLikersPath(SNS_COMMENT_MONG))
+
+    expect(await screen.findByText('댓글을 불러오지 못했어요.')).toBeInTheDocument()
+    expect(screen.getByText('좋아요한 2명을 표시했어요')).toBeInTheDocument()
+
+    fail = false
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('group', { name: '좋아요한 댓글' })).toBeInTheDocument()
   })
 
   it('[AC-SNS04-014] 좋아요가 없으면 첫 좋아요를 권하는 빈 상태가 나온다', async () => {

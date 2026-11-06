@@ -246,6 +246,13 @@ export function SnsLikersScreen({
           </div>
         </div>
       )}
+      {/* 단건 조회만 실패했으면 어느 댓글인지 알 수 없어 카드 자리에 알린다 */}
+      {target === 'comment' && !comment && thread.isError && (
+        <SnsRefetchError
+          message="댓글을 불러오지 못했어요."
+          onRetry={() => void thread.refetch()}
+        />
+      )}
       <p className="flex items-center gap-1.5 px-4 pb-2.5 pt-3.5 text-label text-text-primary">
         <Heart
           className={`size-4 ${data.likeCount > 0 ? 'text-social-active' : 'text-icon-muted'}`}

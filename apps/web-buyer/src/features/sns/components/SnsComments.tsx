@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import { Heart, MessageCircle, MoreHorizontal } from 'lucide-react'
 import { Alert, Avatar, BottomSheet, Button, Modal, Skeleton } from '@aechak/design-system/web'
 import { useIsLoggedIn, useSessionState, type GateFeature, type GateResume } from '@/shared/auth'
@@ -167,6 +174,11 @@ export function SnsCommentList({
   const extra = draft.appended.filter(i => !loadedIds.has(i.publicId))
   // 받아 둔 행이 있는데 다시 조회가 실패하면 낡은 행으로 하는 처리(답글, 수정, 삭제, 차단)를 잠근다(AGENTS.md 6절 7).
   const stale = comments.isError && items.length > 0
+  // 좋아요는 그 댓글이 든 목록 조회를 멈추므로 다음 페이지를 받는 동안에는 좋아요를, 좋아요 요청 중에는 더보기를 막는다.
+  const likeLocked = stale || comments.isFetchingNextPage
+  const commentLiking = useIsMutating({ mutationKey: ['sns', 'like', 'comment'] }) > 0
+  // 로그인 뒤 다시 켠 댓글 좋아요는 목록이 다시 불러와져도 한 번만 보낸다
+  const resumeLikeSent = useRef(false)
 
   // 로그인 뒤 다시 실행(A26). 입력창만 다시 열고 댓글은 보내지 않는다. 답글달기였으면 단건으로 그 댓글을 다시 읽어 아직 답글을
   // 달 수 있을 때만 그 답글 입력창을 연다. 차단은 그 작성자의 댓글이 아직 보일 때만 확인 시트를 다시 연다. 볼 수 없게 됐으면 안내만 한다.
@@ -286,7 +298,7 @@ export function SnsCommentList({
     })
   }
 
-  const row = (item: SnsComment, actions = !stale) => (
+  const row = (item: SnsComment, actions = !stale, likeDisabled = likeLocked) => (
     <SnsCommentRow
       key={item.publicId}
       item={item}
@@ -296,7 +308,7 @@ export function SnsCommentList({
           item={item}
           requireAuth={requireAuth}
           notify={notify}
-          disabled={stale}
+          disabled={likeDisabled}
         />
       }
       // 고정 영역의 같은 댓글에는 편집창을 열지 않는다
@@ -325,8 +337,8 @@ export function SnsCommentList({
         <div className="mx-4 my-2 rounded-card bg-surface-sunken py-1">
           {pinned.data ? (
             <div aria-label="알림으로 연 댓글" role="group">
-              {pinned.data.parent && row(pinned.data.parent, false)}
-              {row(pinned.data.comment, false)}
+              {pinned.data.parent && row(pinned.data.parent, false, likeLocked || pinned.isError)}
+              {row(pinned.data.comment, false, likeLocked || pinned.isError)}
             </div>
           ) : snsErrorCode(pinned.error) === SNS_COMMENT_UNAVAILABLE ? (
             <p className="px-3 py-2 text-body-sm text-text-secondary">댓글을 찾을 수 없어요</p>
@@ -401,6 +413,7 @@ export function SnsCommentList({
           postPublicId={post.publicId}
           commentPublicId={resume.targetPublicId}
           notify={notify}
+          sent={resumeLikeSent}
         />
       )}
 
@@ -411,6 +424,7 @@ export function SnsCommentList({
             size="sm"
             fullWidth
             loading={comments.isFetchingNextPage}
+            disabled={commentLiking}
             onClick={() => void comments.fetchNextPage()}
           >
             댓글 더보기
@@ -650,7 +664,7 @@ function CommentLikeButton({
     <div className="-mr-2 -mt-1.5 flex flex-none flex-col items-center">
       <button
         type="button"
-        aria-label="댓글 좋아요"
+        aria-label={`${item.author?.nickname}님 댓글 좋아요`}
         aria-pressed={item.liked}
         disabled={disabled}
         onClick={press}
@@ -663,7 +677,8 @@ function CommentLikeButton({
         onClick={openLikers}
         className="-mt-1.5 rounded-full px-1 text-caption tabular-nums text-text-tertiary focus-visible:outline-none focus-visible:shadow-focus-ring"
       >
-        <span className="sr-only">댓글 좋아요한 사람</span> {item.likeCount.toLocaleString('ko-KR')}
+        <span className="sr-only">{item.author?.nickname}님 댓글 좋아요한 사람</span>{' '}
+        {item.likeCount.toLocaleString('ko-KR')}
       </button>
     </div>
   )
@@ -674,19 +689,20 @@ function ResumeCommentLike({
   postPublicId,
   commentPublicId,
   notify,
+  sent,
 }: {
   postPublicId: string
   commentPublicId: string
   notify: Notify
+  /** 보냈는지. 목록이 비었다 다시 채워져 이 컴포넌트가 새로 마운트돼도 남도록 목록이 갖는다 */
+  sent: MutableRefObject<boolean>
 }) {
   const like = useSnsCommentLike(postPublicId, commentPublicId)
-  // StrictMode가 effect를 두 번 실행해도 한 번만 보낸다.
-  const sent = useRef(false)
   useEffect(() => {
     if (sent.current) return
     sent.current = true
     like(true, { onError: e => notify(commentLikeErrorMessage(e), 'error') })
-  }, [like, notify])
+  }, [like, notify, sent])
   return null
 }
 

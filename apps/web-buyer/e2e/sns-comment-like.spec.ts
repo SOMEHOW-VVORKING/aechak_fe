@@ -208,14 +208,14 @@ test('[AC-SNS04-E2E-020] 댓글마다 좋아요와 수가 있고 누르면 바�
 
   const mine = rowOf(page, '산책 코스 어디예요?')
   await expect(
-    rowOf(page, '코코 표정 너무 좋네요').getByRole('button', { name: '댓글 좋아요', exact: true }),
+    rowOf(page, '코코 표정 너무 좋네요').getByRole('button', { name: /님 댓글 좋아요$/ }),
   ).toHaveAttribute('aria-pressed', 'true')
   await expect(
-    rowOf(page, '삭제된 댓글이에요').getByRole('button', { name: '댓글 좋아요', exact: true }),
+    rowOf(page, '삭제된 댓글이에요').getByRole('button', { name: /님 댓글 좋아요$/ }),
   ).toHaveCount(0)
 
-  await mine.getByRole('button', { name: '댓글 좋아요', exact: true }).click()
-  await expect(mine.getByRole('button', { name: '댓글 좋아요', exact: true })).toHaveAttribute(
+  await mine.getByRole('button', { name: /님 댓글 좋아요$/ }).click()
+  await expect(mine.getByRole('button', { name: /님 댓글 좋아요$/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -259,7 +259,7 @@ test('[AC-SNS04-E2E-023] 비로그인이 댓글 좋아요를 누르면 로그인
   await page.goto(`/sns/posts/${POST.publicId}`)
 
   await rowOf(page, '코코 표정 너무 좋네요')
-    .getByRole('button', { name: '댓글 좋아요', exact: true })
+    .getByRole('button', { name: /님 댓글 좋아요$/ })
     .first()
     .click()
   await expect(page.getByText(/좋아요는 로그인한 회원만 이용할 수 있어요/)).toBeVisible()
