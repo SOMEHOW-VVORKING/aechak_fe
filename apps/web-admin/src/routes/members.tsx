@@ -51,6 +51,7 @@ import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { usePendingWriteExitGuard } from '@/shared/hooks/usePendingWriteExitGuard'
 
 export const Route = createFileRoute('/members')({
   component: MembersPage,
@@ -209,6 +210,7 @@ function MembersPage() {
   const detail = useAdminMemberDetail(selectedUserId)
   const sanction = useSanctionMember()
   const profileReset = useResetMemberProfile()
+  usePendingWriteExitGuard(profileReset.isPending)
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
@@ -256,6 +258,8 @@ function MembersPage() {
   const hasProfileContent = detail.profileImageUrl != null || detail.bio != null
 
   function closeDrawer() {
+    // 초기화 요청 중에 닫히면 호출별 콜백이 실행되지 않아 결과 안내가 사라진다
+    if (profileReset.isPending) return
     setSelectedUserId(null)
     setConfirmOpen(false)
     setResetOpen(false)
@@ -415,7 +419,7 @@ function MembersPage() {
                   className="shrink-0"
                   leftIcon={<RotateCcw className="size-4" />}
                   onClick={() => setResetOpen(true)}
-                  disabled={!hasProfileContent || profileReset.isPending}
+                  disabled={!hasProfileContent || detail.isError || profileReset.isPending}
                 >
                   프로필 초기화
                 </Button>
@@ -571,7 +575,10 @@ function MembersPage() {
       {member && (
         <Modal
           open={resetOpen}
-          onClose={() => setResetOpen(false)}
+          onClose={() => {
+            if (profileReset.isPending) return
+            setResetOpen(false)
+          }}
           title="프로필을 초기화할까요?"
           description="프로필 이미지가 기본 이미지로 바뀌고 소개글이 비워져요. 닉네임과 계정 상태는 그대로이고 회원은 다시 바꿀 수 있어요."
           confirmLabel="초기화"
