@@ -14,6 +14,7 @@ import {
   snsErrorCode,
   snsPostErrorMessage,
   snsToggleErrorMessage,
+  postReportTarget,
   useDeleteSnsPost,
   useSnsPost,
   useSnsToggle,
@@ -25,6 +26,7 @@ import { petTagLabel, postDate, postDateLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
 import { SnsReactionButton, SnsResumeReaction } from './SnsReactionButton'
+import { SnsReportSheet } from './SnsReportSheet'
 
 interface ToastState {
   open: boolean
@@ -36,7 +38,7 @@ interface ToastState {
 type PostConfirm = 'block' | 'unmute'
 
 // 게시물 상세의 게시물 영역(b7-st-2). 비로그인도 본다(A9). 액션 바는 좋아요와 댓글 수, 리포스트와 저장 버튼(SNS-03),
-// 공유를 그린다. 좋아요와 댓글 버튼은 그 API를 만드는 SNS-04 FE가 붙인다(G-C2). 신고는 SNS-07 전까지 숨긴다.
+// 공유를 그린다. 좋아요와 댓글 버튼은 그 API를 만드는 SNS-04 FE가 붙인다(G-C2). 신고는 더보기 시트에서 연다(SNS-07).
 // author는 카드나 프로필에서 들어와 작성자를 알 때만 온다. 내가 차단한 작성자의 게시물(403 130001)은 응답에
 // 작성자가 없어서 이 값이 있을 때만 프로필 이동을 보여준다(G4).
 export function SnsPostDetailScreen({ publicId, author }: { publicId: string; author?: string }) {
@@ -52,6 +54,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   // 확인 Modal의 타겟은 화면이 소유하고 Modal은 자체 mutation을 만들지 않는다(AGENTS.md 4절).
   const [confirm, setConfirm] = useState<PostConfirm | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
   const [resume, setResume] = useState<SnsReactionKind | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
@@ -70,6 +73,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
   // 작성자가 없어 작성자 publicId로 남기면 꺼낼 수 없고 나중에 그 프로필에서 확인 없이 팔로우가 나간다.
   // 볼 수 없게 됐으면 실행하지 않고 안내만 남긴다. 그 작성자 본인으로 로그인했으면 실행하지 않고 버린다.
   // 리포스트와 저장은 확인 없이 한 번 켠다. 저장은 내 글도 되고(AC-SNS03-032) 리포스트는 내 글이면 버린다.
+  // 신고는 사유가 필요해 시트만 다시 열고 제출하지 않는다(A26).
   useEffect(() => {
     if (!loggedIn) return
     if (unavailable || blockedByMe) {
@@ -88,6 +92,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
+    else if (pending.kind === 'report') setReportOpen(true)
   }, [publicId, loggedIn, unavailable, blockedByMe, post, mutateToggle])
 
   const postUrl = `${window.location.origin}/sns/posts/${publicId}`
@@ -220,8 +225,14 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
           onDelete={() => setDeleteConfirm(true)}
           onMute={() => (post.mutedByMe ? setConfirm('unmute') : mute(post))}
           onBlock={() => requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId })}
+          onReport={() => requireAuth('snsReport', () => setReportOpen(true), { kind: 'report', publicId })}
         />
       )}
+      <SnsReportSheet
+        target={post ? postReportTarget(post) : null}
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+      />
 
       {confirm && post && (
         <Modal

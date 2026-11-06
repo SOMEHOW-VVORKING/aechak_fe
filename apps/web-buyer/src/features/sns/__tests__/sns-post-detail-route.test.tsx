@@ -239,13 +239,13 @@ describe('/sns/posts/$publicId 팔로우, 더보기, 공유', () => {
     expect(await screen.findByRole('button', { name: '팔로우' })).toBeInTheDocument()
   })
 
-  it('[AC-SNS02-026] 다른 사람 게시물 더보기에는 링크 복사, 뮤트, 차단이 있고 수정, 삭제, 신고가 없다', async () => {
+  it('[AC-SNS02-026] 다른 사람 게시물 더보기에는 링크 복사, 뮤트, 차단, 신고가 있고 수정, 삭제가 없다', async () => {
     const user = userEvent.setup()
     renderAt(postPath(SNS_POST_COCO))
 
     await user.click(await screen.findByRole('button', { name: '더보기' }))
     const sheet = await screen.findByRole('dialog')
-    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기'])
+    expect(within(sheet).getAllByRole('button').map(b => b.textContent)).toEqual(['링크 복사', '이 계정 뮤트하기', '차단하기', '신고하기'])
   })
 
   it('[AC-SNS02-029] 링크 복사를 누르면 상세 주소를 복사하고 토스트를 보여준다', async () => {
