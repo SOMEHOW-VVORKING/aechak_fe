@@ -153,11 +153,13 @@ describe('/sns/posts/$publicId 게시물 영역', () => {
     renderAt(postPath(SNS_POST_MINE))
 
     expect(await screen.findByText('리포스트')).toBeInTheDocument()
-    expect([count('좋아요'), count('댓글'), count('리포스트')]).toEqual(['0', '0', '0'])
+    expect([count('댓글'), count('리포스트')]).toEqual(['0', '0'])
+    // 좋아요 수는 좋아요한 사람을 여는 버튼이다(SNS-04).
+    expect(screen.getByRole('button', { name: '좋아요한 사람 0' })).toBeInTheDocument()
     // 저장 버튼은 아이콘만 그린다.
     expect(screen.getByRole('button', { name: '저장' }).textContent).toBe('')
-    // 좋아요와 댓글 버튼은 SNS-04가 붙인다(G-C2).
-    expect(screen.queryByRole('button', { name: /좋아요|댓글/ })).not.toBeInTheDocument()
+    // 댓글 버튼은 SNS-04 댓글이 붙인다(G-C2).
+    expect(screen.queryByRole('button', { name: /댓글/ })).not.toBeInTheDocument()
   })
 
   it('[AC-SNS02-024] 수정한 게시물에는 수정됨 표시가 붙는다', async () => {

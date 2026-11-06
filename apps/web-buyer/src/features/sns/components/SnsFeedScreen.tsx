@@ -31,6 +31,7 @@ import { RELATION_CONFIRM } from '../sns.copy'
 import { SnsFeedCard } from './SnsFeedCard'
 import { SnsListEnd, SnsListError, SnsRefetchError } from './SnsListEnd'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
+import { SnsResumeLike } from './SnsLikeButton'
 import { SnsResumeReaction } from './SnsReactionButton'
 import { SnsReportSheet } from './SnsReportSheet'
 import { SnsWriteFab } from './SnsWriteFab'
@@ -112,8 +113,8 @@ export function SnsFeedScreen({
   const [deleting, setDeleting] = useState<SnsPost | null>(null)
   // 신고 시트도 닫히는 동안 마지막 대상을 그린다.
   const [report, setReport] = useState<{ post: SnsPost; open: boolean } | null>(null)
-  // 로그인 뒤 다시 켤 리포스트나 저장(A26). 정해지면 SnsResumeReaction이 한 번 보낸다.
-  const [resume, setResume] = useState<{ kind: SnsReactionKind; publicId: string } | null>(null)
+  // 로그인 뒤 다시 켤 리포스트, 저장, 좋아요(A26). 정해지면 SnsResumeReaction이나 SnsResumeLike가 한 번 보낸다.
+  const [resume, setResume] = useState<{ kind: SnsReactionKind | 'like'; publicId: string } | null>(null)
   const [toast, setToast] = useState<ToastState>({ open: false, message: '', variant: 'success' })
 
   const showToast = (message: string, variant: ToastState['variant'] = 'success') =>
@@ -127,8 +128,8 @@ export function SnsFeedScreen({
     return requireAuth(feature, action, resumeAction)
   }
 
-  // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 행동은 피드를 받은 뒤 꺼낸다. 리포스트, 저장은 확인 없이 한 번
-  // 켠다. 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다. 차단, 뮤트는 확인이 더
+  // 로그인 뒤 다시 실행(A26, design 6절 10번). 카드에서 남긴 행동은 피드를 받은 뒤 꺼낸다. 리포스트, 저장, 좋아요는 확인 없이
+  // 한 번 켠다. 받아 둔 카드면 바로 켜진 모양이 된다. 받아 둔 내 글의 리포스트는 버튼이 잠겨 있어 버린다. 차단, 뮤트는 확인이 더
   // 필요해 그 카드의 확인 Modal이나 더보기 시트만 다시 연다. 신고는 신고 시트만 다시 열고 제출하지 않는다. 로그인한 피드에
   // 그 카드가 없으면(그사이 볼 수 없게 됐거나 내 글) 열지 않는다.
   const items = feed.data
@@ -137,11 +138,11 @@ export function SnsFeedScreen({
     const pending = peekPendingAction()
     if (!pending) return
     const { kind, publicId } = pending
-    if (kind !== 'repost' && kind !== 'save' && kind !== 'block' && kind !== 'mute' && kind !== 'report') return
+    if (kind !== 'repost' && kind !== 'save' && kind !== 'like' && kind !== 'block' && kind !== 'mute' && kind !== 'report') return
     takePendingAction(publicId)
     const post = items.find(item => item.post.publicId === publicId)?.post
-    if (kind === 'repost' || kind === 'save') {
-      if (kind === 'save' || !post?.isMine) setResume({ kind, publicId })
+    if (kind === 'repost' || kind === 'save' || kind === 'like') {
+      if (kind !== 'repost' || !post?.isMine) setResume({ kind, publicId })
     } else if (post && !post.isMine) {
       if (kind === 'block') setConfirm({ kind: 'block', post })
       else if (kind === 'report') setReport({ post, open: true })
@@ -381,7 +382,8 @@ export function SnsFeedScreen({
         />
       )}
 
-      {resume && (
+      {resume?.kind === 'like' && <SnsResumeLike key={resume.publicId} publicId={resume.publicId} onError={reactionError} />}
+      {resume && resume.kind !== 'like' && (
         <SnsResumeReaction
           key={`${resume.kind}:${resume.publicId}`}
           kind={resume.kind}

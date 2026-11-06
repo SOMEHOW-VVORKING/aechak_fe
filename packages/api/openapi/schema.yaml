@@ -1944,6 +1944,217 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnsPostGridPageResponse"
+  # SNS-04 좋아요와 댓글. 원천은 spec/contracts/sns.yaml(0.5.0, 2026-11-05 SNS-04 부분 초안, 제품 책임자 확인 전).
+  # 실패는 errorCode로 분기한다. 130400(404 볼 수 없는 게시물), 130001(403 내가 차단한 작성자), 130700(404 볼 수 없는 댓글),
+  # 130701(403 남의 댓글 수정과 삭제), 130702(400 빈 내용), 130703(400 500자 초과), 130704(400 금지어 비율 초과),
+  # 130705(409 안내 문구만 남은 스레드의 답글), 20013(403 이용 제한 계정의 SNS 쓰기). 빈도 제한은 HTTP 429로 분기한다.
+  /sns/posts/{publicId}/like:
+    post:
+      summary: "게시물 좋아요(멱등 켜기)"
+      description: >-
+        이미 좋아요했어도 201과 지금의 수다. 자기 게시물에도 누를 수 있다. 판정은 상세와 같아 볼 수 없는 게시물은 404 130400,
+        내가 작성자를 차단했으면 403 130001이다.
+      operationId: "likeSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "201":
+          description: "Created(이미 좋아요한 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+    delete:
+      summary: "게시물 좋아요 취소(멱등 끄기)"
+      description: >-
+        좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같아 볼 수 없게 된 게시물의 좋아요는 끌 수 없다(130400, 130001).
+      operationId: "unlikeSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK(좋아요하지 않은 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+  /sns/posts/{publicId}/likers:
+    get:
+      summary: "게시물 좋아요한 사람(최근 100명)"
+      description: >-
+        최근에 누른 순서로 100명까지 한 번에 온다. 커서와 서버 검색은 없고 닉네임 검색은 FE가 items 안에서 한다. 차단 관계와 탈퇴한
+        사용자는 빠지고 뮤트한 사용자는 나온다. likeCount는 빠진 사용자도 센 전체 수다. 판정은 좋아요 켜기와 같다(130400, 130001).
+      operationId: "getSnsPostLikers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikerListResponse"
+  /sns/posts/{publicId}/comments:
+    get:
+      summary: "댓글 목록(오래된순, 비로그인 허용)"
+      description: >-
+        한 페이지는 최상위 댓글 size개와 그 아래 보이는 대댓글 전부이고 items는 이미 스레드 순서다. 차단 관계, 뮤트, 섀도우 처리로
+        숨긴 댓글은 그 아래 대댓글과 함께 빠진다. 대댓글이 남은 지운 최상위 댓글은 안내 문구 항목(DELETED, WITHDRAWN)이다.
+        판정은 상세와 같다(130400, 130001). 토큰을 보냈을 때만 401과 403 20005, 20006이 난다.
+      operationId: "getSnsPostComments"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+        - $ref: "#/components/parameters/SnsCommentCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentPageResponse"
+    post:
+      summary: "댓글과 대댓글 작성(Idempotency-Key 필수)"
+      description: >-
+        parentPublicId가 없으면 최상위 댓글이고 대댓글을 가리키면 그 최상위 댓글 아래 붙는다. 같은 작성자가 같은 게시물에 같은 키로
+        쓴 댓글이 있으면 본문이 달라도 그 댓글의 지금 항목으로 201이고 그사이 지웠으면 DELETED 항목이다. 판정 순서는 키(90001, 90004),
+        내용(130702, 130703, 130704), 게시물(130400, 130001), 답글 대상(130700, 130705)이다.
+      operationId: "createSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: "입력을 시작할 때 만든 UUID. 그 입력의 모든 게시 시도에 같은 값을 보내고 201 뒤 다음 입력에 새 키를 만든다"
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsCommentCreateRequest"
+      responses:
+        "201":
+          description: "Created(같은 키로 이 게시물에 이미 생긴 댓글이면 그 댓글의 지금 항목)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentResponse"
+  /sns/comments/{commentPublicId}:
+    get:
+      summary: "댓글 하나와 최상위 댓글(알림 진입, 댓글 좋아요한 사람)"
+      description: >-
+        대댓글이면 최상위 댓글을 parent로 함께 준다. 없거나 목록 규칙으로 보이지 않는 댓글은 404 130700이고 게시물 판정은 상세와 같다
+        (130400, 130001).
+      operationId: "getSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentThreadResponse"
+    patch:
+      summary: "본인 댓글 수정"
+      description: >-
+        content를 통째로 바꾸고 200과 바뀐 항목이다. 내용 규칙(130702, 130703, 130704)이 댓글 조회보다 먼저다. 그 뒤 없거나 지운 댓글
+        404 130700, 게시물 판정(130400, 130001), 남의 댓글 403 130701이다. 같은 내용이면 edited도 그대로다.
+      operationId: "updateSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsCommentUpdateRequest"
+      responses:
+        "200":
+          description: "OK(바뀐 것이 없는 저장 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentResponse"
+    delete:
+      summary: "본인 댓글 삭제(멱등)"
+      description: >-
+        이미 지운 댓글도 204다. 게시물 판정을 하지 않아 없는 publicId만 404 130700이고 남의 댓글은 403 130701이다.
+      operationId: "deleteSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음, 이미 지운 댓글 포함)"
+  /sns/comments/{commentPublicId}/like:
+    post:
+      summary: "댓글 좋아요(멱등 켜기)"
+      description: >-
+        게시물 좋아요와 같은 규칙이다. 없거나 보이지 않거나 안내 문구만 남은 댓글은 404 130700, 게시물 판정은 상세와 같다(130400, 130001).
+      operationId: "likeSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "201":
+          description: "Created(이미 좋아요한 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+    delete:
+      summary: "댓글 좋아요 취소(멱등 끄기)"
+      description: "좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같다."
+      operationId: "unlikeSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK(좋아요하지 않은 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+  /sns/comments/{commentPublicId}/likers:
+    get:
+      summary: "댓글 좋아요한 사람(최근 100명)"
+      description: "게시물 좋아요한 사람과 같은 규칙과 응답이다. 판정은 댓글 좋아요 켜기와 같다(130700, 130400, 130001)."
+      operationId: "getSnsCommentLikers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikerListResponse"
   /seller-applications:
     get:
       summary: "내 입점 신청 현황"
@@ -10915,7 +11126,7 @@ components:
           format: int32
     SnsPostDetailResult:
       type: object
-      required: [publicId, author, pet, caption, hashtags, photoUrls, video, likeCount, commentCount, repostCount, edited, createdAt, isMine, following, mutedByMe, reposted, saved]
+      required: [publicId, author, pet, caption, hashtags, photoUrls, video, likeCount, commentCount, repostCount, edited, createdAt, isMine, following, mutedByMe, reposted, saved, liked]
       description: "게시물 상세. SNS-03 피드 카드(SnsFeedItemResult의 post)도 같은 스키마다"
       properties:
         publicId:
@@ -10949,9 +11160,11 @@ components:
         likeCount:
           type: integer
           format: int64
+          description: "좋아요 수. 보는 사람과 관계없이 같고 차단과 뮤트로 줄지 않는다(Q12)"
         commentCount:
           type: integer
           format: int64
+          description: "댓글 수. 게시물 작성자가 뮤트한 사용자에게는 그 사용자의 숨긴 댓글까지 센 보는 사람별 값이다(R1-03). 안내 문구 자리는 세지 않는다"
         repostCount:
           type: integer
           format: int64
@@ -10974,6 +11187,9 @@ components:
         saved:
           type: boolean
           description: "보는 사람이 저장했으면 true. 비로그인은 false"
+        liked:
+          type: boolean
+          description: "보는 사람이 좋아요했으면 true. 비로그인은 false(SNS-04)"
     SnsPostDetailResponse:
       type: object
       required: [data]
@@ -11101,6 +11317,175 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsPostGridPageResult"
+    SnsLikeResult:
+      type: object
+      required: [likeCount]
+      properties:
+        likeCount:
+          type: integer
+          format: int64
+          description: "요청을 처리한 뒤의 좋아요 수(보는 사람과 관계없이 같다)"
+    SnsLikeResponse:
+      type: object
+      required: [data]
+      description: "게시물과 댓글 좋아요 켜기, 끄기의 응답"
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsLikeResult"
+    SnsLikerItemResult:
+      type: object
+      required: [publicId, nickname, profileImageUrl, pet, isMe, following]
+      description: "좋아요한 사람 행. pet은 팔로우 목록 행의 petSummary와 모양이 다르다"
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+        pet:
+          allOf:
+            - $ref: "#/components/schemas/SnsPetResult"
+          nullable: true
+          description: "지금 대표 펫. 펫이 없으면 null. FE가 오늘 날짜로 나이를 계산한다"
+        isMe:
+          type: boolean
+          description: "보는 사람 본인 행이면 true(팔로우 버튼 대신 나 표시)"
+        following:
+          type: boolean
+          description: "보는 사람이 이 행 사용자를 팔로우 중이면 true. isMe면 false"
+    SnsLikerListResult:
+      type: object
+      required: [likeCount, hasMore, items]
+      properties:
+        likeCount:
+          type: integer
+          format: int64
+          description: "전체 좋아요 수. items에서 빠진 차단 관계 사용자도 센다"
+        hasMore:
+          type: boolean
+          description: "뺄 사용자를 뺀 뒤에도 100명을 넘게 남으면 true(하단 안내를 고른다)"
+        items:
+          type: array
+          maxItems: 100
+          description: "최근에 누른 순서로 100명까지"
+          items:
+            $ref: "#/components/schemas/SnsLikerItemResult"
+    SnsLikerListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsLikerListResult"
+    SnsCommentCreateRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: "서버가 NFC 정규화, 줄바꿈 정리, 앞뒤 공백 지우기 뒤 코드 포인트로 센다. 비면 130702, 500자를 넘으면 130703"
+        parentPublicId:
+          type: string
+          nullable: true
+          description: "답글달기를 누른 댓글의 publicId. 최상위 댓글이면 생략하거나 null"
+    SnsCommentUpdateRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: "작성과 같은 규칙"
+    SnsCommentStatus:
+      type: string
+      enum: [ACTIVE, DELETED, WITHDRAWN]
+    SnsCommentItemResult:
+      type: object
+      required: [publicId, parentPublicId, status, author, content, likeCount, liked, edited, replyable, isMine, createdAt]
+      description: >-
+        댓글 목록과 단건의 항목. status가 DELETED나 WITHDRAWN이면 안내 문구 항목이고 author와 content가 null, likeCount가 0이며
+        불리언이 모두 false다
+      properties:
+        publicId:
+          type: string
+        parentPublicId:
+          type: string
+          nullable: true
+          description: "대댓글이면 최상위 댓글의 publicId. 최상위 댓글이면 null"
+        status:
+          $ref: "#/components/schemas/SnsCommentStatus"
+        author:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostAuthorResult"
+          nullable: true
+          description: "작성자. 안내 문구 항목이면 null"
+        content:
+          type: string
+          nullable: true
+          description: "금지어를 가린 뒤의 내용. 안내 문구 항목이면 null"
+        likeCount:
+          type: integer
+          format: int64
+        liked:
+          type: boolean
+          description: "보는 사람이 좋아요했으면 true. 비로그인과 안내 문구 항목은 false"
+        edited:
+          type: boolean
+          description: "내용을 고친 적이 있으면 true(수정됨 표시)"
+        replyable:
+          type: boolean
+          description: "이 항목과 그 최상위 댓글이 모두 ACTIVE면 true. true일 때만 답글달기를 보여준다"
+        isMine:
+          type: boolean
+          description: "보는 사람이 작성자면 true(수정과 삭제를 보여준다). 비로그인과 안내 문구 항목은 false"
+        createdAt:
+          type: string
+          description: "작성 시각. ISO LocalDateTime(KST, 오프셋 없음)"
+    SnsCommentPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      description: "댓글 목록 한 페이지. totalCount가 없고 헤더의 수는 상세 commentCount를 쓴다"
+      properties:
+        items:
+          type: array
+          description: "최상위 댓글 다음에 그 대댓글을 작성 순서로 이어 붙인 목록. 최상위 댓글은 오래된순이다"
+          items:
+            $ref: "#/components/schemas/SnsCommentItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsCommentPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentPageResult"
+    SnsCommentResponse:
+      type: object
+      required: [data]
+      description: "댓글 작성과 수정의 응답. 쓴 사람 기준 항목이다"
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentItemResult"
+    SnsCommentThreadResult:
+      type: object
+      required: [comment, parent]
+      properties:
+        comment:
+          $ref: "#/components/schemas/SnsCommentItemResult"
+        parent:
+          allOf:
+            - $ref: "#/components/schemas/SnsCommentItemResult"
+          nullable: true
+          description: "comment가 대댓글이면 그 최상위 댓글(안내 문구 항목일 수 있다). 최상위 댓글이면 null"
+    SnsCommentThreadResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentThreadResult"
     InspectionProgressStep:
       type: string
       enum: [REQUESTED, AI_REVIEWING, ADMIN_REVIEWING, APPROVED, REJECTED]
@@ -12586,6 +12971,20 @@ components:
       in: query
       required: false
       description: "이전 응답의 nextCursor. 피드는 첫 페이지 기준을 담고 프로필 탭과 저장됨은 목록 주인에도 묶인다. 어긋나거나 만료되면 400 90002"
+      schema:
+        type: string
+    SnsCommentPublicId:
+      name: commentPublicId
+      in: path
+      required: true
+      description: "댓글 공개 ID(ULID). 형식 검증 없이 찾지 못하면 404 130700"
+      schema:
+        type: string
+    SnsCommentCursor:
+      name: cursor
+      in: query
+      required: false
+      description: "이전 응답의 nextCursor. 게시물에 묶이고 다른 게시물이나 다른 목록의 커서면 400 90002"
       schema:
         type: string
   securitySchemes:

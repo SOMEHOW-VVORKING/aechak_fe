@@ -27,10 +27,12 @@ import {
   getSnsFollowingFeed,
   getSnsPopularFeed,
   getSnsPost,
+  getSnsPostLikers,
   getSnsProfile,
   getSnsUserPosts,
   getSnsUserReposts,
   getSnsUserVideos,
+  likeSnsPost,
   muteUser,
   repostSnsPost,
   saveSnsPost,
@@ -38,12 +40,14 @@ import {
   submitReport,
   unblockUser,
   unfollowUser,
+  unlikeSnsPost,
   unmuteUser,
   unrepostSnsPost,
   unsaveSnsPost,
   updateSnsPost,
   type SnsFeedItemResult,
   type SnsFeedPageResult,
+  type SnsLikerListResult,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
@@ -58,7 +62,7 @@ import {
 } from '@aechak/api'
 import { useIsLoggedIn } from '@/shared/auth'
 
-// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭)을
+// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭), SNS-04(좋아요)를
 // spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체
 // useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
 
@@ -69,6 +73,7 @@ export type SnsPost = SnsPostDetailResult
 export type SnsFeedItem = SnsFeedItemResult
 export type SnsFeedKind = 'following' | 'explore' | 'popular'
 export type SnsGridItem = SnsPostGridItemResult
+export type SnsLikerList = SnsLikerListResult
 /** 프로필 게시물 탭. 저장됨은 내 프로필에만 있다 */
 export type SnsProfileTab = 'grid' | 'video' | 'repost' | 'saved'
 export type SnsUserPostTab = Exclude<SnsProfileTab, 'saved'>
@@ -76,6 +81,10 @@ export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
 export type SnsReactionKind = 'repost' | 'save'
+/** 좋아요 대상. 게시물과 댓글이 같은 규칙이다(SNS-04 D3) */
+export type SnsLikeTarget = 'post' | 'comment'
+/** 좋아요 버튼이 그리는 값. 누르기 전 값으로 되돌릴 때도 쓴다 */
+export type SnsLikeState = Pick<SnsPostDetailResult, 'liked' | 'likeCount'>
 
 /**
  * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
@@ -125,6 +134,11 @@ export const snsKeys = {
     ['sns', 'user-posts', publicId, tab, loggedIn] as const,
   // 저장됨은 로그인한 나만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
   saves: () => ['sns', 'saves'] as const,
+  // 좋아요 요청의 mutation 키. 같은 대상의 요청이 떠 있는지 화면과 상관없이 이 키로 본다(design 6절 2번).
+  like: (target: SnsLikeTarget, publicId: string) => ['sns', 'like', target, publicId] as const,
+  // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
+  likerLists: ['sns', 'likers'] as const,
+  likers: (publicId: string) => ['sns', 'likers', 'post', publicId] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -381,7 +395,14 @@ const TOGGLE_FETCHERS: Record<SnsToggleKind, [(id: string) => Promise<unknown>, 
 // 대신 다음에 열 때 다시 읽도록 게시물 캐시를 낡은 것으로만 표시한다(아래 onSuccess).
 const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
   follow: () => [snsKeys.profiles, snsKeys.me, snsKeys.posts],
-  block: publicId => [snsKeys.profile(publicId), snsKeys.me, snsKeys.follows, snsKeys.relations('blocks')],
+  block: publicId => [
+    snsKeys.profile(publicId),
+    snsKeys.me,
+    snsKeys.follows,
+    snsKeys.relations('blocks'),
+    // 차단 관계인 사용자는 좋아요한 사람에서 빠진다(A24).
+    snsKeys.likerLists,
+  ],
   mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes'), snsKeys.posts],
 }
 
@@ -406,6 +427,13 @@ export function useSnsToggle() {
               ...page,
               items: page.items.map(item => (item.publicId === publicId ? { ...item, following: on } : item)),
             })),
+          },
+        )
+        // 좋아요한 사람 행의 팔로우 버튼도 바꾼다(design 6절 6번). 한 번에 받는 목록이라 다시 읽지 않는다.
+        queryClient.setQueriesData<SnsLikerList>({ queryKey: snsKeys.likerLists }, data =>
+          data && {
+            ...data,
+            items: data.items.map(item => (item.publicId === publicId ? { ...item, following: on } : item)),
           },
         )
         // 화면에 없는 목록은 받아 둔 행만 고치면 새로 팔로우한 사람이 빠진 채 남는다. 다음에 열 때 다시 읽게 낡은 것으로만 표시한다.
@@ -434,7 +462,7 @@ export function useSnsToggle() {
       void refetch([
         ...REFETCH_AFTER[kind](publicId),
         // 성공 때는 행을 남기려고 목록을 다시 읽지 않지만, 실패하면 목록 행도 서버 값으로 맞춘다.
-        ...(kind === 'follow' ? [snsKeys.follows] : []),
+        ...(kind === 'follow' ? [snsKeys.follows, snsKeys.likerLists] : []),
       ])
     },
   })
@@ -782,4 +810,108 @@ const REPORT_ERROR_COPY: Record<number, string> = {
 export function snsReportErrorMessage(error: unknown): string {
   const code = snsErrorCode(error)
   return (code != null && REPORT_ERROR_COPY[code]) || '신고를 접수하지 못했어요. 다시 시도해 주세요'
+}
+
+// ── SNS-04 좋아요 ──────────────────────────────────────────────────────────
+
+/** 좋아요 상태와 수를 바꾼다. 수를 주지 않으면 상태가 바뀔 때만 1 올리거나 내린다 */
+function withLike(post: SnsPost, liked: boolean, likeCount?: number): SnsPost {
+  const count = likeCount ?? (post.liked === liked ? post.likeCount : Math.max(0, post.likeCount + (liked ? 1 : -1)))
+  return post.liked === liked && post.likeCount === count ? post : { ...post, liked, likeCount: count }
+}
+
+/** 그 게시물이 든 캐시(상세, 피드 항목의 post)의 좋아요를 바꾼다 */
+function setLike(queryClient: QueryClient, publicId: string, liked: boolean, likeCount?: number) {
+  queryClient.setQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) }, post => post && withLike(post, liked, likeCount))
+  queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+    mapPages(data, items =>
+      items.map(item => (item.post.publicId === publicId ? { ...item, post: withLike(item.post, liked, likeCount) } : item)),
+    ),
+  )
+}
+
+/** 그 게시물이 든 캐시마다 누르기 전 좋아요. 캐시마다 받은 시각이 달라 값이 다를 수 있어 따로 둔다 */
+function snapshotLikes(queryClient: QueryClient, publicId: string): Array<[QueryKey, SnsLikeState]> {
+  const posts = queryClient
+    .getQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) })
+    .flatMap(([key, post]): Array<[QueryKey, SnsLikeState]> => (post ? [[key, { liked: post.liked, likeCount: post.likeCount }]] : []))
+  const feeds = queryClient
+    .getQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds })
+    .flatMap(([key, data]): Array<[QueryKey, SnsLikeState]> => {
+      const post = data?.pages.flatMap(page => page.items).find(item => item.post.publicId === publicId)?.post
+      return post ? [[key, { liked: post.liked, likeCount: post.likeCount }]] : []
+    })
+  return [...posts, ...feeds]
+}
+
+/** snapshotLikes로 남긴 값을 그 캐시에만 되돌린다. 다른 게시물과 다른 필드는 건드리지 않는다 */
+function restoreLikes(queryClient: QueryClient, publicId: string, snapshot: Array<[QueryKey, SnsLikeState]>) {
+  for (const [key, { liked, likeCount }] of snapshot) {
+    if (key[1] === 'post') {
+      queryClient.setQueryData<SnsPost>(key, post => post && withLike(post, liked, likeCount))
+    } else {
+      queryClient.setQueryData<InfiniteData<SnsFeedPageResult>>(key, data =>
+        mapPages(data, items =>
+          items.map(item => (item.post.publicId === publicId ? { ...item, post: withLike(item.post, liked, likeCount) } : item)),
+        ),
+      )
+    }
+  }
+}
+
+/**
+ * 게시물 좋아요 켜기(POST 201)와 끄기(DELETE 200). design 6절 2번이다. 누르는 즉시 채움과 수를 바꾸고 성공하면 응답의
+ * likeCount와 보낸 상태를 그 게시물이 든 캐시에 쓴다. 받아 둔 캐시는 다시 읽지 않는다. 실패하면 누르기 전 값으로 되돌리고
+ * 안내는 부른 화면이 띄운다. 요청이 끝날 때까지 같은 게시물의 다음 요청은 보내지 않는다. 상세와 피드 카드가 같은 키로
+ * 본다. 화면 상태는 누른 뒤 다시 그려야 바뀌어 연타를 막지 못하므로 mutation 캐시를 바로 읽는다.
+ */
+export function useSnsLike(publicId: string) {
+  const queryClient = useQueryClient()
+  const mutationKey = snsKeys.like('post', publicId)
+  const { mutate } = useMutation({
+    mutationKey,
+    mutationFn: async (on: boolean) => (await (on ? likeSnsPost : unlikeSnsPost)(publicId)).data.likeCount,
+    // 받는 중인 조회가 끝나며 누르기 전 값으로 덮어쓰지 않게 멈춘 뒤 바꾼다.
+    onMutate: async on => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: snsKeys.post(publicId) }),
+        queryClient.cancelQueries({ queryKey: snsKeys.feeds, predicate: query => feedHasPost(query.state.data, publicId) }),
+      ])
+      // 멈춘 조회가 데이터를 되돌린 뒤에 남긴다
+      const before = snapshotLikes(queryClient, publicId)
+      setLike(queryClient, publicId, on)
+      return before
+    },
+    onSuccess: (likeCount, on) => {
+      setLike(queryClient, publicId, on, likeCount)
+      // 좋아요한 사람은 다음에 열 때 다시 읽는다.
+      void queryClient.invalidateQueries({ queryKey: snsKeys.likers(publicId) })
+    },
+    onError: (error, _on, before) => {
+      if (before) restoreLikes(queryClient, publicId, before)
+      // 그사이 볼 수 없게 된 글이면 상세를 다시 읽어 삭제된 게시물이나 차단 안내로 바꾼다
+      const code = snsErrorCode(error)
+      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+      }
+    },
+    // 요청 중에 새로 시작한 조회는 반영 전 값을 들고 올 수 있어 멈추고 다시 읽는다. 받는 중이 아니던 캐시는 그대로 둔다.
+    onSettled: () => {
+      void removeFromLists(queryClient, { queryKey: snsKeys.feeds }, data => data)
+      void removeFromLists(queryClient, { queryKey: snsKeys.post(publicId) }, data => data)
+    },
+  })
+  return (on: boolean, options?: Parameters<typeof mutate>[1]) => {
+    if (queryClient.isMutating({ mutationKey }) === 0) mutate(on, options)
+  }
+}
+
+/** 좋아요한 사람(GET /sns/posts/{publicId}/likers). 로그인 전용이라 비로그인이면 부르지 않는다. 최근 100명을 한 번에 받는다 */
+export function useSnsLikers(publicId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: snsKeys.likers(publicId),
+    queryFn: async ({ signal }) => (await getSnsPostLikers(publicId, signal)).data,
+    retry: retryTransient,
+    enabled,
+  })
 }

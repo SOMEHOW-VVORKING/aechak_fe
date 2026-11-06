@@ -26,6 +26,12 @@ export const SNS_USER_POSTS_URL = `${base}/sns/users/:publicId/posts`
 export const SNS_USER_VIDEOS_URL = `${base}/sns/users/:publicId/videos`
 export const SNS_USER_REPOSTS_URL = `${base}/sns/users/:publicId/reposts`
 export const SNS_MY_SAVES_URL = `${base}/sns/me/saves`
+export const SNS_POST_LIKE_URL = `${base}/sns/posts/:publicId/like`
+export const SNS_POST_LIKERS_URL = `${base}/sns/posts/:publicId/likers`
+export const SNS_COMMENTS_URL = `${base}/sns/posts/:publicId/comments`
+export const SNS_COMMENT_URL = `${base}/sns/comments/:commentPublicId`
+export const SNS_COMMENT_LIKE_URL = `${base}/sns/comments/:commentPublicId/like`
+export const SNS_COMMENT_LIKERS_URL = `${base}/sns/comments/:commentPublicId/likers`
 
 export const SNS_ME = '01JB7XQ2M4K9TR3N5W8YZC6DHF'
 export const SNS_COCO = '01JABCDEF0123456789ABCDEFG'
@@ -83,6 +89,15 @@ SNS_NEIGHBORS.forEach((id, i) => {
   USERS[id] = { nickname: `이웃${i + 1}`, profileImageUrl: null, bio: null, pets: [] }
 })
 
+/** 좋아요한 사람 100명 상한을 넘길 때 쓰는 사용자 101명(닉네임 팬1~팬101) */
+export const SNS_FANS = Array.from({ length: 101 }, (_, i) => `01JP${String(i + 1).padStart(22, '0')}`)
+SNS_FANS.forEach((id, i) => {
+  USERS[id] = { nickname: `팬${i + 1}`, profileImageUrl: null, bio: null, pets: [] }
+})
+
+/** 탈퇴한 사용자. 프로필 행이 없어 USERS에 없다(SNS-T18 전 댓글은 WITHDRAWN 안내 문구, 좋아요한 사람에서는 빠진다) */
+export const SNS_WITHDRAWN = '01JQ0000000000000000WITHDR'
+
 interface Relation {
   from: string
   to: string
@@ -113,6 +128,26 @@ export interface SnsActRow {
   createdAt: string
 }
 
+/** 좋아요 행(SNS-04). target은 게시물이나 댓글 publicId다. 배열 뒤쪽이 최근에 누른 행이다 */
+export interface SnsLikeRow {
+  user: string
+  target: string
+}
+
+/** 댓글 행(SNS-04). 서버처럼 지운 댓글도 행을 남긴다. 배열 순서가 작성 순서다 */
+export interface SnsCommentRow {
+  publicId: string
+  post: string
+  /** 대댓글이면 최상위 댓글 publicId */
+  parent: string | null
+  author: string
+  content: string | null
+  createdAt: string
+  edited: boolean
+  deleted: boolean
+  idempotencyKey?: string
+}
+
 export interface SnsSeed {
   /** 보는 사람. null이면 비로그인 */
   viewer: string | null
@@ -125,10 +160,12 @@ export interface SnsSeed {
   /** 배열 뒤쪽이 최근 행이다. id는 seedSns가 배열 순서대로 다시 매긴다 */
   reposts: SnsActRow[]
   saves: SnsActRow[]
-  /** 이용 제한(RESTRICTED) 사용자. 게시, 수정, 삭제와 팔로우, 차단, 뮤트, 리포스트, 저장의 켜기, 끄기가 403 20013이다 */
+  /** 이용 제한(RESTRICTED) 사용자. 게시, 수정, 삭제와 팔로우, 차단, 뮤트, 리포스트, 저장, 좋아요의 켜기, 끄기와 댓글 쓰기가 403 20013이다 */
   restricted: string[]
   /** 접수된 SNS 신고(SNS-07). 같은 신고자의 같은 대상은 409다. 리뷰 화면 경로로 한 사용자 신고도 여기에 둔다 */
   reports: SnsReportRow[]
+  likes: SnsLikeRow[]
+  comments: SnsCommentRow[]
   /** 첫 페이지 요청 시각. 탐색 피드 7일과 인기 피드 72시간을 여기서 거꾸로 센다 */
   now: string
 }
@@ -215,6 +252,8 @@ const DEFAULT_SEED = (): SnsSeed => ({
   saves: [],
   restricted: [],
   reports: [],
+  likes: [],
+  comments: [],
   // 픽스처 게시물(10월 21일, 22일)이 탐색 7일과 인기 72시간 안에 든다.
   now: '2026-10-24T09:00:00',
 })
@@ -481,8 +520,8 @@ function postDetail(row: SnsPostRow, viewer: string | null) {
     hashtags: row.hashtags,
     photoUrls: row.photoUrls,
     video: row.video,
-    likeCount: 0,
-    commentCount: 0,
+    likeCount: likeCountOf(row.publicId),
+    commentCount: commentCountOf(row, viewer),
     repostCount: state.reposts.filter(r => r.post === row.publicId).length,
     edited: row.edited,
     createdAt: row.createdAt,
@@ -491,6 +530,7 @@ function postDetail(row: SnsPostRow, viewer: string | null) {
     mutedByMe: viewer != null && !isMine && has(state.mutes, viewer, row.author),
     reposted: viewer != null && !isMine && state.reposts.some(r => r.user === viewer && r.post === row.publicId),
     saved: viewer != null && state.saves.some(r => r.user === viewer && r.post === row.publicId),
+    liked: likedBy(viewer, row.publicId),
   }
 }
 
@@ -558,16 +598,22 @@ const replacePost = (row: SnsPostRow) => {
   state.posts = state.posts.map(r => (r.publicId === row.publicId ? row : r))
 }
 
-function getPost({ params, request }: { params: Record<string, unknown>; request: Request }) {
-  const viewer = viewerOf(request)
-  const row = findPost(params)
+/** 상세의 게시물 판정. 볼 수 있으면 그 행이고 아니면 오류 응답이다. SNS-04 좋아요와 댓글도 같은 판정이다 */
+function visiblePost(publicId: string, viewer: string | null): SnsPostRow | Response {
+  const row = state.posts.find(r => r.publicId === publicId)
   // 없음, 삭제, 작성자 탈퇴, 작성자가 나를 차단(서로 차단 포함)은 모두 404 130400이다.
   if (!row || row.deleted || !USERS[row.author]) return error(404, 130400)
   if (viewer != null && viewer !== row.author) {
     if (has(state.blocks, row.author, viewer)) return error(404, 130400)
     if (has(state.blocks, viewer, row.author)) return error(403, 130001)
   }
-  return HttpResponse.json({ data: postDetail(row, viewer) })
+  return row
+}
+
+function getPost({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  const row = visiblePost(String(params['publicId']), viewer)
+  return row instanceof Response ? row : HttpResponse.json({ data: postDetail(row, viewer) })
 }
 
 async function updatePost({ params, request }: { params: Record<string, unknown>; request: Request }) {
@@ -969,6 +1015,351 @@ async function submitReport({ request }: { request: Request }) {
   return new HttpResponse(null, { status: 201 })
 }
 
+// ── SNS-04 좋아요와 댓글 ──────────────────────────────────────────────────────
+// 계약(sns.yaml 0.5.0 SNS-04 초안)의 판정 순서, 숨김 규칙, 안내 문구 규칙을 흉내 낸다. 댓글 커서는 `cm|게시물|-|마지막 최상위 댓글`이다.
+// 수는 서버처럼 볼 때 센다(G1). 좋아요 수는 차단과 뮤트로 줄지 않고(Q12), 댓글 수는 지우지 않은 댓글 가운데 섀도우 처리로 숨긴
+// 것만 뺀다(R1-03). 섀도우 처리는 지금의 뮤트 관계로 정한다(R1-02 추천안).
+
+const COMMENT_MAX = 500
+const LIKERS_MAX = 100
+
+/** 좋아요 행 */
+export const snsLike = (user: string, target: string): SnsLikeRow => ({ user, target })
+
+/** 댓글 행. createdAt을 주지 않으면 작성 순서대로 늘어나는 시각이다 */
+export const snsComment = (
+  publicId: string,
+  post: string,
+  author: string,
+  fields: Partial<SnsCommentRow> = {},
+): SnsCommentRow => ({
+  publicId,
+  post,
+  parent: null,
+  author,
+  content: `${USERS[author]?.nickname ?? '탈퇴한 사용자'}의 댓글`,
+  createdAt: postNow(),
+  edited: false,
+  deleted: false,
+  ...fields,
+})
+
+// 계약 예시(getSnsPostComments firstPage, guestLastPage)의 댓글. 모두 SNS_POST_COCO에 달렸고 지운 최상위 댓글 아래에는
+// 초코맘의 대댓글이 남아 안내 문구로 보인다. 기본 시드에는 넣지 않는다(상세와 카드의 수가 바뀌어 SNS-02, SNS-03 테스트가 흔들린다).
+export const SNS_COMMENT_MONG = '01JG2K7M9P1R3T5V7X9Z1B3D5F'
+export const SNS_REPLY_COCO = '01JG2K8A2C4E6G8J0M2P4R6T8V'
+export const SNS_COMMENT_DELETED = '01JG2K9B3D5F7H9K1N3Q5S7W9Y'
+export const SNS_REPLY_CHOCO = '01JG2KAC4E6G8J0M2P4R6T8V0X'
+export const SNS_COMMENT_MINE = '01JG2KBD5F7H9K1N3Q5S7W9Y1A'
+
+export const snsExampleComments = (): SnsCommentRow[] => [
+  snsComment(SNS_COMMENT_MONG, SNS_POST_COCO, SNS_MONG, {
+    content: '코코 표정 너무 좋네요',
+    createdAt: '2026-10-22T09:41:00',
+  }),
+  snsComment(SNS_REPLY_COCO, SNS_POST_COCO, SNS_COCO, {
+    parent: SNS_COMMENT_MONG,
+    content: '감사해요. 다음에 같이 산책해요',
+    createdAt: '2026-10-22T10:02:00',
+    edited: true,
+  }),
+  snsComment(SNS_COMMENT_DELETED, SNS_POST_COCO, SNS_COCO, {
+    content: null,
+    deleted: true,
+    createdAt: '2026-10-22T11:15:00',
+  }),
+  snsComment(SNS_REPLY_CHOCO, SNS_POST_COCO, SNS_CHOCO, {
+    parent: SNS_COMMENT_DELETED,
+    content: '저도 궁금해요',
+    createdAt: '2026-10-22T11:20:00',
+  }),
+  snsComment(SNS_COMMENT_MINE, SNS_POST_COCO, SNS_ME, {
+    content: '산책 코스 어디예요?',
+    createdAt: '2026-10-22T12:00:00',
+  }),
+]
+
+/** 계약 예시의 댓글 좋아요 수(몽이아빠 2, 코코집사 1, 보리언니 1)와 보는 사람(SNS_ME)이 누른 몽이아빠 댓글 */
+export const snsExampleCommentLikes = (): SnsLikeRow[] => [
+  snsLike(SNS_CHOCO, SNS_COMMENT_MONG),
+  snsLike(SNS_ME, SNS_COMMENT_MONG),
+  snsLike(SNS_MONG, SNS_REPLY_COCO),
+  snsLike(SNS_COCO, SNS_COMMENT_MINE),
+]
+
+function likeCountOf(target: string) {
+  return state.likes.filter(r => r.target === target).length
+}
+
+function likedBy(viewer: string | null, target: string) {
+  return viewer != null && state.likes.some(r => r.user === viewer && r.target === target)
+}
+
+function setLike(viewer: string, target: string, on: boolean) {
+  const liked = likedBy(viewer, target)
+  if (on && !liked) state.likes = [...state.likes, snsLike(viewer, target)]
+  if (!on) state.likes = state.likes.filter(r => !(r.user === viewer && r.target === target))
+}
+
+const commentRow = (publicId: string) => state.comments.find(r => r.publicId === publicId)
+
+/** 게시물 작성자가 뮤트한 사용자의 댓글은 그 사용자에게만 보인다(섀도우 처리, A16) */
+const shadowed = (row: SnsCommentRow, postAuthor: string, viewer: string | null) =>
+  row.author !== postAuthor && has(state.mutes, postAuthor, row.author) && viewer !== row.author
+
+/** 차단 관계, 보는 사람이 뮤트한 사용자, 섀도우 처리로 숨긴 댓글이 아니면 true. 숨긴 최상위 댓글은 대댓글도 함께 숨긴다 */
+function commentShown(row: SnsCommentRow, postAuthor: string, viewer: string | null) {
+  const hiddenAuthor =
+    viewer != null && viewer !== row.author && (blockedEither(viewer, row.author) || has(state.mutes, viewer, row.author))
+  return !hiddenAuthor && !shadowed(row, postAuthor, viewer)
+}
+
+const placeholder = (row: SnsCommentRow, status: 'DELETED' | 'WITHDRAWN') => ({
+  publicId: row.publicId,
+  parentPublicId: row.parent,
+  status,
+  author: null,
+  content: null,
+  likeCount: 0,
+  liked: false,
+  edited: false,
+  replyable: false,
+  isMine: false,
+  createdAt: row.createdAt,
+})
+
+/** 항목. 지운 댓글은 DELETED, 프로필이 없는 작성자의 댓글은 WITHDRAWN 안내 문구다(SNS-T18 전, BE 9) */
+function commentItem(row: SnsCommentRow, viewer: string | null) {
+  if (row.deleted) return placeholder(row, 'DELETED')
+  const author = USERS[row.author]
+  if (!author) return placeholder(row, 'WITHDRAWN')
+  const root = row.parent == null ? row : commentRow(row.parent)!
+  return {
+    publicId: row.publicId,
+    parentPublicId: row.parent,
+    status: 'ACTIVE',
+    author: { publicId: row.author, nickname: author.nickname, profileImageUrl: author.profileImageUrl },
+    content: row.content,
+    likeCount: likeCountOf(row.publicId),
+    liked: likedBy(viewer, row.publicId),
+    edited: row.edited,
+    // 이 항목과 최상위 댓글이 모두 ACTIVE일 때만 답글을 달 수 있다(R1-20 추천안).
+    replyable: !root.deleted && USERS[root.author] != null,
+    isMine: viewer === row.author,
+    createdAt: row.createdAt,
+  }
+}
+
+/**
+ * 보는 사람에게 보이는 스레드. 최상위 댓글 작성 순서(오래된순)이고 items는 [최상위 댓글, ...대댓글]이다. 지운 대댓글은 빠지고
+ * 지운 최상위 댓글은 보이는 대댓글이 남아 있을 때만 안내 문구로 남는다(P3).
+ */
+function commentThreads(post: SnsPostRow, viewer: string | null) {
+  const rows = state.comments.filter(r => r.post === post.publicId)
+  return rows
+    .filter(root => root.parent == null && commentShown(root, post.author, viewer))
+    .flatMap(root => {
+      const replies = rows.filter(
+        r => r.parent === root.publicId && !r.deleted && commentShown(r, post.author, viewer),
+      )
+      if (root.deleted && replies.length === 0) return []
+      return [{ root, items: [root, ...replies].map(r => commentItem(r, viewer)) }]
+    })
+}
+
+/** 보는 사람에게 보이는 그 댓글의 항목. 보이지 않으면 undefined */
+function shownComment(row: SnsCommentRow, post: SnsPostRow, viewer: string | null) {
+  return commentThreads(post, viewer)
+    .flatMap(thread => thread.items)
+    .find(item => item.publicId === row.publicId)
+}
+
+function commentCountOf(post: SnsPostRow, viewer: string | null) {
+  return state.comments.filter(row => {
+    if (row.post !== post.publicId || row.deleted) return false
+    const root = row.parent == null ? row : commentRow(row.parent)!
+    return !shadowed(row, post.author, viewer) && !shadowed(root, post.author, viewer)
+  }).length
+}
+
+/** 같은 게시물, 같은 키 재요청과 작성, 수정의 응답. 쓴 사람 기준 항목이고 지운 댓글이면 DELETED다 */
+const ownItem = (row: SnsCommentRow, viewer: string) =>
+  row.deleted ? placeholder(row, 'DELETED') : commentItem(row, viewer)
+
+/**
+ * 댓글 판정. 게시물 판정 뒤 보는 사람에게 보이는 댓글이면 그 행과 게시물이고 아니면 오류 응답이다. 좋아요와 좋아요한 사람은
+ * 지운 댓글의 안내 문구도 130700이다. 계약처럼 저장된 상태를 보므로 탈퇴한 작성자의 대체 표시는 막지 않는다(BE 9).
+ */
+function visibleComment(publicId: string, viewer: string | null, allowDeleted = false) {
+  const row = commentRow(publicId)
+  if (!row) return error(404, 130700)
+  const post = visiblePost(row.post, viewer)
+  if (post instanceof Response) return post
+  const item = shownComment(row, post, viewer)
+  if (!item || (!allowDeleted && row.deleted)) return error(404, 130700)
+  return { row, post, item }
+}
+
+/** 게시물과 댓글 좋아요 켜기(POST 201)와 끄기(DELETE 200). 끄기도 켜기와 같은 판정이고 둘 다 지금의 수를 준다(D3, G8) */
+function like(kind: 'post' | 'comment', on: boolean) {
+  return ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
+    if (viewer == null) return unauthenticated()
+    if (state.restricted.includes(viewer)) return error(403, 20013)
+    const id = String(params[kind === 'post' ? 'publicId' : 'commentPublicId'])
+    const target = kind === 'post' ? visiblePost(id, viewer) : visibleComment(id, viewer)
+    if (target instanceof Response) return target
+    setLike(viewer, id, on)
+    return HttpResponse.json({ data: { likeCount: likeCountOf(id) } }, { status: on ? 201 : 200 })
+  }
+}
+
+// 좋아요한 사람(G4). 최근에 누른 순서로 100명까지이고 차단 관계와 탈퇴한 사용자는 빼고 뮤트한 사용자는 넣는다(A24).
+// likeCount는 뺀 사용자도 센 전체 수다. hasMore는 뺀 뒤에도 100명을 넘게 남을 때 true다(R3-09 추천안).
+function likers(kind: 'post' | 'comment') {
+  return ({ params, request }: { params: Record<string, unknown>; request: Request }) => {
+    const viewer = viewerOf(request)
+    if (viewer == null) return unauthenticated()
+    const id = String(params[kind === 'post' ? 'publicId' : 'commentPublicId'])
+    const target = kind === 'post' ? visiblePost(id, viewer) : visibleComment(id, viewer)
+    if (target instanceof Response) return target
+    const rows = state.likes.filter(r => r.target === id)
+    const shown = [...rows]
+      .reverse()
+      .filter(r => USERS[r.user] && (r.user === viewer || !blockedEither(viewer, r.user)))
+    return HttpResponse.json({
+      data: {
+        likeCount: rows.length,
+        hasMore: shown.length > LIKERS_MAX,
+        items: shown.slice(0, LIKERS_MAX).map(({ user }) => ({
+          publicId: user,
+          nickname: USERS[user]!.nickname,
+          profileImageUrl: USERS[user]!.profileImageUrl,
+          pet: USERS[user]!.pets[0] ?? null,
+          isMe: user === viewer,
+          following: user !== viewer && has(state.follows, viewer, user),
+        })),
+      },
+    })
+  }
+}
+
+// 댓글 목록(D5). 한 페이지는 최상위 댓글 size개와 그 아래 보이는 대댓글 전부다. 커서는 게시물에 묶인다(D1).
+function commentList({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  const post = visiblePost(String(params['publicId']), viewer)
+  if (post instanceof Response) return post
+  const query = listQuery(request, 'cm', post.publicId)
+  if (query.error) return query.error
+  let threads = commentThreads(post, viewer)
+  if (query.cursor) {
+    const lastIndex = state.comments.findIndex(r => r.publicId === query.cursor!.last)
+    if (lastIndex < 0) return error(400, 90002)
+    threads = threads.filter(thread => state.comments.indexOf(thread.root) > lastIndex)
+  }
+  const slice = threads.slice(0, query.size)
+  const hasNext = threads.length > query.size
+  return HttpResponse.json({
+    data: {
+      items: slice.flatMap(thread => thread.items),
+      nextCursor: hasNext ? `cm|${post.publicId}|-|${slice.at(-1)!.root.publicId}` : null,
+      hasNext,
+    },
+  })
+}
+
+/** 내용 규칙(130702, 130703)과 금지어(130704). 통과하면 금지어를 가린 내용이다 */
+function checkComment(raw: unknown): { error: Response } | { content: string } {
+  if (typeof raw !== 'string') return { error: error(400, 90001) }
+  const text = normalizeCaption(raw)
+  if (text == null) return { error: error(400, 130702) }
+  if (Array.from(text).length > COMMENT_MAX) return { error: error(400, 130703) }
+  const moderated = moderateCaption(text)
+  if (moderated.blocked) return { error: error(400, 130704) }
+  return { content: moderated.text! }
+}
+
+// 댓글 작성. 판정 순서는 키, 같은 키 재요청, 내용과 금지어, 게시물, 답글 대상이다(sns.yaml createSnsComment).
+async function createComment({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
+  const key = request.headers.get('Idempotency-Key')
+  if (key == null) return error(400, 90001)
+  if (key.trim() === '' || key.length > 100) return error(400, 90004)
+  const postId = String(params['publicId'])
+  // 본문을 읽은 뒤에 찾는다. 앞에서 찾으면 같은 키의 동시 요청 둘이 await 사이로 함께 지나가 행이 둘 생긴다.
+  const body = (await request.json()) as { content?: unknown; parentPublicId?: string | null }
+  const existing = state.comments.find(r => r.author === viewer && r.post === postId && r.idempotencyKey === key)
+  if (existing) return HttpResponse.json({ data: ownItem(existing, viewer) }, { status: 201 })
+  const checked = checkComment(body.content)
+  if ('error' in checked) return checked.error
+  const post = visiblePost(postId, viewer)
+  if (post instanceof Response) return post
+  let parent: string | null = null
+  if (body.parentPublicId != null) {
+    const target = commentRow(body.parentPublicId)
+    // 없는 댓글, 다른 게시물의 댓글, 쓰는 사람에게 숨긴 댓글, 지운 대댓글은 130700이다.
+    if (!target || target.post !== post.publicId) return error(404, 130700)
+    const root = target.parent == null ? target : commentRow(target.parent)!
+    if (!commentShown(root, post.author, viewer) || !commentShown(target, post.author, viewer)) return error(404, 130700)
+    if (target !== root && target.deleted) return error(404, 130700)
+    // 안내 문구만 남은 최상위 댓글과 그 아래 대댓글에는 답글을 달 수 없다(R1-20 추천안). 저장된 상태를 본다(BE 9).
+    if (root.deleted) return error(409, 130705)
+    parent = root.publicId
+  }
+  const row = snsComment(`01KC${String(state.comments.length).padStart(22, '0')}`, post.publicId, viewer, {
+    parent,
+    content: checked.content,
+    idempotencyKey: key,
+  })
+  state.comments = [...state.comments, row]
+  return HttpResponse.json({ data: ownItem(row, viewer) }, { status: 201 })
+}
+
+// 댓글 단건(G7). 대댓글이면 최상위 댓글을 parent로 함께 준다. 안내 문구로 남은 최상위 댓글도 그대로 온다.
+function getComment({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  const found = visibleComment(String(params['commentPublicId']), viewer, true)
+  if (found instanceof Response) return found
+  const root = found.row.parent == null ? null : commentRow(found.row.parent)!
+  return HttpResponse.json({
+    data: { comment: found.item, parent: root && shownComment(root, found.post, viewer)! },
+  })
+}
+
+// 댓글 수정. 내용 규칙이 댓글 조회보다 먼저다(BE 6). 같은 내용이면 edited를 그대로 두고 200이다.
+async function updateComment({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
+  const checked = checkComment(((await request.json()) as { content?: unknown }).content)
+  if ('error' in checked) return checked.error
+  const row = commentRow(String(params['commentPublicId']))
+  if (!row) return error(404, 130700)
+  const post = visiblePost(row.post, viewer)
+  if (post instanceof Response) return post
+  if (row.author !== viewer) return error(403, 130701)
+  if (row.deleted) return error(404, 130700)
+  if (row.content === checked.content) return HttpResponse.json({ data: ownItem(row, viewer) })
+  const edited = { ...row, content: checked.content, edited: true }
+  state.comments = state.comments.map(r => (r.publicId === row.publicId ? edited : r))
+  return HttpResponse.json({ data: ownItem(edited, viewer) })
+}
+
+// 댓글 삭제(멱등). 게시물 판정을 하지 않아 없는 댓글만 130700이고 남의 댓글은 지웠는지와 상관없이 130701이다(design #9).
+function deleteComment({ params, request }: { params: Record<string, unknown>; request: Request }) {
+  const viewer = viewerOf(request)
+  if (viewer == null) return unauthenticated()
+  if (state.restricted.includes(viewer)) return error(403, 20013)
+  const row = commentRow(String(params['commentPublicId']))
+  if (!row) return error(404, 130700)
+  if (row.author !== viewer) return error(403, 130701)
+  state.comments = state.comments.map(r => (r.publicId === row.publicId ? { ...r, deleted: true, content: null } : r))
+  return new HttpResponse(null, { status: 204 })
+}
+
 export const snsHandlers = [
   http.post(SNS_REPORTS_URL, submitReport),
   http.get(SNS_ME_URL, ({ request }) => {
@@ -1007,4 +1398,15 @@ export const snsHandlers = [
   http.get(SNS_USER_VIDEOS_URL, profileTab('videos')),
   http.get(SNS_USER_REPOSTS_URL, profileTab('reposts')),
   http.get(SNS_MY_SAVES_URL, mySaves),
+  http.post(SNS_POST_LIKE_URL, like('post', true)),
+  http.delete(SNS_POST_LIKE_URL, like('post', false)),
+  http.get(SNS_POST_LIKERS_URL, likers('post')),
+  http.get(SNS_COMMENTS_URL, commentList),
+  http.post(SNS_COMMENTS_URL, createComment),
+  http.get(SNS_COMMENT_URL, getComment),
+  http.patch(SNS_COMMENT_URL, updateComment),
+  http.delete(SNS_COMMENT_URL, deleteComment),
+  http.post(SNS_COMMENT_LIKE_URL, like('comment', true)),
+  http.delete(SNS_COMMENT_LIKE_URL, like('comment', false)),
+  http.get(SNS_COMMENT_LIKERS_URL, likers('comment')),
 ]

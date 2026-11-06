@@ -1,15 +1,16 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Heart, MessageCircle, MoreHorizontal, PawPrint, Repeat2 } from 'lucide-react'
+import { MessageCircle, MoreHorizontal, PawPrint, Repeat2 } from 'lucide-react'
 import { Avatar } from '@aechak/design-system/web'
 import type { UseLoginGate } from '@/shared/auth'
 import type { SnsFeedItem, SnsPost } from '../sns.queries'
 import { petTagLabel, postDate, relativeTimeLabel } from '../sns.format'
+import { SnsLikeButton } from './SnsLikeButton'
 import { SnsReactionButton } from './SnsReactionButton'
 
 interface SnsFeedCardProps {
   item: SnsFeedItem
   onMore: (post: SnsPost) => void
-  /** 리포스트, 저장 버튼의 로그인 게이트와 실패 안내. 상세 버튼과 같은 처리다(design 6절 4번) */
+  /** 좋아요, 리포스트, 저장 버튼의 로그인 게이트와 실패 안내. 상세 버튼과 같은 처리다(design 6절 4번) */
   requireAuth: UseLoginGate['requireAuth']
   onReactionError: (message: string) => void
   /** 다시 읽기가 실패해 받아 둔 값만 남은 피드면 반응 버튼을 잠근다(AGENTS.md 6절 7) */
@@ -28,11 +29,6 @@ export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked
     post.isMine
       ? navigate({ to: '/sns/me' })
       : navigate({ to: '/sns/users/$publicId', params: { publicId: post.author.publicId } })
-
-  const counts = [
-    { label: '좋아요', value: post.likeCount, icon: <Heart className="size-5" /> },
-    { label: '댓글', value: post.commentCount, icon: <MessageCircle className="size-5" /> },
-  ]
 
   return (
     <article className="relative flex flex-col gap-3 px-4 py-4">
@@ -132,15 +128,16 @@ export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked
         />
       )}
 
-      {/* 좋아요와 댓글 버튼은 SNS-04가 붙인다. 리포스트와 저장 버튼은 상세로 가는 버튼 위에 올린다. */}
+      {/* 댓글 버튼은 SNS-04 댓글이 붙인다. 좋아요, 리포스트, 저장 버튼은 상세로 가는 버튼 위에 올린다. */}
       <div className="flex items-center gap-4 text-text-secondary">
-        {counts.map(count => (
-          <span key={count.label} className="flex items-center gap-1">
-            {count.icon}
-            <span className="sr-only">{count.label}</span>
-            <span className="text-body-sm tabular-nums">{count.value.toLocaleString('ko-KR')}</span>
-          </span>
-        ))}
+        <div className="relative z-[2]">
+          <SnsLikeButton post={post} requireAuth={requireAuth} onError={onReactionError} disabled={locked} />
+        </div>
+        <span className="flex items-center gap-1">
+          <MessageCircle className="size-5" />
+          <span className="sr-only">댓글</span>
+          <span className="text-body-sm tabular-nums">{post.commentCount.toLocaleString('ko-KR')}</span>
+        </span>
         <div className="relative z-[2]">
           <SnsReactionButton
             kind="repost"
