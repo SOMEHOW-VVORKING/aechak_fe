@@ -25,6 +25,7 @@ import { RELATION_CONFIRM } from '../sns.copy'
 import { petTagLabel, postDate, postDateLabel } from '../sns.format'
 import { FollowButton } from './FollowButton'
 import { SnsLikeButton, SnsResumeLike } from './SnsLikeButton'
+import { SnsHashtagLinks } from './SnsHashtagLinks'
 import { SnsPostMoreSheet } from './SnsPostMoreSheet'
 import { SnsReactionButton, SnsResumeReaction } from './SnsReactionButton'
 import { SnsReportSheet } from './SnsReportSheet'
@@ -393,15 +394,7 @@ export function SnsPostDetailScreen({ publicId, author }: { publicId: string; au
         </p>
       )}
 
-      {post.hashtags.length > 0 && (
-        <ul aria-label="해시태그" className="flex flex-wrap gap-x-2 gap-y-1 px-4">
-          {post.hashtags.map(tag => (
-            <li key={tag} className="text-body-sm font-medium text-text-brand">
-              #{tag}
-            </li>
-          ))}
-        </ul>
-      )}
+      {post.hashtags.length > 0 && <SnsHashtagLinks hashtags={post.hashtags} className="px-4" />}
 
       {/* 사진은 작성자가 정한 순서대로 넘겨 본다(P2). 텍스트 게시물은 미디어 자리가 없다(A20). */}
       {post.photoUrls.length > 0 && <PhotoCarousel urls={post.photoUrls} />}

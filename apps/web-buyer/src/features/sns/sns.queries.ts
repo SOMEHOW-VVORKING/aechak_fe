@@ -25,6 +25,7 @@ import {
   getMySnsProfile,
   getSnsExploreFeed,
   getSnsFollowingFeed,
+  getSnsHashtagPosts,
   getSnsPopularFeed,
   getSnsPost,
   getSnsPostLikers,
@@ -48,6 +49,7 @@ import {
   type SnsFeedItemResult,
   type SnsFeedPageResult,
   type SnsLikerListResult,
+  type SnsHashtagPostPageResult,
   type SnsPostCreateRequest,
   type SnsPostCreateResponse,
   type SnsPostDetailResult,
@@ -57,6 +59,7 @@ import {
   type SnsProfileResult,
   type SnsRelationItemResult,
   type SnsRelationPageResult,
+  type SnsSearchSortParameter,
   type SnsUserItemResult,
   type SnsUserPageResult,
 } from '@aechak/api'
@@ -85,6 +88,10 @@ export type SnsReactionKind = 'repost' | 'save'
 export type SnsLikeTarget = 'post' | 'comment'
 /** 좋아요 버튼이 그리는 값. 누르기 전 값으로 되돌릴 때도 쓴다 */
 export type SnsLikeState = Pick<SnsPostDetailResult, 'liked' | 'likeCount'>
+/** SNS 검색 세그먼트(b12-st-4) */
+export type SnsSearchSegment = 'posts' | 'users' | 'hashtags'
+/** 게시물 검색과 해시태그 게시물 목록의 정렬. 기본은 인기순이다(P6) */
+export type SnsSearchSort = SnsSearchSortParameter
 
 /**
  * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
@@ -139,6 +146,10 @@ export const snsKeys = {
   // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
   likerLists: ['sns', 'likers'] as const,
   likers: (publicId: string) => ['sns', 'likers', 'post', publicId] as const,
+  // 해시태그 게시물 목록은 피드 카드와 같은 항목이라 feeds 아래에 둔다. 리포스트, 저장, 수정, 삭제, 차단과 뮤트가
+  // 피드 카드에 하는 갱신을 그대로 받는다. 네 번째 자리가 세션 상태인 것도 피드와 같다.
+  hashtagPosts: (name: string, sort: SnsSearchSort, loggedIn: boolean) =>
+    ['sns', 'feed', 'hashtag', loggedIn, name, sort] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -529,7 +540,7 @@ function removeGridCell(queryClient: QueryClient, filters: QueryFilters, publicI
 }
 
 // 팔로잉 피드는 페이지 사이에 같은 원글이 다시 올 수 있다(G3). 먼저 받은 자리 하나만 남긴다(design 6절 6번).
-function selectFeedItems(data: InfiniteData<SnsFeedPageResult>): SnsFeedItem[] {
+function selectFeedItems(data: InfiniteData<{ items: SnsFeedItem[] }>): SnsFeedItem[] {
   const seen = new Set<string>()
   return data.pages
     .flatMap(page => page.items)
@@ -916,4 +927,38 @@ export function useSnsLikers(publicId: string, enabled: boolean) {
     retry: retryTransient,
     enabled,
   })
+}
+
+// ── SNS-06 해시태그 게시물 목록 ───────────────────────────────────────────────
+
+/** 검색 라우트의 search(`?seg=&sort=`). 모르는 값은 버리고 기본값을 쓴다 */
+export function snsSearchSearch(search: Record<string, unknown>): { seg?: SnsSearchSegment; sort?: SnsSearchSort } {
+  const seg = (['posts', 'users', 'hashtags'] as const).find(value => value === search['seg'])
+  const sort = (['POPULAR', 'LATEST'] as const).find(value => value === search['sort'])
+  return { ...(seg && { seg }), ...(sort && { sort }) }
+}
+
+const nextCursor = (last: { hasNext: boolean; nextCursor: string | null }) =>
+  last.hasNext ? (last.nextCursor ?? undefined) : undefined
+
+const selectHashtagPosts = (data: InfiniteData<SnsHashtagPostPageResult>) => ({
+  hashtag: data.pages[0]!.hashtag,
+  items: selectFeedItems(data),
+})
+
+/** 해시태그 게시물 목록(GET /sns/hashtags/{name}/posts). 헤더의 게시글 수는 첫 페이지 값이다. 최근 검색어에 기록하지 않는다 */
+export function useSnsHashtagPosts(name: string, sort: SnsSearchSort) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.hashtagPosts(name, sort, loggedIn), [name, sort, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await getSnsHashtagPosts(encodeURIComponent(name), { sort, cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectHashtagPosts,
+    retry: retryTransient,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
 }
