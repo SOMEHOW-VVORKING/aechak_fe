@@ -724,8 +724,18 @@ const ALREADY_REPORTED = [130802, 30202]
 
 export const isAlreadyReported = (error: unknown) => ALREADY_REPORTED.includes(snsErrorCode(error) ?? -1)
 
-/** 신고 접수(POST /reports). 공백만 적은 상세 내용은 비운 것으로 보내고 서버도 그렇게 본다(P5) */
+/** 다시 보내도 같은 답인 거절. 볼 수 없는 게시물, 차단한 작성자, 볼 수 없는 계정, 본인 게시물, 자기 자신이다 */
+const REPORT_FINAL = [SNS_POST_UNAVAILABLE, SNS_BLOCKED_BY_ME, SNS_UNAVAILABLE, 130800, 30200]
+
+export const isFinalReportError = (error: unknown) => REPORT_FINAL.includes(snsErrorCode(error) ?? -1)
+
+/**
+ * 신고 접수(POST /reports). 공백만 적은 상세 내용은 비운 것으로 보내고 서버도 그렇게 본다(P5).
+ * 게시물이 사라졌거나(130400) 작성자를 차단했으면(130001) 상세를 다시 읽어 화면을 그 안내로 바꾸고 받아 둔 피드는 다음에 열 때
+ * 다시 읽게 낡은 것으로만 표시한다. 계정을 볼 수 없으면(130000) 그 프로필을 다시 읽는다.
+ */
 export function useSubmitSnsReport() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({
       target,
@@ -744,10 +754,19 @@ export function useSubmitSnsReport() {
         reasonText: text === '' ? null : text,
       })
     },
+    onError: (error, { target }) => {
+      const code = snsErrorCode(error)
+      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.publicId) })
+        void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
+      } else if (code === SNS_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.profile(target.publicId) })
+      }
+    },
   })
 }
 
-// 신고 실패 문구. 시트에 그대로 두고 다시 제출할 수 있게 한다. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7).
+// 신고 실패 문구. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7).
 const REPORT_ERROR_COPY: Record<number, string> = {
   130802: '이미 신고한 게시물이에요',
   30202: '이미 신고한 계정이에요',

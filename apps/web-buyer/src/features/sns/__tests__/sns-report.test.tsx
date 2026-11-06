@@ -12,6 +12,7 @@ import {
   SNS_MONG,
   SNS_POST_COCO,
   SNS_POST_MINE,
+  SNS_PROFILE_URL,
   SNS_REPORTS_URL,
   SNS_SPAM,
   WEB_REFRESH_URL,
@@ -192,7 +193,7 @@ describe('SNS 게시물 신고', () => {
     expect(currentSns().reports).toHaveLength(1)
   })
 
-  it('[AC-SNS-RPT-006] 시트를 연 사이 지워진 게시물은 시트에 삭제된 게시물 안내를 보여준다', async () => {
+  it('[AC-SNS-RPT-006] 시트를 연 사이 지워진 게시물은 시트를 닫아 토스트로 알리고 상세를 다시 읽어 삭제된 게시물 안내로 바꾼다', async () => {
     const user = userEvent.setup()
     renderAt(postPath(SNS_POST_COCO))
 
@@ -202,7 +203,63 @@ describe('SNS 게시물 신고', () => {
     await user.click(within(sheet).getByText('스팸/광고'))
     await user.click(submitButton())
 
-    expect(await within(sheet).findByText('삭제된 게시물이에요')).toBeInTheDocument()
+    const toast = await screen.findByRole('alert')
+    expect(toast).toHaveTextContent('삭제된 게시물이에요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    expect(within(sheet).queryByText('삭제된 게시물이에요')).toBeNull()
+    // 상세를 다시 읽어 본문이 삭제된 게시물 안내로 바뀐다.
+    expect(await screen.findByText('게시물이 삭제되어 더 이상 볼 수 없어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-006] 시트를 연 사이 작성자를 차단했으면 시트를 닫아 알리고 상세를 차단한 계정 안내로 바꾼다', async () => {
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openPostReport(user)
+    seedSns({ blocks: [...currentSns().blocks, snsRelation(SNS_ME, SNS_COCO)] })
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('차단한 계정의 게시물이에요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    expect(await screen.findByText('차단을 해제하면 게시물을 볼 수 있어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-006] 피드 카드에서 볼 수 없는 게시물로 거절되면 받아 둔 피드는 바로 다시 읽지 않는다', async () => {
+    let feedReads = 0
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/sns/feeds/explore')) feedReads += 1
+    })
+    const user = userEvent.setup()
+    renderAt('/sns/feed?tab=explore')
+
+    await screen.findByRole('button', { name: '코코집사님의 게시물 보기' })
+    const card = screen.getByRole('button', { name: '코코집사님의 게시물 보기' }).closest('article')!
+    await user.click(within(card).getByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog', { name: '게시물 더보기' })).getByRole('button', { name: '신고하기' }))
+    const posts = currentSns().posts.map(p => (p.publicId === SNS_POST_COCO ? { ...p, deleted: true } : p))
+    seedSns({ posts })
+    const readsBefore = feedReads
+    await user.click(within(reportSheet()).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('삭제된 게시물이에요')
+    await delay(50)
+    expect(feedReads).toBe(readsBefore)
+    expect(screen.getByRole('button', { name: '코코집사님의 게시물 보기' })).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-006] 내 게시물 신고 거절(130800)은 다시 보내도 같은 답이라 시트를 닫고 알린다', async () => {
+    server.use(http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 130800, message: '' }, { status: 400 })))
+    const user = userEvent.setup()
+    renderAt(postPath(SNS_POST_COCO))
+
+    const sheet = await openPostReport(user)
+    await user.click(within(sheet).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('내 게시물은 신고할 수 없어요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
   })
 
   it('[AC-SNS-RPT-007] 리포스트 카드 더보기에서 신고하면 리포스트한 사람이 아니라 원글을 신고한다', async () => {
@@ -254,6 +311,38 @@ describe('SNS 사용자 신고', () => {
     await user.click(submitButton())
 
     expect(await screen.findByText('이미 신고한 계정이에요')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-008] 볼 수 없게 된 계정(130000)은 시트를 닫아 알리고 프로필을 다시 읽어 볼 수 없는 계정 안내로 바꾼다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getByRole('button', { name: '신고하기' }))
+    server.use(
+      http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })),
+      http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 130000, message: '' }, { status: 404 })),
+    )
+    await user.click(within(reportSheet()).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('볼 수 없는 계정이에요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
+    expect(await screen.findByText('계정이 없거나 지금은 볼 수 없어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SNS-RPT-008] 자기 자신 신고 거절(30200)은 시트를 닫고 알린다', async () => {
+    server.use(http.post(SNS_REPORTS_URL, () => HttpResponse.json({ errorCode: 30200, message: '' }, { status: 400 })))
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getByRole('button', { name: '신고하기' }))
+    await user.click(within(reportSheet()).getByText('스팸/광고'))
+    await user.click(submitButton())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('나 자신은 신고할 수 없어요')
+    expect(reportSheet()).toHaveClass('pointer-events-none')
   })
 
   it('[AC-SNS-RPT-009] 내 프로필에는 신고 진입점이 없다', async () => {

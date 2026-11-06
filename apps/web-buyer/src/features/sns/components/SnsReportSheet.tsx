@@ -4,6 +4,7 @@ import { AppToast } from '@/shared/components/AppToast'
 import { RadioList } from '@/shared/components/RadioList'
 import {
   isAlreadyReported,
+  isFinalReportError,
   snsReportErrorMessage,
   useSubmitSnsReport,
   type SnsReportReason,
@@ -32,13 +33,18 @@ interface SnsReportSheetProps {
 
 // 신고 시트(b8-st-1 1-A). 게시물 더보기, 프로필 앱바 더보기, 차단 관리 목록이 같은 시트를 연다(P4).
 // 실패하면 시트와 고른 사유, 상세 내용을 그대로 두고 안내한다(P15). 이미 신고한 대상(409)은 접수 확인으로 보고 닫는다(P6).
+// 다시 보내도 같은 답인 거절(볼 수 없는 대상, 차단한 작성자, 내 게시물, 나 자신)은 시트를 닫고 토스트로 알린다.
 // 요청 중에는 닫지 않는다. 닫히면 react-query가 호출별 성공, 실패 처리를 실행하지 않아 결과를 알릴 수 없다.
 export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: SnsReportSheetProps) {
   const submit = useSubmitSnsReport()
   const [reason, setReason] = useState<SnsReportReason | ''>('')
   const [detail, setDetail] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ open: boolean; title: string; sub?: string }>({ open: false, title: '' })
+  const [toast, setToast] = useState<{ open: boolean; title: string; sub?: string; variant: 'info' | 'error' }>({
+    open: false,
+    title: '',
+    variant: 'info',
+  })
   // 시트를 열 때마다 입력을 비운다. 렌더 중에 맞춰 열린 첫 화면부터 빈 입력이다. 대상은 부르는 화면이 렌더마다 새로
   // 만들 수 있어 종류와 publicId로 비교한다.
   const targetKey = open && target ? `${target.type}:${target.publicId}` : null
@@ -68,12 +74,12 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
       {
         onSuccess: () => {
           onClose()
-          setToast({ open: true, title: '신고가 접수되었습니다', sub: '검토 후 정책에 따라 처리돼요.' })
+          setToast({ open: true, title: '신고가 접수되었습니다', sub: '검토 후 정책에 따라 처리돼요.', variant: 'info' })
         },
         onError: e => {
-          if (isAlreadyReported(e)) {
+          if (isAlreadyReported(e) || isFinalReportError(e)) {
             onClose()
-            setToast({ open: true, title: snsReportErrorMessage(e) })
+            setToast({ open: true, title: snsReportErrorMessage(e), variant: isAlreadyReported(e) ? 'info' : 'error' })
           } else setError(snsReportErrorMessage(e))
         },
       },
@@ -130,7 +136,7 @@ export function SnsReportSheet({ target, open, onClose, toastAboveActionBar }: S
       )}
       <AppToast
         open={toast.open}
-        variant="info"
+        variant={toast.variant}
         message={
           <span className="flex flex-col">
             <span>{toast.title}</span>
