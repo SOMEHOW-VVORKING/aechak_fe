@@ -5,6 +5,7 @@ import type { UseLoginGate } from '@/shared/auth'
 import type { SnsFeedItem, SnsPost } from '../sns.queries'
 import { petTagLabel, postDate, relativeTimeLabel } from '../sns.format'
 import { SnsLikeButton } from './SnsLikeButton'
+import { SnsHashtagLinks } from './SnsHashtagLinks'
 import { SnsReactionButton } from './SnsReactionButton'
 
 interface SnsFeedCardProps {
@@ -18,8 +19,8 @@ interface SnsFeedCardProps {
 }
 
 // 피드 카드(b7-st-1, design 6절 4번). item.post는 상세와 같은 SnsPostDetailResult라 상세 화면 타입을 그대로 쓴다.
-// 카드 전체를 덮는 형제 버튼이 상세로 가고(ProductCard와 같은 방식) 작성자, 더보기, 영상은 그 위에 올린다. 해시태그는
-// SNS-06 목록 라우트 전까지 다른 본문처럼 상세를 연다. 저장 수는 그리지 않는다(A23). 리포스트 카드의 버튼도 원글에 한다.
+// 카드 전체를 덮는 형제 버튼이 상세로 가고(ProductCard와 같은 방식) 작성자, 더보기, 해시태그, 영상은 그 위에 올린다. 해시태그는
+// 그 태그의 게시물 목록을 연다(SNS-06). 저장 수는 그리지 않는다(A23). 리포스트 카드의 버튼도 원글에 한다.
 export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked }: SnsFeedCardProps) {
   const navigate = useNavigate()
   const { post, repostedBy } = item
@@ -78,20 +79,12 @@ export function SnsFeedCard({ item, onMore, requireAuth, onReactionError, locked
       </header>
 
       {post.caption && (
-        <p className="line-clamp-5 whitespace-pre-line break-words text-body leading-relaxed text-text-primary">
+        <p className="line-clamp-5 whitespace-pre-line break-keep break-words text-body leading-relaxed text-text-primary">
           {post.caption}
         </p>
       )}
 
-      {post.hashtags.length > 0 && (
-        <ul aria-label="해시태그" className="flex flex-wrap gap-x-2 gap-y-1">
-          {post.hashtags.map(tag => (
-            <li key={tag} className="text-body-sm font-medium text-text-brand">
-              #{tag}
-            </li>
-          ))}
-        </ul>
-      )}
+      {post.hashtags.length > 0 && <SnsHashtagLinks hashtags={post.hashtags} />}
 
       {/* 사진은 1장이면 한 칸, 2장 이상이면 처음 2장을 두 칸으로 보이고 3장부터 남은 장수를 적는다(P7). */}
       {photos.length === 1 && (

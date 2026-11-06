@@ -40,12 +40,20 @@ interface SnsListEndProps {
   isFetchingNextPage: boolean
   isFetchNextPageError: boolean
   fetchNextPage: () => unknown
+  /** 게시물이 아닌 목록(검색 계정, 해시태그)의 실패 문구 */
+  errorMessage?: string
 }
 
 // 피드, 프로필 탭, 저장됨 탭의 목록 끝(design 6절 6번). 감시 요소가 화면 안에 들어오면 다음 페이지를 부르고 받은 뒤에도
 // 화면 안이면 또 부른다. 중복을 빼서 새 글이 없는 페이지를 받으면 감시 요소가 그대로 보여 관찰 콜백이 다시 오지 않기
 // 때문이다. 다음 페이지가 실패하면 보여준 글은 두고 끝에 실패 안내와 다시 시도를 둔다(P13).
-export function SnsListEnd({ hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage }: SnsListEndProps) {
+export function SnsListEnd({
+  hasNextPage,
+  isFetchingNextPage,
+  isFetchNextPageError,
+  fetchNextPage,
+  errorMessage = '다음 글을 불러오지 못했어요',
+}: SnsListEndProps) {
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null)
   const [inView, setInView] = useState(false)
 
@@ -66,7 +74,7 @@ export function SnsListEnd({ hasNextPage, isFetchingNextPage, isFetchNextPageErr
   if (isFetchNextPageError) {
     return (
       <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-        <p className="text-body-sm text-text-secondary">다음 글을 불러오지 못했어요</p>
+        <p className="text-body-sm text-text-secondary">{errorMessage}</p>
         <Button size="sm" variant="secondary" onClick={() => void fetchNextPage()}>
           다시 시도
         </Button>

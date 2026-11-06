@@ -55,3 +55,12 @@ export function activeFilterCount(filters: SearchFilters): number {
   if (filters.category != null) n += 1
   return n
 }
+
+/** 통합 검색 결과 탭(b12-st-2~4). 홈에서 들어오면 전체, 마켓에서 들어오면 마켓, SNS에서 들어오면 SNS가 기본이다(CRQ-SRCH-07) */
+export type SearchTab = 'all' | 'market' | 'sns'
+
+/** 검색 라우트의 search(`?tab=`). 모르는 값과 전체(기본)는 빼서 주소에 남기지 않는다 */
+export function searchTabSearch(search: Record<string, unknown>): { tab?: Exclude<SearchTab, 'all'> } {
+  const tab = (['market', 'sns'] as const).find(value => value === search['tab'])
+  return tab ? { tab } : {}
+}

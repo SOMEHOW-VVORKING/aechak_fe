@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -112,6 +112,19 @@ describe('/search', () => {
 
     expect(await screen.findByText('츄르 참치맛 40개입')).toBeInTheDocument()
   })
+
+  it('[AC-SEARCH-021] 홈에서 연 검색은 전체 탭, 마켓에서 연 검색은 마켓 탭으로 결과를 연다', async () => {
+    const user = userEvent.setup()
+    renderAt('/search')
+    await user.click(await screen.findByRole('button', { name: '츄르' }))
+    expect(await screen.findByRole('tab', { name: '전체' })).toHaveAttribute('aria-selected', 'true')
+    cleanup()
+
+    renderAt('/search?tab=market')
+    await user.click(await screen.findByRole('button', { name: '츄르' }))
+    expect(await screen.findByRole('tab', { name: '마켓' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: /필터/ })).toBeInTheDocument()
+  })
 })
 
 describe('/search/results', () => {
@@ -131,7 +144,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=고가')
+    renderAt('/search/results?q=고가&tab=market')
 
     await screen.findByText(/검색 결과가 없어요/)
     expect(maxPrice).toBeNull()
@@ -159,7 +172,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=페이지')
+    renderAt('/search/results?q=페이지&tab=market')
 
     expect(await screen.findByText('첫 번째 페이지 상품')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '상품 더 보기' }))
@@ -184,7 +197,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=페이지')
+    renderAt('/search/results?q=페이지&tab=market')
 
     expect(await screen.findByText('보존되어야 하는 상품')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '상품 더 보기' }))
@@ -196,7 +209,7 @@ describe('/search/results', () => {
 
   it('[AC-SEARCH-008] 품절 제외 칩을 끄면 품절 상품이 결과에 나타난다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=스크래쳐')
+    renderAt('/search/results?q=스크래쳐&tab=market')
 
     // 기본 품절 제외(on) — 품절 상품만 매칭돼 결과가 없다.
     expect(await screen.findByText(/검색 결과가 없어요/)).toBeInTheDocument()
@@ -208,7 +221,7 @@ describe('/search/results', () => {
 
   it('[AC-SEARCH-010] 품절 제외 칩이 기본 ON(aria-pressed)으로 렌더된다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=급식기')
+    renderAt('/search/results?q=급식기&tab=market')
 
     // 결과 로드 확인 후 칩 상태 검사.
     expect(await screen.findByText('스테인리스 급식기 타이머형')).toBeInTheDocument()
@@ -223,7 +236,7 @@ describe('/search/results', () => {
   })
 
   it('[AC-SEARCH-011] 결과 없음 화면이 따옴표 없이 검색어를 강조해 보여준다', async () => {
-    renderAt('/search/results?q=존재하지않는상품zz')
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
 
     const heading = await screen.findByText(/검색 결과가 없어요/)
     // 검색어는 (마크업 강조로) 화면에 함께 노출된다.
@@ -250,7 +263,7 @@ describe('/search/results', () => {
         }),
       ),
     )
-    renderAt('/search/results?q=사료')
+    renderAt('/search/results?q=사료&tab=market')
 
     expect(await screen.findByText('찜한 사료')).toBeInTheDocument()
     // liked-1은 isLiked=true라 fetch 시점 미러 시드로 첫 렌더부터 '찜 해제'(채워짐).
@@ -263,7 +276,7 @@ describe('/search/results', () => {
     // 돌아왔다. 서버 추천어만 쓰고, 누르면 그 검색어로 실제 재검색이 돈다.
     const user = userEvent.setup()
     setAccessToken('member-token')
-    renderAt('/search/results?q=존재하지않는상품zz')
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
 
     await screen.findByText(/검색 결과가 없어요/)
     expect(await screen.findByRole('button', { name: '여름 쿨매트' })).toBeInTheDocument()
@@ -282,7 +295,7 @@ describe('/search/results', () => {
         HttpResponse.json({ data: { recentKeywords: [], recommendedKeywords: [] } }),
       ),
     )
-    renderAt('/search/results?q=존재하지않는상품zz')
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
 
     await screen.findByText(/검색 결과가 없어요/)
     expect(screen.queryByText('이런 검색어는 어때요?')).not.toBeInTheDocument()
@@ -290,7 +303,7 @@ describe('/search/results', () => {
 
   it('[AC-SEARCH-009] 가격 칩은 전체 필터 시트가 아니라 가격대 전용 시트를 열고 프리셋이 결과에 반영된다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=급식기')
+    renderAt('/search/results?q=급식기&tab=market')
 
     // 결과 로드 확인.
     expect(await screen.findByText('스테인리스 급식기 타이머형')).toBeInTheDocument()
