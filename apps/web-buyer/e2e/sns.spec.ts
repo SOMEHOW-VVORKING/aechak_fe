@@ -10,7 +10,7 @@ import type {
 
 // SNS-01 프로필(b7-st-4), 팔로워/팔로잉(b7-st-5), 차단/뮤트 관리(b7-st-8), 로그인 안내 시트(b13-st-2) E2E.
 // 실백엔드 없이 page.route 스텁으로 contracts/sns.yaml을 재현한다(교차 출처 8080 + withCredentials라 정확한 origin과
-// Allow-Credentials, OPTIONS 방어 필수). 마이 메뉴의 SNS 진입 행은 SNS_SERVER_AVAILABLE=false로 숨어 있어 경로로 바로 연다.
+// Allow-Credentials, OPTIONS 방어 필수). 각 화면은 경로로 바로 연다.
 // 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
 // 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의

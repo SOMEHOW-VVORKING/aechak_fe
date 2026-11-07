@@ -564,15 +564,25 @@ test('[AC-ADDR-E2E-008] 마이 탭 5탭과 허브 메뉴가 그대로 있고, �
 
   // 허브 메뉴는 한 벌뿐이어야 한다 — 같은 행이 두 번 그려지면 중복 진입점이다. 행의 접근 이름은
   // 제목 + trailing을 합친 것이라(본인 인증은 '본인 인증 인증완료') 부분 일치로 잡는다.
-  for (const label of ['주문 내역', '찜 목록', '상품 리뷰', '배송지 주소록', '펫 프로필 관리', '본인 인증', '회원 탈퇴']) {
+  for (const label of [
+    '주문 내역',
+    '찜 목록',
+    '상품 리뷰',
+    '배송지 주소록',
+    '내 SNS 프로필',
+    '차단/뮤트 관리',
+    '펫 프로필 관리',
+    '본인 인증',
+    '회원 탈퇴',
+  ]) {
     await expect(page.getByRole('button', { name: label })).toHaveCount(1)
   }
   // 그 trailing이 서버 값이다 — 인증 상태가 pill로 붙는다.
   await expect(page.getByRole('button', { name: '본인 인증 인증완료' })).toHaveCount(1)
   // '설정'은 둘이 정상이다 — AppBar 액션(aria-label)과 메뉴 행. 하나로 줄면 한쪽이 사라진 것이다.
   await expect(page.getByRole('button', { name: '설정', exact: true })).toHaveCount(2)
-  // 컷된 메뉴와 아직 안 연 SNS 진입점은 되살아나면 안 된다(SNS_SERVER_AVAILABLE=false).
-  for (const cut of ['쿠폰', '최근 본 상품', '고객센터', '내 SNS 프로필', '차단/뮤트 관리']) {
+  // 컷된 메뉴는 되살아나면 안 된다.
+  for (const cut of ['쿠폰', '최근 본 상품', '고객센터']) {
     await expect(page.getByRole('button', { name: cut })).toHaveCount(0)
   }
 
