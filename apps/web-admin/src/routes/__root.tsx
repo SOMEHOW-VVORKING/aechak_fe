@@ -3,6 +3,7 @@ import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
 import {
+  Activity,
   ClipboardCheck,
   Flag,
   LayoutDashboard,
@@ -51,7 +52,8 @@ const APPLICATIONS_NAV_KEY = '/sellers/applications'
 // nav 구성은 SCRUM-238 차단 이전(26e4b89^)의 5그룹을 되살린 것이고, 그 뒤 생긴 `/admins`를
 // 운영 관리 그룹에 더해 15항목이 됐다. 목데이터 '상품 검수 관리'의 입구를 내려 14항목이었다가
 // (SCRUM-313) 그 화면이 실연동되면서 '상품 카탈로그 관리'로 다시 올라와 15항목이 됐고(SCRUM-363),
-// '채팅 CS 모니터링'을 내려 지금은 **5그룹 14항목, 전부 실연동**이다(SCRUM-377). 차단 이전 nav의
+// '채팅 CS 모니터링'을 내려 14항목이 됐다가(SCRUM-377), 검수 진행 현황 경로가 생겨 'AI 검수
+// 모니터링'이 더해져 지금은 **5그룹 15항목, 전부 실연동**이다(SCRUM-367). 차단 이전 nav의
 // "확장 예정" 6항목 — 홈 배너·카테고리·정산·어드민 계정 권한·고급 통계·세금 신고 — 은 복원
 // 대상이 아니고, 그중 어드민 계정 권한 관리는 `/admins`가 대신한다.
 //
@@ -70,7 +72,8 @@ const APPLICATIONS_NAV_KEY = '/sellers/applications'
 // `GET /admin/audit-logs` 하나(어드민 액션 로그, SCRUM-318)와 `/admin/notices` 여섯(알림/공지
 // 관리, SCRUM-332 — 목록·초안 생성·상세·수정·게시·내림), `/admin/reports` 셋(신고 제재 관리,
 // SCRUM-241 — 목록·상세·처리), `/admin/sellers` 다섯(셀러 관리, SCRUM-362 — 목록·상세·판매정지·
-// 해제·메모)이다.
+// 해제·메모)이다. 2026-11-07에 `/admin/inspections` 둘(목록·상세)이 더해져 'AI 검수 모니터링'이
+// 실연동으로 들어왔다(SCRUM-367).
 // seller·api 호스트에 이름이 닮은 경로(`/sellers/me/orders`·`/reviews`·`/inquiries`)가 있어도
 // 셀러·구매자 본인 스코프라 운영자가 전체를 들여다볼 수 없고, 애초에 web-admin은 `sellerOrigin`을
 // 설정하지 않아 `/sellers/**`를 부르면 어드민이 아닌 api 호스트로 나간다(main.tsx).
@@ -131,14 +134,29 @@ const navGroups: NavGroup[] = [
     items: [
       // `/admin/product-inspections` 넷(목록·상세·승인·반려)에 실연동됐다(SCRUM-283) — 꼬리표를 뗐다.
       //
-      // 이 그룹에 항목이 하나뿐인 이유: 한때 같은 그룹에 있던 목데이터 '상품 검수 관리'는
-      // 실연동되면서 이름과 자리를 함께 바꿨다('상품 카탈로그 관리', 위 '운영' 그룹 — SCRUM-363).
-      // 이름이 닮은 두 항목이 나란히 서면 운영자는 어느 쪽이 실제 검수인지 알 수 없고, 그게
-      // SCRUM-313에서 입구를 내리게 한 사고였다. 여기는 **판정 대기열**만 남긴다.
+      // 한때 같은 그룹에 있던 목데이터 '상품 검수 관리'는 실연동되면서 이름과 자리를 함께
+      // 바꿨다('상품 카탈로그 관리', 위 '운영' 그룹 — SCRUM-363). 이름이 닮은 두 항목이 나란히
+      // 서면 운영자는 어느 쪽이 실제 검수인지 알 수 없고, 그게 SCRUM-313에서 입구를 내리게 한
+      // 사고였다. 그래서 이 항목은 **판정 대기열**이라는 역할만 쥔다 — 아래 '모니터링'과 모수가
+      // 다르다(여기는 운영자가 처리할 것, 아래는 지금 돌고 있는 것 전부).
       {
         key: '/products/ai-queue',
         label: 'AI 검수 큐',
         icon: <ScanEye className={iconClass} />,
+      },
+      // `/admin/inspections` 둘(목록·상세)이 생겨 실연동으로 들어왔다(SCRUM-367).
+      //
+      // **이름을 '큐'와 가르는 축은 모수와 역할이다.** 큐는 운영자가 **처리할** 것이 쌓이는
+      // 작업 목록이라 위반 판정 건만 올라오고 승인·반려가 거기 있다. 이 화면은 **지금 돌고
+      // 있는 검수 건 자체**라 판정 전과 통과까지 전부 나오고 쓰기가 없다. 그래서 '모니터링'을
+      // 골랐다 — 어드민 nav가 이미 그 말을 "지금 흐르는 것을 본다"는 뜻으로 쓰고 있어
+      // ('주문 배송 모니터링'·'채팅 CS 모니터링') 운영자가 새 말을 배우지 않아도 된다.
+      // 집계(`/admin/inspection-metrics`)는 아직 FE 화면이 없다 — 생길 때 이름이 셋 다 갈려
+      // 있어야 해서 여기 함께 적어 둔다(집계 · 작업 목록 · 진행 현황).
+      {
+        key: '/inspections/monitoring',
+        label: 'AI 검수 모니터링',
+        icon: <Activity className={iconClass} />,
       },
     ],
   },
