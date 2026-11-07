@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { bootstrapApiHosts, setOnAuthExpired } from '@aechak/api'
 import { applyCssVariables } from '@aechak/design-system/web'
 import { routeTree } from './routeTree.gen'
+import { RouteErrorScreen } from './shared/components/RouteFallbacks'
 import './index.css'
 
 applyCssVariables()
@@ -32,7 +33,8 @@ bootstrapApiHosts({
   },
 })
 
-const router = createRouter({ routeTree })
+// 화면 오류는 그 라우트 자리에서만 그려 셸과 nav를 남긴다.
+const router = createRouter({ routeTree, defaultErrorComponent: RouteErrorScreen })
 
 // 세션 만료(401 → refresh 실패) 시 로그인 화면으로 보낸다. 동시 다발 401이 네비게이션을
 // 중복 발화하지 않게 가드하고, 이미 로그인 플로우 안이면 손대지 않는다(web-buyer 관례).
