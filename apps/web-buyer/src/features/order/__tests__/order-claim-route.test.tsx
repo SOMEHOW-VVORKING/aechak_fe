@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect } from 'vitest'
+import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 import {
   CLAIM_REASONS_URL,
@@ -22,6 +23,9 @@ import {
 
 // 클레임(취소·반품·교환) 요청·내역·철회와 주문그룹 형제 주문. 서버 계약은 testing/msw/server.ts가
 // 소유하고(유형별 요청 가능 상태·중복 차단·전량 제약·철회 가능 상태) 여기선 시나리오만 세운다.
+
+// 주문 상세·클레임은 회원 전용 화면이라 회원 세션(메모리 토큰)을 전제로 연다.
+beforeEach(() => setAccessToken('member-token'))
 
 function renderAt(path: string) {
   const router = createRouter({

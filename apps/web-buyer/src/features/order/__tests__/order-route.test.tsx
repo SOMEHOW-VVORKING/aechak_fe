@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
@@ -223,6 +223,27 @@ describe('/orders 주문 목록', () => {
 
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    expect(requested).toBe(0)
+  })
+
+  it('[AC-ORDER-GUEST-002] 비회원이 주문 상세·클레임 주소로 오면 로그인 안내를 보고 서버를 부르지 않는다', async () => {
+    // 직접 주소로 들어온 비회원이 GET /orders/{id}의 401로 로그인 화면에 튕기면 돌아올 경로를 잃는다.
+    let requested = 0
+    server.use(
+      http.get(ORDER_DETAIL_URL, () => {
+        requested += 1
+        return new HttpResponse(null, { status: 401 })
+      }),
+    )
+    logout()
+    const router = renderAt('/orders/ORD-1')
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/orders/ORD-1')
+    cleanup()
+
+    const claimRouter = renderAt('/orders/ORD-1/claim?type=return')
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(claimRouter.state.location.pathname).toBe('/orders/ORD-1/claim')
     expect(requested).toBe(0)
   })
 
