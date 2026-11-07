@@ -67,7 +67,12 @@ export function useUpdateProfile() {
   const queryClient = useQueryClient()
   const mutation = useMutation({
     mutationFn: (body: UpdateProfileRequest) => updateProfile(body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ACCOUNT_QUERY_KEY }),
+    onSuccess: () => {
+      // SNS 프로필과 피드 카드, 목록 행도 닉네임과 프로필 사진을 담는다. shared는 sns feature를 import할 수 없어
+      // 그 키의 맨 앞(features/sns snsKeys.all)을 직접 쓴다. SNS 화면은 다음에 열 때 다시 읽으면 되어 기다리지 않는다.
+      void queryClient.invalidateQueries({ queryKey: ['sns'] })
+      return queryClient.invalidateQueries({ queryKey: ACCOUNT_QUERY_KEY })
+    },
   })
   return {
     isPending: mutation.isPending,

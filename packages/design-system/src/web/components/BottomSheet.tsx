@@ -5,13 +5,15 @@ export interface BottomSheetProps {
   onClose: () => void
   children: ReactNode
   title?: string
+  /** 제목을 그리지 않는 시트(비회원 안내, 더보기 메뉴)의 접근성 이름. title이 있으면 title이 이름이다. */
+  ariaLabel?: string
   showGrabber?: boolean
   /** 시트 최대 높이(px). 미지정 시 뷰포트의 90%. */
   maxHeight?: number
   className?: string
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 // 하단에서 올라오는 시트. web에는 side `Drawer`만 있어 옵션/필터 시트·비회원 게이트 등에
 // 쓸 하단 시트를 새로 추가한 것 — 스크림/ESC/포커스 트랩/스크롤 잠금 패턴은 `Modal`/`Drawer`와 동일.
@@ -20,6 +22,7 @@ export function BottomSheet({
   onClose,
   children,
   title,
+  ariaLabel,
   showGrabber = true,
   maxHeight,
   className = '',
@@ -29,9 +32,8 @@ export function BottomSheet({
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
-  useEffect(() => {
-    if (open) setMounted(true)
-  }, [open])
+  // 렌더 중에 맞춘다. effect로 맞추면 open이 켜진 첫 커밋에 패널이 없어 포커스 이동과 트랩 effect가 패널을 찾지 못한다.
+  if (open && !mounted) setMounted(true)
 
   // Restore focus on close
   useEffect(() => {
@@ -65,13 +67,16 @@ export function BottomSheet({
       }
       const first = items[0]!
       const last = items[items.length - 1]!
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 시트 뒤로 넘어간다.
+      // 포커스가 패널 밖에 있으면 아무것도 하지 않는다. 위에 겹쳐 뜬 오버레이의 Tab까지 처리하면 그 오버레이의 첫 항목에서 포커스가 움직이지 않는다.
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (active === first || active === panel) {
           e.preventDefault()
           last.focus()
         }
       } else {
-        if (document.activeElement === last) {
+        if (active === last || active === panel) {
           e.preventDefault()
           first.focus()
         }
@@ -104,6 +109,7 @@ export function BottomSheet({
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
+      aria-label={title ? undefined : ariaLabel}
     >
       {/* Scrim — fade in/out */}
       <div

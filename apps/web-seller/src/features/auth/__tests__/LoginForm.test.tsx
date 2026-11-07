@@ -4,11 +4,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { LoginForm } from '../components/LoginForm'
 
 describe('LoginForm (서버 웹 로그인)', () => {
-  it('[AC-AUTH-001] 카카오만 활성이고 구글/Apple은 준비 중으로 비활성이다', () => {
+  it('[AC-AUTH-001] 로그인 버튼은 카카오 하나다', () => {
     render(<LoginForm onSocialLogin={vi.fn()} />)
     expect(screen.getByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '구글로 로그인 (준비 중)' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Apple로 로그인 (준비 중)' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /구글/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Apple/ })).not.toBeInTheDocument()
   })
 
   it('[AC-AUTH-002] 카카오 클릭 시 onSocialLogin(kakao)를 호출한다', async () => {

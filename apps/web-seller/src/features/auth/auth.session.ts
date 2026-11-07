@@ -6,9 +6,9 @@ import { axiosInstance, getApiBaseURL, setAccessToken } from '@aechak/api'
 // 등재됨)으로 브라우저를 되돌려보낸다. access는 쿼리로 오지 않으므로 복귀 라우트가
 // bootstrapSession(refresh)으로 수령한다.
 
-export type SocialProvider = 'kakao' | 'google' | 'apple'
+export type SocialProvider = 'kakao'
 
-/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 구글·애플은 서버 미지원이라 버튼 비활성. */
+/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 로그인 수단은 카카오 하나다. */
 export const WEB_LOGIN_PROVIDERS: ReadonlySet<SocialProvider> = new Set<SocialProvider>(['kakao'])
 
 export function socialLoginRedirectUrl(provider: SocialProvider, returnUrl: string): string {

@@ -130,7 +130,7 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
     <div className="flex flex-col pb-6">
       <MarketAppBar
         title="마켓"
-        onSearch={() => navigate({ to: '/search' })}
+        onSearch={() => navigate({ to: '/search', search: { tab: 'market' } })}
         onCart={() => navigate({ to: '/cart' })}
         cartCount={cartCount}
         hasNotification

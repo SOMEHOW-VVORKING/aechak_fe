@@ -173,7 +173,8 @@ export function sellerApplicationErrorMessage(error: unknown): string {
   const data = (error as { response?: { data?: { errorCode?: number; message?: string } } }).response?.data
   switch (data?.errorCode) {
     case 10103:
-      return '휴대폰 본인 인증이 필요해요. 구매자 앱 마이페이지에서 인증한 뒤 다시 시도해 주세요.'
+      // 이 띠 바로 아래가 인증 블록이다 — 다른 앱으로 보내는 안내는 거짓이 된다.
+      return '휴대폰 본인 인증이 필요해요. 아래 휴대폰 본인 인증을 끝낸 뒤 다시 시도해 주세요.'
     case 10001:
       return '이미 셀러로 등록된 계정이에요.'
     case 10101:

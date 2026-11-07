@@ -62,8 +62,8 @@ describe('어드민 로그인 (SCRUM-252)', () => {
     renderAt('/login')
 
     expect(await screen.findByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '구글로 로그인 (준비 중)' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Apple로 로그인 (준비 중)' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /구글/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Apple/ })).not.toBeInTheDocument()
     // BE에 POST /auth/login이 없다 — 이메일/비밀번호 폼은 제거됐다.
     expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument()

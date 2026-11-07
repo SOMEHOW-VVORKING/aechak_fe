@@ -15,9 +15,9 @@ import {
 // 활성 약관·필수 동의 불변식·닉네임 형식/중복/전이는 전부 서버 소유다. 생성된 react-query 훅이 아니라
 // fetcher만 소비하고, 이 파일이 자체 useQuery/useMutation으로 감싼다(pet.queries.ts와 동일 이유).
 
-export type SocialProvider = 'kakao' | 'google' | 'apple'
+export type SocialProvider = 'kakao'
 
-/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 구글·애플은 서버 미지원이라 버튼 비활성. */
+/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 로그인 수단은 카카오 하나다. */
 export const WEB_LOGIN_PROVIDERS: ReadonlySet<SocialProvider> = new Set<SocialProvider>(['kakao'])
 
 /**

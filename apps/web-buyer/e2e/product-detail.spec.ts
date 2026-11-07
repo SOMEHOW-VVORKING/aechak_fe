@@ -7,7 +7,9 @@ const API_ORIGIN = 'http://localhost:8080'
 // 상품 상세 + 옵션 ↔ 실 API 연동 E2E. 실백엔드 없이 page.route 스텁으로 재현한다(마켓 spec과 동일한
 // CORS/프리플라이트 규칙). 옵션 조합 추가금이 시트 총액에 반영되는지까지 검증한다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

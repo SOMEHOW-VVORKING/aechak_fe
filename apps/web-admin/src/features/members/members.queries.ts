@@ -10,6 +10,7 @@ import {
   getAdminMemberDetail,
   getAdminMembers,
   releaseAdminMemberSanction,
+  resetAdminMemberProfile,
   sanctionAdminMember,
   type AdminMemberDetailData,
   type AdminMemberListData,
@@ -99,6 +100,9 @@ export function useAdminMembers(params: MemberListParams): MemberListResult {
 
 export interface MemberDetailResult {
   member: MemberAccount | null
+  /** 현재 프로필 이미지 주소. 기본 이미지면 null이다. */
+  profileImageUrl: string | null
+  bio: string | null
   sanctions: SanctionEntryView[]
   isLoading: boolean
   isError: boolean
@@ -115,6 +119,8 @@ export function useAdminMemberDetail(userId: number | null): MemberDetailResult 
   })
   return {
     member: query.data ? toMemberAccount(query.data.member) : null,
+    profileImageUrl: query.data?.profileImageUrl ?? null,
+    bio: query.data?.bio ?? null,
     sanctions: (query.data?.sanctions ?? []).map(toSanctionEntry),
     isLoading: query.isLoading,
     isError: query.isError,
@@ -160,6 +166,15 @@ export function useSanctionMember() {
         ...body,
       })
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEY }),
+  })
+}
+
+/** 프로필 초기화. 제재와 같이 204 본문 없음이라 성공과 실패 모두 무효화 후 재조회로 반영한다. */
+export function useResetMemberProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: number) => resetAdminMemberProfile(userId),
     onSettled: () => queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEY }),
   })
 }

@@ -2,12 +2,35 @@
 // 돌아올 주소로 /login/complete만 받으므로, 메모리가 아니라 같은 출처 sessionStorage에 보관한다.
 // 접근이 막힌 환경(사파리 프라이빗 등)에서도 화면이 깨지지 않게 읽기와 쓰기를 모두 try/catch로 감싼다.
 
-/** follow만 켜기 요청으로 다시 보내고 block·mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다. */
-export type PendingActionKind = 'follow' | 'block' | 'mute' | 'open'
+/**
+ * follow, repost, save, like는 켜기 요청으로 다시 보내고 block, mute는 시트만 다시 연다. open은 돌아올 경로만 쓴다.
+ * compose는 대상 없는 글쓰기다(publicId는 빈 문자열). 돌아온 SNS 탭이 작성 화면을 다시 연다(SNS-02 A26).
+ * repost, save, like의 대상은 게시물 publicId다(SNS-03 design 6절 10번, SNS-04 design 6절 10번).
+ * report는 신고 시트만 다시 열고 자동으로 제출하지 않는다. 대상은 게시물이나 사용자 publicId다(SNS-07 A26).
+ * comment는 댓글 입력창을, commentBlock은 댓글 작성자의 차단 확인을, commentReport는 댓글 신고 시트를 다시 연다. publicId는
+ * 게시물이고 targetPublicId는 comment면 답글달기를 누른 댓글, commentBlock이면 댓글 작성자, commentReport면 신고할 댓글,
+ * commentLike면 좋아요를 누른 댓글이다(SNS-04 design 6절 10번, SNS-07 A26).
+ */
+export type PendingActionKind =
+  | 'follow'
+  | 'block'
+  | 'mute'
+  | 'open'
+  | 'compose'
+  | 'repost'
+  | 'save'
+  | 'report'
+  | 'like'
+  | 'comment'
+  | 'commentBlock'
+  | 'commentReport'
+  | 'commentLike'
 
 export interface PendingAction {
   kind: PendingActionKind
   publicId: string
+  /** 화면 안의 대상(댓글이나 댓글 작성자). 화면 키는 publicId다 */
+  targetPublicId?: string
   /** 로그인 뒤 돌아갈 같은 출처 경로(path + search) */
   returnTo: string
   createdAt: number
@@ -52,6 +75,7 @@ export function peekPendingAction(): PendingAction | null {
     if (
       typeof value.kind === 'string' &&
       typeof value.publicId === 'string' &&
+      (value.targetPublicId === undefined || typeof value.targetPublicId === 'string') &&
       isSafePath(value.returnTo) &&
       typeof value.createdAt === 'number' &&
       Date.now() - value.createdAt < TTL_MS
@@ -71,6 +95,13 @@ export function takePendingAction(publicId: string): PendingAction | null {
   if (action?.publicId !== publicId) return null
   clearPendingAction()
   return action
+}
+
+/** 대상 없는 글쓰기 대기 행동을 꺼내고 지운다. 글쓰기가 아니면 그대로 두고 false다. */
+export function takeComposeAction(): boolean {
+  if (peekPendingAction()?.kind !== 'compose') return false
+  clearPendingAction()
+  return true
 }
 
 /**

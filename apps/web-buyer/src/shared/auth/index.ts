@@ -19,6 +19,7 @@ export {
   clearPendingAction,
   peekPendingAction,
   resumeReturnPath,
+  takeComposeAction,
   takePendingAction,
 } from './pending-action'
 export type { PendingAction } from './pending-action'
