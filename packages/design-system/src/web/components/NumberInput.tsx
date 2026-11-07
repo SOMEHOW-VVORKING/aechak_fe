@@ -8,6 +8,8 @@ export interface NumberInputProps {
   step?: number
   size?: 'sm' | 'md'
   disabled?: boolean
+  /** 입력칸의 접근 가능한 이름. 한 화면에 여럿이면 각각 달라야 구분된다. */
+  'aria-label'?: string
 }
 
 export function NumberInput({
@@ -18,6 +20,7 @@ export function NumberInput({
   step = 1,
   size = 'md',
   disabled = false,
+  'aria-label': ariaLabel = '값',
 }: NumberInputProps) {
   const [localValue, setLocalValue] = useState(String(value))
 
@@ -77,7 +80,7 @@ export function NumberInput({
         onChange={handleInputChange}
         onBlur={handleBlur}
         disabled={disabled}
-        aria-label="값"
+        aria-label={ariaLabel}
         className={`${valWidth} ${valText} bg-transparent text-center text-text-primary tabular-nums outline-none disabled:cursor-not-allowed`}
       />
       <button

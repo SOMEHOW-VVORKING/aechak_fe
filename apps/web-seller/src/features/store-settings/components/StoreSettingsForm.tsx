@@ -32,8 +32,9 @@ export function StoreSettingsForm({ value, onChange, accountNumberMasked }: Stor
             className="max-w-[520px]"
           />
         </Field>
-        <Field label="대표자명" required>
+        <Field label="대표자명" htmlFor="store-representative-name" required>
           <Input
+            id="store-representative-name"
             value={value.representativeName}
             onChange={e => onChange({ representativeName: e.target.value })}
           />
@@ -43,14 +44,16 @@ export function StoreSettingsForm({ value, onChange, accountNumberMasked }: Stor
       {isBusiness && (
         <FormSection title="사업자 정보" step={2} stepStatus="done">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="상호명" required>
+            <Field label="상호명" htmlFor="store-business-name" required>
               <Input
+                id="store-business-name"
                 value={value.businessName}
                 onChange={e => onChange({ businessName: e.target.value })}
               />
             </Field>
-            <Field label="사업자등록번호" required>
+            <Field label="사업자등록번호" htmlFor="store-business-reg-no" required>
               <Input
+                id="store-business-reg-no"
                 value={value.businessRegNo}
                 onChange={e => onChange({ businessRegNo: e.target.value })}
                 placeholder="000-00-00000"
@@ -58,8 +61,9 @@ export function StoreSettingsForm({ value, onChange, accountNumberMasked }: Stor
               />
             </Field>
             {isCorporate && (
-              <Field label="법인등록번호" required>
+              <Field label="법인등록번호" htmlFor="store-corp-reg-no" required>
                 <Input
+                  id="store-corp-reg-no"
                   value={value.corpRegNo}
                   onChange={e => onChange({ corpRegNo: e.target.value })}
                   className="tabular-nums"
