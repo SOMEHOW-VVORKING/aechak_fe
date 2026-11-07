@@ -174,7 +174,8 @@ function recordSellerRequests(): string[] {
   return entries
 }
 
-const writesOnly = (entries: readonly string[]) => entries.filter(entry => !entry.startsWith('GET '))
+const writesOnly = (entries: readonly string[]) =>
+  entries.filter(entry => !entry.startsWith('GET '))
 
 /** 응답을 테스트가 붙잡고 있다가 놓는다 — 그 사이가 "요청이 떠 있는 동안"이다. */
 function gateSuspend() {
@@ -426,7 +427,10 @@ describe('/sellers', () => {
     open = await drawer()
     expect(open.getByRole('button', { name: '판매정지' })).toBeDisabled()
 
-    await user.type(open.getByRole('textbox', { name: '상세 사유' }), '동일 사유 경고를 세 번 보냈어요.')
+    await user.type(
+      open.getByRole('textbox', { name: '상세 사유' }),
+      '동일 사유 경고를 세 번 보냈어요.',
+    )
     open = await drawer()
     expect(open.getByRole('button', { name: '판매정지' })).toBeEnabled()
     // 버튼이 잠긴 동안 쓰기가 한 건도 나가지 않았다.
@@ -467,9 +471,7 @@ describe('/sellers', () => {
     await user.click(within(confirm).getByRole('button', { name: '정지 해제' }))
 
     expect(await screen.findByText('정지 해제 처리했어요.')).toBeInTheDocument()
-    expect(writesOnly(requests)).toEqual([
-      `POST ${ADMIN_SELLERS_URL}/2033/suspensions/release`,
-    ])
+    expect(writesOnly(requests)).toEqual([`POST ${ADMIN_SELLERS_URL}/2033/suspensions/release`])
     // 드로어가 들고 있던 현재 메모가 그대로 함께 간다(비어 있지 않을 때만 덮어쓰는 값이다).
     expect(lastAdminSellerWrite()?.body).toEqual({
       reasonDetail: '점검 결과 문제 없었어요.',
@@ -535,9 +537,7 @@ describe('/sellers', () => {
 
     // 드로어가 열려 있고, 재조회가 가져온 새 상태에 맞는 조치로 바뀐다.
     open = await drawer()
-    await waitFor(() =>
-      expect(open.getByRole('button', { name: '정지 해제' })).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(open.getByRole('button', { name: '정지 해제' })).toBeInTheDocument())
     expect(open.queryByRole('button', { name: '판매정지' })).toBeNull()
   })
 
@@ -578,7 +578,9 @@ describe('/sellers', () => {
     )
     renderAt('/sellers')
 
-    expect(await screen.findByText(/어드민 권한이 없어 셀러 목록을 볼 수 없어요/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/어드민 권한이 없어 셀러 목록을 볼 수 없어요/),
+    ).toBeInTheDocument()
     // 0곳을 그리면 "조건에 맞는 셀러가 없다"로 읽힌다 — 조회 실패는 0이 아니라 줄표다.
     expect(screen.getByText('조건에 맞는 셀러 —')).toBeInTheDocument()
     expect(screen.queryByText('조건에 맞는 셀러 0곳')).toBeNull()
@@ -642,8 +644,14 @@ describe('/sellers', () => {
     await user.click((await drawer()).getByRole('button', { name: '판매정지' }))
     const confirm = await screen.findByRole('dialog', { name: '판매를 정지할까요?' })
     await user.click(within(confirm).getByRole('button', { name: '판매정지' }))
-    // loading이면 확인 버튼의 접근명이 스피너(aria-hidden)뿐이라 빈 이름이 된다.
-    await waitFor(() => expect(within(confirm).getByRole('button', { name: '' })).toBeDisabled())
+    // loading이면 확인 버튼이 sr-only 문구를 남긴 채 잠긴다.
+    await waitFor(() =>
+      expect(within(confirm).getByRole('button', { name: '판매정지' })).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(within(confirm).getByRole('button', { name: '판매정지' })).toBeDisabled()
 
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: '판매를 정지할까요?' })).toBeInTheDocument()
