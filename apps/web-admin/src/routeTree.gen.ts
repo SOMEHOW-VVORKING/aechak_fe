@@ -22,6 +22,7 @@ import { Route as SellersIndexRouteImport } from './routes/sellers/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as SellersApplicationsRouteImport } from './routes/sellers/applications'
 import { Route as ProductsReviewRouteImport } from './routes/products/review'
+import { Route as ProductsCatalogRouteImport } from './routes/products/catalog'
 import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
 import { Route as OrdersMonitoringRouteImport } from './routes/orders/monitoring'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
@@ -91,6 +92,11 @@ const ProductsReviewRoute = ProductsReviewRouteImport.update({
   path: '/products/review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsCatalogRoute = ProductsCatalogRouteImport.update({
+  id: '/products/catalog',
+  path: '/products/catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsAiQueueRoute = ProductsAiQueueRouteImport.update({
   id: '/products/ai-queue',
   path: '/products/ai-queue',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login/': typeof LoginIndexRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login': typeof LoginIndexRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login/': typeof LoginIndexRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login/'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login/'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   LoginCompleteRoute: typeof LoginCompleteRoute
   OrdersMonitoringRoute: typeof OrdersMonitoringRoute
   ProductsAiQueueRoute: typeof ProductsAiQueueRoute
+  ProductsCatalogRoute: typeof ProductsCatalogRoute
   ProductsReviewRoute: typeof ProductsReviewRoute
   SellersApplicationsRoute: typeof SellersApplicationsRoute
   LoginIndexRoute: typeof LoginIndexRoute
@@ -331,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/catalog': {
+      id: '/products/catalog'
+      path: '/products/catalog'
+      fullPath: '/products/catalog'
+      preLoaderRoute: typeof ProductsCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/ai-queue': {
       id: '/products/ai-queue'
       path: '/products/ai-queue'
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginCompleteRoute: LoginCompleteRoute,
   OrdersMonitoringRoute: OrdersMonitoringRoute,
   ProductsAiQueueRoute: ProductsAiQueueRoute,
+  ProductsCatalogRoute: ProductsCatalogRoute,
   ProductsReviewRoute: ProductsReviewRoute,
   SellersApplicationsRoute: SellersApplicationsRoute,
   LoginIndexRoute: LoginIndexRoute,

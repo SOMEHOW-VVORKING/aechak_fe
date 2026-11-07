@@ -331,9 +331,11 @@ describe('어드민 대시보드 지표', () => {
 
   /**
    * '검수 대기 상품'의 진입점은 **둘**이다 — 지표 칸과 할 일 줄. 한쪽만 누르면 다른 쪽이
-   * 목데이터 화면(`/products/review`)을 가리키게 돌아가도 아무것도 깨지지 않는다(실측: 할 일
-   * 줄의 `to`만 그 경로로 되돌려도 이 파일 전체가 통과했다). 그 화면은 nav 입구가 없어
-   * (SCRUM-313) 대시보드가 거기로 가는 유일한 통로다.
+   * 상품 카탈로그 관리(`/products/catalog`, 옛 `/products/review`가 지금 보내는 곳)를 가리키게
+   * 돌아가도 아무것도 깨지지 않는다(실측: 할 일 줄의 `to`만 그 경로로 되돌려도 이 파일 전체가
+   * 통과했다). 그 화면도 2026-11-05에 실연동됐지만(SCRUM-363) **모수가 다르다** — 카탈로그는
+   * 전수 상품이고 이 숫자는 관리자 확인이 남은 행만 센 큐의 `totalCount`라, 거기로 보내면
+   * 운영자가 3건을 찾다가 수백 행을 뒤진다.
    */
   const INSPECTION_ENTRIES = [
     ['지표 칸', () => metricCard('검수 대기 상품')],
@@ -347,7 +349,7 @@ describe('어드민 대시보드 지표', () => {
       const { router } = renderDashboard()
 
       await waitFor(() => expect(metricCard('검수 대기 상품')).toHaveTextContent('3건'))
-      // 준비 중 화면(`/products/review`)으로 보내면 운영자가 예시 12행이 깔린 가짜 목록에 떨어진다.
+      // 카탈로그(`/products/catalog`)로 보내면 이 숫자와 모수가 다른 전수 목록에 떨어진다.
       await user.click(open())
 
       await waitFor(() => expect(router.state.location.pathname).toBe('/products/ai-queue'))
