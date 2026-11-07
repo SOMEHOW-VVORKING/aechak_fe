@@ -139,7 +139,16 @@ function OrdersRoute() {
   // 동기화하는 것은 이 화면의 범위가 아니다).
   const { status } = Route.useSearch()
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, segment: status })
-  const listQuery = useSellerOrders(toParams(filters))
+  // DatePicker의 min/max는 피커 UI만 묶는다 — 키보드로 직접 날짜를 쳐 넣으면 역전된 범위가 그대로
+  // 상태에 들어오고 BE가 400/90001로 거절한다(be SellerOrderSearchRequest.toQuery). 서버 문구는
+  // "입력한 내용을 다시 확인해 주세요"라 어느 칸이 문제인지 알려주지 않으므로 자리를 짚어 준다.
+  // ISO yyyy-MM-dd는 사전순이 곧 시간순이라 문자열 비교로 충분하다.
+  const dateRangeInverted =
+    filters.orderedFrom !== '' && filters.orderedTo !== '' && filters.orderedFrom > filters.orderedTo
+  // 역전된 범위는 보내지 않고 마지막으로 유효했던 조건의 목록을 둔다.
+  const [queryFilters, setQueryFilters] = useState<Filters>(filters)
+  if (!dateRangeInverted && queryFilters !== filters) setQueryFilters(filters)
+  const listQuery = useSellerOrders(toParams(dateRangeInverted ? queryFilters : filters))
   // `isPlaceholderData`는 "지금 보고 있는 data가 이전 키(이전 페이지·이전 필터)의 응답"이라는
   // 뜻이다. 처리 뒤 무효화나 포커스 복귀로 같은 키를 다시 받는 중에는 false다 — 그래서 이 값으로
   // 잠가도 처리 직후의 재조회까지 함께 잠기지 않는다(클레임·정산 화면과 같은 처리).
@@ -207,13 +216,6 @@ function OrdersRoute() {
       },
     )
   }
-
-  // DatePicker의 min/max는 피커 UI만 묶는다 — 키보드로 직접 날짜를 쳐 넣으면 역전된 범위가 그대로
-  // 상태에 들어오고 BE가 400/90001로 거절한다(be SellerOrderSearchRequest.toQuery). 서버 문구는
-  // "입력한 내용을 다시 확인해 주세요"라 어느 칸이 문제인지 알려주지 않으므로 자리를 짚어 준다.
-  // ISO yyyy-MM-dd는 사전순이 곧 시간순이라 문자열 비교로 충분하다.
-  const dateRangeInverted =
-    filters.orderedFrom !== '' && filters.orderedTo !== '' && filters.orderedFrom > filters.orderedTo
 
   const totalPages = data?.totalPages ?? 0
   // 재조회가 실패해도 keepPreviousData가 직전 페이지를 남긴다 — 그 상태를 안내 문구로 가른다.
