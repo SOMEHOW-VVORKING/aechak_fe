@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle } from 'lucide-react'
 import { Alert, Button, Drawer, Skeleton, Textarea, Timeline, type TimelineStep } from '@aechak/design-system/web'
-import type { InspectionProgressStep, SellerProductInspection } from '@aechak/api'
+import type { InspectionProgressStep, InspectionViolation, SellerProductInspection } from '@aechak/api'
+import { inspectionViolationCategoryLabel } from '@aechak/domain'
 import {
   APPEAL_REASON_MAX_LENGTH,
   canAppealInspection,
@@ -118,12 +120,16 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
             </Alert>
           )}
           {inspection.judgment === 'FLAG' ? (
-            <Alert variant={byAdmin ? 'warning' : 'error'} title="AI가 확인이 필요한 표현을 찾아 반려했어요">
-              <div className="flex flex-col gap-1">
-                {inspection.reasonSummary && <strong>{inspection.reasonSummary}</strong>}
-                {inspection.sellerNotice && <span>{inspection.sellerNotice}</span>}
-              </div>
-            </Alert>
+            <>
+              <Alert variant={byAdmin ? 'warning' : 'error'} title="AI가 확인이 필요한 표현을 찾아 반려했어요">
+                <div className="flex flex-col gap-1">
+                  {inspection.reasonSummary && <strong>{inspection.reasonSummary}</strong>}
+                  {inspection.sellerNotice && <span>{inspection.sellerNotice}</span>}
+                </div>
+              </Alert>
+              {/* BE 배포 전이나 되돌린 뒤의 응답에는 violations가 없을 수 있다 */}
+              <ViolationList violations={inspection.violations ?? []} />
+            </>
           ) : (
             // AI가 반려한 뒤 고친 내용을 판단하지 못한 경우 — 반려는 그대로 남는다.
             !byAdmin && (
@@ -144,6 +150,40 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
     case 'APPROVED':
       return <p className="text-body-sm text-text-secondary">검수를 통과했어요.</p>
   }
+}
+
+// 판정 실패 뒤에는 목록이 셀러가 이미 고친 문구를 가리키므로 FLAG 분기에서만 그린다.
+function ViolationList({ violations }: { violations: InspectionViolation[] }) {
+  if (violations.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="text-label font-medium text-text-secondary">수정 필요 항목</h3>
+      <ul className="flex flex-col gap-1.5">
+        {violations.map((violation, index) => (
+          <li key={index} className="flex items-start gap-2 text-body-sm text-text-secondary">
+            <AlertTriangle className="mt-0.5 size-3.5 flex-none text-warning-fg" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-text-primary">{inspectionViolationCategoryLabel(violation.category)}</p>
+              <dl>
+                {violation.quote && (
+                  <div className="flex gap-2">
+                    <dt className="flex-none text-text-tertiary">걸린 표현</dt>
+                    <dd className="min-w-0 break-words">{violation.quote}</dd>
+                  </div>
+                )}
+                {violation.suggestion && (
+                  <div className="flex gap-2">
+                    <dt className="flex-none text-text-tertiary">수정 제안</dt>
+                    <dd className="min-w-0 break-words">{violation.suggestion}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 /**

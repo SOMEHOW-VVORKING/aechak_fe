@@ -72,6 +72,25 @@ export function cartLineKey(productId: string, option: string): string {
   return `${productId}::${option}`
 }
 
+// 상품 검수 위반 분류의 화면 이름. 셀러와 어드민이 같은 이름을 쓰는데 앱끼리는 import할 수 없어 도메인에 둔다.
+// 분류는 서버가 주는 문자열이라 객체 조회면 `constructor` 같은 값이 프로토타입에 걸린다. 그래서 Map으로 찾는다.
+const INSPECTION_VIOLATION_CATEGORY_LABELS = new Map([
+  ['MEDICAL_CLAIM', '질병 치료 효능'],
+  ['EFFICACY_OVERCLAIM', '효능 과장'],
+  ['FALSE_CLAIM', '허위 표시'],
+  ['DISPARAGEMENT', '비방'],
+  ['BANNED_INGREDIENT', '금지 성분'],
+  ['CONTACT_INFO', '연락처 노출'],
+  ['OFF_PLATFORM', '외부 거래 유도'],
+  ['SPAM', '스팸성 문구'],
+  ['ABUSE', '욕설'],
+  ['PII', '개인정보'],
+])
+
+export function inspectionViolationCategoryLabel(category: string): string {
+  return INSPECTION_VIOLATION_CATEGORY_LABELS.get(category) ?? '기타'
+}
+
 // 구매자 배송지 주소록 항목(b10-st-4). 주문서(checkout)와 주소록 화면이 공유한다.
 export interface DeliveryAddress {
   id: string
