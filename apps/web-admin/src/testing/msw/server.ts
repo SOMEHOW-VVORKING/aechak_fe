@@ -8,6 +8,7 @@ import { claimHandlers } from './claims.handlers'
 import { reviewHandlers } from './reviews.handlers'
 import { reportHandlers } from './reports.handlers'
 import { inspectionMonitorHandlers } from './inspection-monitor.handlers'
+import { inspectionMetricsHandlers } from './inspection-metrics.handlers'
 // 검토 큐 목록 핸들러가 쓰는 경로 상수도 그 모듈이 소유한다(승인·반려가 거기서 상품 상태를 바꾼다).
 import { ADMIN_PRODUCT_INSPECTIONS_URL, productHandlers } from './products.handlers'
 import { sellerHandlers } from './sellers.handlers'
@@ -102,6 +103,13 @@ export {
   type AdminInspectionPerspectiveWire,
   type AdminInspectionWire,
 } from './inspection-monitor.handlers'
+export {
+  ADMIN_INSPECTION_METRICS_URL,
+  makeAdminInspectionMetricsWire,
+  makeLegacyAdminInspectionMetricsWire,
+  seedAdminInspectionMetrics,
+  type AdminInspectionMetricsWire,
+} from './inspection-metrics.handlers'
 export {
   ADMIN_REVIEWS_URL,
   ADMIN_REVIEW_BLIND_URL,
@@ -1305,5 +1313,8 @@ export const handlers = [
   // (핸들러가 없으면 onUnhandledRequest:'error'로 깨진다). 위 검수 **큐** 핸들러와 다른 경로다 —
   // `/admin/product-inspections`는 관리자 확인이 남은 큐, 이쪽은 검수 건 자체의 진행이다.
   ...inspectionMonitorHandlers,
+  // 검수 집계는 시드가 없으면 403으로 답한다(`seedAdminInspectionMetrics(null)`과 같다) —
+  // `/products/ai-metrics`를 여는 테스트는 먼저 시드한다.
+  ...inspectionMetricsHandlers,
 ]
 export const server = setupServer(...handlers)

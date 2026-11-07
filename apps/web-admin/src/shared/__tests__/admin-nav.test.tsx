@@ -13,6 +13,8 @@ import {
   seedAdminClaims,
   seedAdminInquiries,
   seedAdminInspections,
+  seedAdminInspectionMetrics,
+  makeAdminInspectionMetricsWire,
   seedAdminNotices,
   seedAdminOrders,
   seedAdminProductInspections,
@@ -60,7 +62,8 @@ const normalizePath = (pathname: string) =>
  * 경로를 1건짜리 조회로 불러 `totalCount`만 모아 칸과 할 일 줄을 전부 실 집계로 채웠다(칸별
  * 계약은 `features/dashboard/__tests__`가 본다). 같은 날 BE가 없는 '채팅 CS 모니터링'은 nav와
  * 라우트째 걷었다(SCRUM-377). 또 `/admin/inspections` 둘(목록·상세)이 확인돼 'AI 검수
- * 모니터링'이 실연동으로 새로 들어왔다(SCRUM-367). 그래서 nav 15항목 전부가 실연동이다.
+ * 모니터링'이 실연동으로 새로 들어왔다(SCRUM-367). `/admin/inspection-metrics` 하나로 'AI 검수
+ * 지표'도 들어왔다(SCRUM-279). 그래서 nav 16항목 전부가 실연동이다.
  */
 const LIVE_LABELS = [
   '셀러 입점 심사',
@@ -70,6 +73,7 @@ const LIVE_LABELS = [
   '상품 카탈로그 관리',
   'AI 검수 큐',
   'AI 검수 모니터링',
+  'AI 검수 지표',
   '주문 배송 모니터링',
   '서비스 문의 관리',
   '취소/반품/교환',
@@ -94,7 +98,7 @@ const PENDING_TAG = '준비 중'
 /**
  * nav 항목이 **어느 화면으로 가는지**. 주소로 직접 열어 보는 단언은 라벨과 `key`가 어긋난 것을
  * 잡지 못한다 — 라벨은 그대로 두고 `key`만 다른 경로로 바꿔도 통과하므로, 실제로 눌러서 도착지를
- * 확인한다. 15항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
+ * 확인한다. 16항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
  * 화면에 떨어진 것이다.
  */
 const NAV_DESTINATIONS = [
@@ -105,6 +109,7 @@ const NAV_DESTINATIONS = [
   ['상품 카탈로그 관리', '/products/catalog'],
   ['AI 검수 큐', '/products/ai-queue'],
   ['AI 검수 모니터링', '/inspections/monitoring'],
+  ['AI 검수 지표', '/products/ai-metrics'],
   ['신고 제재 관리', '/reports'],
   ['서비스 문의 관리', '/inquiries'],
   ['주문 배송 모니터링', '/orders/monitoring'],
@@ -147,9 +152,11 @@ describe('어드민 nav', () => {
     // 시드하면 진행 중인 건이 없어 폴링이 느린 주기(30초)로 떨어져, 이 파일의 테스트가 도는 동안
     // 같은 경로를 다시 부르지 않는다.
     seedAdminInspections()
+    // 검수 지표는 시드가 없으면 403으로 답한다 — `/products/ai-metrics`가 열리면 조회가 나간다.
+    seedAdminInspectionMetrics(makeAdminInspectionMetricsWire())
   })
 
-  it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
+  it('[AC-ADMIN-NAV-001] 5그룹 16항목이 이름으로 모두 렌더된다', async () => {
     renderAt('/')
 
     for (const label of LIVE_LABELS) {
@@ -165,7 +172,7 @@ describe('어드민 nav', () => {
   /**
    * 차단 이전 nav의 그룹 배치 + 그 뒤 생긴 `/admins`·`/products/catalog`·
    * `/inspections/monitoring`. 머리글과 항목을 각각 전역에서 찾기만 하면 **항목이 다른 그룹으로
-   * 옮겨가도 통과한다** — 머리글 5개와 항목 15개는 그대로이기 때문이다. 운영자가 메뉴에서 읽는
+   * 옮겨가도 통과한다** — 머리글 5개와 항목 16개는 그대로이기 때문이다. 운영자가 메뉴에서 읽는
    * 정보의 절반이 "무엇이 무엇과 묶여 있나"라
    * 소속까지 고정한다.
    */
@@ -174,10 +181,10 @@ describe('어드민 nav', () => {
     // 셀러·회원 관리와 같은 결이다(SCRUM-363). '검수' 그룹에 두면 'AI 검수 큐'와 나란히 서서
     // "검수는 어느 쪽에서 하나"가 되돌아온다 — 입구를 내리게 한 사고(SCRUM-313)의 원인이 그것이다.
     ['운영', ['대시보드', '셀러 입점 심사', '셀러 관리', '일반 회원 관리', '상품 카탈로그 관리']],
-    // 큐(운영자가 처리할 것)와 모니터링(지금 돌고 있는 것 전부) 둘이다 — 모수가 달라 나란히
-    // 서도 "검수는 어느 쪽에서 하나"가 되돌아오지 않는다(SCRUM-367). 아래 항목 수 단언이
-    // 이름만 닮은 세 번째 항목이 섞여 드는 것을 잡는다.
-    ['검수', ['AI 검수 큐', 'AI 검수 모니터링']],
+    // 큐(운영자가 처리할 것)·모니터링(지금 돌고 있는 것 전부)·지표(끝난 건의 집계) 셋이다 —
+    // 모수가 달라 나란히 서도 "검수는 어느 쪽에서 하나"가 되돌아오지 않는다(SCRUM-367·279).
+    // 아래 항목 수 단언이 이름만 닮은 네 번째 항목이 섞여 드는 것을 잡는다.
+    ['검수', ['AI 검수 큐', 'AI 검수 모니터링', 'AI 검수 지표']],
     ['신고 / 문의', ['신고 제재 관리', '서비스 문의 관리']],
     // '채팅 CS 모니터링'을 내려 셋뿐이다(2026-11-07, `__root.tsx` nav 주석에 사유) — 아래 항목
     // 수 단언이 그 항목이 되올라오는 것을 잡는다.
@@ -185,7 +192,7 @@ describe('어드민 nav', () => {
     ['운영 관리', ['관리자 관리', '알림/공지 관리', '어드민 액션 로그']],
   ] as const satisfies readonly (readonly [string, readonly string[]])[]
 
-  it('[AC-ADMIN-NAV-008] 15항목이 정해진 5그룹에 소속되어 묶인다', async () => {
+  it('[AC-ADMIN-NAV-008] 16항목이 정해진 5그룹에 소속되어 묶인다', async () => {
     renderAt('/')
 
     expect(await screen.findByRole('button', { name: '관리자 관리' })).toBeInTheDocument()
@@ -259,7 +266,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 항목이 남아 있지 않으니 nav 15항목 전부의 목적지에 띠가 **없어야** 한다.
+   * 꼬리표가 붙은 항목이 남아 있지 않으니 nav 16항목 전부의 목적지에 띠가 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).
@@ -277,7 +284,7 @@ describe('어드민 nav', () => {
    * 실연동 작업은 항목을 한 배열에서 다른 배열로 옮기는 일이라, **옮기다 흘리는 것**이 이 파일의
    * 실제 실패 모양이다. 그래서 두 배열이 `NAV_DESTINATIONS`를 빠짐없이, 겹치지 않게 덮는지
    * 여기서 고정한다. `NAV_DESTINATIONS` 자체는 AC-ADMIN-NAV-008이 렌더된 nav와 맞춰 두므로
-   * (그룹마다 항목 수까지 센다) 이 둘을 맞대면 nav에 올라온 15항목 전부가 분류를 받는다.
+   * (그룹마다 항목 수까지 센다) 이 둘을 맞대면 nav에 올라온 16항목 전부가 분류를 받는다.
    */
   it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동으로 분류된다', () => {
     const classified = [...LIVE_LABELS]
