@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { HttpResponse, http } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 import {
   ADMIN_APPLICATIONS_URL,
@@ -122,7 +123,10 @@ const forbidden = () =>
   )
 
 describe('/audit-log', () => {
+  afterEach(() => setAccessToken(null))
   beforeEach(() => {
+    // 로그인한 운영자 상태. 토큰이 없으면 __root가 refresh를 먼저 보내 요청 기록에 섞인다.
+    setAccessToken('admin-access')
     seedAdminAuditLogs([입점승인, 회원제재, 권한부여실패, 클레임개입], RECORDING_SINCE)
   })
 

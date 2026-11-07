@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { getAccessToken, restoreSession } from '@aechak/api'
 import { createRootRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
@@ -267,7 +268,7 @@ function AdminShell() {
   // 발사해 401/403을 만들지 않도록, 훅보다 **먼저** 돌려보낸다(조건을 훅 아래로 내리면 안 된다).
   // 로그인 플로우 밖에서 SideNav-less 라우트가 또 생기면 조건을 더하지 말고 pathless layout으로
   // 전환할 것(web-seller AppShell과 같은 지시).
-  if (pathname === '/login' || pathname === '/login/' || pathname.startsWith('/login/')) {
+  if (isLoginFlow(pathname)) {
     return <Outlet />
   }
   return <AdminNavShell pathname={pathname} />
@@ -307,6 +308,21 @@ function AdminNavShell({ pathname }: { pathname: string }) {
   )
 }
 
+const isLoginFlow = (pathname: string) =>
+  pathname === '/login' || pathname === '/login/' || pathname.startsWith('/login/')
+
 export const Route = createRootRoute({
+  /*
+   * 새로고침 직후에는 메모리에 access가 없다. 화면이 먼저 뜨면 첫 `/admin/**` 요청들이 토큰 없이
+   * 나가 401을 받고, refresh 뒤 재시도가 끝날 때까지 대시보드가 실패 표기('—')로 그려진다.
+   * 그래서 화면보다 먼저 refresh를 한 번 한다(구매자·셀러 __root와 같은 자리).
+   *
+   * 실패는 여기서 판정하지 않는다. 세션이 없으면 첫 요청의 401이 공유 클라이언트를 거쳐
+   * setupAuthExpiredRedirect로 로그인에 보낸다. 로그인 흐름은 자기 refresh·로그인을 하므로 건너뛴다.
+   */
+  beforeLoad: async ({ location }) => {
+    if (isLoginFlow(location.pathname) || getAccessToken()) return
+    await restoreSession().catch(() => undefined)
+  },
   component: AdminShell,
 })
