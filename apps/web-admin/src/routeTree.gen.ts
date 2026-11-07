@@ -15,7 +15,6 @@ import { Route as NoticesRouteImport } from './routes/notices'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as InquiriesRouteImport } from './routes/inquiries'
 import { Route as ClaimsRouteImport } from './routes/claims'
-import { Route as ChatMonitoringRouteImport } from './routes/chat-monitoring'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AdminsRouteImport } from './routes/admins'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,9 +22,11 @@ import { Route as SellersIndexRouteImport } from './routes/sellers/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as SellersApplicationsRouteImport } from './routes/sellers/applications'
 import { Route as ProductsReviewRouteImport } from './routes/products/review'
+import { Route as ProductsCatalogRouteImport } from './routes/products/catalog'
 import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
 import { Route as OrdersMonitoringRouteImport } from './routes/orders/monitoring'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
+import { Route as InspectionsMonitoringRouteImport } from './routes/inspections/monitoring'
 
 const ReviewsRoute = ReviewsRouteImport.update({
   id: '/reviews',
@@ -55,11 +56,6 @@ const InquiriesRoute = InquiriesRouteImport.update({
 const ClaimsRoute = ClaimsRouteImport.update({
   id: '/claims',
   path: '/claims',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatMonitoringRoute = ChatMonitoringRouteImport.update({
-  id: '/chat-monitoring',
-  path: '/chat-monitoring',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditLogRoute = AuditLogRouteImport.update({
@@ -97,6 +93,11 @@ const ProductsReviewRoute = ProductsReviewRouteImport.update({
   path: '/products/review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsCatalogRoute = ProductsCatalogRouteImport.update({
+  id: '/products/catalog',
+  path: '/products/catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsAiQueueRoute = ProductsAiQueueRouteImport.update({
   id: '/products/ai-queue',
   path: '/products/ai-queue',
@@ -112,21 +113,27 @@ const LoginCompleteRoute = LoginCompleteRouteImport.update({
   path: '/login/complete',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InspectionsMonitoringRoute = InspectionsMonitoringRouteImport.update({
+  id: '/inspections/monitoring',
+  path: '/inspections/monitoring',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login/': typeof LoginIndexRoute
@@ -136,16 +143,17 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login': typeof LoginIndexRoute
@@ -156,16 +164,17 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
+  '/products/catalog': typeof ProductsCatalogRoute
   '/products/review': typeof ProductsReviewRoute
   '/sellers/applications': typeof SellersApplicationsRoute
   '/login/': typeof LoginIndexRoute
@@ -177,16 +186,17 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login/'
@@ -196,16 +206,17 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login'
@@ -215,16 +226,17 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
+    | '/products/catalog'
     | '/products/review'
     | '/sellers/applications'
     | '/login/'
@@ -235,16 +247,17 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminsRoute: typeof AdminsRoute
   AuditLogRoute: typeof AuditLogRoute
-  ChatMonitoringRoute: typeof ChatMonitoringRoute
   ClaimsRoute: typeof ClaimsRoute
   InquiriesRoute: typeof InquiriesRoute
   MembersRoute: typeof MembersRoute
   NoticesRoute: typeof NoticesRoute
   ReportsRoute: typeof ReportsRoute
   ReviewsRoute: typeof ReviewsRoute
+  InspectionsMonitoringRoute: typeof InspectionsMonitoringRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   OrdersMonitoringRoute: typeof OrdersMonitoringRoute
   ProductsAiQueueRoute: typeof ProductsAiQueueRoute
+  ProductsCatalogRoute: typeof ProductsCatalogRoute
   ProductsReviewRoute: typeof ProductsReviewRoute
   SellersApplicationsRoute: typeof SellersApplicationsRoute
   LoginIndexRoute: typeof LoginIndexRoute
@@ -293,13 +306,6 @@ declare module '@tanstack/react-router' {
       path: '/claims'
       fullPath: '/claims'
       preLoaderRoute: typeof ClaimsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chat-monitoring': {
-      id: '/chat-monitoring'
-      path: '/chat-monitoring'
-      fullPath: '/chat-monitoring'
-      preLoaderRoute: typeof ChatMonitoringRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audit-log': {
@@ -351,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/catalog': {
+      id: '/products/catalog'
+      path: '/products/catalog'
+      fullPath: '/products/catalog'
+      preLoaderRoute: typeof ProductsCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/ai-queue': {
       id: '/products/ai-queue'
       path: '/products/ai-queue'
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inspections/monitoring': {
+      id: '/inspections/monitoring'
+      path: '/inspections/monitoring'
+      fullPath: '/inspections/monitoring'
+      preLoaderRoute: typeof InspectionsMonitoringRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -379,16 +399,17 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminsRoute: AdminsRoute,
   AuditLogRoute: AuditLogRoute,
-  ChatMonitoringRoute: ChatMonitoringRoute,
   ClaimsRoute: ClaimsRoute,
   InquiriesRoute: InquiriesRoute,
   MembersRoute: MembersRoute,
   NoticesRoute: NoticesRoute,
   ReportsRoute: ReportsRoute,
   ReviewsRoute: ReviewsRoute,
+  InspectionsMonitoringRoute: InspectionsMonitoringRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   OrdersMonitoringRoute: OrdersMonitoringRoute,
   ProductsAiQueueRoute: ProductsAiQueueRoute,
+  ProductsCatalogRoute: ProductsCatalogRoute,
   ProductsReviewRoute: ProductsReviewRoute,
   SellersApplicationsRoute: SellersApplicationsRoute,
   LoginIndexRoute: LoginIndexRoute,

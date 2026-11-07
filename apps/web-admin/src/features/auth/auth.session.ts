@@ -12,9 +12,9 @@ import { axiosInstance, getApiBaseURL, setAccessToken, setOnAuthExpired } from '
 //    `/admin/**` 호출이 403 errorCode 20011이 되므로, "로그인은 됐지만 권한이 없다"를 화면이 구분해
 //    보여 줘야 한다(features/admins의 에러 매핑).
 
-export type SocialProvider = 'kakao' | 'google' | 'apple'
+export type SocialProvider = 'kakao'
 
-/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 구글·애플은 서버 미지원이라 버튼 비활성. */
+/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 로그인 수단은 카카오 하나다. */
 export const WEB_LOGIN_PROVIDERS: ReadonlySet<SocialProvider> = new Set<SocialProvider>(['kakao'])
 
 export function socialLoginRedirectUrl(provider: SocialProvider, returnUrl: string): string {
