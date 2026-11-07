@@ -22,33 +22,34 @@ export type AuditResult = AdminAuditResult
  *
  * 열에는 서버 `actionLabel`을 그대로 쓴다 — FE 표로 덮으면 서버가 열거를 늘린 날 빈 칸이 되거나
  * 틀린 한글이 찍힌다. 이 표가 있어야 하는 이유는 **필터 옵션**이다: 옵션은 데이터가 오기 전에
- * 존재해야 해서 서버 라벨로 만들 수 없다. `satisfies`로 적어 두면 서버가 값을 늘렸을 때
+ * 존재해야 해서 서버 라벨로 만들 수 없다. 글자는 BE `AdminAuditAction`의 라벨과 같게 둔다. 다르면
+ * 운영자가 행에서 본 이름으로 필터를 찾지 못한다. `satisfies`로 적어 두면 서버가 값을 늘렸을 때
  * `pnpm openapi:generate` 결과가 타입 오류를 내 옵션에서 빠진 것이 그 자리에서 드러난다.
  */
 export const AUDIT_ACTION_LABELS = {
   SELLER_APPLICATION_APPROVED: '셀러 입점 승인',
-  SELLER_APPLICATION_REJECTED: '셀러 입점 반려',
+  SELLER_APPLICATION_REJECTED: '셀러 입점 거부',
   SELLER_SUSPENDED: '셀러 판매정지',
   SELLER_SUSPENSION_RELEASED: '셀러 판매정지 해제',
   SELLER_MEMO_UPDATED: '셀러 내부 메모 수정',
   ADMIN_PROMOTED: '관리자 권한 부여',
   ADMIN_DEMOTED: '관리자 권한 회수',
-  PRODUCT_INSPECTION_APPROVED: '상품 검수 통과',
+  PRODUCT_INSPECTION_APPROVED: '상품 검수 승인',
   PRODUCT_INSPECTION_REJECTED: '상품 검수 반려',
   PRODUCT_SALE_SUSPENDED: '상품 판매중지',
   PRODUCT_SALE_RESUMED: '상품 판매 재개',
   CLAIM_INTERVENED: '클레임 개입',
-  MEMBER_SANCTIONED: '회원 이용 제한',
-  MEMBER_SANCTION_RELEASED: '회원 이용 제한 해제',
+  MEMBER_SANCTIONED: '회원 제재',
+  MEMBER_SANCTION_RELEASED: '회원 제재 해제',
   MEMBER_PROFILE_RESET: '회원 프로필 초기화',
-  INQUIRY_ANSWERED: '문의 답변',
+  INQUIRY_ANSWERED: '서비스 문의 답변',
   REVIEW_BLINDED: '리뷰 블라인드',
   REVIEW_UNBLINDED: '리뷰 블라인드 해제',
   REVIEW_DELETED: '리뷰 삭제',
-  ORDER_DISPATCH_NUDGED: '발송 독촉',
-  NOTICE_UPDATED: '공지 수정',
-  NOTICE_PUBLISHED: '공지 게시',
-  NOTICE_UNPUBLISHED: '공지 게시 중단',
+  ORDER_DISPATCH_NUDGED: '셀러 발송 독촉',
+  NOTICE_UPDATED: '서비스 공지 수정',
+  NOTICE_PUBLISHED: '서비스 공지 게시',
+  NOTICE_UNPUBLISHED: '서비스 공지 내림',
   REPORT_DECIDED: '신고 처리',
 } satisfies Record<AuditAction, string>
 

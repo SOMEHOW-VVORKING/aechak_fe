@@ -52,7 +52,7 @@ const 회원제재 = makeAdminAuditLogWire({
   actedAt: '2026-10-26T11:18:02',
   actorNickname: '박CS',
   action: 'MEMBER_SANCTIONED',
-  actionLabel: '회원 이용 제한',
+  actionLabel: '회원 제재',
   targetType: 'MEMBER',
   targetTypeLabel: '회원',
   targetId: '19023',
@@ -194,7 +194,7 @@ describe('/audit-log', () => {
     await screen.findByText('조건에 맞는 로그 1건')
     await user.selectOptions(
       screen.getAllByRole('combobox')[1]!,
-      screen.getByRole('option', { name: '회원 이용 제한' }),
+      screen.getByRole('option', { name: '회원 제재' }),
     )
     await screen.findByText('조건에 맞는 로그 1건')
     await user.selectOptions(
