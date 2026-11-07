@@ -458,7 +458,7 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     await user.click(screen.getByRole('button', { name: '이의 제기' }))
 
     expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
-    expect(screen.getByText('관리자가 다시 확인하고 있어요')).toBeInTheDocument()
+    expect(screen.getByText('관리자가 이의를 확인하고 있어요')).toBeInTheDocument()
     expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
   })
 
@@ -606,5 +606,56 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
 
     expect(await screen.findByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).toBeInTheDocument()
     expect(screen.queryByText('검수 단계')).not.toBeInTheDocument()
+  })
+
+  // ─── 문구와 단계의 일치 (SCRUM-377) ─────────────────────────────────────────
+
+  it('[AC-SPRD-120] 규칙 검사에서 걸린 반려는 AI가 반려했다고 말하지 않는다', async () => {
+    serveInspection(
+      inspectionWire({
+        stages: [
+          { stage: 'RULE', outcome: 'VIOLATION', detail: null },
+          { stage: 'TRIAGE', outcome: 'UNCHECKED', detail: '이 단계는 돌지 않았어요' },
+          { stage: 'MODEL', outcome: 'UNCHECKED', detail: '이 단계는 돌지 않았어요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('자동 규칙 검사에서 걸려 반려했어요')).toBeInTheDocument()
+    expect(screen.queryByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-121] 상세 검수에서 걸린 반려는 AI 반려 문구를 유지한다', async () => {
+    serveInspection(inspectionWire({ stages: STAGES }))
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-122] 이의만 접수된 관리자 확인 단계는 고친 내용이 통과했다고 말하지 않는다', async () => {
+    serveInspection(
+      inspectionWire({
+        inspectionStatus: 'APPROVED',
+        progressStep: 'ADMIN_REVIEWING',
+        appealedAt: '2026-11-07T22:02:14',
+        appealReason: '대량 구매 안내 문구였어요.',
+        stages: [
+          { stage: 'RULE', outcome: 'VIOLATION', detail: null },
+          { stage: 'TRIAGE', outcome: 'UNCHECKED', detail: '이 단계는 돌지 않았어요' },
+          { stage: 'MODEL', outcome: 'UNCHECKED', detail: '이 단계는 돌지 않았어요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('관리자가 이의를 확인하고 있어요')).toBeInTheDocument()
+    expect(screen.queryByText(/고친 내용이 AI 검수를 통과했어요/)).not.toBeInTheDocument()
   })
 })

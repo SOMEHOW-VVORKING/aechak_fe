@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 
 interface FieldProps {
   label: string
+  /** 자식 입력의 id. 주면 라벨을 `<label for>`로 그려 입력에 접근 가능한 이름을 붙인다. */
+  htmlFor?: string
   required?: boolean
   /** 라벨 오른쪽 끝에 두는 보조 컨트롤(예: 출고지와 동일 체크박스). */
   trailing?: ReactNode
@@ -10,9 +12,10 @@ interface FieldProps {
 
 // DS Input의 label 슬롯과 같은 모양(gap-1.5, text-label)인데 필수 별표나 라벨 옆 컨트롤 때문에
 // label prop을 못 쓰는 자리(SegmentedControl/NumberInput/칩 입력 등)에 쓴다.
-export function Field({ label, required = false, trailing, children }: FieldProps) {
+export function Field({ label, htmlFor, required = false, trailing, children }: FieldProps) {
+  const Tag = htmlFor ? 'label' : 'span'
   const text = (
-    <span className="text-label font-medium text-text-primary">
+    <Tag htmlFor={htmlFor} className="text-label font-medium text-text-primary">
       {required ? (
         <>
           {label} <span className="text-error-fg">*</span>
@@ -20,7 +23,7 @@ export function Field({ label, required = false, trailing, children }: FieldProp
       ) : (
         label
       )}
-    </span>
+    </Tag>
   )
   return (
     <div className="flex flex-col gap-1.5">

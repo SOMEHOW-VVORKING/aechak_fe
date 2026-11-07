@@ -117,7 +117,12 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
     case 'AI_REVIEWING':
       return <p className="text-body-sm text-text-secondary">AI가 상품 내용을 검수하고 있어요. 보통 1분 안에 끝나요.</p>
     case 'ADMIN_REVIEWING':
-      return (
+      // 서버는 이의를 접수해도 이 단계를 준다. 그때는 고친 내용이 없으니 통과 문구를 쓰지 않는다.
+      return inspection.appealedAt != null ? (
+        <Alert variant="info" title="관리자가 이의를 확인하고 있어요">
+          이의를 접수했어요. 관리자가 확인하면 결과를 알려 드려요.
+        </Alert>
+      ) : (
         <Alert variant="info" title="관리자가 다시 확인하고 있어요">
           고친 내용이 AI 검수를 통과했어요. 관리자가 확인하면 다시 노출돼요.
         </Alert>
@@ -133,7 +138,7 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
           )}
           {inspection.judgment === 'FLAG' ? (
             <>
-              <Alert variant={byAdmin ? 'warning' : 'error'} title="AI가 확인이 필요한 표현을 찾아 반려했어요">
+              <Alert variant={byAdmin ? 'warning' : 'error'} title={flagTitle(inspection.stages)}>
                 <div className="flex flex-col gap-1">
                   {inspection.reasonSummary && <strong>{inspection.reasonSummary}</strong>}
                   {inspection.sellerNotice && <span>{inspection.sellerNotice}</span>}
@@ -162,6 +167,12 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
     case 'APPROVED':
       return <p className="text-body-sm text-text-secondary">검수를 통과했어요.</p>
   }
+}
+
+/** 규칙 검사에서 걸렸으면 AI가 돌지 않았으므로 단계 줄과 같은 말을 쓴다. */
+function flagTitle(stages: SellerProductInspection['stages']): string {
+  const ruleHit = stages?.some(s => s.stage === 'RULE' && s.outcome === 'VIOLATION') ?? false
+  return ruleHit ? '자동 규칙 검사에서 걸려 반려했어요' : 'AI가 확인이 필요한 표현을 찾아 반려했어요'
 }
 
 /**

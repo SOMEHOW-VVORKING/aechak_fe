@@ -296,9 +296,9 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
     await waitFor(() => expect(originRoad()).toHaveValue('서울 강남구 테헤란로 1'))
 
     // 배송비만 고쳐 저장해도 출고지가 옛 값으로 되돌아가지 않는다.
-    const amounts = screen.getAllByRole('textbox', { name: '값' })
-    await user.clear(amounts[0]!)
-    await user.type(amounts[0]!, '4000')
+    const baseFee = screen.getByRole('textbox', { name: '기본 배송비' })
+    await user.clear(baseFee)
+    await user.type(baseFee, '4000')
     await user.click(screen.getByRole('button', { name: '저장' }))
 
     await screen.findByText('저장했어요.')
@@ -334,15 +334,30 @@ describe('/shipping-policy (실서버 계약 — MSW)', () => {
     const user = userEvent.setup()
     renderAt('/shipping-policy')
 
-    // 금액 스테퍼 입력칸은 DOM 순서가 화면 순서다 — 첫 칸이 기본 배송비다.
-    const amounts = await screen.findAllByRole('textbox', { name: '값' })
-    await user.clear(amounts[0]!)
-    await user.type(amounts[0]!, '3000.5')
+    const baseFee = await screen.findByRole('textbox', { name: '기본 배송비' })
+    await user.clear(baseFee)
+    await user.type(baseFee, '3000.5')
     await user.click(screen.getByRole('button', { name: '저장' }))
 
     // 소수를 그대로 보내면 서버 필드가 Long이라 10005가 아니라 역직렬화 400/90001로 떨어지고
     // (MSW 핸들러가 그 분기를 재현한다) 저장 성공 토스트가 뜨지 않는다.
     await screen.findByText('저장했어요.')
     expect(currentShippingPolicy().baseShippingFee).toBe(3001)
+  })
+
+  it('[AC-SHIP-ROUTE-017] 금액 칸마다 자기 라벨을 이름으로 갖는다', async () => {
+    renderAt('/shipping-policy')
+
+    for (const name of [
+      '기본 배송비',
+      '무료배송 기준 금액',
+      '제주 추가 배송비',
+      '도서산간 추가 배송비',
+      '반품 배송비',
+      '교환 배송비 (왕복)',
+    ]) {
+      expect(await screen.findByRole('textbox', { name })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('textbox', { name: '값' })).not.toBeInTheDocument()
   })
 })

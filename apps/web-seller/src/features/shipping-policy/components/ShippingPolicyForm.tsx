@@ -50,6 +50,7 @@ function MoneyField({
           max={max}
           step={500}
           disabled={disabled}
+          aria-label={label}
         />
         <span className="text-body-sm text-text-tertiary">원</span>
       </div>
@@ -165,6 +166,7 @@ export function ShippingPolicyForm({ value, onChange, disabled = false }: Shippi
                 max={MAX_FREE_SHIPPING_THRESHOLD}
                 step={1000}
                 disabled={disabled || !value.freeShipping}
+                aria-label="무료배송 기준 금액"
               />
               <span className="text-body-sm text-text-tertiary">원</span>
             </div>

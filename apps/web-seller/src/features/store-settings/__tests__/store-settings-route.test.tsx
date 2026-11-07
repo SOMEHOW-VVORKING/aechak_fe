@@ -70,6 +70,17 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(saved?.businessName).toBeNull()
   })
 
+  it('[AC-STORE-ROUTE-024] 대표자명 칸은 라벨을 이름으로 가져 라벨로 찾아 입력할 수 있다', async () => {
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.type(await screen.findByRole('textbox', { name: /^대표자명/ }), '정지은')
+    await user.click(screen.getByRole('button', { name: '임시저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentSellerApplication()?.representativeName).toBe('정지은')
+  })
+
   it('[AC-STORE-ROUTE-003] 반려 상태는 사유를 보여주고, 재제출은 저장(자동 재개) → 제출 체인으로 SUBMITTED가 된다', async () => {
     seedSellerApplication(
       makeApplicationWire({

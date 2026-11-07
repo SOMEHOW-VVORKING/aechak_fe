@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { delay, http, HttpResponse } from 'msw'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, onTestFinished } from 'vitest'
 import {
   SELLER_ORDERS_URL,
   currentSellerOrders,
@@ -485,6 +485,35 @@ describe('셀러 주문 처리 경계', () => {
     fireEvent.change(screen.getByLabelText('주문일 시작'), { target: { value: '2026-10-25' } })
 
     expect(await screen.findByText('주문일 시작이 종료보다 늦어요.')).toBeInTheDocument()
+  })
+
+  it('[AC-SORDER-022] 역전된 주문일 범위로는 조회를 보내지 않고 직전 목록을 둔다', async () => {
+    const sent: string[] = []
+    const record = ({ request }: { request: Request }) => {
+      if (request.url.startsWith(SELLER_ORDERS_URL)) sent.push(request.url)
+    }
+    server.events.on('request:start', record)
+    onTestFinished(() => server.events.removeListener('request:start', record))
+    renderOrders()
+    await screen.findByText(NEW_ORDER.orderId)
+
+    fireEvent.change(screen.getByLabelText('주문일 종료'), { target: { value: '2026-10-20' } })
+    fireEvent.change(screen.getByLabelText('주문일 시작'), { target: { value: '2026-10-25' } })
+
+    expect(await screen.findByText('주문일 시작이 종료보다 늦어요.')).toBeInTheDocument()
+    expect(screen.getByText(NEW_ORDER.orderId)).toBeInTheDocument()
+    expect(sent.some(url => url.includes('orderedFrom=2026-10-25') && url.includes('orderedTo=2026-10-20'))).toBe(
+      false,
+    )
+    expect(screen.queryByText('목록을 불러오지 못했어요.')).not.toBeInTheDocument()
+
+    // 범위를 바로잡으면 그 조건으로 다시 조회한다.
+    fireEvent.change(screen.getByLabelText('주문일 종료'), { target: { value: '2026-10-30' } })
+    await waitFor(() =>
+      expect(sent.some(url => url.includes('orderedFrom=2026-10-25') && url.includes('orderedTo=2026-10-30'))).toBe(
+        true,
+      ),
+    )
   })
 })
 
