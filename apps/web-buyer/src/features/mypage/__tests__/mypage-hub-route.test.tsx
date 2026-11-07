@@ -3,8 +3,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HttpResponse, http } from 'msw'
+import { setAccessToken } from '@aechak/api'
+import { logout } from '@/shared/auth'
 import { POINTS_URL, seedAccount, seedPointBalance, server, USER_ME_URL } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
+
+// 마이페이지는 회원 전용 화면이라 비회원에게는 로그인 안내가 뜬다 — 토큰이 세션의 정본이므로
+// 이 화면들의 전제인 회원 세션을 토큰으로 세운다.
+beforeEach(() => setAccessToken('member-token'))
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -20,6 +26,25 @@ function renderAt(path: string) {
 }
 
 // 마이 허브 프로필 카드는 GET /users/me(useMe)로 렌더한다. 인증 배지는 서버 isPhoneVerified 기준.
+describe('/mypage 비회원 게이트', () => {
+  it('[AC-MYPAGE-GUEST-001] 비회원은 내 정보 대신 로그인 안내를 보고 서버를 부르지 않는다', async () => {
+    // GET /users/me는 회원 전용이다. 허브를 그대로 열면 빈 프로필 카드와 401 리다이렉트만 남는다.
+    let requested = 0
+    server.use(
+      http.get(USER_ME_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: {} })
+      }),
+    )
+    logout()
+    renderAt('/mypage')
+
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    expect(requested).toBe(0)
+  })
+})
+
 describe('/mypage 프로필 요약 카드 실서버 연동', () => {
   beforeEach(() => {
     seedAccount()
@@ -112,13 +137,13 @@ describe('/mypage 적립금 표시 행', () => {
 })
 
 describe('/mypage SNS 진입 행 게이트', () => {
-  it('[AC-SNS01-006] SNS BE가 배포되기 전(SNS_SERVER_AVAILABLE=false)에는 SNS 진입 행을 숨긴다', async () => {
+  it('[AC-SNS01-006] SNS를 공개한 상태(SNS_SERVER_AVAILABLE=true)에서는 SNS 진입 행을 그린다', async () => {
     seedAccount({ nickname: '코코집사' })
     renderAt('/mypage')
 
     expect(await screen.findByText('코코집사')).toBeInTheDocument()
     expect(screen.getByText('주문 내역')).toBeInTheDocument()
-    expect(screen.queryByText('내 SNS 프로필')).not.toBeInTheDocument()
-    expect(screen.queryByText('차단/뮤트 관리')).not.toBeInTheDocument()
+    expect(screen.getByText('내 SNS 프로필')).toBeInTheDocument()
+    expect(screen.getByText('차단/뮤트 관리')).toBeInTheDocument()
   })
 })

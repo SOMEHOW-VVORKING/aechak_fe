@@ -105,6 +105,7 @@ import 경로: `@aechak/design-system/web`
 | `onClose` | `() => void` | **필수** |
 | `children` | `ReactNode` | **필수** |
 | `title` | `string` | — |
+| `ariaLabel` | `string` | — (`title`이 있으면 무시) |
 | `showGrabber` | `boolean` | `true` |
 | `maxHeight` | `number` (px) | — (미지정 시 뷰포트 90%) |
 | `className` | `string` | — |
@@ -113,6 +114,9 @@ import 경로: `@aechak/design-system/web`
 쓴다. 스크림 클릭·ESC로 닫히고 포커스 트랩·바디 스크롤 잠금은 `Modal`/`Drawer`와 동일한 패턴. 옆에서
 나오는 패널이 필요하면 `Drawer`를 쓸 것 (`BottomSheet` ≠ `Drawer`). 네이티브 `BottomSheet`의 `visible`
 대신 `Modal`/`Drawer`와 맞춘 `open`을 쓴다.
+
+`title`을 그리지 않는 시트(비회원 게이트, 더보기 메뉴)는 `ariaLabel`로 dialog의 접근성 이름을 준다. 이름이
+없으면 스크린리더가 시트를 이름 없는 대화상자로 읽는다.
 
 ---
 
@@ -801,9 +805,25 @@ interface Column<T> {
 ```
 
 ```ts
-interface NavItem  { key: string; label: string; icon?: ReactNode; badge?: number }
+interface NavItem  { key: string; label: string; icon?: ReactNode; badge?: number; tag?: string }
 interface NavGroup { label?: string; items: NavItem[] }
 ```
+
+`badge`(숫자)와 `tag`(글자)는 쓰임이 달라 필드가 나뉘어 있고 한 항목에 둘을 함께 줄 수 있다 —
+`badge`는 "처리할 일이 몇 건 쌓였다"(0·null이면 안 그린다, 99 초과는 `99+`), `tag`는 "이 목적지가
+아직 열리지 않았다"(`'준비 중'`)다. 함께 주면 **꼬리표가 먼저, 배지가 뒤**로 그려진다(준비 중이
+처리 건수처럼 읽히지 않게). `tag` 글자는 버튼 접근명에 포함되므로 테스트·스크린리더가 보는 이름은
+`"항목 이름 준비 중"`이 된다(색이나 점만으로 구별하게 두지 않는다). 이 조합의 계약은
+`apps/web-admin/src/shared/__tests__/side-nav-tag-badge.test.tsx`가 고정한다.
+
+`label`이 있는 그룹은 `role="group"` + `aria-labelledby`로 머리글과 항목이 묶여 렌더된다 —
+스크린리더가 "운영 그룹"으로 읽고, 테스트는 `within(getByRole('group', { name: '운영' }))`으로
+그룹 소속을 단언할 수 있다(머리글 유무만 보면 항목이 다른 그룹으로 옮겨가도 통과한다).
+
+`activeKey`는 항목 `key`와 **완전 일치**로만 비교한다(DS는 경로 규칙을 모른다). 호출부가
+pathname을 넘길 때는 꼬리 슬래시·하위 경로를 직접 정규화할 것 — `/sellers/`를 그대로 넘기면
+`/sellers` 항목이 활성이 되지 않아 활성 스타일과 `aria-current`가 사라진다(web-seller
+`AppShell`은 첫 세그먼트로, web-admin `__root`는 `navActiveKey`로 맞춘다).
 
 | prop | 타입 |
 |---|---|
@@ -896,11 +916,11 @@ interface NavGroup { label?: string; items: NavItem[] }
 
 | prop | 타입 | 기본값 |
 |---|---|---|
-| `tabs` | `{ key: string; label: string; badge?: number }[]` | **필수** |
+| `tabs` | `{ key: string; label: string; badge?: number \| string }[]` | **필수** |
 | `activeKey` | `string` | **필수** |
 | `onSelect` | `(key: string) => void` | **필수** |
 
-페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`).
+페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`). `badge`는 받은 값을 그대로 그리므로 천 단위 구분(`toLocaleString('ko-KR')`)은 호출부가 문자열로 넘긴다.
 
 ---
 

@@ -6,7 +6,8 @@ import { useSafeBack } from '@/shared/useSafeBack'
 import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 
 // 알림 설정(b11-st-2). 전체 알림(마스터) + 야간 알림. 마스터가 꺼지면 야간 알림은 비활성
-// (종속)되고 "앱 알림을 모두 껐어요" 토스트가 뜬다. 실제 알림 기능은 범위 밖 — 토글 UI만 동작.
+// (종속)된다. 서버에 알림 도메인도 설정 저장 경로도 없어 토글은 이 화면에만 남는다 —
+// "켜고 끌 수 있어요" 같은 문구를 두면 저장된 줄 알게 되므로, 안내 자리에서 그 사실을 밝힌다.
 export function NotificationSettingsScreen() {
   const [allOn, setAllOn] = useState(true)
   const [nightOn, setNightOn] = useState(true)
@@ -25,8 +26,8 @@ export function NotificationSettingsScreen() {
         <SettingsGroup
           footnote={
             allOn
-              ? '앱의 모든 푸시 알림을 한 번에 켜고 끌 수 있어요.'
-              : '전체 알림이 꺼져 있어 다른 알림은 받을 수 없어요.'
+              ? '아직 앱 푸시 알림은 나가지 않아요. 여기서 고른 값도 저장되지 않고 이 화면에만 남아요.'
+              : '전체 알림을 끈 표시예요. 아직 푸시 알림 자체가 나가지 않고, 이 선택도 저장되지 않아요.'
           }
         >
           <SettingsControlRow
@@ -55,7 +56,7 @@ export function NotificationSettingsScreen() {
       <AppToast
         open={toastOpen}
         onClose={() => setToastOpen(false)}
-        message="앱 알림을 모두 껐어요."
+        message="앱 알림을 모두 끈 것으로 표시했어요. 저장되지는 않아요."
         variant="info"
       />
     </MobileScreen>

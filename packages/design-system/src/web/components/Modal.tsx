@@ -13,7 +13,7 @@ interface ModalProps {
   children?: ReactNode
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 export function Modal({
   open,
@@ -57,10 +57,13 @@ export function Modal({
       if (!items.length) { e.preventDefault(); return }
       const first = items[0]!
       const last = items[items.length - 1]!
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 패널 뒤로 넘어간다.
+      // 포커스가 패널 밖에 있으면 아무것도 하지 않는다. 위에 겹쳐 뜬 오버레이의 Tab까지 처리하면 그 오버레이의 첫 항목에서 포커스가 움직이지 않는다.
       if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+        if (active === first || active === panel) { e.preventDefault(); last.focus() }
       } else {
-        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+        if (active === last || active === panel) { e.preventDefault(); first.focus() }
       }
     }
     document.addEventListener('keydown', handler)
@@ -103,11 +106,11 @@ export function Modal({
         className="relative z-10 w-full max-w-sm rounded-modal bg-surface-raised shadow-modal outline-none animate-modal-in"
       >
         <div className="p-6">
-          <h2 id={titleId} className="text-subheading font-semibold text-text-primary">
+          <h2 id={titleId} className="text-subheading font-semibold text-text-primary break-keep break-words">
             {title}
           </h2>
           {description && (
-            <p className="mt-2 text-body-sm text-text-secondary">{description}</p>
+            <p className="mt-2 text-body-sm text-text-secondary break-keep break-words">{description}</p>
           )}
           {children && <div className="mt-4">{children}</div>}
         </div>
@@ -133,7 +136,11 @@ export function Modal({
               aria-busy={loading || undefined}
             >
               {loading ? (
-                <span className="inline-block size-4 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+                <>
+                  <span className="inline-block size-4 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+                  {/* 스피너만 남기면 요청 중인 버튼의 이름이 사라진다. Button처럼 글자를 남기되 화면에서는 스피너만 보인다. */}
+                  <span className="sr-only">{confirmLabel}</span>
+                </>
               ) : (
                 confirmLabel
               )}

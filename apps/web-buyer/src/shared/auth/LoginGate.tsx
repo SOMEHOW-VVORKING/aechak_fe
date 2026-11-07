@@ -16,18 +16,46 @@ export type GateFeature =
   | 'write'
   | 'chat'
   | 'review'
+  | 'inquiry'
   | 'follow'
   | 'follows'
   | 'block'
   | 'mute'
+  | 'report'
+  | 'snsReport'
+  | 'feed'
+  | 'repost'
+  | 'save'
+  | 'like'
+  | 'likers'
+  | 'comment'
 
 // SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
-const SNS_FEATURES = new Set<GateFeature>(['follow', 'follows', 'block', 'mute'])
+// 글쓰기(write)는 SNS 게시물 작성이다(SNS-02 design 6절 10번). feed는 비로그인이 누른 팔로잉 피드 탭이다(SNS-03 A9).
+// repost, save는 게시물 리포스트와 저장이다(SNS-03 design 6절 5번). snsReport는 SNS 게시물, 댓글, 사용자 신고다(SNS-07).
+// 상품 신고(report)는 로그인 뒤 이어서 하지 않아 SNS 문구를 쓰지 않는다. like, likers는 좋아요와 좋아요한 사람이다(SNS-04 design 6절 10번).
+const SNS_FEATURES = new Set<GateFeature>([
+  'follow',
+  'follows',
+  'block',
+  'mute',
+  'write',
+  'feed',
+  'repost',
+  'save',
+  'snsReport',
+  'like',
+  'likers',
+  'comment',
+])
 
 /** 로그인 뒤 다시 실행할 행동. 게이트가 열린 화면의 경로와 함께 sessionStorage에 남긴다. */
 export interface GateResume {
   kind: PendingActionKind
   publicId: string
+  targetPublicId?: string
+  /** 로그인 뒤 돌아갈 경로를 게이트가 열린 화면의 경로 대신 정할 때 쓴다 */
+  returnTo?: string
 }
 
 const FEATURE_COPY: Record<GateFeature, string> = {
@@ -37,10 +65,19 @@ const FEATURE_COPY: Record<GateFeature, string> = {
   write: '글 작성은 로그인한 회원만 이용할 수 있어요.',
   chat: '채팅은 로그인한 회원만 이용할 수 있어요.',
   review: '리뷰는 로그인한 회원만 볼 수 있어요.',
+  inquiry: '상품 문의는 로그인한 회원만 이용할 수 있어요.',
   follow: '팔로우는 로그인한 회원만 이용할 수 있어요.',
   follows: '팔로워/팔로잉 목록은 로그인한 회원만 볼 수 있어요.',
   block: '차단은 로그인한 회원만 이용할 수 있어요.',
   mute: '뮤트는 로그인한 회원만 이용할 수 있어요.',
+  report: '신고는 로그인한 회원만 이용할 수 있어요.',
+  snsReport: '신고는 로그인한 회원만 이용할 수 있어요.',
+  feed: '팔로잉 피드는 로그인한 회원만 볼 수 있어요.',
+  repost: '리포스트는 로그인한 회원만 이용할 수 있어요.',
+  save: '저장은 로그인한 회원만 이용할 수 있어요.',
+  like: '좋아요는 로그인한 회원만 이용할 수 있어요.',
+  likers: '좋아요한 사람 목록은 로그인한 회원만 볼 수 있어요.',
+  comment: '댓글은 로그인한 회원만 쓸 수 있어요.',
 }
 
 export interface UseLoginGate {
@@ -104,12 +141,12 @@ export function LoginGate({ open, feature, onClose, resume }: LoginGateProps) {
   // 로그인 화면은 페이지 전체를 이동하므로 행동과 돌아올 경로를 sessionStorage에 남긴다.
   // onClose는 부르지 않는다. 시트는 화면과 함께 사라지고, 화면에 따라 onClose가 뒤로 가기라 이동이 겹친다.
   const goLogin = () => {
-    if (resume) savePendingAction({ ...resume, returnTo: href })
+    if (resume) savePendingAction({ ...resume, returnTo: resume.returnTo ?? href })
     navigate({ to: '/onboarding/login', search: resume ? { resume: true } : {} })
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose}>
+    <BottomSheet open={open} onClose={onClose} ariaLabel="로그인이 필요해요">
       <div className="flex flex-col items-center gap-3 pb-1 text-center">
         <span className="flex size-14 items-center justify-center rounded-full bg-brand-subtle text-brand">
           <Lock className="size-7" />

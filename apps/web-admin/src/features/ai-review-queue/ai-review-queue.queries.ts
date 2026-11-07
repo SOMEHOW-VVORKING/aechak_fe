@@ -1,92 +1,58 @@
 import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AdminReviewState,
-  approveAdminContentInspection,
-  getAdminContentInspectionDetail,
-  getAdminContentInspections,
-  rejectAdminContentInspection,
-  type AdminInspectionDetailData,
-  type AdminInspectionListData,
-  type AdminReviewReason,
-  type GetAdminContentInspectionsParams,
-  type InspectionTargetType,
+  approveAdminProductInspection,
+  getAdminProductInspectionDetail,
+  getAdminProductInspections,
+  rejectAdminProductInspection,
+  ReviewQueueStatus,
+  type AdminProductInspectionListData,
+  type GetAdminProductInspectionsParams,
 } from '@aechak/api'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
-  collectViolations,
-  toPipelineStages,
-  toQueueRow,
-  type InspectionDecision,
-  type PipelinePerspectiveRow,
-  type PipelineStageView,
-  type QueueRowView,
+  toAiReviewDetail,
+  toAiReviewRow,
+  type QueueStatus,
 } from './ai-review-queue.map'
 
-// AI 검수 큐 4종(목록·상세·허용·차단)을 실서버에 붙이는 얇은 어댑터. 생성된 react-query 훅이
-// 아니라 fetcher만 소비하고 이 파일이 자체 useQuery/useMutation으로 감싼다(AGENTS 규약).
-// 캐시 키 접두를 공유해 결정 한 번의 무효화가 목록·대기 수·열린 상세까지 함께 갱신한다.
+// 어드민 상품 검토 큐 넷(목록, 상세, 승인, 반려)을 실서버에 붙이는 어댑터. 생성된 react-query 훅이 아니라
+// fetcher만 소비한다(AGENTS 규약). 결정 한 번의 무효화가 목록과 열린 상세를 함께 갱신하도록 접두를 공유한다.
 
 export const AI_REVIEW_QUEUE_QUERY_KEY = ['products', 'ai-review-queue'] as const
 
-/** 서버 기본값과 같은 페이지 크기(BE PageQuery). 서버는 1~100으로 절삭한다. */
+/** 서버 기본값과 같은 페이지 크기(BE PageQuery). */
 export const DEFAULT_PAGE_SIZE = 20
 
-export interface QueueListParams {
-  /** null이면 state 파라미터 자체를 보내지 않는다(OPEN·RESOLVED 전체). */
-  state: AdminReviewState | null
-  /** null이면 reason 파라미터 자체를 보내지 않는다(전체). */
-  reason: AdminReviewReason | null
-  targetType?: InspectionTargetType | null
+export interface AiReviewListParams {
+  /** null이면 status 파라미터 자체를 보내지 않는다(전체 조회). */
+  status: QueueStatus | null
+  /** 켜면 이의제기된 상품만 받는다. */
+  appealedOnly: boolean
   page: number
-  size?: number
 }
 
-export interface QueueListResult {
-  rows: QueueRowView[]
-  totalCount: number
-  /**
-   * 이 목록을 서버에서 받은 시각(epoch ms). 대기 시간의 기준 시각으로 쓴다.
-   *
-   * 화면이 `Date.now()`를 직접 읽으면 렌더마다 값이 달라 같은 목록의 컬럼이 매 렌더
-   * 다시 그려진다. 응답 시각은 재조회할 때만 바뀌고 "마지막으로 받은 시점 기준 대기 시간"이라는
-   * 뜻도 분명하다. 첫 조회 전에는 0이다(그때는 그릴 행도 없다).
-   */
-  dataUpdatedAt: number
-  isLoading: boolean
-  isError: boolean
-  error: unknown
-}
-
-// 값이 빈 파라미터는 키째 빼서 보낸다(AGENTS 6-6) — 서버가 미입력이 아니라 형식 오류로 읽는
-// 자리가 있어서다. 정규화는 이 층이 맡고 라우트는 null만 넘긴다.
-function listParams({
-  state,
-  reason,
-  targetType,
-  page,
-  size,
-}: QueueListParams): GetAdminContentInspectionsParams {
+/**
+ * 끄면 `appealed` 자체를 보내지 않는다. 서버 기본값이 false라 같은 요청이고, **false의 뜻을
+ * 확인하지 못했기 때문이다** — false가 "이의 없는 것만"이면 전체 조회가 조용히 줄어든다.
+ */
+function listParams({ status, appealedOnly, page }: AiReviewListParams): GetAdminProductInspectionsParams {
   return {
-    ...(state ? { state } : {}),
-    ...(reason ? { reason } : {}),
-    ...(targetType ? { targetType } : {}),
+    ...(status ? { status } : {}),
+    ...(appealedOnly ? { appealed: true } : {}),
     page,
-    size: size ?? DEFAULT_PAGE_SIZE,
+    size: DEFAULT_PAGE_SIZE,
   }
 }
 
-/** 오프셋 페이지네이션 목록(커서가 아니다). page 음수·범위 밖 size는 서버가 보정한다. */
-export function useAiReviewQueue(params: QueueListParams): QueueListResult {
-  const query = useQuery<AdminInspectionListData>({
+export function useAiReviewQueue(params: AiReviewListParams) {
+  const query = useQuery<AdminProductInspectionListData>({
     queryKey: [...AI_REVIEW_QUEUE_QUERY_KEY, 'list', listParams(params)],
-    queryFn: ({ signal }) =>
-      getAdminContentInspections(listParams(params), signal).then(response => response.data),
-    // 필터·페이지를 바꾸는 동안 표가 비지 않게 이전 결과를 유지한다.
+    queryFn: ({ signal }) => getAdminProductInspections(listParams(params), signal).then(response => response.data),
     placeholderData: keepPreviousData,
   })
   return {
-    rows: (query.data?.items ?? []).map(toQueueRow),
+    rows: (query.data?.items ?? []).map(toAiReviewRow),
     totalCount: query.data?.totalCount ?? 0,
-    dataUpdatedAt: query.dataUpdatedAt,
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
@@ -94,97 +60,59 @@ export function useAiReviewQueue(params: QueueListParams): QueueListResult {
 }
 
 /**
- * 처리 대기 건수. 목록의 totalCount는 현재 필터 기준이라 "대기 N"을 만들 수 없어 OPEN만 세는
- * 1건짜리 조회를 따로 둔다(심사 대기 배지와 같은 패턴). 실패하거나 권한이 없으면 null이고
- * 그때는 배지를 아예 그리지 않는다 — 틀린 숫자를 띄우지 않는다.
- */
-export function useOpenInspectionCount(): number | null {
-  const query = useQuery({
-    queryKey: [...AI_REVIEW_QUEUE_QUERY_KEY, 'open-count'],
-    queryFn: ({ signal }) =>
-      getAdminContentInspections(
-        { state: AdminReviewState.OPEN, page: 0, size: 1 },
-        signal,
-      ).then(response => response.data.totalCount),
-  })
-  return query.data ?? null
-}
-
-export interface QueueDetailView {
-  inspectionId: number
-  row: QueueRowView
-  /** 다섯 단계의 흐름 — 어디까지 돌았고 어디서 걸렸는지 */
-  stages: PipelineStageView[]
-  /** 위반을 든 관점만 모은 것. 화면이 가장 먼저 보여 줘야 하는 값이다 */
-  violationRows: PipelinePerspectiveRow[]
-  appealReason: string | null
-  adminDecidedBy: number | null
-  adminDecidedAt: string | null
-  adminNote: string | null
-  totalCostMicroUsd: number
-}
-
-export interface QueueDetailResult {
-  detail: QueueDetailView | null
-  isLoading: boolean
-  isError: boolean
-  error: unknown
-}
-
-function toDetailView(data: AdminInspectionDetailData): QueueDetailView {
-  return {
-    inspectionId: data.summary.inspectionId,
-    row: toQueueRow(data.summary),
-    stages: toPipelineStages(data),
-    violationRows: collectViolations(data),
-    appealReason: data.appealReason ?? null,
-    adminDecidedBy: data.adminDecidedBy ?? null,
-    adminDecidedAt: data.adminDecidedAt ?? null,
-    adminNote: data.adminNote ?? null,
-    totalCostMicroUsd: data.totalCostMicroUsd,
-  }
-}
-
-export function useAiReviewQueueDetail(inspectionId: number | null): QueueDetailResult {
-  const query = useQuery({
-    queryKey: [...AI_REVIEW_QUEUE_QUERY_KEY, 'detail', inspectionId],
-    queryFn:
-      inspectionId == null
-        ? skipToken
-        : ({ signal }) =>
-            getAdminContentInspectionDetail(inspectionId, signal).then(response => response.data),
-  })
-  return {
-    detail: query.data ? toDetailView(query.data) : null,
-    isLoading: query.isLoading,
-    isError: query.isError,
-    error: query.error,
-  }
-}
-
-export interface DecisionInput {
-  inspectionId: number
-  decision: InspectionDecision
-  /** 허용은 메모(선택), 차단은 사유(필수)를 같은 칸으로 받는다. */
-  note: string
-}
-
-/**
- * 허용·차단. 둘 다 204 본문 없음이라 낙관적 갱신이 아니라 무효화 후 재조회로 반영한다.
+ * 관리자 확인을 기다리는 검수 건수. 대시보드 첫 화면의 `검수 대기 상품` 칸과 할 일 줄이 쓴다.
  *
- * 실패해도 무효화하는 이유가 둘이다. 409/40501(이미 처리됨)은 화면이 낡았다는 신호고,
- * 409/40508(내용이 바뀜)은 서버가 결정을 **아예 저장하지 않은** 경우라 상품 상태가 지금
- * 어떤지 다시 받아야 운영자가 다음 행동을 고를 수 있다.
+ * `size=1`로 받고 `totalCount`만 읽는다 — 목록 길이로 세면 늘 1이다. 이 화면의 기본 탭과 같은
+ * 모수(`PENDING_REVIEW`)이지만 **키를 따로 쓴다**: 목록 키에는 page·size가 실려 있어 거기 끼면
+ * 화면이 1건짜리 페이지를 그리게 된다.
  */
-export function useDecideInspection() {
+export function usePendingInspectionCount(): number | null {
+  const params: GetAdminProductInspectionsParams = {
+    status: ReviewQueueStatus.PENDING_REVIEW,
+    page: 0,
+    size: 1,
+  }
+  return useMetricValue([...AI_REVIEW_QUEUE_QUERY_KEY, 'pending-count'], signal =>
+    getAdminProductInspections(params, signal).then(response => response.data.totalCount),
+  )
+}
+
+export function useAiReviewDetail(productId: string | null) {
+  const query = useQuery({
+    queryKey: [...AI_REVIEW_QUEUE_QUERY_KEY, 'detail', productId],
+    queryFn:
+      productId == null
+        ? skipToken
+        : ({ signal }) => getAdminProductInspectionDetail(productId, signal).then(response => response.data),
+  })
+  return {
+    detail: query.data ? toAiReviewDetail(query.data) : null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+  }
+}
+
+export type AiReviewDecision = 'approve' | 'reject'
+
+export interface AiReviewDecisionInput {
+  productId: string
+  decision: AiReviewDecision
+  /** 반려일 때만 쓴다. 셀러에게 그대로 보인다. */
+  reason?: string
+}
+
+/**
+ * 승인·반려. 둘 다 204라 무효화 후 재조회로 반영한다. 실패해도 무효화하는 이유는 409가 화면이
+ * 낡았다는 신호라 그 자리에서 최신 상태를 다시 받아야 하기 때문이다.
+ */
+export function useDecideAiReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ inspectionId, decision, note }: DecisionInput) => {
-      const trimmed = note.trim()
-      return decision === 'allow'
-        ? approveAdminContentInspection(inspectionId, trimmed === '' ? {} : { note: trimmed })
-        : rejectAdminContentInspection(inspectionId, { reason: trimmed })
-    },
+    mutationFn: ({ productId, decision, reason }: AiReviewDecisionInput) =>
+      decision === 'approve'
+        ? approveAdminProductInspection(productId)
+        : rejectAdminProductInspection(productId, { reason: reason ?? '' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: AI_REVIEW_QUEUE_QUERY_KEY }),
   })
 }

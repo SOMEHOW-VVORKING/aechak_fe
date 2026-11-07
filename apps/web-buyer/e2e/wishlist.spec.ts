@@ -1,11 +1,14 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 찜 목록(b3-st-4) ↔ 실 API 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을 재현한다
 // (마켓/검색 spec과 동일한 CORS/프리플라이트 규칙). 서버가 찜 목록에서만 내려주는
 // isViewable=false(찜한 뒤 카테고리가 비활성화된 상품)를 화면이 어떻게 다루는지 확인하고,
 // 각 상태에서 page.screenshot으로 PR 첨부용 캡처를 test-results/pr-c(gitignore)에 남긴다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -73,6 +76,11 @@ const WITH_BLOCKED = ALL_VIEWABLE.map((p, i) =>
 function likedEnvelope(products: unknown[]) {
   return { data: { products, totalCount: products.length, nextCursor: null, hasNext: false } }
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-WISH-E2E-001] 찜 목록이 서버 응답 그대로 그리드에 뜬다', async ({ page }) => {
   await page.route('**/api/v1/users/me/liked-products*', route =>

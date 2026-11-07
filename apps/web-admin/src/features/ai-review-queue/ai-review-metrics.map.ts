@@ -3,17 +3,84 @@ import type {
   InspectionMetricsFunnel,
   InspectionMetricsMsPercentile,
 } from '@aechak/api'
-import { reasonMeta, toWireError, type LabelMeta } from './ai-review-queue.map'
+import type { StatusPillVariant } from '@aechak/design-system/web'
 
 // 어드민 AI 검수 운영 지표(admin 모듈 `/admin/inspection-metrics`) 응답을 화면 모델로 옮기는
-// 매퍼. 큐 매퍼와 같은 feature에 두는 이유는 둘이 같은 서버 열거(등재 사유)와 같은 에러 분기를
-// 쓰기 때문이다 — 분리하면 사유 라벨·에러 번역을 shared로 올려야 하고, 돌고 있는 큐 화면의
-// import를 그만큼 건드린다.
+// 매퍼. 큐와 같은 검수 BC라 같은 feature에 둔다.
 //
 // 이 파일의 규칙 하나가 나머지를 다 설명한다. **서버가 주지 않은 값은 0이 아니라 null이다.**
 // 응답은 블록이 통째로 빠져 올 수 있다(확장 전 서버는 창 필드 넷과 promotion·coverage·cost·
 // backlog만 준다). 없는 블록을 0으로 채우면 "집계가 0이다"라는 거짓을 말하고, 운영자는 그걸
 // 보고 "오늘 아무 일도 없었다"로 읽는다.
+
+// ── 라벨과 에러 분기 ───────────────────────────────────────────────────────────
+// 큐 매퍼가 쓰던 사유 라벨과 에러 읽기를 지표 쪽에 따로 둔다. 큐가 다른 경로
+// (`/admin/product-inspections`)로 실연동돼 서버 열거가 갈렸기 때문이다.
+
+export interface LabelMeta {
+  label: string
+  variant: StatusPillVariant
+  /** 목록·상세에서 라벨만으로는 모자란 맥락. 한 줄로 끊어 쓴다. */
+  hint?: string
+}
+
+/**
+ * 모르는 열거 값을 받았을 때의 폴백.
+ *
+ * 서버 열거가 늘어나는 것은 실제로 일어나는 일이고(TRIAGE가 그렇게 추가됐다), 생성된 타입은
+ * 그때 거짓이 된다. `Record` 조회를 그대로 쓰면 `undefined.label`로 화면이 백지가 되므로
+ * 모든 조회를 이 함수로 통과시킨다 — 운영자는 "알 수 없는 값"과 원문을 함께 본다.
+ */
+function metaOf(table: Record<string, LabelMeta>, value: string | null | undefined): LabelMeta {
+  if (!value) return { label: '—', variant: 'neutral' }
+  return table[value] ?? { label: `알 수 없음 (${value})`, variant: 'warning' }
+}
+
+const REASON_META: Record<string, LabelMeta> = {
+  VERDICT_FAILED: {
+    label: '판정 실패',
+    variant: 'error',
+    hint: '판정 과정이 실패했어요. 노출은 그대로예요.',
+  },
+  UNJUDGED: {
+    label: '미판정',
+    variant: 'error',
+    hint: '기한이 지나도 판정이 오지 않았어요. 노출은 그대로예요.',
+  },
+  MODEL_UNVERIFIED: {
+    label: '증거 없는 통과',
+    variant: 'warning',
+    hint: '통과 판정인데 모델 관점이 내용을 하나도 보지 않았어요.',
+  },
+  CRITIC_OVERTURNED: {
+    label: '비평 뒤집힘',
+    variant: 'info',
+    hint: '비평이 모델 위반을 뒤집어 통과로 바꿨어요.',
+  },
+  OVERBLOCK_SUSPECT: {
+    label: '과탐 의심',
+    variant: 'warning',
+    hint: '위반이 전부 금지 성분이라 과탐일 수 있어요.',
+  },
+  SELLER_APPEAL: {
+    label: '셀러 이의',
+    variant: 'accent',
+    hint: '셀러가 이의를 제기했어요.',
+  },
+}
+
+const reasonMeta = (value: string | null | undefined): LabelMeta => metaOf(REASON_META, value)
+
+interface WireError {
+  status?: number
+  errorCode?: number
+}
+
+function toWireError(error: unknown): WireError {
+  const response = (error as { response?: { status?: number; data?: { errorCode?: number } } })
+    ?.response
+  return { status: response?.status, errorCode: response?.data?.errorCode }
+}
 
 // ── 0. 질의 창 ─────────────────────────────────────────────────────────────────
 
@@ -464,7 +531,8 @@ export interface BacklogReasonRow {
 
 export interface BacklogView {
   openCount: number
-  staleOpenCount: number
+  /** dev 서버가 아직 주지 않는다(2026-11-07). 없으면 null이고 화면은 칸을 그리지 않는다. */
+  staleOpenCount: number | null
   oldestWaitingSince: string | null
   oldestWaitMinutes: number | null
   warnCount: number
@@ -488,7 +556,7 @@ export function toBacklogView(data: AdminInspectionMetricsData): BacklogView | n
   }
   return {
     openCount: backlog.openCount,
-    staleOpenCount: backlog.staleOpenCount,
+    staleOpenCount: backlog.staleOpenCount ?? null,
     oldestWaitingSince: backlog.oldestWaitingSince ?? null,
     oldestWaitMinutes: backlog.oldestWaitMinutes ?? null,
     warnCount: backlog.warnCount,

@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type {
   OrderDeliveryAddressResponse,
   OrderDetailEnvelope,
@@ -11,7 +12,9 @@ import type {
 // (교차 출처 8080 + withCredentials라 정확한 origin과 Allow-Credentials, OPTIONS 방어 필수).
 // page.screenshot으로 PR 첨부용 캡처를 test-results/pr-c(gitignore)에 남긴다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
@@ -211,6 +214,12 @@ async function stubOrders(page: Page, groups: OrderGroupItemResponse[], pageSize
     if (route.request().method() === 'GET') calls.push(url.searchParams.get('status') ?? 'all')
     return fulfill(route, 200, listBody(url, groups, pageSize))
   })
+  // 주문 상세가 함께 부르는 보조 경로 — 비워 둬야 스텁 밖으로 새어 나가지 않는다.
+  // 글롭의 `*`는 `/`를 넘지 않으므로 목록(`/order-groups?*`)·결제(`/payment/*`)와 겹치지 않는다.
+  await page.route(`${API}/orders/*/claims`, route => fulfill(route, 200, { data: { items: [] } }))
+  await page.route(`${API}/order-groups/*`, route =>
+    fulfill(route, 404, { errorCode: 50109, message: '주문 정보를 찾을 수 없습니다.' }),
+  )
   return calls
 }
 
@@ -298,6 +307,11 @@ const CONFIRMED_DETAIL: OrderDetailEnvelope = {
     purchaseConfirmDueAt: null,
   },
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-ORDER-E2E-001] 주문 목록은 그룹 카드 안에 셀러 주문별 상태 pill을 그리고 세그먼트가 status 필터로 나간다', async ({
   page,
@@ -470,16 +484,17 @@ test('[AC-ORDER-E2E-007] 구매확정 거절은 이미 확정(50008)과 확정 �
   await shot(page, `${SHOTS}/orders-10-confirm-rejected.png`)
 })
 
-test('[AC-ORDER-E2E-004] 없는 주문(404/50000)은 "찾을 수 없어요", 취소 URL은 상세로 되돌린다', async ({
+test('[AC-ORDER-E2E-004] 없는 주문(404/50000)은 "찾을 수 없어요", 예전 취소 URL은 클레임 요청으로 넘어간다', async ({
   page,
 }) => {
   await stubOrders(page, [MIXED])
   await page.route(`${API}/orders/*`, route =>
     fulfill(route, 404, { errorCode: 50000, message: '주문을 찾을 수 없습니다.' }),
   )
+  // 예전 취소 URL은 취소 유형 클레임 요청으로 넘어가고, 주문이 없으면 그 화면이 404를 알린다.
   await page.goto('/orders/01K7E2E0UNKNOWN0000000001/cancel')
 
-  await expect(page).toHaveURL(`${ORIGIN}/orders/01K7E2E0UNKNOWN0000000001`)
+  await expect(page).toHaveURL(`${ORIGIN}/orders/01K7E2E0UNKNOWN0000000001/claim?type=cancel`)
   await expect(page.getByText('주문을 찾을 수 없어요')).toBeVisible()
   await expect(page.getByText('취소 사유')).toHaveCount(0)
   await shot(page, `${SHOTS}/orders-04-detail-not-found.png`)

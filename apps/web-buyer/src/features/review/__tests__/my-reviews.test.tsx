@@ -6,9 +6,10 @@ import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/rea
 import { beforeEach, describe, it, expect } from 'vitest'
 import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
-import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, server } from '@/testing/msw/server'
-import { getReviews, removeReview, resetReviews } from '@/shared/review'
+import { MY_REVIEWS_URL, REVIEW_DETAIL_URL, REVIEWS_URL, USER_ME_URL, server } from '@/testing/msw/server'
+import { addReview, getReviews, removeReview, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
+import type { Review } from '@aechak/domain'
 
 // 내 리뷰(GET /users/me/reviews) 실 HTTP 경로. BE MyReviewListResponse 계약 그대로 응답한다
 // (be: boot/api/.../review/response/MyReviewListResponse.kt).
@@ -86,13 +87,27 @@ function clearMockData() {
   for (const review of getReviews()) removeReview(review.id)
 }
 
+// 로컬 스토어가 내 리뷰 탭에 끼지 않는지 보는 테스트가 직접 넣는 리뷰. 스토어에는 시드가 없다.
+const LOCAL_REVIEW: Review = {
+  id: 'rv-local-1',
+  productId: 'p-feeder-5l',
+  orderId: '20260620-0044',
+  author: '나',
+  rating: 5,
+  content: '서버에 없는 로컬 스토어 리뷰예요.',
+  images: [],
+  option: '용량 5L / 화이트',
+  verifiedPurchase: true,
+  createdAt: '2026.06.24',
+}
+
 describe('내 리뷰 서버 연동', () => {
   beforeEach(() => {
     resetReviews()
     resetAccount()
   })
 
-  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 작성 대기는 서버 항목만, 작성 완료는 로컬 시드 리뷰를 더한다', async () => {
+  it('[AC-MY-REVIEW-001] 두 탭을 서버 목록으로 그리고 작성 대기와 작성 완료 모두 서버 항목만 보여준다', async () => {
     const calls = serveTabs({
       unreviewed: page([unreviewed()], { totalCount: 1 }),
       written: page([written()], { totalCount: 1 }),
@@ -100,17 +115,59 @@ describe('내 리뷰 서버 연동', () => {
     const user = userEvent.setup()
     renderAt('/reviews/mine')
 
-    // 작성 대기는 서버 1(목업 주문 스토어 폐기로 로컬 파생 없음), 작성 완료는 서버 1 + 로컬 시드 리뷰 2.
+    // 작성 대기는 서버 1(목업 주문 스토어 폐기로 로컬 파생 없음), 작성 완료도 서버 1(로컬 시드 리뷰 없음).
     expect(await screen.findByText('작성 대기 1')).toBeInTheDocument()
-    expect(await screen.findByText('작성 완료 3')).toBeInTheDocument()
+    expect(await screen.findByText('작성 완료 1')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 연어 사료')).toBeInTheDocument()
     expect(screen.getByText('구매확정 09.20 / 10.20까지 작성')).toBeInTheDocument()
     expect(calls.map(c => c.get('tab')).sort()).toEqual(['unreviewed', 'written'])
     expect(calls.every(c => c.get('size') === '20' && !c.has('cursor'))).toBe(true)
 
-    await user.click(await screen.findByRole('tab', { name: '작성 완료 3' }))
+    await user.click(await screen.findByRole('tab', { name: '작성 완료 1' }))
     expect(await screen.findByText('서버에 저장된 내 리뷰 본문이에요.')).toBeInTheDocument()
     expect(screen.getByText('서버 주문 닭고기 간식')).toBeInTheDocument()
+  })
+
+  it('[AC-MY-REVIEW-010] 로컬 스토어에 리뷰가 있어도 작성 완료 탭의 목록과 개수는 서버만 따른다', async () => {
+    // 리뷰는 서버에만 저장한다(POST /reviews). 스토어를 서버 목록 뒤에 붙이면 서버에 없는 리뷰가
+    // 보이고 탭 개수가 부풀려지는데, 가입 직후 계정이 남의 리뷰를 보던 자리가 여기다.
+    addReview(LOCAL_REVIEW)
+    serveTabs({ written: page([written()], { totalCount: 1 }) })
+    const user = userEvent.setup()
+    renderAt('/reviews/mine')
+
+    // 서버 1건뿐 — 스토어의 1건이 개수에 더해지지 않는다.
+    expect(await screen.findByText('작성 완료 1')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '작성 완료 1' }))
+    expect(await screen.findByText('서버에 저장된 내 리뷰 본문이에요.')).toBeInTheDocument()
+    // 스토어 리뷰 본문은 목록에 없다.
+    expect(screen.queryByText(LOCAL_REVIEW.content)).not.toBeInTheDocument()
+  })
+
+  it('[AC-MY-REVIEW-009] 작성 완료 카드의 작성자는 GET /users/me 닉네임이다', async () => {
+    serveTabs({ written: page([written()], { totalCount: 1 }) })
+    server.use(
+      http.get(USER_ME_URL, () =>
+        HttpResponse.json({
+          data: {
+            status: 'ACTIVE',
+            nickname: '연어러버',
+            profileImageUrl: null,
+            profileImageKey: null,
+            bio: null,
+            email: null,
+            phoneNumber: null,
+            isPhoneVerified: true,
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/reviews/mine')
+    await user.click(await screen.findByRole('tab', { name: '작성 완료 1' }))
+
+    expect(await screen.findByText('연어러버')).toBeInTheDocument()
+    expect(screen.queryByText('코코집사')).not.toBeInTheDocument()
   })
 
   it('[AC-MY-REVIEW-002] 서버와 목업 모두 비면 탭마다 빈 안내를 보여준다', async () => {

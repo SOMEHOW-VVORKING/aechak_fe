@@ -139,7 +139,9 @@ describe('/products/ai-metrics', () => {
 
     expect(await screen.findByText('손익분기 초과')).toBeInTheDocument()
     expect(
-      screen.getByText('승급률이 기준을 넘었어요 — 선별이 아끼는 호출보다 더하는 호출이 많은 구간이에요.'),
+      screen.getByText(
+        '승급률이 기준을 넘었어요 — 선별이 아끼는 호출보다 더하는 호출이 많은 구간이에요.',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -153,7 +155,9 @@ describe('/products/ai-metrics', () => {
     await screen.findByText('1단 룰')
     await user.selectOptions(screen.getByRole('combobox', { name: '집계 기간' }), '7d')
 
-    await waitFor(() => expect(requested.some(url => new URL(url).searchParams.has('from'))).toBe(true))
+    await waitFor(() =>
+      expect(requested.some(url => new URL(url).searchParams.has('from'))).toBe(true),
+    )
     const sent = new URL(requested[requested.length - 1] as string).searchParams.get('from')
     // 오프셋 없는 LocalDateTime이어야 한다 — UTC 표기로 보내면 서버가 시간대만큼 밀린 창을 센다.
     expect(sent).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/)
@@ -216,6 +220,28 @@ describe('/products/ai-metrics', () => {
     expect(await screen.findByRole('heading', { name: 'AI 검수 큐' })).toBeInTheDocument()
   })
 
+  it('[AC-AI-METRICS-018] 서버가 지문 어긋남 건수를 주지 않으면 그 칸을 그리지 않는다', async () => {
+    // 2026-11-07 dev 응답의 적체 블록 모양이다 — staleOpenCount·openByReason이 없다.
+    seedAdminInspectionMetrics(
+      makeAdminInspectionMetricsWire({
+        backlog: {
+          openCount: 37,
+          oldestWaitingSince: '2026-11-07T09:00:00',
+          oldestWaitMinutes: 30,
+          warnCount: 50,
+          warnAgeMinutes: 1440,
+          breached: false,
+        },
+      }),
+    )
+    renderAt('/products/ai-metrics')
+
+    expect(await screen.findByText('처리 대기')).toBeInTheDocument()
+    expect(screen.getByText('37건')).toBeInTheDocument()
+    expect(screen.queryByText('지문이 어긋난 건')).not.toBeInTheDocument()
+    expect(screen.queryByText(/undefined|NaN/)).not.toBeInTheDocument()
+  })
+
   it('[AC-AI-METRICS-010] 비용은 분모가 다른 건당 비용 둘을 구분해 보여 준다', async () => {
     renderAt('/products/ai-metrics')
 
@@ -247,9 +273,7 @@ describe('/products/ai-metrics', () => {
     // 승급률 블록은 확장 전에도 있으므로 손익분기 기준선은 그려야 한다.
     expect(screen.getByText('37.6%')).toBeInTheDocument()
     expect(screen.getByText('손익분기 45.7%')).toBeInTheDocument()
-    expect(
-      screen.getByText(/건너뛰기율은 승급률의 여집합으로 계산한 값이에요/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/건너뛰기율은 승급률의 여집합으로 계산한 값이에요/)).toBeInTheDocument()
   })
 
   it('[AC-AI-METRICS-012] 서버가 경보 문장을 주지 않으면 불리언에서 만든 문장을 보여 준다', async () => {
@@ -281,7 +305,9 @@ describe('/products/ai-metrics', () => {
 
     // 빈 상태 문구로 떨어지면 "데이터 없음"과 "볼 권한이 없음"이 구분되지 않는다.
     expect(
-      await screen.findByText('어드민 권한이 없어 검수 지표를 볼 수 없어요. 관리자 권한을 확인해 주세요.'),
+      await screen.findByText(
+        '어드민 권한이 없어 검수 지표를 볼 수 없어요. 관리자 권한을 확인해 주세요.',
+      ),
     ).toBeInTheDocument()
     expect(screen.queryByText('1단 룰')).not.toBeInTheDocument()
   })

@@ -1,5 +1,5 @@
-import { axiosInstance, errorResponse, getAccessToken, restoreSession, setAccessToken } from '@aechak/api'
-import { getIsLoggedIn, logout } from './auth.store'
+import { axiosInstance, errorResponse, restoreSession, setAccessToken } from '@aechak/api'
+import { getSessionState, login, logout } from './auth.store'
 
 // 서버 세션 종료(POST /auth/web/logout) — 설정 홈 로그아웃의 서버 배선(SCRUM-92).
 // 서버 계약: permitAll + refresh 쿠키 기반이라 Authorization이 필요 없고, 쿠키가 없거나 이미
@@ -16,15 +16,49 @@ export async function endServerSession(): Promise<void> {
   }
 }
 
-// 비로그인도 열리는 라우트(SNS 프로필 등)의 세션 확인. access는 메모리에만 있어 새로고침이나 공유 링크로 들어오면
-// 비어 있고, 토큰 선택 API는 401 없이 비로그인 응답을 주므로 인터셉터의 refresh도 돌지 않는다. 그래서 요청 전에
-// refresh 쿠키로 세션을 먼저 복원한다. 쿠키가 없으면(401) 로그인 화면으로 보내지 않고 비로그인으로 이어 간다.
-// 네트워크/5xx는 세션 유무를 모르니 그대로 둔다(_tabs/index.tsx와 같은 판단).
+// 루트 게이트가 세션 확인을 기다리는 상한. axios에 timeout이 없어서 이 상한이 없으면 refresh 한
+// 건이 응답하지 않는 동안 앱 전체가 빈 화면이 된다 — BE가 permitAll로 열어 둔 공개 카탈로그까지
+// 인증 서버 응답을 기다리게 되므로, 기다림을 끊고 먼저 그린다(확인은 백그라운드에서 계속된다).
+//
+// 아는 창(窓): 상한에 걸리면 'unknown'으로 렌더하고, 회원 전용 화면은 'unknown'을 막지 않으므로
+// (조회 실패를 그대로 보이게 하는 기존 판단 — wishlist.tsx 참고) 그 조회가 401을 받아 전역
+// onAuthExpired로 로그인 화면으로 간다. 로그인 안내 대신 로그인 화면이 뜨는 셈이다. 이미 5xx·
+// 네트워크 실패로 'unknown'이 되는 경로가 같은 결과였고, 반대로 'unknown'을 막으면 멀쩡한 회원에게
+// "로그인이 필요해요"라는 거짓을 읽힌다(AC-AUTH-STORE-006·AC-HOME-025가 잠근 자리). 그래서 상한은
+// 공개 화면이 인증 서버에 묶이지 않는 쪽을 고른다 — 이쪽 손실은 안내 문구, 저쪽 손실은 앱 전체다.
+const SESSION_GATE_TIMEOUT_MS = 1500
+
+/**
+ * 세션을 한 번 확인해 'unknown'을 'member' 또는 'guest'로 확정한다. 모든 라우트가 렌더 전에
+ * 이것을 거친다(__root beforeLoad).
+ *
+ * access는 메모리에만 있어 새로고침이나 공유 링크로 들어오면 비어 있고, refresh 쿠키는 httpOnly라
+ * JS가 읽을 수 없다. 그래서 refresh를 한 번 쏴 보는 것만이 회원 여부를 아는 방법이다. 쿠키가
+ * 없으면(401) 로그인 화면으로 보내지 않고 비회원으로 확정해 게스트 카탈로그를 그대로 보여준다.
+ * 네트워크/5xx는 세션 유무를 모르니 'unknown'으로 남겨 다음 네비게이션에서 다시 확인한다.
+ *
+ * 확정된 뒤에는 요청을 보내지 않는다 — refresh 쿠키는 호출마다 회전하므로 불필요한 재확인이
+ * 멀쩡한 세션을 흔든다. 동시 호출은 client.ts의 공유 refreshPromise가 한 번으로 합친다(상한에
+ * 걸려 다음 네비게이션에서 다시 불려도 진행 중인 요청에 합류하므로 쿠키가 또 회전하지 않는다).
+ */
 export async function restoreSessionOrGuest(): Promise<void> {
-  if (!getIsLoggedIn() || getAccessToken()) return
+  if (getSessionState() !== 'unknown') return
+  // 확정은 백그라운드로 계속 둔다 — 아래 상한에 걸려 먼저 렌더해도, 응답이 오면 상태가 올라가고
+  // 화면이 다시 그려진다. 이 체인은 reject하지 않는다(두 갈래 다 받는다).
+  const confirmed = restoreSession().then(
+    () => login(),
+    // refresh 401(쿠키 없음/만료 20002, 재사용 20003) = 세션 없음 → 비회원 확정.
+    (error: unknown) => {
+      if (errorResponse(error)?.status === 401) logout()
+    },
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const bound = new Promise<void>(resolve => {
+    timer = setTimeout(resolve, SESSION_GATE_TIMEOUT_MS)
+  })
   try {
-    await restoreSession()
-  } catch (error) {
-    if (errorResponse(error)?.status === 401) logout()
+    await Promise.race([confirmed, bound])
+  } finally {
+    clearTimeout(timer)
   }
 }

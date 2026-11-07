@@ -1,11 +1,14 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 
 // 검색 입력·최근검색어(b3-st-2) + 결과·필터(b3-st-3) ↔ 실 API 연동 E2E. 실백엔드 없이 page.route
 // 스텁으로 서버 계약을 재현한다(마켓 spec과 동일한 CORS/프리플라이트 규칙 — 페이지 5175 → API 8080이
 // 교차 출처 + withCredentials라 fulfill 응답에도 정확한 origin의 CORS 헤더가 필요하다). 각 상태에서
 // page.screenshot으로 PR 첨부용 캡처를 test-results/pr-c(gitignore)에 남긴다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -88,11 +91,11 @@ function product(productId: string, name: string, price: number) {
   }
 }
 
-// 무결과(3-C) 화면의 대체 검색어(SearchResultsScreen의 FALLBACK_SUGGESTIONS) 중 하나. 이 칩을 눌러
-// 재검색이 검색창을 동기화하고 새 결과를 부르는지(3-C → 3-A) 검증한다.
-const FALLBACK_QUERY = '하네스'
+// 무결과(3-C) 화면의 추천 검색어는 서버 추천어(RECOMMENDED_KEYWORDS)에서 온다. 그중 결과가 걸리는
+// 것 하나를 골라, 칩을 눌러 재검색이 검색창을 동기화하고 새 결과를 부르는지(3-C → 3-A) 검증한다.
+const SUGGESTED_QUERY = '대용량 사료'
 
-// keyword로 결과 유무를 가른다 — '사료' 또는 재검색용 대체 검색어는 결과 있음(3-A), 그 외는 빈 결과(3-C).
+// keyword로 결과 유무를 가른다 — '사료'(추천어 재검색 포함)는 결과 있음(3-A), 그 외는 빈 결과(3-C).
 const SEARCH_HITS = [
   product('p-search-1', '강아지 연어 사료 2kg', 28000),
   product('p-search-2', '고양이 그레인프리 사료 5kg', 42000),
@@ -111,7 +114,7 @@ function stubProducts(route: Route) {
   const params = new URL(route.request().url()).searchParams
   const keyword = params.get('keyword') ?? ''
   const category = params.get('category')
-  let hits = keyword.includes('사료') || keyword.includes(FALLBACK_QUERY) ? SEARCH_HITS : []
+  let hits = keyword.includes('사료') ? SEARCH_HITS : []
   if (category) hits = hits.filter(p => CATEGORY_OF[p.productId] === Number(category))
   return fulfillJson(route, 200, {
     data: { products: hits, totalCount: hits.length, nextCursor: null, hasNext: false },
@@ -119,6 +122,7 @@ function stubProducts(route: Route) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
   // 결과 화면의 카테고리 필터가 조회하는 /categories(로그인 사용자 전용). 결과 화면 진입 시 항상 발사된다.
   await page.route('**/api/v1/categories', route => fulfillJson(route, 200, CATEGORIES))
 })
@@ -144,7 +148,7 @@ test('[AC-SEARCH-E2E-002] 결과 그리드(3-A)·필터 시트(3-B)와 카테고
   await page.route('**/api/v1/search/products*', stubProducts)
 
   // 3-A: 결과 그리드 + 결과 수.
-  await page.goto('/search/results?q=사료')
+  await page.goto('/search/results?q=사료&tab=market')
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await expect(page.getByText('고양이 그레인프리 사료 5kg')).toBeVisible()
   await expect(page.getByText('대형견 대용량 사료 15kg')).toBeVisible()
@@ -166,18 +170,22 @@ test('[AC-SEARCH-E2E-002] 결과 그리드(3-A)·필터 시트(3-B)와 카테고
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
 })
 
-test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 대체 검색어를 보여준다', async ({ page }) => {
+test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 추천 검색어를 보여준다', async ({ page }) => {
   await page.route('**/api/v1/search/products*', stubProducts)
+  // 추천 칩의 출처 — 무결과일 때 결과 화면이 /search/keywords를 조회한다(하드코딩 칩을 걷어낸 자리).
+  await page.route('**/api/v1/search/keywords', route =>
+    fulfillJson(route, 200, keywordsEnvelope(RECENT_KEYWORDS)),
+  )
 
-  await page.goto('/search/results?q=없는키워드')
+  await page.goto('/search/results?q=없는키워드&tab=market')
   await expect(page.getByText('검색 결과가 없어요')).toBeVisible()
   await expect(page.getByText('이런 검색어는 어때요?')).toBeVisible()
   await shot(page, `${SHOTS}/05-no-results.png`)
 
-  // 대체 검색어 칩(하네스)을 눌러 같은 라우트로 재검색하면, 검색창이 새 키워드로 동기화되고(3-C의
+  // 추천 검색어 칩을 눌러 같은 라우트로 재검색하면, 검색창이 새 키워드로 동기화되고(3-C의
   // useEffect(setDraftQuery,[query])) 결과가 다시 로드된다(3-C → 3-A).
-  await page.getByRole('button', { name: FALLBACK_QUERY }).click()
-  await expect(page.getByPlaceholder('상품, 브랜드 검색')).toHaveValue(FALLBACK_QUERY)
+  await page.getByRole('button', { name: SUGGESTED_QUERY }).click()
+  await expect(page.getByPlaceholder('상품/계정/해시태그 검색')).toHaveValue(SUGGESTED_QUERY)
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await shot(page, `${SHOTS}/06-research.png`)
 })

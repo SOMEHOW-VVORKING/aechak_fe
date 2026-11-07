@@ -59,16 +59,20 @@ describe('ai-review-metrics.map', () => {
 
   it('[AC-AI-METRICS-M003] 창이 1분 안쪽으로 다르면 어긋남이 아니고, 그보다 크면 어긋남이다', () => {
     const window = toWindowView({
-      window: { from: '2026-10-16T09:00:30', to: '2026-10-23T09:00:00', measuredAt: '2026-10-23T09:00:00' },
+      window: {
+        from: '2026-10-16T09:00:30',
+        to: '2026-10-23T09:00:00',
+        measuredAt: '2026-10-23T09:00:00',
+      },
     })
     // 서버가 초를 버리거나 올리는 것은 어긋남이 아니다 — 그걸 경보로 올리면 안내가 상시 켜진다.
-    expect(windowGaps({ from: '2026-10-16T09:00:00', to: null, policyVersion: null }, window).period).toBe(
-      false,
-    )
+    expect(
+      windowGaps({ from: '2026-10-16T09:00:00', to: null, policyVersion: null }, window).period,
+    ).toBe(false)
     // 설정 창(24시간)을 돌려주는 서버에 7일을 요청한 경우가 이것이다.
-    expect(windowGaps({ from: '2026-10-22T09:00:00', to: null, policyVersion: null }, window).period).toBe(
-      true,
-    )
+    expect(
+      windowGaps({ from: '2026-10-22T09:00:00', to: null, policyVersion: null }, window).period,
+    ).toBe(true)
     // 기간을 고르지 않았으면 비교 대상이 없어 어긋남도 없다.
     expect(windowGaps(EMPTY_METRICS_QUERY, window).period).toBe(false)
   })
@@ -82,17 +86,23 @@ describe('ai-review-metrics.map', () => {
         policyVersion: 'policy-v1',
       },
     })
-    expect(windowGaps({ from: null, to: null, policyVersion: 'policy-v2' }, served).policyVersion).toBe(
-      true,
-    )
-    expect(windowGaps({ from: null, to: null, policyVersion: 'policy-v1' }, served).policyVersion).toBe(
-      false,
-    )
+    expect(
+      windowGaps({ from: null, to: null, policyVersion: 'policy-v2' }, served).policyVersion,
+    ).toBe(true)
+    expect(
+      windowGaps({ from: null, to: null, policyVersion: 'policy-v1' }, served).policyVersion,
+    ).toBe(false)
     // 서버가 버전 필터를 무시하고 전체를 집계한 경우(응답 policyVersion이 null)도 어긋남이다.
     const all = toWindowView({
-      window: { from: '2026-10-22T00:00:00', to: '2026-10-23T00:00:00', measuredAt: '2026-10-23T09:00:00' },
+      window: {
+        from: '2026-10-22T00:00:00',
+        to: '2026-10-23T00:00:00',
+        measuredAt: '2026-10-23T09:00:00',
+      },
     })
-    expect(windowGaps({ from: null, to: null, policyVersion: 'policy-v1' }, all).policyVersion).toBe(true)
+    expect(
+      windowGaps({ from: null, to: null, policyVersion: 'policy-v1' }, all).policyVersion,
+    ).toBe(true)
   })
 
   it('[AC-AI-METRICS-M005] window 블록이 없으면 flat 필드로 떨어지고 창의 끝은 측정 시각이다', () => {
@@ -370,7 +380,10 @@ describe('ai-review-metrics.map', () => {
         callCount: 10,
         inspectionCount: 5,
         totalCostMicroUsd: 1000,
-        byStage: { CRITIC: { callCount: 5, costMicroUsd: 600 }, REWRITE: { callCount: 5, costMicroUsd: 400 } },
+        byStage: {
+          CRITIC: { callCount: 5, costMicroUsd: 600 },
+          REWRITE: { callCount: 5, costMicroUsd: 400 },
+        },
       },
     })
     expect(split?.hasUnattributed).toBe(false)

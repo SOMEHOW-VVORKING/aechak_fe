@@ -9,10 +9,24 @@ import {
   toRegisterRequest,
   toUpdateRequest,
   validateProductForm,
+  type ProductDraft,
   type ProductFormValues,
 } from '../products.contract'
 
 const thumbnail = [{ id: 't', previewUrl: 'blob:t', imageKey: 'tmp/1/products/1.png', file: null }]
+
+/** 초안 응답은 중첩 목록이 항상 배열이다(요청에서는 nullable) — 테스트가 그 모양을 지어낸다. */
+function draftOf(patch: Partial<ProductDraft> = {}): ProductDraft {
+  return {
+    draftId: 'd1',
+    savedAt: '2026-10-01T00:00:00',
+    additionalImageKeys: [],
+    detailImageKeys: [],
+    optionGroups: [],
+    optionCombinations: [],
+    ...patch,
+  }
+}
 
 function validForm(patch: Partial<ProductFormValues> = {}): ProductFormValues {
   return {
@@ -82,7 +96,7 @@ describe('validateProductForm', () => {
 describe('toFormValues', () => {
   it('[AC-SPRD-005] 할인가 없이 할인 기간만 저장한 임시저장은 할인 토글을 켠 채로 연다', () => {
     const values = toFormValues(
-      { productId: 'd1', savedAt: '2026-10-01T00:00:00', discountStartAt: '2026-10-10T00:00:00' },
+      draftOf({ discountStartAt: '2026-10-10T00:00:00' }),
       [],
       key => `url:${key}`,
     )
@@ -226,8 +240,46 @@ describe('toDraftRequest', () => {
       { optionValues: ['1kg'], additionalPrice: 500 },
       { optionValues: ['2kg'], additionalPrice: 0 },
     ])
-    const resumed = toFormValues({ productId: 'd1', savedAt: '2026-10-01T00:00:00', ...draft }, [], key => key)
+    const resumed = toFormValues(
+      draftOf({
+        productName: draft.productName,
+        regularPrice: draft.regularPrice,
+        optionGroups: draft.optionGroups ?? [],
+        optionCombinations: draft.optionCombinations ?? [],
+      }),
+      [],
+      key => key,
+    )
     expect(resumed.combinations[0]).toMatchObject({ optionValues: ['1kg'], additionalPrice: '500', stockQuantity: '' })
+  })
+
+  it('[AC-SPRD-037] 비운 칸은 키째 빠진다 — PUT이 통째로 덮어쓰므로 그것이 "비움"이다', () => {
+    const body = toDraftRequest({
+      ...emptyProductForm(),
+      productName: '  하네스  ',
+      // 할인 토글이 꺼져 있으면 입력해 둔 할인가도 싣지 않는다.
+      discountEnabled: false,
+      discountPrice: '1000',
+    })
+    expect(body).toEqual({ productName: '하네스' })
+  })
+
+  it('[AC-SPRD-066] 초안의 null 재고와 빈 그룹명을 폼 값으로 되살린다', () => {
+    // 옵션 없이 재고만 비운 초안 — String(null)이 새면 '재고 null'이 폼에 보인다.
+    const resumed = toFormValues(
+      draftOf({ optionCombinations: [{ optionValues: [], additionalPrice: 0, stockQuantity: null }] }),
+      [],
+      key => key,
+    )
+    expect(resumed.defaultStock).toBe('')
+
+    // 그룹명을 아직 안 적은 초안. 폼은 문자열만 다루므로 빈 문자열로 내려와야 한다.
+    const withGroup = toFormValues(
+      draftOf({ optionGroups: [{ name: null, values: ['1kg'] }] }),
+      [],
+      key => key,
+    )
+    expect(withGroup.optionGroups).toEqual([{ name: '', values: ['1kg'] }])
   })
 })
 
@@ -236,7 +288,8 @@ describe('productErrorMessage', () => {
 
   it('[AC-SPRD-004] BE errorCode별 FE 문구를 돌려준다', () => {
     const fallback = '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
-    for (const code of [40000, 40001, 40002, 40003, 40004, 40005, 40100, 40101, 40200, 40201, 90001, 90003, 100000, 100002]) {
+    // 40400·40401은 임시저장 전용 코드다(ProductErrorCode PRODUCT_DRAFT_NOT_FOUND / _LIMIT_EXCEEDED).
+    for (const code of [40000, 40001, 40002, 40003, 40004, 40005, 40100, 40101, 40200, 40201, 40400, 40401, 90001, 90003, 100000, 100002]) {
       expect(productErrorMessage(error(400, code))).not.toBe(fallback)
     }
     expect(productErrorMessage(error(400, 40003))).toBe(
@@ -246,6 +299,9 @@ describe('productErrorMessage', () => {
     expect(productErrorMessage(error(409, 90003))).toBe('다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해 주세요.')
     // 90002(INVALID_CURSOR)는 셀러 상품 API가 보내지 않는다.
     expect(productErrorMessage(error(400, 90002))).toBe(fallback)
+    expect(productErrorMessage(error(422, 40401))).toBe(
+      '임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.',
+    )
     expect(productErrorMessage(new Error('network'))).toBe(fallback)
   })
 })

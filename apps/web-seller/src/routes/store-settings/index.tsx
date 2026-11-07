@@ -19,6 +19,7 @@ import {
   DOCUMENT_LABEL,
   DocumentSection,
   REQUIRED_DOCUMENTS,
+  StoreProfileSection,
   StoreSettingsForm,
   emptyFormValue,
   formValueFrom,
@@ -27,6 +28,7 @@ import {
   isWithinDocumentSizeLimit,
   missingDocuments,
   OVERSIZED_DOCUMENT_MESSAGE,
+  PhoneVerificationSection,
   sellerApplicationErrorMessage,
   UNSUPPORTED_DOCUMENT_MESSAGE,
   uploadSellerDocument,
@@ -106,7 +108,7 @@ const HEADER_META: Record<ScreenStatus, HeaderMeta> = {
   },
   submitted: {
     title: '스토어 개설 심사',
-    description: '입점 신청이 접수됐어요. 심사가 시작되면 알려드릴게요.',
+    description: '입점 신청이 접수됐어요. 심사가 시작되면 이 화면의 상태가 바뀌어요.',
     pillVariant: 'neutral',
     pillLabel: '심사 대기',
     pillIcon: Clock,
@@ -242,7 +244,7 @@ function StoreSettingsRoute() {
   function handleSubmit() {
     void performSave(() => {
       submitApplication.mutate({
-        onSuccess: () => toast.show('제출했어요. 심사 결과를 알림으로 알려드릴게요.'),
+        onSuccess: () => toast.show('제출했어요. 심사 결과는 이 화면에서 확인할 수 있어요.'),
         onError: error => setActionError(sellerApplicationErrorMessage(error)),
       })
     })
@@ -257,7 +259,10 @@ function StoreSettingsRoute() {
     )
   }
 
-  if (isError) {
+  // 읽은 적이 없을 때만 화면 전체를 실패로 바꾼다. 캐시가 있는데(재조회 실패) 전체를 갈면
+  // 작성 중인 입력이 사라진다 — 신청 정보는 staleTime 60초라 창 포커스 한 번으로 재조회가
+  // 돌고, 그 조회만 실패해도 승인 뒤 스토어 폼까지 언마운트돼 다시 서버 값으로 시드된다.
+  if (isError && application === undefined) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
@@ -307,21 +312,15 @@ function StoreSettingsRoute() {
           icon: <Clock className="size-6" />,
           title: status === 'submitted' ? '심사 대기 중이에요' : '심사 중이에요',
           description:
-            '제출해주신 서류를 확인하고 있어요. 1~2영업일 안에 심사 결과를 알림으로 보내드릴게요.',
+            '제출해주신 서류를 확인하고 있어요. 보통 1~2영업일 걸려요. 따로 알림이 가지 않으니 이 화면에서 결과를 확인해 주세요.',
         }
-      : status === 'approved'
+      : status === 'cancelled'
         ? {
-            icon: <CheckCircle2 className="size-6" />,
-            title: '입점 신청이 승인됐어요',
-            description: '스토어 정보를 설정하는 화면은 곧 제공될 예정이에요.',
+            icon: <Ban className="size-6" />,
+            title: '취소된 신청이에요',
+            description: '새로 입점을 원하시면 고객센터로 문의해 주세요.',
           }
-        : status === 'cancelled'
-          ? {
-              icon: <Ban className="size-6" />,
-              title: '취소된 신청이에요',
-              description: '새로 입점을 원하시면 고객센터로 문의해 주세요.',
-            }
-          : null
+        : null
 
   return (
     <div className="p-6">
@@ -336,6 +335,23 @@ function StoreSettingsRoute() {
       />
       {headerMeta.description && (
         <p className="-mt-4 mb-4 text-body-sm text-text-tertiary">{headerMeta.description}</p>
+      )}
+
+      {/* 재조회 실패 — 화면은 그대로 두고 값이 마지막으로 읽은 것임을 밝힌다. */}
+      {isError && (
+        <Alert variant="warning" className="mb-4">
+          <span>
+            최신 신청 정보를 불러오지 못했어요. 마지막으로 불러온 정보와 작성 중인 입력은 그대로
+            두었어요.{' '}
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="underline underline-offset-2"
+            >
+              다시 시도
+            </button>
+          </span>
+        </Alert>
       )}
 
       {status !== 'approved' && status !== 'cancelled' && (
@@ -370,6 +386,10 @@ function StoreSettingsRoute() {
         />
       )}
 
+      {/* 승인 뒤에는 같은 화면이 스토어 운영 설정이 된다(GET·PUT /sellers/me/store).
+          조회·저장을 이 섹션이 소유하므로 라우트는 신청 단계만 들고 있는다. */}
+      {status === 'approved' && <StoreProfileSection />}
+
       {isFormStage && (
         <>
           {status === 'rejected' && application?.rejectionReason && (
@@ -384,11 +404,17 @@ function StoreSettingsRoute() {
             </Alert>
           )}
 
-          <StoreSettingsForm
-            value={form}
-            onChange={handleChange}
-            accountNumberMasked={application?.accountNumberMasked}
-          />
+          {/* BE requirePhoneVerified()가 임시저장부터 403/10103으로 막는다 — 폼을 다 채운 뒤에
+              막히지 않게 인증 블록을 신청 폼보다 먼저 둔다. */}
+          <PhoneVerificationSection />
+
+          <div className="mt-5">
+            <StoreSettingsForm
+              value={form}
+              onChange={handleChange}
+              accountNumberMasked={application?.accountNumberMasked}
+            />
+          </div>
 
           <div className="mt-5">
             <DocumentSection
@@ -409,7 +435,7 @@ function StoreSettingsRoute() {
               ) : (
                 <>
                   <Clock className="size-3.5" />
-                  제출하면 1~2영업일 안에 심사 결과를 알림으로 보내드려요.
+                  제출하면 보통 1~2영업일 안에 결과가 이 화면에 표시돼요.
                 </>
               )}
             </span>

@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type {
   AddCartItemEnvelope,
   CartEnvelope,
@@ -25,7 +26,9 @@ const TOKEN = process.env['LIVE_API_TOKEN']
 test.skip(!TOKEN, '로컬 실 BE + LIVE_API_TOKEN 필요')
 test.describe.configure({ mode: 'serial', timeout: 90_000 })
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
@@ -156,6 +159,11 @@ test.afterAll(async ({ playwright }) => {
   } finally {
     await request.dispose()
   }
+})
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
 })
 
 test('[LIVE-01] 상품 상세에서 기본형을 담으면 실 POST /carts/items 201과 담김 시트가 뜬다', async ({

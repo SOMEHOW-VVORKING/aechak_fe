@@ -75,15 +75,23 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
     expect(screen.getByText('3', { selector: '.tabular-nums' })).toBeInTheDocument()
   })
 
-  it('[AC-ADM-ROSTER-002] 승격 직후 재로그인이 필요하다는 안내가 화면에 고정돼 있다', async () => {
+  it('[AC-ADM-ROSTER-002] 권한 변경이 다음 토큰 갱신에 반영된다는 안내가 화면에 고정돼 있다', async () => {
     renderAt('/admins')
 
-    // role은 로그인 시점 JWT 스냅샷이다 — 이 문구는 계약의 일부라 성공 토스트와 별개로 늘 보인다.
-    expect(await screen.findByText(/구매자 앱\(api\)에서 다시 로그인해야 관리자 권한이 반영돼요/)).toBeInTheDocument()
-    expect(screen.getByText(/이미 발급된 토큰이 만료될 때까지 관리자로 통과해요/)).toBeInTheDocument()
+    // 게이트가 읽는 access 토큰의 role은 발급·갱신 순간의 DB 값이다(BE TokenService.currentRole).
+    // 문구 전체를 리터럴로 고정한다 — 일부만 단언하면 "재로그인이 필요 없다"나 "다시 로그인하면
+    // 바로 반영된다"를 지우거나 뒤집어도 통과한다.
+    expect(
+      await screen.findByText(
+        '권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요. 다시 로그인할 필요는 없지만, 이미 발급된 access 토큰(수명 30분)이 만료되기 전까지는 옛 권한으로 통과해요. 바로 반영하려면 그 계정이 다시 로그인하면 돼요.',
+      ),
+    ).toBeInTheDocument()
+    // 강등을 "refresh 만료(7일)까지 통과"로 읽으면 운영자가 불필요한 비상 조치를 한다.
+    expect(screen.queryByText(/만료될 때까지 관리자로 통과/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/다시 로그인해야 관리자 권한이 반영/)).not.toBeInTheDocument()
   })
 
-  it('[AC-ADM-ROSTER-003] 활성 일반 회원을 승격하면 명부에 추가되고 재로그인 안내가 다시 뜬다', async () => {
+  it('[AC-ADM-ROSTER-003] 활성 일반 회원을 승격하면 명부에 추가되고 반영 시점 안내가 뜬다', async () => {
     const user = userEvent.setup()
     renderAt('/admins')
     await rowOf('김운영')
@@ -92,7 +100,7 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
     await user.click(screen.getByRole('button', { name: '관리자로 승격' }))
 
     expect(
-      await screen.findByText('관리자로 승격했어요. 그 계정은 다시 로그인해야 권한이 반영돼요.'),
+      await screen.findByText('관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.'),
     ).toBeInTheDocument()
     await screen.findByText('승격대상')
     expect(currentAdminRoster().find(row => row.userId === 45)?.role).toBe('ADMIN')
@@ -157,11 +165,17 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
 
     await user.click(within(row).getByRole('button', { name: '김운영 관리자 권한 해제' }))
     const modal = await screen.findByRole('dialog')
-    // 강등해도 이미 발급된 토큰은 만료까지 통과한다 — 즉시 차단으로 설명하지 않는다.
-    expect(modal).toHaveTextContent('이미 발급된 토큰은 만료될 때까지 관리자로 통과해요.')
+    // 강등은 즉시도, refresh 수명(7일)까지도 아니다 — 이미 발급된 access가 만료될 때까지다.
+    expect(modal).toHaveTextContent(
+      '김운영 계정이 일반 회원으로 돌아가요. 이미 발급된 access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.',
+    )
     await user.click(within(modal).getByRole('button', { name: '권한 해제' }))
 
-    expect(await screen.findByText('관리자 권한을 해제했어요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        '관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.',
+      ),
+    ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('김운영')).not.toBeInTheDocument())
     expect(currentAdminRoster().find(row2 => row2.userId === 7)?.role).toBe('GENERAL')
   })
@@ -262,5 +276,38 @@ describe('/admins 관리자 명부 (SCRUM-252, 253)', () => {
     server.resetHandlers()
     await user.click(previous)
     expect(await screen.findByText('관리자0')).toBeInTheDocument()
+  })
+
+  it('[AC-ADM-ROSTER-014] 권한 없는 계정(403/20011)에서는 승격 버튼이 눌리지 않는다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    renderAt('/admins')
+    await screen.findByText('관리자 권한이 없는 계정이에요. 관리자 계정으로 다시 로그인해 주세요.')
+
+    await user.type(screen.getByLabelText('승격할 사용자 ID'), '45')
+
+    // 명부가 막힌 이유 자체가 권한이라, 같은 토큰으로 나가는 승격도 서버가 반드시 거절한다 —
+    // 누를 수 있게 둬서 실패를 보여 줄 이유가 없다(자기 자신 강등 버튼과 같은 판단).
+    expect(screen.getByRole('button', { name: '관리자로 승격' })).toBeDisabled()
+  })
+
+  it('[AC-ADM-ROSTER-015] 일시 장애(5xx)로 명부가 비어도 승격은 막지 않는다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(ADMIN_ROSTER_URL, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/admins')
+    await screen.findByText('관리자 명부를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+
+    await user.type(screen.getByLabelText('승격할 사용자 ID'), '45')
+
+    // 재시도로 풀릴 수 있는 실패다 — 권한 오류와 같이 묶어 막으면 할 수 있는 일을 못 하게 된다.
+    expect(screen.getByRole('button', { name: '관리자로 승격' })).toBeEnabled()
   })
 })

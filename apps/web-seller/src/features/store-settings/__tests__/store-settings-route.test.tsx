@@ -1,21 +1,39 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { SELLER_APPLICATION_QUERY_KEY, SELLER_STORE_QUERY_KEY } from '@/features/store-settings'
 import {
+  MSW_PHONE_CODE,
+  PHONE_VERIFICATIONS_CONFIRM_URL,
+  PHONE_VERIFICATIONS_URL,
+  SELLER_APPLICATIONS_URL,
+  SELLER_STORE_URL,
   currentSellerApplication,
+  currentStore,
   makeApplicationWire,
+  makeStoreWire,
+  seedPhoneVerification,
   seedSellerApplication,
+  seedStoreSettings,
+  server,
 } from '../../../testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
-function renderAt(path: string) {
+// 실제 앱(main.tsx)의 쿼리 기본값 — staleTime 60초. 재진입 경로는 이 값으로 재현해야 한다.
+// 기본값 0으로 재진입을 테스트하면 언마운트 뒤 재조회가 언제나 돌아, 캐시가 폼을 확정하는
+// 결함이 있어도 통과한다.
+const PROD_QUERY_DEFAULTS = {
+  defaultOptions: { queries: { retry: false, staleTime: 1000 * 60 } },
+}
+
+function renderAt(path: string, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [path] }),
   })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -26,6 +44,7 @@ function renderAt(path: string) {
 describe('/store-settings (실서버 계약 — MSW)', () => {
   beforeEach(() => {
     seedSellerApplication(null)
+    seedPhoneVerification()
   })
 
   it('[AC-STORE-ROUTE-001] 신청 이력이 없으면(404/10100) 신규 신청 폼을 보여준다', async () => {
@@ -116,12 +135,302 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
     expect(screen.queryByRole('button', { name: '임시저장' })).not.toBeInTheDocument()
   })
 
-  it('[AC-STORE-ROUTE-005] 승인(APPROVED)은 승인 안내만 보여준다(2-B는 여전히 범위 밖)', async () => {
+  /**
+   * 예전엔 승인 뒤 이 자리가 "스토어 정보를 설정하는 화면은 곧 제공될 예정이에요"라는 빈 화면이었다.
+   * GET/PUT /sellers/me/store가 이미 떠 있었으므로 승인된 셀러가 자기 상호조차 못 보는 거짓이었다.
+   */
+  it('[AC-STORE-ROUTE-005] 승인(APPROVED)은 서버 스토어 값을 폼에 채워 보여준다', async () => {
     seedSellerApplication(makeApplicationWire({ status: 'APPROVED', decidedAt: '2026-08-12T10:00:00' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({
+        storeName: '애착상회',
+        brandIntro: '손으로 깎는 원목 급식대만 만들어요.',
+        zipCode: '13529',
+        roadAddress: '경기 성남시 판교역로 2',
+        detailAddress: '3층',
+      }),
+    })
     renderAt('/store-settings')
 
-    expect(await screen.findByText('입점 신청이 승인됐어요')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('애착상회')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('손으로 깎는 원목 급식대만 만들어요.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('경기 성남시 판교역로 2')).toBeInTheDocument()
+    expect(screen.queryByText(/곧 제공될 예정/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '제출하기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-008] 저장은 전체 덮어쓰기로 나가고 빈 칸은 null이 된다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ storeName: '애착상회', brandIntro: '지울 소개', zipCode: '13529' }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '  애착스토어  ')
+    await user.clear(screen.getByDisplayValue('지울 소개'))
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    const saved = currentStore()
+    // 상호 앞뒤 공백은 보내는 쪽에서 떼고, 비운 칸은 ''가 아니라 null로 나간다.
+    expect(saved?.storeName).toBe('애착스토어')
+    expect(saved?.brandIntro).toBeNull()
+    // 건드리지 않은 칸은 읽은 값 그대로 남는다(전체 덮어쓰기라 빼면 지워진다).
+    expect(saved?.zipCode).toBe('13529')
+    // 저장 뒤 폼도 서버가 다듬은 값으로 되맞춰진다.
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-009] 폼에 없는 이미지 키도 그대로 실려 저장이 이미지를 지우지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({
+        profileImageKey: 'sellers/store/p.webp',
+        bannerImageKey: 'sellers/store/b.webp',
+      }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await screen.findByDisplayValue('애착상회')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.profileImageKey).toBe('sellers/store/p.webp')
+    expect(currentStore()?.bannerImageKey).toBe('sellers/store/b.webp')
+  })
+
+  it('[AC-STORE-ROUTE-010] 상호를 비우면 서버를 부르지 않고 화면이 먼저 막는다', async () => {
+    let puts = 0
+    server.use(
+      http.put(SELLER_STORE_URL, () => {
+        puts += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.clear(await screen.findByDisplayValue('애착상회'))
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(
+      await screen.findByText('저장하지 못했어요. 상호(스토어명)를 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(puts).toBe(0)
+  })
+
+  it('[AC-STORE-ROUTE-011] 정지 셀러는 값은 보여주고 저장은 막고 사유를 알린다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ status: 'SUSPENDED' }),
+    })
+    renderAt('/store-settings')
+
+    expect(await screen.findByDisplayValue('애착상회')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+    expect(screen.getByText(/운영 중인 스토어만 설정을 바꿀 수 있어요/)).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-012] 조회가 실패하면 빈 폼 대신 재시도를 준다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    server.use(http.get(SELLER_STORE_URL, () => new HttpResponse(null, { status: 500 })))
+    renderAt('/store-settings')
+
+    // 저장이 전체 덮어쓰기라, 못 읽은 값을 빈 폼으로 보여 주면 저장이 상호를 지운다.
+    expect(await screen.findByText('스토어 정보를 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-014] 승인인데 서버에 스토어가 없으면 읽기 실패와 다른 문구를 보여준다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({ isSeller: false, applicationStatus: 'APPROVED', store: null })
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('스토어가 아직 열리지 않았어요')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 주소 3필드는 배송 정책의 출고지와 **같은 컬럼**이다. 재진입 때 캐시된 옛 주소로 폼을
+   * 확정하면, 저장이 전체 덮어쓰기라 그 사이 배송 정책에서 바꾼 출고지가 되돌아간다.
+   * 같은 QueryClient 로 두 번 렌더해 캐시가 남은 재진입을 재현한다.
+   */
+  it('[AC-STORE-ROUTE-015] 재진입 때 캐시된 옛 주소로 저장하지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const first = renderAt('/store-settings', queryClient)
+    await screen.findByDisplayValue('경기 성남시 판교역로 2')
+    first.unmount()
+
+    // 그 사이 다른 화면(배송 정책)이 같은 주소 컬럼을 바꿨다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    // 캐시된 옛 주소가 아니라 다시 읽은 값이 폼에 들어가야 한다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('경기 성남시 판교역로 2')).not.toBeInTheDocument()
+
+    // 상호만 바꿔 저장해도 주소가 옛 값으로 되돌아가지 않는다.
+    const nameInput = screen.getByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /**
+   * 입력 중에 도착한 새 응답은 **건드린 칸만** 비켜 가야 한다. 폼 전체를 지키면, 상호만 고치는
+   * 동안 다른 화면(배송 정책)이 바꾼 주소가 버려지고 전체 덮어쓰기 저장이 옛 주소를 되돌린다.
+   * 상호를 고친 뒤 무효화로 재조회를 일으켜 "입력 중 새 응답 도착"을 만든다.
+   */
+  it('[AC-STORE-ROUTE-016] 입력 중에 도착한 새 주소는 버리지 않고 건드린 칸만 지킨다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '경기 성남시 판교역로 2' }),
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 그 사이 다른 화면이 같은 주소 컬럼을 바꿨고, 재조회가 새 값을 들고 온다.
+    seedStoreSettings({
+      isSeller: true,
+      applicationStatus: 'APPROVED',
+      store: makeStoreWire({ roadAddress: '서울 강남구 테헤란로 1' }),
+    })
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    // 건드리지 않은 주소는 새 값으로 맞춰지고, 건드린 상호는 입력이 남는다.
+    expect(await screen.findByDisplayValue('서울 강남구 테헤란로 1')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    await screen.findByText('저장했어요.')
+    expect(currentStore()?.storeName).toBe('애착스토어')
+    expect(currentStore()?.roadAddress).toBe('서울 강남구 테헤란로 1')
+  })
+
+  /**
+   * 재조회가 도는 동안에는 저장을 막는다. 병합은 조회가 끝난 뒤에야 도는데 저장이 열려 있으면,
+   * 다른 화면이 바꾼 값이 도착하기 전에 전체 덮어쓰기가 그 변경을 되돌린다.
+   */
+  it('[AC-STORE-ROUTE-017] 재조회 중에는 저장을 막고 이유를 알린다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderAt('/store-settings', queryClient)
+    const saveButton = await screen.findByRole('button', { name: '저장' })
+    expect(saveButton).toBeEnabled()
+
+    // 응답을 붙잡아 재조회가 도는 구간을 만든다.
+    let release: (() => void) | undefined
+    const pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    server.use(
+      http.get(SELLER_STORE_URL, async () => {
+        await pending
+        return HttpResponse.json({
+          data: { isSeller: true, applicationStatus: 'APPROVED', store: makeStoreWire() },
+        })
+      }),
+    )
+    void queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeDisabled())
+    expect(screen.getByText(/최신 값을 다시 불러오는 중이라 저장을 잠시 막았어요/)).toBeInTheDocument()
+
+    release?.()
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+  })
+
+  /**
+   * 재조회 실패로 화면을 갈아 치우면 작성 중인 입력이 사라진다. 신청 정보는 staleTime 60초라
+   * 창 포커스 한 번으로 재조회가 돌고, 그 조회만 실패해도 승인 뒤 스토어 폼이 언마운트된다 —
+   * 다시 마운트되면 서버 값으로 다시 시드되므로 입력은 되돌아오지 않는다.
+   */
+  it('[AC-STORE-ROUTE-018] 신청 정보 재조회가 실패해도 작성 중인 폼을 치우지 않는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    // 신청 정보 재조회만 실패한다(스토어 조회는 그대로 성공).
+    server.use(http.get(SELLER_APPLICATIONS_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_APPLICATION_QUERY_KEY })
+
+    // 실패는 띠로만 알리고, 입력과 폼은 그대로 남는다.
+    expect(await screen.findByText(/최신 신청 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('신청 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 스토어 조회 재조회 실패도 같다 — 섹션을 갈면 입력이 사라진다. 다만 이쪽은 저장까지 막는다:
+   * 서버 값을 확인하지 못한 채 전체 덮어쓰기로 저장하면 그 사이 배송 정책이 바꾼 주소가
+   * 되돌아간다(주소 3필드가 같은 컬럼이다).
+   */
+  it('[AC-STORE-ROUTE-019] 스토어 재조회가 실패하면 폼은 두고 저장만 막는다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    const queryClient = new QueryClient(PROD_QUERY_DEFAULTS)
+    const user = userEvent.setup()
+    renderAt('/store-settings', queryClient)
+
+    const nameInput = await screen.findByDisplayValue('애착상회')
+    await user.clear(nameInput)
+    await user.type(nameInput, '애착스토어')
+
+    server.use(http.get(SELLER_STORE_URL, () => new HttpResponse(null, { status: 500 })))
+    await queryClient.invalidateQueries({ queryKey: SELLER_STORE_QUERY_KEY })
+
+    expect(await screen.findByText(/최신 스토어 정보를 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('애착스토어')).toBeInTheDocument()
+    expect(screen.queryByText('스토어 정보를 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled()
+  })
+
+  /** BE에 통지 도메인이 없다 — 심사 단계 어디서도 알림을 보내 준다고 말하지 않는다. */
+  it('[AC-STORE-ROUTE-013] 심사 단계 안내는 알림을 약속하지 않고 이 화면을 가리킨다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
+    renderAt('/store-settings')
+
+    expect(await screen.findByText(/이 화면에서 결과를 확인해 주세요/)).toBeInTheDocument()
+    expect(screen.queryByText(/알림으로/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/알려드릴게요/)).not.toBeInTheDocument()
   })
 
   it('[AC-STORE-ROUTE-006] 서류를 첨부하면 presigned 업로드 → tmpKey가 임시저장에 실린다', async () => {
@@ -140,5 +449,120 @@ describe('/store-settings (실서버 계약 — MSW)', () => {
         currentSellerApplication()?.documents.some(doc => doc.documentType === 'BANKBOOK_COPY'),
       ).toBe(true)
     })
+  })
+
+  /**
+   * BE requirePhoneVerified()가 임시저장부터 403/10103으로 막는다. 예전엔 셀러 화면이 "구매자 앱
+   * 마이페이지에서 인증한 뒤 다시 시도해 주세요"로 안내했는데, 셀러센터만 쓰는 운영자에게는
+   * 갈 수 없는 곳을 가리키는 거짓이었다 — 이제 같은 화면에서 인증한다(SCRUM-287).
+   */
+  it('[AC-STORE-ROUTE-020] 인증 블록이 신청 폼 앞에 있고, 번호 발송 → 코드 확인까지 이 화면에서 끝난다', async () => {
+    const sent: string[] = []
+    const confirmed: { phoneNumber: string; code: string }[] = []
+    server.use(
+      http.post(PHONE_VERIFICATIONS_URL, async ({ request }) => {
+        const body = (await request.json()) as { phoneNumber: string }
+        sent.push(body.phoneNumber)
+        return HttpResponse.json({ data: { expiresInSeconds: 180, resendCooldownSeconds: 60 } })
+      }),
+      http.post(PHONE_VERIFICATIONS_CONFIRM_URL, async ({ request }) => {
+        confirmed.push((await request.json()) as { phoneNumber: string; code: string })
+        return HttpResponse.json({
+          data: {
+            status: 'ACTIVE',
+            nickname: '애착상회',
+            profileImageUrl: null,
+            profileImageKey: null,
+            bio: null,
+            email: null,
+            phoneNumber: '010-****-5678',
+            isPhoneVerified: true,
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    // 인증 블록이 신청 폼(판매자 유형)보다 앞에 있어야 한다 — 다 채운 뒤 403으로 막히지 않게.
+    const section = await screen.findByText('휴대폰 본인 인증')
+    const legalType = screen.getByText('판매자 유형')
+    expect(section.compareDocumentPosition(legalType) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 인증번호를 받기 전에는 코드 칸이 없다.
+    expect(screen.queryByLabelText('인증번호')).not.toBeInTheDocument()
+
+    // 앞뒤 공백은 화면이 떼고 보낸다(BE @Pattern은 trim하지 않는다).
+    await user.type(screen.getByLabelText('휴대폰 번호'), ' 010-1234-5678 ')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    await screen.findByLabelText('인증번호')
+    expect(sent).toEqual(['010-1234-5678'])
+
+    await user.type(screen.getByLabelText('인증번호'), MSW_PHONE_CODE)
+    await user.click(screen.getByRole('button', { name: '인증 확인' }))
+
+    expect(await screen.findByText(/인증됐어요/)).toBeInTheDocument()
+    expect(confirmed).toEqual([{ phoneNumber: '010-1234-5678', code: MSW_PHONE_CODE }])
+    // 인증 여부를 묻지 않는다 — '이미 인증한 것을 구분하지 않고 다시 인증'이 이 화면의 계약이다.
+    expect(screen.queryByLabelText('휴대폰 번호')).not.toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-021] 코드가 틀리면(30005) 서버 판정을 인증번호 칸에 인라인으로 보여준다', async () => {
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.type(await screen.findByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+
+    await user.type(await screen.findByLabelText('인증번호'), '000000')
+    await user.click(screen.getByRole('button', { name: '인증 확인' }))
+
+    expect(await screen.findByText('인증번호가 올바르지 않아요.')).toBeInTheDocument()
+    expect(screen.queryByText(/인증됐어요/)).not.toBeInTheDocument()
+    // 틀렸다고 칸을 닫지 않는다 — 다시 입력하거나 재발송할 수 있어야 한다.
+    expect(screen.getByRole('button', { name: '인증번호 재발송' })).toBeInTheDocument()
+  })
+
+  it('[AC-STORE-ROUTE-022] 미인증 저장(403/10103)은 같은 화면의 인증 블록을 가리킨다', async () => {
+    server.use(
+      http.post(SELLER_APPLICATIONS_URL, () =>
+        HttpResponse.json(
+          { errorCode: 10103, message: '휴대폰 본인 인증이 필요합니다.' },
+          { status: 403 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/store-settings')
+
+    await user.click(await screen.findByRole('button', { name: '임시저장' }))
+
+    expect(await screen.findByText(/아래 휴대폰 본인 인증을 끝낸 뒤/)).toBeInTheDocument()
+    // 셀러센터만 쓰는 운영자를 갈 수 없는 곳으로 보내지 않는다.
+    expect(screen.queryByText(/구매자 앱/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 인증 블록은 BE requirePhoneVerified()가 걸리는 단계(none/draft/rejected)에만 둘 이유가 있다.
+   * 승인 뒤 이 화면은 스토어 운영 설정이고 심사 중에는 저장·제출 자체가 없어, 거기 인증 칸이
+   * 뜨면 할 일이 없는 입력을 시키는 거짓 안내가 된다. 배치를 고치다 블록이 isFormStage 밖으로
+   * 나가도 다른 단언은 전부 통과하므로(순서 단언도 그대로 참이다) 부재를 따로 못 박는다.
+   */
+  it('[AC-STORE-ROUTE-023] 승인·심사 단계 화면에는 인증 블록이 없다', async () => {
+    seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+    renderAt('/store-settings')
+
+    // 스토어 운영 설정이 떠 있는 것까지 확인한 뒤에 부재를 묻는다(렌더 전 통과를 막는다).
+    expect(await screen.findByRole('button', { name: '저장' })).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('휴대폰 번호')).not.toBeInTheDocument()
+
+    cleanup()
+    seedSellerApplication(makeApplicationWire({ status: 'SUBMITTED' }))
+    renderAt('/store-settings')
+
+    expect(await screen.findByText('심사 대기 중이에요')).toBeInTheDocument()
+    expect(screen.queryByText('휴대폰 본인 인증')).not.toBeInTheDocument()
   })
 })

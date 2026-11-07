@@ -8,7 +8,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // 경로만 withCredentials=false로 보내고, 스텁 응답도 BE와 똑같이 Access-Control-Allow-Credentials를
 // **빼야** 한다 — 그 헤더의 부재 자체가 credentials 분기의 회귀 감시다. 반대로 `/auth/web/refresh`는
 // httpOnly 쿠키를 왕복하는 credentials 요청이라 정확한 origin + Allow-Credentials가 둘 다 필요하다.
-const ORIGIN = 'http://localhost:5174'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5174'
 const ADMIN_API_ORIGIN = 'http://localhost:8082'
 const API_ORIGIN = 'http://localhost:8080'
 
@@ -199,7 +201,7 @@ test('[AC-ADM-E2E-010] 로그인 화면은 카카오만 열려 있고 SideNav �
   await page.goto('/login')
 
   await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: '구글로 로그인 (준비 중)' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /구글|Apple/ })).toHaveCount(0)
   // BE에 POST /auth/login이 없다 — 이메일/비밀번호 폼은 제거됐다.
   await expect(page.getByLabel('Email')).toHaveCount(0)
   await expect(page.getByLabel('Password')).toHaveCount(0)
@@ -233,23 +235,29 @@ test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에�
   // 가입일이다 — '승격일'로 적으면 가입 시각을 승격 시각으로 위장한다.
   await expect(page.getByRole('columnheader', { name: '가입일' })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: '승격일' })).toHaveCount(0)
-  // 승격 직후 재로그인이 필요하다는 안내는 계약의 일부다.
-  await expect(page.getByText(/다시 로그인해야 관리자 권한이 반영돼요/)).toBeVisible()
+  // 권한 변경이 다음 토큰 갱신에 반영된다는 안내는 계약의 일부다(재로그인은 필요 없다).
+  await expect(page.getByText(/권한 변경은 그 계정이 다음에 토큰을 갱신할 때 반영돼요/)).toBeVisible()
   // 자기 행은 서버 isSelf로 표시되고 권한 해제가 잠긴다(403/30014).
   await expect(page.getByRole('button', { name: '현재 운영자 관리자 권한 해제' })).toBeDisabled()
   await shot(page, '02-roster')
 
   await page.getByLabel('승격할 사용자 ID').fill('45')
   await page.getByRole('button', { name: '관리자로 승격' }).click()
-  await expect(page.getByText('관리자로 승격했어요. 그 계정은 다시 로그인해야 권한이 반영돼요.')).toBeVisible()
+  await expect(
+    page.getByText('관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.'),
+  ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '승격대상' })).toBeVisible()
 
   await page.getByRole('button', { name: '김운영 관리자 권한 해제' }).click()
   const modal = page.getByRole('dialog')
-  await expect(modal).toContainText('이미 발급된 토큰은 만료될 때까지 관리자로 통과해요.')
+  await expect(modal).toContainText('access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.')
   await shot(page, '03-demote-confirm')
   await modal.getByRole('button', { name: '권한 해제' }).click()
-  await expect(page.getByText('관리자 권한을 해제했어요.')).toBeVisible()
+  await expect(
+    page.getByText(
+      '관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 30분)이 만료되면 관리자 접근이 끊겨요.',
+    ),
+  ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '김운영' })).toHaveCount(0)
 
   // 업무 요청은 콜백에서 받은 access를 Bearer로 달고 나간다 — 스텁이 토큰을 검사하므로 세션 수령이

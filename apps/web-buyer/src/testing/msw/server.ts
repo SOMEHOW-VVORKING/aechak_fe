@@ -2,10 +2,14 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { axiosInstance, type ReviewItemResponse } from '@aechak/api'
 import {
+  ClaimStatus,
   OrderListStatusFilter,
   OrderStatus,
   PaymentMethod,
   type CartItemStatus,
+  type ClaimItemResponse,
+  type ClaimReasonCatalogResponse,
+  type ClaimType,
   type OrderActiveClaimResponse,
   type OrderDeliveryAddressResponse,
   type OrderDetailResponse,
@@ -15,7 +19,9 @@ import {
   type PreparePaymentResponse,
 } from '@aechak/api'
 import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
-import { snsHandlers } from './sns'
+import { recordSnsUpload, snsHandlers } from './sns'
+import { productInquiryHandlers } from './product-inquiry'
+import { noticeHandlers } from './notices'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리). 실제 HTTP 경로(URL·쿼리 파라미터·
 // envelope 해석)까지 검증하려고 모듈 모킹 대신 네트워크 레벨에서 가로챈다.
@@ -31,8 +37,10 @@ export const PRODUCTS_URL = `${base}/products`
 export const PRODUCT_DETAIL_URL = `${base}/products/:productId`
 export const PRODUCT_OPTIONS_URL = `${base}/products/:productId/options`
 export const PRODUCT_REVIEWS_URL = `${base}/products/:productId/reviews`
+export const PRODUCT_REVIEW_SUMMARY_URL = `${base}/products/:productId/review-summary`
 export const REVIEWS_URL = `${base}/reviews`
 export const REVIEW_DETAIL_URL = `${base}/reviews/:reviewId`
+export const REPORTS_URL = `${base}/reports`
 export const MY_REVIEWS_URL = `${base}/users/me/reviews`
 export const PRODUCT_LIKE_URL = `${base}/products/:productId/like`
 export const LIKED_PRODUCTS_URL = `${base}/users/me/liked-products`
@@ -217,6 +225,12 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-10T09:00:00',
     images: [{ imageUrl: placeholderImage(200), sortOrder: 0 }],
+    // 셀러 답글이 실린 유일한 행 — 구매자 목록에 답글이 함께 나오는지(SCRUM-315)를 이 행이 고정한다.
+    sellerReply: {
+      content: '소음은 설치면을 평평하게 두면 줄어요. 불편하셨다면 교환도 도와드릴게요.',
+      repliedAt: '2026-08-11T10:00:00',
+      updatedAt: '2026-08-11T10:00:00',
+    },
   },
   {
     reviewId: 504,
@@ -228,6 +242,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-09T09:00:00',
     images: [],
+  sellerReply: null,
   },
   {
     reviewId: 503,
@@ -239,6 +254,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-08T09:00:00',
     images: [{ imageUrl: placeholderImage(120), sortOrder: 0 }],
+  sellerReply: null,
   },
   {
     reviewId: 502,
@@ -250,6 +266,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorProfileImageUrl: null,
     createdAt: '2026-08-07T09:00:00',
     images: [],
+  sellerReply: null,
   },
   {
     reviewId: 501,
@@ -260,6 +277,7 @@ export const REAL_PRODUCT_REVIEWS: ReviewItemResponse[] = [
     authorNickname: '집사7**',
     authorProfileImageUrl: null,
     createdAt: '2026-08-06T09:00:00',
+    sellerReply: null,
     images: [
       { imageUrl: placeholderImage(40), sortOrder: 0 },
       { imageUrl: placeholderImage(70), sortOrder: 1 },
@@ -502,6 +520,23 @@ function labelOf(breedId: number): string {
   )
 }
 
+// 업로드 용도(contracts/sns.yaml UploadPurpose). 상한이 있는 용도만 contentLength가 필수다.
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const UPLOAD_PURPOSES: Record<string, { folder: string; types: string[]; maxBytes?: number }> = {
+  USER_PROFILE: { folder: 'users/profile', types: IMAGE_TYPES },
+  PET_PROFILE: { folder: 'pets/profile', types: IMAGE_TYPES },
+  PRODUCT: { folder: 'products', types: IMAGE_TYPES },
+  SELLER_STORE: { folder: 'sellers/store', types: IMAGE_TYPES },
+  SELLER_DOCUMENT: { folder: 'sellers/documents', types: [...IMAGE_TYPES, 'application/pdf'] },
+  REVIEW_IMAGE: { folder: 'reviews/images', types: IMAGE_TYPES },
+  SNS_POST_IMAGE: { folder: 'sns/posts/images', types: IMAGE_TYPES, maxBytes: 10 * 1024 * 1024 },
+  SNS_POST_VIDEO: {
+    folder: 'sns/posts/videos',
+    types: ['video/mp4', 'video/quicktime'],
+    maxBytes: 100 * 1024 * 1024,
+  },
+}
+
 const petHandlers = [
   http.get(PETS_URL, () => HttpResponse.json({ data: { pets: petRows.map(withImageUrl) } })),
   http.post(PETS_URL, async ({ request }) => {
@@ -564,19 +599,42 @@ const petHandlers = [
     return HttpResponse.json({ data: { promotedDefaultPetId: promoted } })
   }),
   http.post(PRESIGNED_URL, async ({ request }) => {
-    const body = (await request.json()) as { purpose: string; contentType: string }
-    // 키 경로에 purpose를 반영해 프로필/펫/리뷰 업로드를 재현한다(서버 UploadPurpose.prefix와 동일).
-    const folder =
-      body.purpose === 'USER_PROFILE'
-        ? 'users/profile'
-        : body.purpose === 'REVIEW_IMAGE'
-          ? 'reviews/images'
-          : 'pets/profile'
-    const key = `tmp/1/${folder}/fixture.${body.contentType.split('/')[1]}`
-    return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
+    const body = (await request.json()) as {
+      purpose: string
+      contentType: string
+      contentLength?: number
+    }
+    // 판정 순서는 계약(sns.yaml issuePresignedUrl)과 같다. 모르는 용도와 1보다 작은 길이 90001,
+    // 허용 밖 형식 100000, 상한이 있는 용도의 길이 누락 90001과 상한 초과 100004.
+    const purpose = UPLOAD_PURPOSES[body.purpose]
+    if (!purpose || (body.contentLength != null && !(body.contentLength >= 1))) {
+      return errorJson(400, 90001, '잘못된 요청입니다.')
+    }
+    if (!purpose.types.includes(body.contentType)) {
+      return errorJson(400, 100000, '지원하지 않는 파일 형식입니다.')
+    }
+    if (purpose.maxBytes != null) {
+      if (body.contentLength == null) return errorJson(400, 90001, '잘못된 요청입니다.')
+      if (body.contentLength > purpose.maxBytes) return errorJson(400, 100004, '파일 용량이 너무 큽니다.')
+    }
+    // 상한이 있는 SNS 용도는 한 게시물에 여러 장을 올리므로 키마다 새 이름을 쓴다(같은 키 두 번은 130404).
+    const name = purpose.maxBytes != null ? ulid() : 'fixture'
+    const key = `tmp/1/${purpose.folder}/${name}.${body.contentType.split('/')[1]}`
+    // 서명에 든 형식을 URL에 남겨 PUT의 Content-Type이 다르면 S3처럼 403을 준다.
+    // 길이 서명은 jsdom Blob이 본문으로 실리지 않아(문자열로 바뀐다) 여기서 대조하지 않고 E2E가 본다.
+    const url = `https://fake-s3.local/${key}?type=${encodeURIComponent(body.contentType)}`
+    return HttpResponse.json({ data: { url, key } })
   }),
   // presigned PUT은 S3 직행이라 baseURL 밖이다. 절대 URL로 따로 가로챈다.
-  http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
+  http.put('https://fake-s3.local/*', ({ request }) => {
+    const url = new URL(request.url)
+    const signedType = url.searchParams.get('type')
+    if (signedType != null && request.headers.get('Content-Type') !== signedType) {
+      return new HttpResponse(null, { status: 403 })
+    }
+    recordSnsUpload(url.pathname.slice(1))
+    return new HttpResponse(null, { status: 200 })
+  }),
 ]
 
 export const USER_ME_URL = `${base}/users/me`
@@ -1330,6 +1388,7 @@ export function seedOrderGroups(groups: OrderGroupRow[] = []): void {
   orderDetailRows = new Map()
   createdOrderGroups = []
   idempotentResponses = new Map()
+  resetOrderClaims()
 }
 
 /** 핸들러가 보는 현재 주문그룹 목록(결제 PAID로 새로 생긴 그룹 포함). */
@@ -1781,16 +1840,298 @@ const paymentHandlers = [
   }),
 ]
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 클레임(취소·반품·교환) — GET·POST /orders/{id}/claims, DELETE .../{claimPublicId},
+// GET /claims/reasons. 주문그룹 단건 조회(GET /order-groups/{id})도 여기서 다룬다.
+// BE 규칙 중 화면 동작을 가르는 것만 재현한다: 유형별 요청 가능 상태, 중복 차단, 전량 제약,
+// 철회 가능 상태, 요청이 품목·activeClaim을 바꾸는 것.
+// ─────────────────────────────────────────────────────────────────────────────
+export const ORDER_GROUP_DETAIL_URL = `${base}/order-groups/:orderGroupId`
+export const ORDER_CLAIMS_URL = `${base}/orders/:orderPublicId/claims`
+export const ORDER_CLAIM_URL = `${base}/orders/:orderPublicId/claims/:claimPublicId`
+export const CLAIM_REASONS_URL = `${base}/claims/reasons`
+
+/** be ClaimType.requestableFrom — 취소는 발송 전, 반품·교환은 배송완료만. */
+const CLAIM_REQUESTABLE_FROM: Record<ClaimType, ReadonlySet<OrderStatus>> = {
+  CANCEL: new Set([OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.DISPATCH_PENDING]),
+  RETURN: new Set([OrderStatus.DELIVERED]),
+  EXCHANGE: new Set([OrderStatus.DELIVERED]),
+}
+
+/** be ClaimStatus.RELEASED — 거부·철회만 품목을 풀어준다. */
+const RELEASED_CLAIM_STATUSES: ReadonlySet<ClaimStatus> = new Set([
+  ClaimStatus.REJECTED,
+  ClaimStatus.WITHDRAWN,
+])
+
+/** be ClaimReasonCode.selectableFor(SCRUM-273) — 유형별 선택지와 문구를 서버가 내려준다. */
+export const CLAIM_REASON_CATALOG: ClaimReasonCatalogResponse = {
+  claimTypes: [
+    {
+      claimType: 'CANCEL',
+      reasons: [
+        { code: 'CHANGE_OF_MIND', label: '단순 변심', detailRequired: false },
+        { code: 'WRONG_OPTION', label: '옵션을 잘못 선택했어요', detailRequired: false },
+        { code: 'PRICE_MISMATCH', label: '가격 조건이 맞지 않아요', detailRequired: false },
+        { code: 'DELIVERY_DELAY', label: '배송이 너무 늦어요', detailRequired: false },
+        { code: 'OTHER', label: '기타', detailRequired: true },
+      ],
+    },
+    {
+      claimType: 'RETURN',
+      reasons: [
+        { code: 'CHANGE_OF_MIND', label: '단순 변심', detailRequired: false },
+        { code: 'DEFECTIVE', label: '상품이 파손되었거나 불량이에요', detailRequired: false },
+        { code: 'WRONG_ITEM', label: '주문과 다른 상품이 왔어요', detailRequired: false },
+        { code: 'NOT_AS_DESCRIBED', label: '상품 설명과 달라요', detailRequired: false },
+        { code: 'OTHER', label: '기타', detailRequired: true },
+      ],
+    },
+    {
+      claimType: 'EXCHANGE',
+      reasons: [
+        { code: 'DEFECTIVE', label: '상품이 파손되었거나 불량이에요', detailRequired: false },
+        { code: 'WRONG_ITEM', label: '주문과 다른 상품이 왔어요', detailRequired: false },
+        { code: 'WRONG_OPTION', label: '옵션을 잘못 선택했어요', detailRequired: false },
+        { code: 'OTHER', label: '기타', detailRequired: true },
+      ],
+    },
+  ],
+}
+
+/** orderId → 클레임 내역. seedOrderGroups()가 비운다. */
+let orderClaimRows = new Map<string, ClaimItemResponse[]>()
+let nextClaimSeq = 1
+
+/**
+ * 주문의 클레임 내역을 세운다. 진행 중 건을 심을 때는 셀러 주문의 `activeClaim`도 함께 세울 것 —
+ * BE는 두 응답이 같은 사실을 가리키므로 한쪽만 심으면 실제와 다른 조합이 된다.
+ */
+export function seedOrderClaims(orderId: string, claims: ClaimItemResponse[]): void {
+  orderClaimRows.set(
+    orderId,
+    claims.map(claim => ({ ...claim, items: claim.items.map(item => ({ ...item })) })),
+  )
+}
+
+export function resetOrderClaims(): void {
+  orderClaimRows = new Map()
+  nextClaimSeq = 1
+}
+
+export function makeClaimItem(
+  overrides: Partial<ClaimItemResponse> = {},
+): ClaimItemResponse {
+  return {
+    claimPublicId: `CLAIM${nextClaimSeq++}`,
+    claimType: 'RETURN',
+    status: 'CLAIM_REQUESTED',
+    refundStatus: 'NONE',
+    sellerApprovalStatus: 'REQUESTED',
+    returnCostBearer: null,
+    refundAmount: 64000,
+    rejectionReason: null,
+    // BE는 LocalDateTime 직렬화라 오프셋이 없다 — 어댑터가 KST로 읽는지 보려면 이 모양이어야 한다.
+    requestedAt: '2026-10-20T10:00:00',
+    approvedAt: null,
+    resolvedAt: null,
+    items: [],
+    ...overrides,
+  }
+}
+
+/** 주문그룹을 찾고 그 안에서 셀러 주문을 집는다(결제대기는 상세·클레임 대상이 아니다). */
+function findSellerOrder(orderId: string): { group: OrderGroupRow; so: SellerOrderRow } | null {
+  for (const group of orderGroupRows) {
+    const so = group.sellerOrders.find(s => s.orderId === orderId)
+    if (so && so.status !== OrderStatus.PENDING_PAYMENT) return { group, so }
+  }
+  return null
+}
+
+const claimHandlers = [
+  // 주문그룹 단건 — 금액·배송지 + 하위 셀러 주문 전부(결제대기 포함, 거르는 것은 화면 몫).
+  http.get(ORDER_GROUP_DETAIL_URL, ({ params }) => {
+    const groupId = String(params['orderGroupId'])
+    const group = orderGroupRows.find(g => g.orderGroupId === groupId)
+    if (!group) return errorJson(404, 50109, '주문 정보를 찾을 수 없습니다.')
+    return HttpResponse.json({
+      data: {
+        orderGroupId: group.orderGroupId,
+        status: group.sellerOrders.every(so => so.status === OrderStatus.CANCELLED)
+          ? 'CANCELLED'
+          : 'PAID',
+        totalProductAmount: group.totalProductAmount,
+        totalShippingFee: group.totalShippingFee,
+        usedPoint: group.usedPoint,
+        finalPaymentAmount: group.finalPaymentAmount,
+        expiresAt: group.orderedAt,
+        deliveryAddress: group.deliveryAddress ?? ORDER_DELIVERY_ADDRESS,
+        orders: group.sellerOrders.map(so => ({
+          orderId: so.orderId,
+          status: so.status,
+          sellerName: so.sellerName,
+          sellerShippingFee: so.sellerShippingFee ?? 0,
+          items: so.items,
+        })),
+      },
+    })
+  }),
+
+  // 사유 선택지. **SCRUM-273 머지 전 dev에는 이 경로가 없다** — 404를 보는 테스트는 server.use로 덮는다.
+  http.get(CLAIM_REASONS_URL, () => HttpResponse.json({ data: CLAIM_REASON_CATALOG })),
+
+  http.get(ORDER_CLAIMS_URL, ({ params }) => {
+    const orderId = String(params['orderPublicId'])
+    if (!findSellerOrder(orderId)) return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+    return HttpResponse.json({ data: { items: orderClaimRows.get(orderId) ?? [] } })
+  }),
+
+  http.post(ORDER_CLAIMS_URL, async ({ params, request }) => {
+    const orderId = String(params['orderPublicId'])
+    const found = findSellerOrder(orderId)
+    if (!found) return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+    const { so } = found
+    const body = (await request.json()) as {
+      claimType?: ClaimType
+      reasonCode?: string
+      reasonDetail?: string | null
+      items?: { orderItemId: number; quantity: number }[]
+    }
+    const claimType = body.claimType
+    if (claimType == null || body.reasonCode == null || body.reasonCode.trim() === '') {
+      return errorJson(400, 90001, '잘못된 요청입니다.')
+    }
+    if (!CLAIM_REQUESTABLE_FROM[claimType].has(so.status)) {
+      return errorJson(409, 50401, '현재 주문 상태에서는 요청할 수 없는 클레임입니다.')
+    }
+    // 대상 지정이 없으면 주문 전체 전량(be resolveTargets).
+    const targets =
+      body.items && body.items.length > 0
+        ? body.items
+        : so.items.map(item => ({ orderItemId: item.orderItemId, quantity: item.quantity }))
+    const held = new Set(
+      (orderClaimRows.get(orderId) ?? [])
+        .filter(claim => !RELEASED_CLAIM_STATUSES.has(claim.status))
+        .flatMap(claim => claim.items.map(item => item.orderItemId)),
+    )
+    for (const target of targets) {
+      const line = so.items.find(item => item.orderItemId === target.orderItemId)
+      if (!line) return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+      if (target.quantity > line.quantity) {
+        return errorJson(422, 50406, '주문한 수량보다 많이 요청할 수 없습니다.')
+      }
+      if (target.quantity < line.quantity) {
+        return errorJson(422, 50410, '주문한 수량 전부를 대상으로만 요청할 수 있습니다.')
+      }
+      if (held.has(target.orderItemId)) {
+        return errorJson(409, 50403, '이미 진행 중인 클레임이 있는 상품입니다.')
+      }
+    }
+    // 환불액은 서버가 확정한다(be ClaimAmountCalculator). 배송비는 **주문 전체를 대상으로 할 때만**
+    // 돌려주고, **교환도 같은 계산식을 탄다** — 교환은 실제 환불 집행 대상에서만 빠지므로 응답에는
+    // 0이 아닌 금액이 실려 온다. 스텁이 교환을 0으로 내리면 화면이 그 금액을 환불처럼 그려도 드러나지 않는다.
+    const itemRefund = targets.reduce((sum, target) => {
+      const line = so.items.find(item => item.orderItemId === target.orderItemId)
+      return sum + (line ? line.unitPrice * target.quantity : 0)
+    }, 0)
+    const coversWholeOrder = so.items.every(item =>
+      targets.some(
+        target => target.orderItemId === item.orderItemId && target.quantity >= item.quantity,
+      ),
+    )
+    const refundAmount = itemRefund + (coversWholeOrder ? (so.sellerShippingFee ?? 0) : 0)
+
+    const claim = makeClaimItem({
+      claimType,
+      status: 'CLAIM_REQUESTED',
+      // be Claim.request는 유형을 가리지 않고 refundStatus=NONE으로 둔다.
+      refundStatus: 'NONE',
+      sellerApprovalStatus: 'REQUESTED',
+      refundAmount,
+      items: targets.map(target => {
+        const line = so.items.find(item => item.orderItemId === target.orderItemId)
+        return {
+          orderItemId: target.orderItemId,
+          productName: line?.productName ?? '',
+          quantity: target.quantity,
+          refundAmount: line ? line.unitPrice * target.quantity : 0,
+        }
+      }),
+    })
+    orderClaimRows.set(orderId, [...(orderClaimRows.get(orderId) ?? []), claim])
+    // 진행 중 클레임은 주문 상세에도 실린다(구매확정·새 요청을 잠그는 근거).
+    so.activeClaim = {
+      claimPublicId: claim.claimPublicId,
+      claimType,
+      status: 'CLAIM_REQUESTED',
+      refundStatus: claim.refundStatus ?? null,
+    }
+    // 반품·교환은 요청 시점에 품목이 잡힌다(취소는 환불 집행 때 바뀐다 — be markRequestedItems).
+    if (claimType !== 'CANCEL') {
+      const itemStatus: OrderItemStatus =
+        claimType === 'RETURN' ? 'RETURN_REQUESTED' : 'EXCHANGE_REQUESTED'
+      for (const target of targets) {
+        const line = so.items.find(item => item.orderItemId === target.orderItemId)
+        if (line) line.itemStatus = itemStatus
+      }
+    }
+    return HttpResponse.json(
+      {
+        data: {
+          claimPublicId: claim.claimPublicId,
+          claimType,
+          status: 'CLAIM_REQUESTED',
+          refundAmount,
+          sellerApprovalStatus: 'REQUESTED',
+          autoApproveDueAt: '2026-10-22T10:00:00',
+          requestedAt: '2026-10-20T10:00:00',
+        },
+      },
+      { status: 201 },
+    )
+  }),
+
+  // 철회 — 셀러가 판단하기 전(CLAIM_REQUESTED)에만. 그 뒤에는 전이가 막혀 409 50402.
+  http.delete(ORDER_CLAIM_URL, ({ params }) => {
+    const orderId = String(params['orderPublicId'])
+    const claimPublicId = String(params['claimPublicId'])
+    const found = findSellerOrder(orderId)
+    if (!found) return errorJson(404, 50000, '주문을 찾을 수 없습니다.')
+    const { so } = found
+    const claims = orderClaimRows.get(orderId) ?? []
+    const claim = claims.find(c => c.claimPublicId === claimPublicId)
+    if (!claim) return errorJson(404, 50400, '클레임을 찾을 수 없습니다.')
+    if (claim.status !== 'CLAIM_REQUESTED') {
+      return errorJson(409, 50402, '허용되지 않은 클레임 상태 전이입니다.')
+    }
+    claim.status = 'WITHDRAWN'
+    claim.resolvedAt = '2026-10-21T10:00:00'
+    if (so.activeClaim?.claimPublicId === claimPublicId) delete so.activeClaim
+    // 잡혀 있던 품목을 되돌린다(be revertRequestedItems) — 되돌리지 않으면 다시 요청할 수 없다.
+    if (claim.claimType !== 'CANCEL') {
+      for (const line of claim.items) {
+        const item = so.items.find(i => i.orderItemId === line.orderItemId)
+        if (item) item.itemStatus = 'ORDERED'
+      }
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+]
+
 export const handlers = [
   ...deliveryAddressHandlers,
   ...cartHandlers,
   ...orderHandlers,
+  ...claimHandlers,
   ...paymentHandlers,
   ...petHandlers,
   ...accountHandlers,
   ...onboardingHandlers,
   ...likedProductHandlers,
   ...snsHandlers,
+  ...productInquiryHandlers,
+  ...noticeHandlers,
   // 탈퇴 — 기본은 BE 현행(WithdrawalFacade가 항상 withdrawable=true)과 같다. 제한/에러는 테스트가 server.use로 덮는다.
   http.get(WITHDRAWAL_CHECK_URL, () => HttpResponse.json({ data: { withdrawable: true } })),
   http.delete(USER_ME_URL, () => new HttpResponse(null, { status: 204 })),
@@ -2039,8 +2380,16 @@ export const handlers = [
       },
     })
   }),
+  // 리뷰 AI 요약. 기본은 실 픽스처 id도 요약 없음(카드 미노출)이고, 요약이 필요한 테스트가 server.use로 갈아끼운다.
+  http.get(PRODUCT_REVIEW_SUMMARY_URL, ({ params }) =>
+    params.productId === REAL_PRODUCT_ID
+      ? HttpResponse.json({ data: { productSummary: null, similarPetSummary: null } })
+      : new HttpResponse(null, { status: 404 }),
+  ),
 ]
 
 export const server = setupServer(...handlers)
 
 export * from './sns'
+export * from './product-inquiry'
+export * from './notices'

@@ -1719,3 +1719,131 @@ feature 모듈은 `features/inquiry`(`InquiryScreen` + `inquiry.mock` + `inquiry
   취소 품목 제외·상품 이동·확정 후 재조회 실패), `testing/msw/__tests__/order-handlers.test.ts`(`[AC-MSW-ORDER-009/010]` 신규 필드·
   확정 핸들러 204/50007/50008/50000), E2E `e2e/orders.spec.ts`(`[AC-ORDER-E2E-006/007/008]`, 캡처
   `test-results/pr-c/orders-07~11`).
+
+### 상품 상세 리뷰 AI 요약 카드 초안 — GET /products/{productId}/review-summary 연동 (SCRUM-299, 2026-10-28)
+
+BE가 AI 서버(SCRUM-310)의 장단점 집계로 만든 요약을 상품 상세 별점 카드 아래에 그린다. **시안이 없어 기존
+`Card`와 텍스트 토큰으로 만든 초안이고, 문구는 `ReviewAiSummary.tsx` 맨 위 `COPY`·`CONS_ABSENCE_NOTE`·
+`WEIGHT_BAND_LABEL`에 모아 두었다.** 시안이 나오면 이 파일만 고치면 된다.
+
+- **요청 조건은 리뷰 미리보기와 같다(`canFetchServerReviews`).** 요약 API도 JWT 필수라 비회원이나 목업 상품에서
+  부르면 401 전역 리다이렉트로 상세를 잃는다. 비회원이 주소로 바로 들어오면 로그인 기본값이 true라 둘 다
+  나가는 문제는 미리보기에 원래 있던 것이고, 상품 상세 라우트의 세션 복원을 고쳐야 풀린다.
+- **아쉬운 점이 비어도 칸을 숨기지 않는다.** `consAbsenceReason`마다 한 줄 안내를 두고 모르는 값은 일반 안내로
+  받는다. 숨기면 반복된 단점이 있는데 문장만 없는 상품(`NARRATION_MISSING`)이 단점 없는 상품처럼 보인다.
+- **`mentionCount`는 사람 수가 아니라 리뷰 수라 `리뷰 N건`으로 쓴다.** 한 사람이 리뷰를 여러 건 쓸 수 있다.
+- **캐시 키는 `['review-summary', productId]`다.** 응답이 조회자 대표 펫 체급에 따라 달라서 `shared/pet`이 펫
+  mutation 뒤에 이 접두를 통째로 지우고(`removeQueries`, 무효화만 하면 이전 체급 요약을 먼저 그린다), 리뷰를
+  쓰거나 지우면 `invalidateReviewCaches`가 그 상품 키를 무효화한다.
+- 로딩 중에는 그리지 않고, 실패하면 요약이 없는 것과 구분되게 한 줄로 알린다(6절 7항).
+- 회귀: `features/product/__tests__/product-route.test.tsx`(`[AC-PRODUCT-024~030]` 두 요약, 사유 한 줄, 둘 다
+  null, 비회원 미호출, 사유 전부와 모르는 값, 실패 안내, 비슷한 아이 요약만), E2E `e2e/product-detail.spec.ts`
+  (`[AC-PRODUCT-E2E-004]` 봉투째 읽어 카드 렌더). 상세로 들어가는 `home`·`reviews` spec에도 요약 스텁을 더했다.
+
+### 구매자 상품 문의 신설 — 네 경로 실연동 (SCRUM-340, 2026-10-31)
+
+10/29 에 셀러 '고객 문의'(SCRUM-316)가 실연동됐는데 **문의를 만들 클라이언트가 없어 그 목록이
+영구히 비어 있었다.** 구매자 절반이 없던 것이고, 이 배치가 그걸 채운다. 붙인 경로는 넷
+(`POST`·`GET /products/{id}/inquiries`, `DELETE /product-inquiries/{id}`,
+`GET /users/me/product-inquiries`)이고 전부 `api` 모듈이다.
+
+- **고객센터 1:1 문의(`features/inquiry`, `POST /inquiries`)와 도메인이 다르다.** 저쪽은 구매자가
+  운영자에게 묻고, 이쪽은 구매자가 셀러에게 묻는다. 에러코드 구간도 1200xx / 1201xx 로 갈려 있다.
+  새 feature 는 `features/product-inquiry`이고 두 폴더를 합치지 말 것.
+- **목록도 JWT 필수다**(비로그인 401 errorCode 20004). 비밀글을 가릴지가 조회자에 달려 있어 서버가
+  permitAll 로 열지 않았다 — 리뷰 목록과 같은 이유다. 그래서 상세의 문의 영역은 `useIsLoggedIn()`을
+  `enabled`로 넘겨 **비회원에게는 호출 자체를 하지 않고** 로그인 안내 카드만 그린다(401 이 나가면
+  전역 인터셉터가 상세를 로그인으로 밀어낸다). 비회원 화면에 건수를 적지 않는 이유도 같다 —
+  "목록을 못 봤다"를 0 건으로 적으면 "질문이 없는 상품"이 된다.
+- **남의 비밀글은 행이 남고 내용만 가려진다.** 서버가 `readable=false`와 함께 `title`·`content`를
+  `"비밀글입니다."`로, `answer`를 null 로 바꿔 내린다(`ProductInquiryItemResult.from`). 화면은
+  **그 자리표시 값을 본문으로 그리지 않고** `readable`을 보고 잠긴 행을 그린다 — 그대로 그리면
+  사용자가 "작성자가 저 문장을 썼다"고 읽는다. 행을 지우지도 않는다(서버 `totalCount`가 가려진
+  글까지 세므로 머리말 숫자와 카드 수가 어긋난다). 내 문의 목록은 본인 것이라 마스킹이 없다.
+- **철회는 되돌릴 수 없고, 공용 `Modal`은 `loading`과 무관하게 ESC·스크림에서 `onClose`를 부른다.**
+  DS 는 4개 앱 공용이라 고치지 않고 **호출부에서** `onClose`를 `isPending` 가드로 감싼다
+  (`MyProductInquiriesScreen`). 안 막으면 비가역 요청이 떠 있는데 화면은 아무 일도 없던 것처럼
+  보인다. 철회 중에는 다른 행의 철회 버튼도 함께 잠근다.
+- **철회가 거절되면 성공과 똑같이 목록을 다시 받는다**(`onSettled`, codex 교차검증에서 잡혔다).
+  철회가 거절되는 사유는 전부 "화면이 들고 있는 행이 낡았다"는 뜻이다 — 답변이 달렸고(409
+  120111), 이미 철회됐고(409 120110), 사라졌고(404), 내 것이 아니다(403). 성공에만 무효화하면
+  사유 토스트가 3초 뒤 사라진 자리에 **'답변 대기' pill 과 철회하기 버튼이 그대로 남아** 서버가
+  방금 알려준 것과 반대되는 상태를 읽고, 다시 눌러도 같은 409 를 받는다. 회귀는 `[AC-PINQ-026]`이
+  토스트만이 아니라 **'답변 완료'로 바뀌고 철회 버튼이 사라지는 것까지** 단언해서 잡는다.
+- **답변 기한(`answerDueAt`)과 기한 지남(`overdue`)은 서버 판정값**이라 화면이 날짜를 다시 빼지
+  않는다 — 셀러 화면의 지표와 어긋난다.
+- **로그인 가드를 라우트에 다는 기준은 "permitAll 화면인가"다.** 완전 회원 전용 화면
+  (`/mypage/product-inquiries`·`/orders`·`/reviews/mine`·`/wishlist`·`/mypage/sns-relations`)은
+  가드를 달지 않고 401 → refresh 실패 → 전역 로그인 이동에 맡긴다 — 비회원을 로그인으로 보내는
+  것이 **옳은 도착지**이고 잃을 화면이 없다. 가드(`useIsLoggedIn` + `beforeLoad`)가 필요한 쪽은
+  **permitAll 인데 회원 전용 조회를 섞는** 화면이다(상품 상세·SNS 프로필·검색·카탈로그) — 거기서는
+  401 이 볼 권리가 있던 화면을 빼앗는다. 두 부류를 섞어 가드를 일괄로 달면 비회원에게 영구
+  스켈레톤을 그리게 된다(`enabled:false`인 쿼리는 `isPending`이 계속 true 라 `isLoading`에
+  `enabled`를 곱해야 한다 — `useProductInquiries`가 그렇게 한다).
+- **feature 간 import 가 금지라 상세 화면이 문의 영역을 직접 부를 수 없다.** `ProductDetailScreen`에
+  `inquirySlot?: ReactNode`를 두고 `routes/products/$productId/index.tsx`가 조립해 내려 준다.
+  구분선도 슬롯이 직접 그린다 — 목업 카탈로그 상품(`p-*`)에서는 영역 전체를 접으므로(서버에 없는
+  상품이라 등록할 곳도, 받을 목록도 없다) 선만 남으면 안 된다.
+- **`useIsLoggedIn()`은 "토큰이 있다"가 아니다 — 이게 dev 배포에서 터졌다.** `auth.store`의
+  `loggedIn` 기본값이 `true`인 세션 mock 이라, 새로고침이나 공유 링크로 들어온 **진짜 비회원도
+  로그인한 것으로 읽힌다.** 그 상태로 회원 전용 조회를 보내면 401 → refresh 실패 → 전역
+  리다이렉트로 **보고 있던 상세를 통째로 잃는다.** permitAll 화면에서 회원 전용 조회를 섞는
+  자리는 라우트 `beforeLoad`에 `restoreSessionOrGuest()`를 달아 **비회원인지 먼저 확정**해야
+  한다(`routes/products/$productId/index.tsx`, SNS 프로필 라우트가 같은 수단을 쓴다). MSW 테스트는
+  `setAccessToken`으로 토큰을 세워 두면 초록이라 **이 결함을 잡지 못한다** — 실제로 17건이 전부
+  초록인 채로 dev 에서 터졌다. 회귀는 `[AC-PINQ-008]`(토큰 없이 진입)이 잡는다.
+  같은 이유로 **회원 전제 테스트는 `loggedIn`만 true로 두지 말고 토큰까지 세운다** — 토큰 없는
+  로그인 상태는 실제 앱의 회원에게 존재하지 않고, 그 상태로 통과하던 상세 테스트 14건이 세션
+  복원을 켜자 한꺼번에 빨개졌다.
+- 회귀: `features/product-inquiry/__tests__/product-inquiry-route.test.tsx`
+  (`[AC-PINQ-001~008]` 목록·빈 상태·마스킹·내 비밀글·비회원 무호출·게이트·상품 404·토큰 없는 진입,
+  `[AC-PINQ-010~012]` 등록·비밀글 플래그·유형 필수, `[AC-PINQ-020~026]` 내 목록·철회 확인·취소·
+  요청 중 ESC/스크림 잠금·답변 뒤 철회 불가·거절 안내). MSW 는 `testing/msw/product-inquiry.ts`가
+  상태형으로 들고 **마스킹 규칙까지 서버와 같게 흉내 낸다** — 여기서 가리지 않으면 화면이 마스킹을
+  존중하는지 확인할 수 없다. E2E `e2e/product-detail.spec.ts`가 빈 상태를 함께 잡는다(스텁을 빼면
+  로컬 8080 에 BE 가 떠 있을 때 401 → refresh 실패로 상세 단언이 깨진다 — 리뷰 미리보기와 같은 함정).
+
+### 구매자 공지사항 신설 — `/notices` 두 경로 실연동 (SCRUM-332, 2026-11-03)
+
+어드민 공지 관리(SCRUM-332)가 실연동돼 운영자가 공지를 게시하는데 **구매자가 그걸 볼 화면이
+아예 없었다** — `GET /notices`·`GET /notices/{noticeId}`가 dev 에 열려 있는데 FE 가 한 번도
+부르지 않았다. 이 배치가 목록·상세 라우트와 **설정 홈의 입구**를 함께 만든다. 두 경로 모두
+`api` 모듈이다.
+
+- **라우트는 설정 하위에 둔다**(`/settings/notices`·`/settings/notices/$noticeId`). 공지는
+  고객지원 성격이고, 설정 홈 '고객지원' 그룹이 자연스러운 입구다 — 입구 없이 화면만 만들면
+  운영자가 공지를 올려도 구매자는 닿을 길이 없다. 그래서 회귀도 "목록이 그려진다"가 아니라
+  **설정 홈 행을 눌러 목록이 열리는 것**을 단언한다(`[AC-BUYER-NOTICE-001]`).
+- **회원 전용이다.** BE `SecurityConfig`의 permitAll 목록에 `/notices`가 없고(상품·검색과 다르다)
+  `PENDING_ONBOARDING` 허용 목록에도 없다. 그래서 비회원으로 확정된 세션에는 `AuthRequiredScreen`을
+  그리고 요청을 보내지 않는다 — 부르면 401 에서 전역 리다이렉트로 화면을 잃는다. `feature` 키는
+  `'notice'`를 새로 더했다: `'mypage'` 문구를 빌리면 "내 정보는 로그인한 회원만 볼 수 있어요"라는
+  **거짓 사유**를 읽힌다(공지는 내 정보가 아니고, 경로가 닫혀 있을 뿐이다).
+- **커서에 분류 필터가 실리지 않는다.** 서버 코덱이 담는 것은 tag·pinned·publishedAt·noticeId
+  넷뿐이라 분류를 바꾼 채 옛 커서를 보내도 **서버가 거부하지 않고** 엉뚱한 앵커에서 이어 읽은
+  섞인 목록이 그려진다. 막는 것은 FE 뿐이라 **분류를 쿼리 키에 넣어** 조건이 바뀌는 순간 커서
+  사슬을 새로 시작한다(`[AC-BUYER-NOTICE-006]`). `더보기`는 `query.hasNextPage`로만 열고 응답
+  본문의 `hasNext`로 열지 않는다 — `keepPreviousData` 구간에는 본문이 이전 조건의 페이지다.
+- **`totalCount`는 첫 페이지만 채워지고 커서 페이지는 null 이다** — 뒤 페이지 값으로 덮으면
+  스크롤 한 번에 전체 건수가 사라진다. `pages[0]`만 읽는다(`[AC-BUYER-NOTICE-005]`).
+- **`pinned`가 정렬의 첫 키라 중요 공지가 늘 앞에 온다**(pinned desc, publishedAt desc, id desc).
+  화면이 게시 시각만 보여 주면 눈에 보이는 순서와 어긋나므로 '중요'를 **글자로** 적는다.
+- **`publishedAt`은 오프셋 없는 LocalDateTime(KST 벽시계)**이다 — `new Date()`로 파싱하면 브라우저
+  타임존만큼 밀린다. 자리를 잘라 `2026.10.26 10:00`으로 읽고, 날짜 라벨은 feature 마다 따로 두는
+  관례대로 셀러·어드민과 공용화하지 않는다(구분자가 앱마다 다르다). 독자용 `publishedAt`은
+  **비지 않으므로**(조회 조건이 게시 시각 있는 행만 고른다) 어드민과 달리 null 분기가 없다.
+- **분류 라벨 다섯 값을 앱 안에 다시 적는다**(packages/domain 에 공지가 없고 앱 경계를 넘어
+  import 할 수 없다). `satisfies Record<NoticeCategory, string>`로 적어 서버가 값을 늘리면 생성물
+  갱신 시점에 타입 오류가 난다. 표에 없는 값은 `noticeCategoryMeta`가 **원문을 경고 pill 로**
+  그린다 — 구조분해로 바로 읽으면 분류 한 건이 목록을 통째로 날린다(`[AC-BUYER-NOTICE-003]`).
+  `SETTLEMENT`(정산)를 빼지 말 것(대상이 ALL 인 정산 안내가 구매자에게도 온다).
+- **독자용 응답에는 `status`·`audience`가 없고 읽음 여부·발송 필드도 없다.** 열람 기록 테이블도
+  푸시 발송 경로도 플랫폼에 없어서다 — '안 읽음' 배지나 '알림으로 보냈어요' 문구를 만들면 영구히
+  안 바뀌는 표시이거나 거짓이 된다. MSW 더블도 그 필드를 흉내 내지 않는다.
+- **상세를 따로 조회한다.** 목록 행에는 `contentPreview`(평탄화한 앞 100자)뿐이라 행만으로 그리면
+  **잘린 글이 공지 전문으로 읽힌다**(`[AC-BUYER-NOTICE-010]`). 404(150000)는 초안·내린 공지·
+  구매자 대상이 아닌 공지를 한 코드로 끊으므로 문구도 사유를 단정하지 않는다.
+- 회귀: `features/notices/__tests__/notices-route.test.tsx`(`[AC-BUYER-NOTICE-001~012]` 입구·정렬·
+  라벨·미지 분류·필터·커서·실패와 빈 상태 구분·비회원 무호출·전문·404). MSW 는
+  `testing/msw/notices.ts`가 상태형으로 들고 커서 base64url 인코딩까지 서버와 같게 흉내 낸다 —
+  **커서에 분류 지문을 넣지 않는다**(넣어 400 으로 끊으면 쿼리 키 방어선을 떼도 초록이다).

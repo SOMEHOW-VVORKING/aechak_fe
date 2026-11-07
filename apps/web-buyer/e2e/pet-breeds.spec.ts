@@ -5,7 +5,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // 출처 + withCredentials라서, fulfill 응답에도 CORS 헤더(정확한 origin, 와일드카드 불가)를
 // 넣어야 브라우저가 응답을 페이지에 전달한다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

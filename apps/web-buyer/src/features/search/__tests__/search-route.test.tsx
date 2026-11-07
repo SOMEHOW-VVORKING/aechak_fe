@@ -1,11 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { describe, expect, it, vi } from 'vitest'
-import { setOnAuthExpired, type ProductSummaryResponse } from '@aechak/api'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setAccessToken, setOnAuthExpired, type ProductSummaryResponse } from '@aechak/api'
 import { resetWishlist } from '@/shared/catalog'
+import { resetAuth } from '@/shared/auth'
 import { routeTree } from '../../../routeTree.gen'
 import { SEARCH_KEYWORDS_URL, SEARCH_PRODUCTS_URL, server } from '@/testing/msw/server'
 
@@ -44,7 +45,11 @@ function renderAt(path: string) {
 }
 
 describe('/search', () => {
-  it('[AC-SEARCH-015] 게스트 랜딩의 인증 복원 실패는 전역 로그인 이동을 일으키지 않는다', async () => {
+  // 최근·추천 검색어(GET /search/keywords)는 회원 전용이다. 랜딩 자체는 비회원도 열려야 하므로
+  // 회원 전제 케이스는 토큰으로 로그인시키고, 비회원 케이스는 토큰 없이 둔다.
+  beforeEach(() => setAccessToken('member-token'))
+
+  it('[AC-SEARCH-015] 세션이 끊긴 회원의 최근 검색어 401은 전역 로그인 이동을 일으키지 않는다', async () => {
     const onAuthExpired = vi.fn()
     let requested = false
     setOnAuthExpired(onAuthExpired)
@@ -59,6 +64,25 @@ describe('/search', () => {
     await waitFor(() => expect(requested).toBe(true))
     expect(onAuthExpired).not.toHaveBeenCalled()
     setOnAuthExpired(null)
+  })
+
+  it('[AC-SEARCH-018] 비회원은 최근 검색어를 아예 조회하지 않고 로그인 안내를 본다', async () => {
+    resetAuth()
+    let requested = 0
+    server.use(
+      http.get(SEARCH_KEYWORDS_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { recentKeywords: [], recommendedKeywords: [] } })
+      }),
+    )
+
+    renderAt('/search')
+
+    // 저장되지 않는 비회원에게 "여기에 표시돼요"라고 적으면 저장될 것처럼 읽힌다.
+    expect(await screen.findByText('로그인하면 최근 검색어를 저장해 드려요')).toBeInTheDocument()
+    expect(requested).toBe(0)
+    // 비어 있는 추천 섹션은 제목만 남은 빈 칸이라 접는다.
+    expect(screen.queryByText('추천 검색어')).not.toBeInTheDocument()
   })
 
   it('[AC-SEARCH-006] 전체 삭제를 누르면 최근 검색어가 비고 빈 상태가 나타난다', async () => {
@@ -88,6 +112,19 @@ describe('/search', () => {
 
     expect(await screen.findByText('츄르 참치맛 40개입')).toBeInTheDocument()
   })
+
+  it('[AC-SEARCH-021] 홈에서 연 검색은 전체 탭, 마켓에서 연 검색은 마켓 탭으로 결과를 연다', async () => {
+    const user = userEvent.setup()
+    renderAt('/search')
+    await user.click(await screen.findByRole('button', { name: '츄르' }))
+    expect(await screen.findByRole('tab', { name: '전체' })).toHaveAttribute('aria-selected', 'true')
+    cleanup()
+
+    renderAt('/search?tab=market')
+    await user.click(await screen.findByRole('button', { name: '츄르' }))
+    expect(await screen.findByRole('tab', { name: '마켓' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: /필터/ })).toBeInTheDocument()
+  })
 })
 
 describe('/search/results', () => {
@@ -107,7 +144,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=고가')
+    renderAt('/search/results?q=고가&tab=market')
 
     await screen.findByText(/검색 결과가 없어요/)
     expect(maxPrice).toBeNull()
@@ -135,7 +172,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=페이지')
+    renderAt('/search/results?q=페이지&tab=market')
 
     expect(await screen.findByText('첫 번째 페이지 상품')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '상품 더 보기' }))
@@ -160,7 +197,7 @@ describe('/search/results', () => {
         })
       }),
     )
-    renderAt('/search/results?q=페이지')
+    renderAt('/search/results?q=페이지&tab=market')
 
     expect(await screen.findByText('보존되어야 하는 상품')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '상품 더 보기' }))
@@ -172,7 +209,7 @@ describe('/search/results', () => {
 
   it('[AC-SEARCH-008] 품절 제외 칩을 끄면 품절 상품이 결과에 나타난다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=스크래쳐')
+    renderAt('/search/results?q=스크래쳐&tab=market')
 
     // 기본 품절 제외(on) — 품절 상품만 매칭돼 결과가 없다.
     expect(await screen.findByText(/검색 결과가 없어요/)).toBeInTheDocument()
@@ -184,7 +221,7 @@ describe('/search/results', () => {
 
   it('[AC-SEARCH-010] 품절 제외 칩이 기본 ON(aria-pressed)으로 렌더된다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=급식기')
+    renderAt('/search/results?q=급식기&tab=market')
 
     // 결과 로드 확인 후 칩 상태 검사.
     expect(await screen.findByText('스테인리스 급식기 타이머형')).toBeInTheDocument()
@@ -199,7 +236,7 @@ describe('/search/results', () => {
   })
 
   it('[AC-SEARCH-011] 결과 없음 화면이 따옴표 없이 검색어를 강조해 보여준다', async () => {
-    renderAt('/search/results?q=존재하지않는상품zz')
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
 
     const heading = await screen.findByText(/검색 결과가 없어요/)
     // 검색어는 (마크업 강조로) 화면에 함께 노출된다.
@@ -226,7 +263,7 @@ describe('/search/results', () => {
         }),
       ),
     )
-    renderAt('/search/results?q=사료')
+    renderAt('/search/results?q=사료&tab=market')
 
     expect(await screen.findByText('찜한 사료')).toBeInTheDocument()
     // liked-1은 isLiked=true라 fetch 시점 미러 시드로 첫 렌더부터 '찜 해제'(채워짐).
@@ -234,9 +271,39 @@ describe('/search/results', () => {
     expect(screen.getByRole('button', { name: '찜하기' })).toBeInTheDocument()
   })
 
+  it('[AC-SEARCH-019] 무결과 추천어는 하드코딩 칩이 아니라 서버 추천 검색어다', async () => {
+    // 하드코딩 칩(강아지 의류·우비·방한 패딩·하네스)은 걸리는 상품이 없어 눌러도 같은 무결과로
+    // 돌아왔다. 서버 추천어만 쓰고, 누르면 그 검색어로 실제 재검색이 돈다.
+    const user = userEvent.setup()
+    setAccessToken('member-token')
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
+
+    await screen.findByText(/검색 결과가 없어요/)
+    expect(await screen.findByRole('button', { name: '여름 쿨매트' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '강아지 의류' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '하네스' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '여름 쿨매트' }))
+    expect(await screen.findByText('여름 쿨매트 젤 방석 L')).toBeInTheDocument()
+  })
+
+  it('[AC-SEARCH-020] 서버 추천어가 없으면 추천 섹션을 접는다', async () => {
+    // 비회원은 추천어 경로가 회원 전용이라 비고, 제목만 남은 빈 칸이 되면 안 된다.
+    resetAuth()
+    server.use(
+      http.get(SEARCH_KEYWORDS_URL, () =>
+        HttpResponse.json({ data: { recentKeywords: [], recommendedKeywords: [] } }),
+      ),
+    )
+    renderAt('/search/results?q=존재하지않는상품zz&tab=market')
+
+    await screen.findByText(/검색 결과가 없어요/)
+    expect(screen.queryByText('이런 검색어는 어때요?')).not.toBeInTheDocument()
+  })
+
   it('[AC-SEARCH-009] 가격 칩은 전체 필터 시트가 아니라 가격대 전용 시트를 열고 프리셋이 결과에 반영된다', async () => {
     const user = userEvent.setup()
-    renderAt('/search/results?q=급식기')
+    renderAt('/search/results?q=급식기&tab=market')
 
     // 결과 로드 확인.
     expect(await screen.findByText('스테인리스 급식기 타이머형')).toBeInTheDocument()

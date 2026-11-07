@@ -40,9 +40,6 @@ export const DEFAULT_FILTERS: SearchFilters = {
   category: null,
 }
 
-// 검색 결과 API는 대체 검색어를 반환하지 않아 무결과 UI에만 쓰는 제품 카피다.
-export const FALLBACK_SUGGESTIONS = ['강아지 의류', '우비', '방한 패딩', '하네스']
-
 // 활성 필터 수(필터바 "필터 N" 배지) — 기본값에서 벗어난 항목 수.
 // 품절 제외는 기본 on이므로 off로 바꾼 것도 "적용된 필터"로 카운트한다.
 export function activeFilterCount(filters: SearchFilters): number {
@@ -57,4 +54,13 @@ export function activeFilterCount(filters: SearchFilters): number {
   if (filters.minRating > 0) n += 1
   if (filters.category != null) n += 1
   return n
+}
+
+/** 통합 검색 결과 탭(b12-st-2~4). 홈에서 들어오면 전체, 마켓에서 들어오면 마켓, SNS에서 들어오면 SNS가 기본이다(CRQ-SRCH-07) */
+export type SearchTab = 'all' | 'market' | 'sns'
+
+/** 검색 라우트의 search(`?tab=`). 모르는 값과 전체(기본)는 빼서 주소에 남기지 않는다 */
+export function searchTabSearch(search: Record<string, unknown>): { tab?: Exclude<SearchTab, 'all'> } {
+  const tab = (['market', 'sns'] as const).find(value => value === search['tab'])
+  return tab ? { tab } : {}
 }

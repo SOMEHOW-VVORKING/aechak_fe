@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { errorResponse, getProductDetail } from '@aechak/api'
-import type { ProductReport, ProductReportReason } from '@aechak/domain'
+import { errorResponse, getProductDetail, submitReport } from '@aechak/api'
+import type { ProductReportReason } from '@aechak/domain'
 import { findMockProduct, mediaUrl } from '@/shared/catalog'
 import { fetchReportTarget, getReportTargetMock, type ReportTarget } from './report.mock'
 
@@ -44,22 +44,46 @@ export function useReportTarget(productId: string) {
   })
 }
 
-// 상품 신고 제출 mutation. 실제 접수/검수 큐 연동은 범위 밖이라, 결정적 id를 부여한
-// ProductReport를 만들어 mock 지연 후 반환한다(운영 검수 큐로 넘어가는 형태만 시연).
-// 신고자 식별 정보는 담지 않는다(신고자 비공개 보호).
+// 화면의 사유 값을 BE 상품 신고 사유 코드로 옮긴다.
+const REASON_CODE: Record<ProductReportReason, 'FALSE_AD' | 'INFO_ERROR' | 'ILLEGAL' | 'INAPPROPRIATE' | 'OTHER'> = {
+  'false-ad': 'FALSE_AD',
+  'wrong-info': 'INFO_ERROR',
+  illegal: 'ILLEGAL',
+  inappropriate: 'INAPPROPRIATE',
+  etc: 'OTHER',
+}
+
+// 목업 카탈로그 상품 신고를 가르는 표식. 서버에 없는 상품이라 요청하지 않고 접수할 수 없다고 알린다.
+const MOCK_PRODUCT_REPORT = 'mock-product-report'
+
+// 상품 신고 제출(POST /reports).
 export function useSubmitReport() {
-  return useMutation<ProductReport, Error, SubmitReportInput>({
-    mutationFn: ({ productId, reason, detail }) =>
-      new Promise(resolve => {
-        setTimeout(() => {
-          resolve({
-            id: `rp-${productId}-${reason}`,
-            productId,
-            reason,
-            detail: detail.trim(),
-            createdAt: new Date().toISOString(),
-          })
-        }, 500)
-      }),
+  return useMutation<void, Error, SubmitReportInput>({
+    mutationFn: async ({ productId, reason, detail }) => {
+      if (findMockProduct(productId)) throw new Error(MOCK_PRODUCT_REPORT)
+      const reasonText = detail.trim()
+      await submitReport({
+        targetType: 'PRODUCT',
+        targetId: productId,
+        reasonCode: REASON_CODE[reason],
+        reasonText: reasonText === '' ? null : reasonText,
+      })
+    },
   })
+}
+
+export function reportErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message === MOCK_PRODUCT_REPORT) return '예시 상품은 신고할 수 없어요.'
+  switch (errorResponse(error)?.data?.errorCode) {
+    case 40303:
+      return '이미 신고한 상품이에요.'
+    case 40302:
+      return '본인 상품은 신고할 수 없어요.'
+    case 40300:
+      return '기타 사유는 상세 내용을 적어 주세요.'
+    case 40000:
+      return '신고할 상품을 찾지 못했어요.'
+    default:
+      return '신고를 접수하지 못했어요. 잠시 후 다시 시도해 주세요.'
+  }
 }

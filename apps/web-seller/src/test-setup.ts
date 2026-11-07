@@ -1,7 +1,14 @@
 import '@testing-library/jest-dom'
-import { afterAll, afterEach, beforeAll } from 'vitest'
-import { configureApiHosts } from '@aechak/api'
-import { API_ORIGIN, SELLER_ORIGIN, server } from './testing/msw/server'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
+import { configureApiHosts, setAccessToken } from '@aechak/api'
+import {
+  API_ORIGIN,
+  SELLER_ORIGIN,
+  makeApplicationWire,
+  seedSellerApplication,
+  seedStoreSettings,
+  server,
+} from './testing/msw/server'
 
 // 테스트는 main.tsx를 거치지 않으므로 호스트 구성을 여기서 실제 앱과 똑같이 세운다 —
 // 그러지 않으면 호스트 분기가 무동작이라 모든 요청이 api로 몰리고, 셀러 모듈로 가야 할
@@ -46,3 +53,16 @@ if (typeof URL.revokeObjectURL !== 'function') {
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
+
+// __root 가드가 세션과 셀러 자격을 요구한다 — 비로그인은 /login, 미승인은 /store-settings로
+// 보낸다. 라우트 렌더 테스트는 "승인된 셀러가 들어와 있는 상태"를 전제하므로 그 전제를
+// 여기서 공통으로 세운다. refresh 핸들러는 401 고정이라(에러 테스트가 조용히 통과하지 않게)
+// 메모리 access를 직접 심어야 가드가 복원 요청 없이 통과한다.
+// 가드 자체나 미승인 흐름을 검증하는 테스트는 각자 setAccessToken(null)·seedSellerApplication()으로
+// 이 전제를 비운다(테스트 파일의 beforeEach가 이것보다 나중에 돈다).
+beforeEach(() => {
+  setAccessToken('seller-test-token')
+  seedSellerApplication(makeApplicationWire({ status: 'APPROVED' }))
+  seedStoreSettings()
+})
+afterEach(() => setAccessToken(null))

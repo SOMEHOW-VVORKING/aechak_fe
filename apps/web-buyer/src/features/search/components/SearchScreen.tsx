@@ -3,31 +3,34 @@ import { useNavigate } from '@tanstack/react-router'
 import { Clock, X } from 'lucide-react'
 import { Card, MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
-import { useIsLoggedIn } from '@/shared/auth'
+import { useSessionState } from '@/shared/auth'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   useDeleteAllRecentKeywords,
   useDeleteRecentKeyword,
   useSearchLanding,
 } from '../search.queries'
+import type { SearchTab } from '../search.mock'
 import { KeywordChip } from './KeywordChip'
 
-// 검색 입력/최근 검색어(b3-st-2). 로그인 사용자는 서버의 최근·추천 검색어를 조회하고,
-// 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다.
-export function SearchScreen() {
+// 검색 입력/최근 검색어(b3-st-2, b12-st-1). 로그인 사용자는 서버의 최근·추천 검색어를 조회하고,
+// 최근 검색어 삭제는 optimistic cache update 뒤 실제 DELETE API로 확정한다. tab은 검색을 연 화면이 정한 결과 탭이다.
+export function SearchScreen({ tab }: { tab?: Exclude<SearchTab, 'all'> }) {
   const navigate = useNavigate()
-  const isLoggedIn = useIsLoggedIn()
+  const sessionState = useSessionState()
+  const isLoggedIn = sessionState === 'member'
   const { data } = useSearchLanding(isLoggedIn)
   const deleteOne = useDeleteRecentKeyword()
   const deleteAll = useDeleteAllRecentKeywords()
 
   const [query, setQuery] = useState('')
   const recent = data?.recentKeywords ?? []
+  const suggested = data?.suggestedKeywords ?? []
 
   const submit = (keyword: string) => {
     const q = keyword.trim()
     if (!q) return
-    navigate({ to: '/search/results', search: { q } })
+    navigate({ to: '/search/results', search: { q, ...(tab && { tab }) } })
   }
 
   const goBack = useSafeBack({ to: '/' })
@@ -40,7 +43,7 @@ export function SearchScreen() {
             value={query}
             onChange={setQuery}
             onClear={() => setQuery('')}
-            placeholder="상품, 브랜드 검색"
+            placeholder="상품/계정/해시태그 검색"
             autoFocus
             onKeyDown={e => {
               if (e.key === 'Enter') submit(query)
@@ -92,22 +95,29 @@ export function SearchScreen() {
           ) : (
             <Card className="flex flex-col items-center gap-2 px-4 py-6">
               <Clock className="size-6 text-icon-muted" />
+              {/* 최근·추천 검색어(GET /search/keywords)는 회원 전용이다. 비회원에게 "여기에
+                  표시돼요"라고 적으면 저장되지 않는 것을 저장될 것처럼 읽게 된다. 반대로 세션
+                  확인이 끝나지 않은 'unknown'에 로그인을 권하면 회원에게 거짓을 읽힌다. */}
               <span className="text-body-sm text-text-tertiary">
-                최근 검색한 상품이 여기에 표시돼요
+                {sessionState === 'guest'
+                  ? '로그인하면 최근 검색어를 저장해 드려요'
+                  : '최근 검색한 상품이 여기에 표시돼요'}
               </span>
             </Card>
           )}
         </section>
 
-        {/* 추천 검색어 */}
-        <section className="flex flex-col gap-2.5">
-          <span className="text-label font-semibold text-text-primary">추천 검색어</span>
-          <div className="flex flex-wrap gap-2">
-            {(data?.suggestedKeywords ?? []).map(keyword => (
-              <KeywordChip key={keyword} keyword={keyword} onClick={() => submit(keyword)} />
-            ))}
-          </div>
-        </section>
+        {/* 추천 검색어 — 비어 있으면(비회원·서버 무응답) 제목만 남은 빈 칸이 되므로 섹션을 접는다. */}
+        {suggested.length > 0 && (
+          <section className="flex flex-col gap-2.5">
+            <span className="text-label font-semibold text-text-primary">추천 검색어</span>
+            <div className="flex flex-wrap gap-2">
+              {suggested.map(keyword => (
+                <KeywordChip key={keyword} keyword={keyword} onClick={() => submit(keyword)} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </MobileScreen>
   )

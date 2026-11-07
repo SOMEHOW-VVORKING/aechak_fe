@@ -4,8 +4,9 @@ import { ChevronLeft, ChevronRight, UserMinus, UserPlus } from 'lucide-react'
 import { Alert, Button, DataTable, Input, Modal, StatusPill, Toast } from '@aechak/design-system/web'
 import type { Column, StatusPillVariant } from '@aechak/design-system/web'
 import {
+  ACCESS_TOKEN_TTL_MINUTES,
   DEFAULT_PAGE_SIZE,
-  RELOGIN_REQUIRED_NOTICE,
+  ROLE_PROPAGATION_NOTICE,
   USER_STATUS_LABEL,
   adminDisplayName,
   demoteErrorMessage,
@@ -34,6 +35,11 @@ const STATUS_VARIANT: Record<keyof typeof USER_STATUS_LABEL, StatusPillVariant> 
   WITHDRAWN: 'muted',
 }
 
+// 이 화면의 토스트는 "언제 반영되는지"를 한 문장 더 말하므로 DS 기본 3초로는 다 읽히지 않는다
+// (해제 토스트가 50자를 넘는다). 운영자가 읽지 못하는 안내는 안 쓴 것과 같아 여기만 늘린다 —
+// DS 기본값은 4개 앱 공용이라 건드리지 않는다.
+const ROLE_CHANGE_TOAST_MS = 7000
+
 function AdminRosterPage() {
   const navigate = useNavigate()
   const [page, setPage] = useState(0)
@@ -61,6 +67,10 @@ function AdminRosterPage() {
   const showPager = totalPages > 1 || page > 0
 
   const parsedUserId = parseUserId(userIdInput)
+  // 명부 조회가 **권한 때문에** 막힌 상태(401/20004·403/20005·403/20011)라면 승격 요청도 같은
+  // 토큰으로 나가 반드시 거절된다 — 누를 수 있게 둬서 실패를 보여 줄 이유가 없다(자기 자신 강등
+  // 버튼과 같은 판단). 5xx·네트워크 실패는 재시도로 풀릴 수 있으므로 막지 않는다.
+  const blockedByPermission = isError && needsRelogin(error)
 
   function submitPromote() {
     if (parsedUserId == null) return
@@ -68,8 +78,11 @@ function AdminRosterPage() {
     promote.mutate(parsedUserId, {
       onSuccess: () => {
         setUserIdInput('')
-        // 승격 직후에는 그 계정의 토큰에 권한이 없다 — 토스트에서도 재로그인을 다시 말한다.
-        setToast({ message: '관리자로 승격했어요. 그 계정은 다시 로그인해야 권한이 반영돼요.', variant: 'success' })
+        // 지금 쥔 access 토큰에는 아직 옛 역할이 박혀 있다 — 토스트에서도 반영 시점을 다시 말한다.
+        setToast({
+          message: '관리자로 승격했어요. 그 계정이 다음에 토큰을 갱신하면 권한이 반영돼요.',
+          variant: 'success',
+        })
       },
       onError: requestError => setPromoteError(promoteErrorMessage(requestError)),
     })
@@ -81,7 +94,11 @@ function AdminRosterPage() {
     demote.mutate(demoteTarget.userId, {
       onSuccess: () => {
         setDemoteTarget(null)
-        setToast({ message: '관리자 권한을 해제했어요.', variant: 'success' })
+        // 해제는 즉시가 아니다 — 운영자가 실제 차단 시점을 설명할 수 있게 창을 숫자로 말한다.
+        setToast({
+          message: `관리자 권한을 해제했어요. 이미 발급된 access 토큰(수명 ${ACCESS_TOKEN_TTL_MINUTES}분)이 만료되면 관리자 접근이 끊겨요.`,
+          variant: 'success',
+        })
       },
       onError: requestError => {
         // 409/30013(마지막 관리자)·403/30014(자기 자신)은 "화면이 낡았다"가 아니라 규칙이다 —
@@ -151,10 +168,10 @@ function AdminRosterPage() {
     <div className="p-6">
       <PageIntro title="관리자 관리" description="관리자 명부를 확인하고 권한을 주거나 거둬요." />
 
-      {/* 고정 문구 — 계약의 일부다(role은 로그인 시점 JWT 스냅샷). 성공 토스트와 별개로 늘 보인다.
+      {/* 고정 문구 — 권한 변경의 반영 시점이다. 성공 토스트와 별개로 늘 보인다.
           DS Alert가 variant별 아이콘을 자체 렌더하므로 앞에 lucide 아이콘을 또 넣지 않는다. */}
       <Alert variant="info" className="mb-3.5">
-        {RELOGIN_REQUIRED_NOTICE}
+        {ROLE_PROPAGATION_NOTICE}
       </Alert>
 
       <div className="mb-3.5 flex flex-col gap-1.5">
@@ -173,7 +190,7 @@ function AdminRosterPage() {
           </div>
           <Button
             leftIcon={<UserPlus className="size-4" />}
-            disabled={parsedUserId == null || isMutating}
+            disabled={parsedUserId == null || isMutating || blockedByPermission}
             loading={promote.isPending}
             onClick={submitPromote}
           >
@@ -257,7 +274,7 @@ function AdminRosterPage() {
           open
           onClose={() => setDemoteTarget(null)}
           title="관리자 권한을 해제할까요?"
-          description={`${adminDisplayName(demoteTarget)} 계정이 일반 회원으로 돌아가요. 이미 발급된 토큰은 만료될 때까지 관리자로 통과해요.`}
+          description={`${adminDisplayName(demoteTarget)} 계정이 일반 회원으로 돌아가요. 이미 발급된 access 토큰(수명 ${ACCESS_TOKEN_TTL_MINUTES}분)이 만료되면 관리자 접근이 끊겨요.`}
           confirmLabel="권한 해제"
           confirmVariant="danger"
           loading={demote.isPending}
@@ -266,7 +283,13 @@ function AdminRosterPage() {
       )}
 
       {toast && (
-        <Toast open onClose={() => setToast(null)} message={toast.message} variant={toast.variant} />
+        <Toast
+          open
+          onClose={() => setToast(null)}
+          message={toast.message}
+          variant={toast.variant}
+          duration={ROLE_CHANGE_TOAST_MS}
+        />
       )}
     </div>
   )

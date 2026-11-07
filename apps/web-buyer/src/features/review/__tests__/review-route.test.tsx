@@ -13,7 +13,8 @@ import {
   REVIEWS_URL,
   server,
 } from '@/testing/msw/server'
-import { getReviews, resetReviews } from '@/shared/review'
+import type { Review } from '@aechak/domain'
+import { addReview, getReviews, resetReviews } from '@/shared/review'
 import { resetAccount } from '@/shared/account'
 
 function renderAt(path: string) {
@@ -41,6 +42,20 @@ const SERVER_WRITE_URL =
   '&option=' +
   encodeURIComponent('5m / 블랙')
 
+// 로컬 스토어 경로(목업 작성분의 수정/삭제)를 검증하는 테스트가 직접 넣는 리뷰. 스토어에는 시드가 없다.
+const LOCAL_REVIEW: Review = {
+  id: 'rv-seed-1',
+  productId: 'p-feeder-5l',
+  orderId: '20260620-0044',
+  author: '나',
+  rating: 5,
+  content: '급식 시간이 정확하고 앱 알림이 편해요. 우리 집 고양이가 잘 적응했어요. 재구매 의사 있어요.',
+  images: [],
+  option: '용량 5L / 화이트',
+  verifiedPurchase: true,
+  createdAt: '2026.06.24',
+}
+
 describe('리뷰 라우트', () => {
   beforeEach(() => {
     resetReviews()
@@ -48,10 +63,10 @@ describe('리뷰 라우트', () => {
   })
 
   it('[AC-REVIEW-ROUTE-001] /reviews/mine은 대기/완료 탭과 개수를 렌더한다', async () => {
-    // 작성 대기는 서버 목록(기본 핸들러 빈 목록)뿐이고, 작성 완료는 로컬 시드 리뷰 2건.
+    // 두 탭 모두 서버 목록(기본 핸들러 빈 목록)뿐이다. 로컬 시드 리뷰를 더하지 않는다.
     renderAt('/reviews/mine')
     expect(await screen.findByText('작성 대기 0')).toBeInTheDocument()
-    expect(await screen.findByText('작성 완료 2')).toBeInTheDocument()
+    expect(await screen.findByText('작성 완료 0')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-ROUTE-002] /reviews/write는 작성 대기 스냅샷의 상품과 별점 입력을 렌더한다', async () => {
@@ -83,11 +98,10 @@ describe('리뷰 라우트', () => {
   })
 
   it('[AC-REVIEW-ROUTE-006] 상품 리뷰 목록에서 내 리뷰는 닉네임 + 수정/삭제로 뜬다', async () => {
-    // 시드 리뷰 rv-seed-1(author: 나)이 p-feeder-5l 목록에 얹힌다 → 작성자는 '나'가 아니라
-    // 내 계정 닉네임(코코집사)으로 표기되고, 그 카드에만 수정/삭제 버튼이 붙는다.
+    // 로컬 리뷰가 p-feeder-5l 목록에 얹히고, 그 카드에만 수정/삭제 버튼이 붙는다.
+    addReview(LOCAL_REVIEW)
     renderAt('/reviews/product/p-feeder-5l')
-    expect(await screen.findByText('코코집사')).toBeInTheDocument()
-    expect(screen.queryByText('나')).not.toBeInTheDocument()
+    expect(await screen.findByText(LOCAL_REVIEW.content)).toBeInTheDocument()
     // 다른 구매자 목업 리뷰는 그대로(닉네임 유지, 수정/삭제 없음).
     expect(screen.getByText('집사**')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '수정' })).toBeInTheDocument()
@@ -96,8 +110,9 @@ describe('리뷰 라우트', () => {
 
   it('[AC-REVIEW-ROUTE-007] 상품 리뷰 목록에서 내 리뷰를 삭제하면 목록에서 사라진다', async () => {
     const user = userEvent.setup()
+    addReview(LOCAL_REVIEW)
     renderAt('/reviews/product/p-feeder-5l')
-    await screen.findByText('코코집사')
+    await screen.findByText(LOCAL_REVIEW.content)
 
     await user.click(screen.getByRole('button', { name: '삭제' }))
     // 확인 모달 → 삭제하기
@@ -105,7 +120,7 @@ describe('리뷰 라우트', () => {
     await user.click(screen.getByRole('button', { name: '삭제하기' }))
 
     // 내 리뷰가 목록에서 사라진다(닉네임/수정·삭제 버튼 제거). 다른 리뷰는 유지.
-    await waitFor(() => expect(screen.queryByText('코코집사')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(LOCAL_REVIEW.content)).not.toBeInTheDocument())
     expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
     expect(screen.getByText('집사**')).toBeInTheDocument()
   })
@@ -117,6 +132,17 @@ describe('리뷰 라우트', () => {
     expect(screen.getByText('집사7**')).toBeInTheDocument()
     // 요약 평균 (2+5+3+4+5)/5 = 3.8
     expect(screen.getByText('3.8')).toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-016] 셀러 답글이 달린 리뷰는 본문 아래에 판매자 답글을 함께 보여준다', async () => {
+    // 답글이 셀러센터에만 보이면 쓸모가 없다(SCRUM-315) — 구매자 목록에도 실리는지 고정한다.
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+
+    expect(await screen.findByText('냥집사')).toBeInTheDocument()
+    expect(screen.getByText(/판매자 답글/)).toBeInTheDocument()
+    expect(screen.getByText(/설치면을 평평하게 두면/)).toBeInTheDocument()
+    // 답글이 없는 리뷰까지 답글 블록을 그리지 않는다(픽스처 5건 중 답글은 1건이다).
+    expect(screen.getAllByText(/판매자 답글/)).toHaveLength(1)
   })
 
   it('[AC-REVIEW-ROUTE-009] 포토리뷰만 토글은 사진 없는 리뷰를 감춘다', async () => {
@@ -281,7 +307,7 @@ describe('리뷰 라우트', () => {
                 rating: 5,
                 content: '서버에 저장된 내 리뷰예요.',
                 optionName: '기본형',
-                authorNickname: '코코집사',
+                authorNickname: '연어러버',
                 authorProfileImageUrl: null,
                 createdAt: '2026-08-20T10:00:00',
                 images: [],
@@ -305,6 +331,25 @@ describe('리뷰 라우트', () => {
 
     expect(screen.getByRole('button', { name: '삭제' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-017] 서버 리뷰(isMine)의 작성자는 서버 닉네임으로 표기한다', async () => {
+    serveMyServerReview(322)
+    renderAt(`/reviews/product/${REAL_PRODUCT_ID}`)
+    expect(await screen.findByText('서버에 저장된 내 리뷰예요.')).toBeInTheDocument()
+
+    expect(screen.getByText('연어러버')).toBeInTheDocument()
+    expect(screen.queryByText('코코집사')).not.toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-018] 사진 없이 등록하면 완료 토스트가 텍스트 리뷰 적립금을 안내한다', async () => {
+    renderAt('/reviews/mine?submitted=true')
+    expect(await screen.findByText('리뷰가 등록됐어요. 적립금 300원 지급 예정')).toBeInTheDocument()
+  })
+
+  it('[AC-REVIEW-ROUTE-019] 사진과 함께 등록하면 완료 토스트가 포토 리뷰 적립금을 안내한다', async () => {
+    renderAt('/reviews/mine?submitted=true&photo=true')
+    expect(await screen.findByText('리뷰가 등록됐어요. 적립금 500원 지급 예정')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-ROUTE-015] 정렬 전환이 실패하면 기본 필터로 되돌릴 길을 준다', async () => {
@@ -414,7 +459,47 @@ describe('리뷰 라우트', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/mine'))
     // 작성 완료 탭은 서버 written 목록을 그린다. 서버 리뷰는 로컬 스토어에 따로 쌓지 않는다.
     expect(await screen.findByText('서버가 확정한 본문이에요.')).toBeInTheDocument()
+    // 사진 없이 등록했으니 텍스트 리뷰 적립금으로 안내한다.
+    expect(router.state.location.search).toMatchObject({ submitted: true, photo: false })
+    expect(screen.getByText('리뷰가 등록됐어요. 적립금 300원 지급 예정')).toBeInTheDocument()
     expect(getReviews().some(r => r.id === 'srv-977')).toBe(false)
+  })
+
+  it('[AC-REVIEW-WRITE-006] 사진과 함께 등록하면 photo=true로 이동하고 포토 리뷰 적립금을 안내한다', async () => {
+    let posted: { imageKeys?: string[] } | null = null
+    server.use(
+      http.post(REVIEWS_URL, async ({ request }) => {
+        posted = (await request.json()) as { imageKeys?: string[] }
+        return HttpResponse.json(
+          {
+            data: {
+              reviewId: 978,
+              productId: 1,
+              rating: 5,
+              content: '사진과 함께 남기는 리뷰예요.',
+              optionName: '5m / 블랙',
+              createdAt: '2026-08-21T10:00:00',
+              images: [],
+            },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    const router = renderAt(SERVER_WRITE_URL)
+    await screen.findByText('상품은 만족하셨나요?')
+    const stars = screen.getAllByRole('radio')
+    await user.click(stars[stars.length - 1]!)
+    await user.type(screen.getByRole('textbox'), '사진과 함께 남기는 리뷰예요.')
+    const photoInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
+    await user.upload(photoInput, new File(['x'], 'photo.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '리뷰 등록' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/reviews/mine'))
+    expect(posted!.imageKeys).toHaveLength(1)
+    expect(router.state.location.search).toMatchObject({ submitted: true, photo: true })
+    expect(await screen.findByText('리뷰가 등록됐어요. 적립금 500원 지급 예정')).toBeInTheDocument()
   })
 
   it('[AC-REVIEW-WRITE-005] 주문 품목 id 없이 진입하면 작성 폼 대신 안내를 보여주고 로컬에도 남기지 않는다', async () => {
@@ -565,12 +650,13 @@ describe('리뷰 라우트', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
+    // 로컬 스토어 리뷰는 상품 리뷰 목록에만 얹힌다(내 리뷰 탭은 서버 목록만 쓴다).
+    addReview(LOCAL_REVIEW)
     const user = userEvent.setup()
-    renderAt('/reviews/mine')
-    await screen.findByText('작성 완료 2')
-    await user.click(screen.getByText('작성 완료 2'))
+    renderAt('/reviews/product/p-feeder-5l')
+    await screen.findByText(LOCAL_REVIEW.content)
 
-    await user.click(screen.getAllByRole('button', { name: '삭제' })[0]!)
+    await user.click(screen.getByRole('button', { name: '삭제' }))
     await user.click(screen.getByRole('button', { name: '삭제하기' }))
 
     expect(await screen.findByText('리뷰를 삭제했어요.')).toBeInTheDocument()
@@ -597,19 +683,22 @@ describe('리뷰 라우트', () => {
 
   it('[AC-REVIEW-ROUTE-004] 리뷰 수정 완료 후 뒤로가기는 수정 화면을 재진입하지 않는다(replace)', async () => {
     const user = userEvent.setup()
-    // 내 리뷰 목록 위에서 시드 리뷰(rv-seed-1) 수정 화면으로 진입한 세션.
+    // 내 리뷰 목록 위에서 로컬 리뷰(rv-seed-1) 수정 화면으로 진입한 세션.
+    addReview(LOCAL_REVIEW)
     const router = renderHistory(['/reviews/mine', '/reviews/write?reviewId=rv-seed-1'])
 
     // 수정 화면(별점 프리필로 '리뷰 수정' 즉시 활성)이 뜬다.
     expect(await screen.findByText('상품은 만족하셨나요?')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '리뷰 수정' }))
 
-    // 저장 완료 → 내 리뷰(완료 탭)로 이동.
-    expect(await screen.findByText('작성 완료 2', {}, { timeout: 3000 })).toBeInTheDocument()
+    // 저장 완료 → 내 리뷰(완료 탭)로 이동. 작성 완료 개수는 서버 목록(0건)만 센다.
+    expect(await screen.findByText('작성 완료 0', {}, { timeout: 3000 })).toBeInTheDocument()
 
-    // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다.
+    // 뒤로가기 → 수정 화면을 replace로 빠져나왔으니 그 이전(내 리뷰)로 가야 한다. 탭 라벨만
+    // 기다리면 화면이 언마운트되는 시점에 기대게 되니 도착 주소를 직접 단언한다.
     router.history.back()
-    expect(await screen.findByText('작성 대기 0')).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.href).toBe('/reviews/mine'))
     expect(screen.queryByText('상품은 만족하셨나요?')).not.toBeInTheDocument()
+    expect(screen.getByText('작성 대기 0')).toBeInTheDocument()
   })
 })

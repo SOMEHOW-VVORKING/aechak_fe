@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import { setAccessToken } from '@aechak/api'
+import { logout } from '@/shared/auth'
 import { routeTree } from '../../../routeTree.gen'
 import {
   ORDER_CONFIRM_URL,
@@ -15,6 +17,10 @@ import {
   seedOrderGroups,
   server,
 } from '@/testing/msw/server'
+
+// 주문 내역은 회원 전용 화면이라 비회원에게는 로그인 안내가 뜬다 — 토큰이 세션의 정본이므로
+// 이 화면들의 전제인 회원 세션을 토큰으로 세운다.
+beforeEach(() => setAccessToken('member-token'))
 
 // 주문 목록·상세는 서버(GET /order-groups, GET /orders/{orderId})로 구동한다. 응답 계약·필터·커서는
 // testing/msw/server.ts가 소유하고 여기선 seedOrderGroups로 시나리오만 세운다(afterEach가 리셋).
@@ -202,6 +208,24 @@ const CANCELLED = makeOrderGroupRow({
 })
 
 describe('/orders 주문 목록', () => {
+  it('[AC-ORDER-GUEST-001] 비회원은 주문 내역 대신 로그인 안내를 보고 서버를 부르지 않는다', async () => {
+    // GET /order-groups는 회원 전용이다. 화면을 그대로 열면 401 → 전역 로그인 리다이렉트로
+    // 빈 화면만 스치고 사라진다 — 왜 비었는지와 다음 행동을 그 자리에 보여준다.
+    let requested = 0
+    server.use(
+      http.get(ORDER_GROUPS_URL, () => {
+        requested += 1
+        return HttpResponse.json({ data: { orderGroups: [], nextCursor: null, hasNext: false } })
+      }),
+    )
+    logout()
+    renderAt('/orders')
+
+    expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '로그인 / 회원가입' })).toBeInTheDocument()
+    expect(requested).toBe(0)
+  })
+
   it('[AC-ORDER-ROUTE-001] 그룹 카드 안에 셀러 주문별 상태 pill을 보여준다(혼합 상태 그룹)', async () => {
     seedOrderGroups([MIXED, PAID_ONLY])
     renderAt('/orders')
@@ -421,12 +445,20 @@ describe('/orders/$orderId 주문 상세', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 
-  it('[AC-ORDER-ROUTE-010] 취소 화면 URL로 직접 들어가면 상세로 되돌린다(취소 API 없음)', async () => {
+  it('[AC-ORDER-ROUTE-010] 예전 취소 화면 URL은 취소 유형 클레임 요청으로 넘긴다', async () => {
+    // 취소는 클레임 한 경로(POST /orders/{id}/claims)로 합쳐졌다 — 옛 링크를 끊지 않고 새 화면으로 보낸다.
     seedOrderGroups([PAID_ONLY])
     const router = renderAt('/orders/o-paid/cancel')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orders/o-paid/claim'))
+    expect(router.state.location.search).toEqual({ type: 'cancel' })
+    expect(await screen.findByText('취소 사유')).toBeInTheDocument()
+  })
+
+  it('[AC-ORDER-ROUTE-023] 유형 없는 클레임 URL은 상세로 되돌린다(빈 폼을 띄우지 않는다)', async () => {
+    seedOrderGroups([PAID_ONLY])
+    const router = renderAt('/orders/o-paid/claim')
     await waitFor(() => expect(router.state.location.pathname).toBe('/orders/o-paid'))
     expect(await screen.findByText('o-paid')).toBeInTheDocument()
-    expect(screen.queryByText('취소 사유')).not.toBeInTheDocument()
   })
 
   it('[AC-ORDER-ROUTE-014] 배송완료 상세는 송장·배송완료 시각과 자동확정 기한을 보여준다', async () => {
@@ -534,16 +566,18 @@ describe('/orders/$orderId 구매확정', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 
-  it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 읽기 전용으로 보여주고 구매확정 버튼을 두지 않는다', async () => {
+  it('[AC-ORDER-ROUTE-018] 진행 중 클레임이 있으면 구매확정도 새 요청도 막고 사유를 적는다', async () => {
     seedOrderGroups([CLAIM_IN_PROGRESS])
     renderAt('/orders/o-claim')
 
-    expect(await screen.findByText('반품 진행 중')).toBeInTheDocument()
+    expect(await screen.findByText('반품 요청')).toBeInTheDocument()
     expect(screen.getByText('회수 진행 중')).toBeInTheDocument()
     expect(screen.getByText('환불 요청됨')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '구매확정' })).not.toBeInTheDocument()
-    // 요청·철회 진입점은 사유 코드 어휘 미확정(SCRUM-273)이라 두지 않는다.
-    expect(screen.queryByRole('button', { name: '반품 요청' })).not.toBeInTheDocument()
+    // 진행 중에는 유형과 무관하게 새 요청을 받지 않는다(서버 409 50403).
+    expect(screen.queryByRole('button', { name: '반품 신청' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '교환 신청' })).not.toBeInTheDocument()
+    // 회수가 시작된 뒤에는 철회할 수 없다(서버 409 50402) — 버튼을 두지 않는다.
     expect(screen.queryByRole('button', { name: '요청 철회' })).not.toBeInTheDocument()
   })
 })

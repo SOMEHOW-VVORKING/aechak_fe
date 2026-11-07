@@ -6,11 +6,16 @@ import type {
   ReviewListEnvelope,
 } from '@aechak/api'
 
+// 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
+const API_ORIGIN = 'http://localhost:8080'
+
 // 홈(b1-st-1) ↔ GET /home(BE SCRUM-155) 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을
 // 재현한다(교차 출처 8080 + withCredentials라 정확한 origin과 Allow-Credentials, OPTIONS 방어 필수).
 // page.screenshot으로 PR 첨부용 캡처를 test-results/pr-c(gitignore)에 남긴다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -164,6 +169,9 @@ test('[AC-HOME-E2E-003] 랭킹 행을 누르면 그 상품 상세로 이동한�
   await stubHome(page)
   await page.route(`**/api/v1/products/${id}`, route => fulfill(route, 200, detail))
   await page.route(`**/api/v1/products/${id}/reviews**`, route => fulfill(route, 200, reviews))
+  await page.route(`${API_ORIGIN}/api/v1/products/${id}/review-summary`, route =>
+    fulfill(route, 200, { data: { productSummary: null, similarPetSummary: null } }),
+  )
   await page.goto('/')
 
   await page.getByRole('button', { name: /츄르 참치맛 40개입/ }).click()

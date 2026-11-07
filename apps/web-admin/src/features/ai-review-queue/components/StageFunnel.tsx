@@ -65,12 +65,7 @@ export function StageFunnel({ funnel }: StageFunnelProps) {
 }
 
 /** 막대 색 — 브랜드 그린 한 색조의 네 단계(밝음 → 어두움). 디자인시스템이 내보내는 램프 변수다. */
-const STAGE_FILL = [
-  'var(--green-300)',
-  'var(--green-400)',
-  'var(--green-500)',
-  'var(--green-600)',
-]
+const STAGE_FILL = ['var(--green-300)', 'var(--green-400)', 'var(--green-500)', 'var(--green-600)']
 
 function FunnelRow({ stage }: { stage: FunnelStageView }) {
   const share = stage.share
@@ -98,7 +93,10 @@ function FunnelRow({ stage }: { stage: FunnelStageView }) {
         title={`${stage.order}단 ${stage.label} 진입 ${formatCount(stage.enteredCount)}건 / ${stage.exitLabel} ${formatCount(stage.exitedCount)}건`}
       >
         {share != null && (
-          <div className="h-full rounded-r-[4px]" style={{ width: `${widthPercent}%`, background: fill }} />
+          <div
+            className="h-full rounded-r-[4px]"
+            style={{ width: `${widthPercent}%`, background: fill }}
+          />
         )}
       </div>
 

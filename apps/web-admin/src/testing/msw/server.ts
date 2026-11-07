@@ -1,6 +1,17 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { API_PATH_PREFIX } from '@aechak/api'
+import { adminBase, apiBase, errorBody } from './base'
+import { auditLogHandlers } from './audit-log.handlers'
+import { noticeHandlers } from './notices.handlers'
+import { inquiryHandlers } from './inquiries.handlers'
+import { claimHandlers } from './claims.handlers'
+import { reviewHandlers } from './reviews.handlers'
+import { reportHandlers } from './reports.handlers'
+import { inspectionMonitorHandlers } from './inspection-monitor.handlers'
+import { inspectionMetricsHandlers } from './inspection-metrics.handlers'
+// 검토 큐 목록 핸들러가 쓰는 경로 상수도 그 모듈이 소유한다(승인·반려가 거기서 상품 상태를 바꾼다).
+import { ADMIN_PRODUCT_INSPECTIONS_URL, productHandlers } from './products.handlers'
+import { sellerHandlers } from './sellers.handlers'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-seller의 src/testing/msw 관례를
 // web-admin에 이식했다. 모듈 모킹 대신 네트워크 레벨에서 가로채 실제 HTTP 경로(URL·봉투·에러
@@ -10,10 +21,105 @@ import { API_PATH_PREFIX } from '@aechak/api'
 // api 모듈에서 받는다. 두 호스트를 한 base로 합치면 요청이 엉뚱한 모듈로 나가도 MSW가 똑같이
 // 받아 주어, 실제 배포에서만 드러나는 호스트 오배치를 테스트가 놓친다. 두 상수는 test-setup.ts의
 // configureApiHosts 인자와 같은 값이어야 한다(admin 로컬 포트는 seller와 겹치지 않는 8082).
-export const API_ORIGIN = 'http://localhost:8080'
-export const ADMIN_ORIGIN = 'http://localhost:8082'
-const apiBase = `${API_ORIGIN}${API_PATH_PREFIX}`
-const adminBase = `${ADMIN_ORIGIN}${API_PATH_PREFIX}`
+export { ADMIN_ORIGIN, API_ORIGIN } from './base'
+export {
+  ADMIN_REPORTS_URL,
+  ADMIN_REPORT_DECISION_URL,
+  ADMIN_REPORT_DETAIL_URL,
+  currentAdminReport,
+  lastAdminReportSanction,
+  makeAdminReportWire,
+  seedAdminReports,
+  type AdminReportWire,
+} from './reports.handlers'
+export {
+  ADMIN_SELLERS_URL,
+  ADMIN_SELLER_DETAIL_URL,
+  ADMIN_SELLER_MEMO_URL,
+  ADMIN_SELLER_RELEASE_URL,
+  ADMIN_SELLER_SUSPEND_URL,
+  SANCTION_HISTORY_LIMIT,
+  currentAdminSeller,
+  lastAdminSellerWrite,
+  makeAdminSellerWire,
+  seedAdminSellers,
+  type AdminSellerWire,
+  type SellerSanctionHistoryWire,
+} from './sellers.handlers'
+export {
+  ADMIN_AUDIT_LOGS_URL,
+  makeAdminAuditLogWire,
+  seedAdminAuditLogs,
+  type AdminAuditLogWire,
+} from './audit-log.handlers'
+export {
+  ADMIN_NOTICES_URL,
+  ADMIN_NOTICE_DETAIL_URL,
+  ADMIN_NOTICE_PUBLISH_URL,
+  ADMIN_NOTICE_UNPUBLISH_URL,
+  currentAdminNotice,
+  makeAdminNoticeWire,
+  seedAdminNotices,
+  type AdminNoticeWire,
+} from './notices.handlers'
+export {
+  ADMIN_CLAIMS_URL,
+  ADMIN_CLAIM_DETAIL_URL,
+  ADMIN_CLAIM_INTERVENE_URL,
+  ADMIN_CLAIM_REASONS_URL,
+  currentAdminClaim,
+  makeAdminClaimWire,
+  seedAdminClaims,
+  type AdminClaimWire,
+} from './claims.handlers'
+export {
+  ADMIN_INQUIRIES_URL,
+  ADMIN_INQUIRY_ANSWER_URL,
+  ADMIN_INQUIRY_DETAIL_URL,
+  ADMIN_INQUIRY_STATUS_URL,
+  currentAdminInquiry,
+  makeAdminInquiryWire,
+  seedAdminInquiries,
+  type AdminInquiryWire,
+} from './inquiries.handlers'
+export {
+  ADMIN_PRODUCTS_URL,
+  ADMIN_PRODUCT_APPROVE_URL,
+  ADMIN_PRODUCT_INSPECTIONS_URL,
+  ADMIN_PRODUCT_REJECT_URL,
+  ADMIN_PRODUCT_RESUME_URL,
+  ADMIN_PRODUCT_SUSPEND_URL,
+  currentAdminProduct,
+  makeAdminProductWire,
+  seedAdminProducts,
+  type AdminProductWire,
+} from './products.handlers'
+export {
+  ADMIN_INSPECTIONS_URL,
+  ADMIN_INSPECTION_DETAIL_URL,
+  makeAdminInspectionPerspectiveWire,
+  makeAdminInspectionWire,
+  seedAdminInspections,
+  type AdminInspectionPerspectiveWire,
+  type AdminInspectionWire,
+} from './inspection-monitor.handlers'
+export {
+  ADMIN_INSPECTION_METRICS_URL,
+  makeAdminInspectionMetricsWire,
+  makeLegacyAdminInspectionMetricsWire,
+  seedAdminInspectionMetrics,
+  type AdminInspectionMetricsWire,
+} from './inspection-metrics.handlers'
+export {
+  ADMIN_REVIEWS_URL,
+  ADMIN_REVIEW_BLIND_URL,
+  ADMIN_REVIEW_DETAIL_URL,
+  ADMIN_REVIEW_UNBLIND_URL,
+  currentAdminReview,
+  makeAdminReviewWire,
+  seedAdminReviews,
+  type AdminReviewWire,
+} from './reviews.handlers'
 
 export const ADMIN_ROSTER_URL = `${adminBase}/admin/admins`
 export const ADMIN_ROSTER_MEMBER_URL = `${ADMIN_ROSTER_URL}/:userId`
@@ -21,7 +127,19 @@ export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
 export const ADMIN_APPLICATION_REJECT_URL = `${ADMIN_APPLICATION_DETAIL_URL}/reject`
+export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
+export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
+export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`
+export const ADMIN_MEMBER_RELEASE_URL = `${ADMIN_MEMBER_SANCTION_URL}/release`
+export const ADMIN_MEMBER_PROFILE_RESET_URL = `${ADMIN_MEMBER_DETAIL_URL}/profile/reset`
+export const ADMIN_ORDERS_URL = `${adminBase}/admin/orders`
+export const ADMIN_ORDER_METRICS_URL = `${ADMIN_ORDERS_URL}/metrics`
+export const ADMIN_ORDER_DETAIL_URL = `${ADMIN_ORDERS_URL}/:orderId`
+export const ADMIN_ORDER_NUDGE_URL = `${ADMIN_ORDER_DETAIL_URL}/dispatch-nudges`
 export const WEB_REFRESH_URL = `${apiBase}/auth/web/refresh`
+// 기본 핸들러를 두지 않는다 — 로그아웃을 부르는지/안 부르는지가 테스트의 단언이라,
+// 조용히 204를 주는 기본값이 있으면 "취소했는데 호출했다"는 회귀가 통과한다.
+export const WEB_LOGOUT_URL = `${apiBase}/auth/web/logout`
 
 type WireStatus = 'DRAFT' | 'SUBMITTED' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 type WireBusinessType = 'PERSONAL_GENERAL' | 'SOLE_PROPRIETORSHIP' | 'CORPORATE'
@@ -116,7 +234,6 @@ export function currentAdminApplication(applicationId: number): AdminApplication
   return found ? clone(found) : null
 }
 
-const errorBody = (errorCode: number, message: string) => ({ errorCode, message })
 
 function summaryOf(row: AdminApplicationWire) {
   // 목록 행에는 6필드뿐이다 — 사업자등록번호도 전화번호도 없다(BE AdminApplicationSummaryResponse).
@@ -362,689 +479,842 @@ const rosterHandlers = [
   }),
 ]
 
-// ─── AI 검수 큐 (admin 호스트 /admin/content-inspections) ──────────────────────
-// BE AdminContentInspectionController + AdminInspectionReviewFacade의 가드 순서를 그대로
-// 미러한다. 순서가 계약의 일부라서(차단은 **사유 검사가 상태 가드보다 먼저**다 — 입점 심사
-// 반려와 반대다) FE 분기가 틀리면 이 스텁에서 드러난다.
+// ─── 일반 회원 관리 (admin 호스트 /admin/members) ──────────────────────────────
+// BE AdminMemberService + User의 제재 전이 가드를 그대로 미러한다. 가드 순서가 계약의 일부라
+// (자기 자신 → 존재 확인 → 관리자 → 종단 상태) FE 분기가 틀리면 이 스텁에서 드러난다.
 
-export const ADMIN_INSPECTIONS_URL = `${adminBase}/admin/content-inspections`
-export const ADMIN_INSPECTION_DETAIL_URL = `${ADMIN_INSPECTIONS_URL}/:inspectionId`
-export const ADMIN_INSPECTION_APPROVE_URL = `${ADMIN_INSPECTION_DETAIL_URL}/approve`
-export const ADMIN_INSPECTION_REJECT_URL = `${ADMIN_INSPECTION_DETAIL_URL}/reject`
+export type WireMemberStatus =
+  | 'PENDING_ONBOARDING'
+  | 'ACTIVE'
+  | 'RESTRICTED'
+  | 'SUSPENDED'
+  | 'BANNED'
+  | 'WITHDRAWN'
 
-export type WireReviewState = 'OPEN' | 'RESOLVED'
-export type WireReviewReason =
-  | 'VERDICT_FAILED'
-  | 'UNJUDGED'
-  | 'MODEL_UNVERIFIED'
-  | 'CRITIC_OVERTURNED'
-  | 'OVERBLOCK_SUSPECT'
-  | 'SELLER_APPEAL'
-export type WireJudgment = 'PASS' | 'FLAG' | 'UNJUDGED' | 'FAILED'
-export type WireAppealState = 'OPEN' | 'ACCEPTED' | 'REJECTED'
-export type WireAdminDecision = 'ALLOWED' | 'BLOCKED'
-export type WirePerspective = 'ALL' | 'DISPLAY_ADS' | 'CONDUCT_TRADE' | 'RULE' | 'TRIAGE'
-export type WirePerspectiveOutcome = 'VIOLATION' | 'CLEAR' | 'UNCHECKED'
+export type WireSanctionAction = 'RESTRICT' | 'SUSPEND' | 'BAN' | 'FORCE_WITHDRAW' | 'RELEASE'
+export type WireSanctionReason = 'ABUSIVE_REVIEW' | 'CHAT_DISPUTE' | 'FALSE_REPORT' | 'OTHER'
 
-const REVIEW_REASONS: WireReviewReason[] = [
-  'VERDICT_FAILED',
-  'UNJUDGED',
-  'MODEL_UNVERIFIED',
-  'CRITIC_OVERTURNED',
-  'OVERBLOCK_SUSPECT',
-  'SELLER_APPEAL',
-]
-const REVIEW_STATES: WireReviewState[] = ['OPEN', 'RESOLVED']
-
-export interface AdminInspectionFindingWire {
-  perspective: WirePerspective
-  outcome: WirePerspectiveOutcome
-  skipReason: string | null
-  /** 서버는 JSON 칼럼을 문자열로 그대로 내려준다 — 파싱은 화면 책임이다. */
-  violations: string | null
+export interface MemberSanctionWire {
+  sanctionId: number
+  action: WireSanctionAction
+  reasonCode: WireSanctionReason | null
+  reasonDetail: string | null
+  effectiveUntil: string | null
+  memo: string | null
+  actedByAdminId: number
+  actedAt: string
 }
 
-export interface AdminInspectionCallWire {
-  perspective: string | null
-  modelId: string
-  outcome: string
-  costMicroUsd: number
-  latencyMs: number
+/** 상세 응답 모양의 서버 상태. 목록 행은 member를 그대로 투영한다. */
+export interface AdminMemberWire {
+  userId: number
+  publicId: string
+  nickname: string | null
+  /** 저장값. 유효 상태(status)는 핸들러가 sanctionUntil로 계산한다 — 서버와 같은 규칙이다. */
+  storedStatus: WireMemberStatus
+  sanctionUntil: string | null
+  warningCount: number
+  reportCount: number
+  joinedAt: string
+  role: 'ADMIN' | 'GENERAL'
+  profileImageUrl: string | null
+  bio: string | null
+  sanctions: MemberSanctionWire[]
 }
 
-/** BE AdminInspectionDetailResponse 모양의 서버 상태. 목록 행은 여기서 투영해 만든다. */
-export interface AdminInspectionWire {
-  inspectionId: number
-  targetType: 'PRODUCT' | 'REVIEW'
-  targetRef: number
-  judgment: WireJudgment | null
-  reasonCode: string | null
-  reasonSummary: string | null
-  adminReviewReason: WireReviewReason | null
-  adminReviewState: WireReviewState | null
-  appealState: WireAppealState | null
-  adminDecision: WireAdminDecision | null
-  appealedAt: string | null
-  requestedAt: string
-  settledAt: string | null
-  productId: string | null
-  productName: string | null
-  productInspectionStatus: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | null
-  productAdminDecision: WireAdminDecision | null
-  sellerId: number | null
-  storeName: string | null
-  appealReason: string | null
-  adminDecidedBy: number | null
-  adminDecidedAt: string | null
-  adminNote: string | null
-  findings: AdminInspectionFindingWire[]
-  calls: AdminInspectionCallWire[]
-  /**
-   * 셀러가 그사이 상품 내용을 고쳤는가. 서버에서는 상품 행의 내용 해시와 검수 행의 해시를
-   * 맞춰 보는 일이고, 어긋나면 게이트가 409 errorCode 40508로 결정을 거부하면서 결정 자체를
-   * 남기지 않는다(트랜잭션 롤백). 스텁은 그 사실만 플래그로 들고 있는다.
-   */
-  contentChanged?: boolean
-}
+let members: AdminMemberWire[] = []
+let sanctionIdSeq = 0
 
-let inspections: AdminInspectionWire[] = []
-
-export function makeAdminInspectionWire(
-  overrides: Partial<AdminInspectionWire> = {},
-): AdminInspectionWire {
+export function makeAdminMemberWire(overrides: Partial<AdminMemberWire> = {}): AdminMemberWire {
   return {
-    inspectionId: 101,
-    targetType: 'PRODUCT',
-    targetRef: 9001,
-    judgment: 'FLAG',
-    reasonCode: 'BANNED_INGREDIENT',
-    reasonSummary: '초콜릿향 간식',
-    adminReviewReason: 'OVERBLOCK_SUSPECT',
-    adminReviewState: 'OPEN',
-    appealState: null,
-    adminDecision: null,
-    appealedAt: null,
-    requestedAt: '2026-06-18T07:10:00',
-    settledAt: '2026-06-18T07:14:00',
-    productId: 'PRD-0001',
-    productName: '동결건조 닭가슴살',
-    productInspectionStatus: 'PENDING',
-    productAdminDecision: null,
-    sellerId: 7,
-    storeName: '냥이상점',
-    appealReason: null,
-    adminDecidedBy: null,
-    adminDecidedAt: null,
-    adminNote: null,
-    findings: [],
-    calls: [],
+    userId: 1001,
+    publicId: '01HZXK0000000000000000001',
+    nickname: '코코맘',
+    storedStatus: 'ACTIVE',
+    sanctionUntil: null,
+    warningCount: 0,
+    reportCount: 0,
+    joinedAt: '2026-05-02T09:00:00',
+    role: 'GENERAL',
+    profileImageUrl: null,
+    bio: null,
+    sanctions: [],
     ...overrides,
   }
 }
 
-const cloneInspection = (row: AdminInspectionWire): AdminInspectionWire => ({
+const cloneMember = (row: AdminMemberWire): AdminMemberWire => ({
   ...row,
-  findings: row.findings.map(finding => ({ ...finding })),
-  calls: row.calls.map(call => ({ ...call })),
+  sanctions: row.sanctions.map(entry => ({ ...entry })),
 })
 
-/** 테스트마다 서버의 큐를 세운다. 인자 없이 부르면 빈 큐(items: [], totalCount: 0). */
-export function seedAdminInspections(rows: AdminInspectionWire[] = []): void {
-  inspections = rows.map(cloneInspection)
+export function seedAdminMembers(rows: AdminMemberWire[] = []): void {
+  members = rows.map(cloneMember)
+  sanctionIdSeq = 0
 }
 
-/** 핸들러가 반영한 현재 검수 상태 — 테스트가 허용·차단 결과를 읽는다. */
-export function currentAdminInspection(inspectionId: number): AdminInspectionWire | null {
-  const found = inspections.find(row => row.inspectionId === inspectionId)
-  return found ? cloneInspection(found) : null
+/** 핸들러가 반영한 현재 회원 상태 — 테스트가 제재·해제 결과를 읽는다. */
+export function currentAdminMember(userId: number): AdminMemberWire | null {
+  const found = members.find(row => row.userId === userId)
+  return found ? cloneMember(found) : null
 }
 
-// 목록 행의 필드를 하나씩 적는다(BE AdminInspectionSummaryResponse 19필드). 상세 필드를
-// 빼는 방식으로 쓰면 와이어 타입에 상세 필드가 하나 늘 때 목록 응답으로 조용히 새어 나가고,
-// 그 값에 의존한 화면이 실제 배포에서만 비게 된다.
-function inspectionSummaryOf(row: AdminInspectionWire) {
+/** 유효 상태 — 기간이 지난 임시 정지는 ACTIVE로 내려간다(BE UserStatus.effective와 같은 규칙). */
+function effectiveStatus(row: AdminMemberWire): WireMemberStatus {
+  if (row.storedStatus !== 'SUSPENDED' || row.sanctionUntil == null) return row.storedStatus
+  return new Date(row.sanctionUntil).getTime() <= Date.now() ? 'ACTIVE' : 'SUSPENDED'
+}
+
+function memberSummaryOf(row: AdminMemberWire) {
   return {
-    inspectionId: row.inspectionId,
-    targetType: row.targetType,
-    targetRef: row.targetRef,
-    judgment: row.judgment,
-    reasonCode: row.reasonCode,
-    reasonSummary: row.reasonSummary,
-    adminReviewReason: row.adminReviewReason,
-    adminReviewState: row.adminReviewState,
-    appealState: row.appealState,
-    adminDecision: row.adminDecision,
-    appealedAt: row.appealedAt,
-    requestedAt: row.requestedAt,
-    settledAt: row.settledAt,
-    productId: row.productId,
-    productName: row.productName,
-    productInspectionStatus: row.productInspectionStatus,
-    productAdminDecision: row.productAdminDecision,
-    sellerId: row.sellerId,
-    storeName: row.storeName,
+    userId: row.userId,
+    publicId: row.publicId,
+    nickname: row.nickname,
+    status: effectiveStatus(row),
+    storedStatus: row.storedStatus,
+    sanctionUntil: row.sanctionUntil,
+    warningCount: row.warningCount,
+    reportCount: row.reportCount,
+    joinedAt: row.joinedAt,
   }
 }
 
-const inspectionHandlers = [
-  http.get(ADMIN_INSPECTIONS_URL, ({ request }) => {
+const STATUS_FILTERS: Record<string, WireMemberStatus[]> = {
+  ALL: [],
+  NORMAL: ['ACTIVE', 'PENDING_ONBOARDING'],
+  RESTRICTED: ['RESTRICTED'],
+  SUSPENDED: ['SUSPENDED'],
+  BANNED: ['BANNED'],
+  WITHDRAWN: ['WITHDRAWN'],
+}
+
+/** 커서는 서버와 같은 모양(base64url "m:필터:마지막id")이다 — FE가 값을 들여다보지 않는지도 함께 고정된다. */
+const encodeCursor = (filter: string, lastUserId: number) =>
+  btoa(`m:${filter}:${lastUserId}`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+function decodeCursor(raw: string): { filter: string; lastUserId: number } | null {
+  try {
+    const parts = atob(raw.replace(/-/g, '+').replace(/_/g, '/')).split(':')
+    if (parts.length !== 3 || parts[0] !== 'm') return null
+    const lastUserId = Number(parts[2])
+    return Number.isFinite(lastUserId) ? { filter: parts[1]!, lastUserId } : null
+  } catch {
+    return null
+  }
+}
+
+const memberHandlers = [
+  http.get(ADMIN_MEMBERS_URL, ({ request }) => {
     const params = new URL(request.url).searchParams
-    const state = params.get('state')
-    const reason = params.get('reason')
-    if (state != null && !REVIEW_STATES.includes(state as WireReviewState)) {
-      return HttpResponse.json(errorBody(90001, 'state: 잘못된 값입니다.'), { status: 400 })
+    const rawFilter = params.get('status')
+    // 알 수 없는 상태 필터는 400이 아니라 ALL로 본다(BE MemberStatusFilter.from).
+    const filter = rawFilter != null && rawFilter in STATUS_FILTERS ? rawFilter : 'ALL'
+    const cursorParam = params.get('cursor')
+    let lastUserId: number | null = null
+    if (cursorParam != null) {
+      const decoded = decodeCursor(cursorParam)
+      // 필터를 바꾼 채 보낸 옛 커서와 망가진 커서는 같은 400/90002다.
+      if (!decoded || decoded.filter !== filter) {
+        return HttpResponse.json(errorBody(90002, '유효하지 않은 커서입니다.'), { status: 400 })
+      }
+      lastUserId = decoded.lastUserId
     }
-    if (reason != null && !REVIEW_REASONS.includes(reason as WireReviewReason)) {
-      return HttpResponse.json(errorBody(90001, 'reason: 잘못된 값입니다.'), { status: 400 })
-    }
-    const targetType = params.get('targetType')
-    const page = Math.max(0, Number(params.get('page') ?? 0) || 0)
     const sizeParam = params.get('size')
     const size =
       sizeParam == null ? 20 : Math.min(100, Math.max(1, Math.trunc(Number(sizeParam)) || 1))
+    const keyword = params.get('keyword')
+    const joinedFrom = params.get('joinedFrom')
+    const joinedTo = params.get('joinedTo')
+    const statuses = STATUS_FILTERS[filter] ?? []
 
-    const matched = inspections.filter(row => {
-      // 큐에 올라온 적 없는 검수는 아예 조회되지 않는다.
-      if (row.adminReviewState == null) return false
-      if (state != null && row.adminReviewState !== state) return false
-      if (targetType != null && row.targetType !== targetType) return false
-      if (reason == null) return true
-      // reason=SELLER_APPEAL은 이유 축이 아니라 이의 축으로 번역된다 — 이의가 걸린 행 전부다.
-      if (reason === 'SELLER_APPEAL') return row.appealState != null
-      return row.adminReviewReason === reason
-    })
-    // 정렬은 서버가 소유한다 — 최신 검수 먼저(id 내림차순).
-    const sorted = [...matched].sort((a, b) => b.inspectionId - a.inspectionId)
-    return HttpResponse.json({
-      data: {
-        items: sorted.slice(page * size, page * size + size).map(inspectionSummaryOf),
-        totalCount: matched.length,
-      },
-    })
-  }),
-
-  http.get(ADMIN_INSPECTION_DETAIL_URL, ({ params }) => {
-    const row = inspections.find(item => item.inspectionId === Number(params['inspectionId']))
-    if (!row) {
-      return HttpResponse.json(errorBody(40500, '검수 기록을 찾을 수 없습니다.'), { status: 404 })
-    }
-    const detail = cloneInspection(row)
-    return HttpResponse.json({
-      data: {
-        summary: inspectionSummaryOf(detail),
-        appealReason: detail.appealReason,
-        adminDecidedBy: detail.adminDecidedBy,
-        adminDecidedAt: detail.adminDecidedAt,
-        adminNote: detail.adminNote,
-        findings: detail.findings,
-        calls: detail.calls,
-        totalCostMicroUsd: detail.calls.reduce((sum, call) => sum + call.costMicroUsd, 0),
-      },
-    })
-  }),
-
-  http.post(ADMIN_INSPECTION_APPROVE_URL, async ({ params, request }) => {
-    // 본문 없이 불러도 204여야 한다(컨트롤러가 required=false로 받는다).
-    const body = (await request.json().catch(() => null)) as { note?: string | null } | null
-    const note = body?.note ?? null
-    if (note != null && note.length > 500) {
-      return HttpResponse.json(errorBody(90001, '메모는 500자 이하여야 합니다.'), { status: 400 })
-    }
-    return decideInspection(Number(params['inspectionId']), 'ALLOWED', note)
-  }),
-
-  http.post(ADMIN_INSPECTION_REJECT_URL, async ({ params, request }) => {
-    const body = (await request.json().catch(() => null)) as { reason?: string | null } | null
-    const reason = body?.reason ?? null
-    if (reason != null && reason.length > 500) {
-      return HttpResponse.json(errorBody(90001, '반려 사유는 500자 이하여야 합니다.'), {
-        status: 400,
+    // 관리자 계정은 이 목록에 없다(명부 경로가 따로 있다).
+    const matched = members
+      .filter(row => row.role === 'GENERAL')
+      .filter(row => statuses.length === 0 || statuses.includes(row.storedStatus))
+      .filter(row => {
+        if (keyword == null) return true
+        return (row.nickname ?? '').includes(keyword) || String(row.userId) === keyword
       })
+      .filter(row => (joinedFrom == null ? true : row.joinedAt.slice(0, 10) >= joinedFrom))
+      // 상한은 포함이다 — 서버가 다음 날 0시 미만으로 변환한다.
+      .filter(row => (joinedTo == null ? true : row.joinedAt.slice(0, 10) <= joinedTo))
+
+    const sorted = [...matched].sort((a, b) => b.userId - a.userId)
+    const afterCursor = lastUserId == null ? sorted : sorted.filter(row => row.userId < lastUserId!)
+    const page = afterCursor.slice(0, size)
+    const hasNext = afterCursor.length > size
+    return HttpResponse.json({
+      data: {
+        items: page.map(memberSummaryOf),
+        totalCount: matched.length,
+        nextCursor: hasNext ? encodeCursor(filter, page[page.length - 1]!.userId) : null,
+        hasNext,
+      },
+    })
+  }),
+
+  http.get(ADMIN_MEMBER_DETAIL_URL, ({ params }) => {
+    const row = members.find(item => item.userId === Number(params['userId']))
+    // 없는 계정과 관리자 계정이 같은 404다.
+    if (!row || row.role === 'ADMIN') {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
     }
-    // 사유 검사가 상태 가드보다 **먼저**다 — facade의 reject가 잠금을 잡기 전에 사유를 본다.
-    if (reason == null || reason.trim() === '') {
-      return HttpResponse.json(errorBody(40502, '반려 사유를 입력해 주세요.'), { status: 400 })
+    return HttpResponse.json({
+      data: {
+        member: memberSummaryOf(row),
+        profileImageUrl: row.profileImageUrl,
+        bio: row.bio,
+        sanctions: [...row.sanctions].sort((a, b) => b.sanctionId - a.sanctionId),
+      },
+    })
+  }),
+
+  http.post(ADMIN_MEMBER_SANCTION_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      action?: WireSanctionAction
+      reasonCode?: WireSanctionReason
+      reasonDetail?: string
+      durationDays?: number
+      memo?: string
+    } | null
+    const action = body?.action
+    const reasonCode = body?.reasonCode
+    // @Valid가 먼저다 — action·reasonCode 누락과 RELEASE 전송은 모두 90001이다.
+    if (action == null || reasonCode == null) {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
     }
-    return decideInspection(Number(params['inspectionId']), 'BLOCKED', reason)
+    if (action === 'RELEASE') {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
+    }
+    if ((body?.memo ?? '').length > 300 || (body?.reasonDetail ?? '').length > 500) {
+      return HttpResponse.json(errorBody(90001, '잘못된 요청입니다.'), { status: 400 })
+    }
+    const guard = guardSanctionTarget(Number(params['userId']))
+    if (isRejection(guard)) return guard
+    const row = guard
+    // 입력 검증(기간·상세 사유)이 상태 전이보다 먼저다 — BE가 이력 행을 먼저 만든다.
+    if (action === 'SUSPEND' && body?.durationDays == null) {
+      return HttpResponse.json(errorBody(30801, '임시 정지는 제재 기간이 필요합니다.'), { status: 400 })
+    }
+    if (action !== 'SUSPEND' && body?.durationDays != null) {
+      return HttpResponse.json(
+        errorBody(30802, '임시 정지가 아닌 제재에는 기간을 지정할 수 없습니다.'),
+        { status: 400 },
+      )
+    }
+    if (reasonCode === 'OTHER' && (body?.reasonDetail ?? '').trim() === '') {
+      return HttpResponse.json(
+        errorBody(30800, '기타 사유 제재는 상세 사유가 필요합니다.'),
+        { status: 400 },
+      )
+    }
+    const terminal = terminalStateError(row)
+    if (terminal) return terminal
+    // 온보딩 전 계정은 돌아올 상태를 잃어 되돌아오는 제재를 받지 못한다(BE 30023).
+    if (row.storedStatus === 'PENDING_ONBOARDING' && (action === 'RESTRICT' || action === 'SUSPEND')) {
+      return HttpResponse.json(
+        errorBody(
+          30023,
+          '가입을 마치지 않은 계정에는 이용 제한·임시 정지를 걸 수 없습니다. 영구 정지나 탈퇴 처리를 사용해 주세요.',
+        ),
+        { status: 409 },
+      )
+    }
+
+    const effectiveUntil =
+      action === 'SUSPEND'
+        ? new Date(Date.now() + body!.durationDays! * 86_400_000).toISOString().slice(0, 19)
+        : null
+    if (action === 'RESTRICT') {
+      row.storedStatus = 'RESTRICTED'
+      row.sanctionUntil = null
+    } else if (action === 'SUSPEND') {
+      row.storedStatus = 'SUSPENDED'
+      row.sanctionUntil = effectiveUntil
+    } else if (action === 'BAN') {
+      row.storedStatus = 'BANNED'
+      row.sanctionUntil = null
+    } else {
+      row.storedStatus = 'WITHDRAWN'
+      row.sanctionUntil = null
+      // 탈퇴 처리는 닉네임 점유를 푼다(영구 정지는 유지한다).
+      row.nickname = null
+      row.profileImageUrl = null
+      row.bio = null
+    }
+    sanctionIdSeq += 1
+    row.sanctions.push({
+      sanctionId: sanctionIdSeq,
+      action,
+      reasonCode,
+      reasonDetail: body?.reasonDetail?.trim() || null,
+      effectiveUntil,
+      memo: body?.memo?.trim() || null,
+      actedByAdminId: CURRENT_ADMIN_USER_ID,
+      actedAt: '2026-10-27T09:00:00',
+    })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // 프로필 초기화 — 관리자 계정은 조회처럼 404, 프로필이 없는 계정(온보딩 전, 탈퇴)은 30024다.
+  http.post(ADMIN_MEMBER_PROFILE_RESET_URL, ({ params }) => {
+    const row = members.find(item => item.userId === Number(params['userId']))
+    if (!row || row.role === 'ADMIN') {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+    }
+    if (row.storedStatus === 'PENDING_ONBOARDING' || row.storedStatus === 'WITHDRAWN') {
+      return HttpResponse.json(
+        errorBody(30024, '프로필이 없는 계정은 프로필을 초기화할 수 없습니다.'),
+        { status: 409 },
+      )
+    }
+    row.profileImageUrl = null
+    row.bio = null
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post(ADMIN_MEMBER_RELEASE_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      reasonDetail?: string
+      memo?: string
+    } | null
+    const guard = guardSanctionTarget(Number(params['userId']))
+    if (isRejection(guard)) return guard
+    const row = guard
+    // 해제할 제재가 없으면 30019다 — 영구 정지·탈퇴도 여기에 든다(둘은 해제 불가).
+    if (row.storedStatus !== 'RESTRICTED' && row.storedStatus !== 'SUSPENDED') {
+      return HttpResponse.json(errorBody(30019, '해제할 제재가 없습니다.'), { status: 409 })
+    }
+    row.storedStatus = 'ACTIVE'
+    row.sanctionUntil = null
+    sanctionIdSeq += 1
+    row.sanctions.push({
+      sanctionId: sanctionIdSeq,
+      action: 'RELEASE',
+      reasonCode: null,
+      reasonDetail: body?.reasonDetail?.trim() || null,
+      effectiveUntil: null,
+      memo: body?.memo?.trim() || null,
+      actedByAdminId: CURRENT_ADMIN_USER_ID,
+      actedAt: '2026-10-27T09:00:00',
+    })
+    return new HttpResponse(null, { status: 204 })
   }),
 ]
 
-function decideInspection(
-  inspectionId: number,
-  decision: WireAdminDecision,
-  note: string | null,
-): Response {
-  const row = inspections.find(item => item.inspectionId === inspectionId)
+/**
+ * 제재·해제 공통 가드 — 자기 자신 → 존재 → 관리자 순서가 BE와 같다.
+ * 대상 행을 돌려주거나 거절 응답을 돌려준다(둘 중 하나).
+ */
+function guardSanctionTarget(userId: number): AdminMemberWire | Response {
+  if (userId === CURRENT_ADMIN_USER_ID) {
+    return HttpResponse.json(errorBody(30020, '자신을 제재할 수 없습니다.'), { status: 403 })
+  }
+  const row = members.find(item => item.userId === userId)
   if (!row) {
-    return HttpResponse.json(errorBody(40500, '검수 기록을 찾을 수 없습니다.'), { status: 404 })
+    return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
   }
-  if (row.adminReviewState !== 'OPEN') {
-    return HttpResponse.json(errorBody(40501, '이미 처리한 검수입니다.'), { status: 409 })
-  }
-  if (row.contentChanged) {
-    // 결정 자체가 남지 않는다 — 게이트 예외가 트랜잭션을 되돌린다.
+  if (row.role === 'ADMIN') {
     return HttpResponse.json(
-      errorBody(40508, '상품 내용이 바뀌어 이 검수로는 결정할 수 없습니다.'),
+      errorBody(30021, '관리자 계정은 제재할 수 없습니다. 먼저 강등해 주세요.'),
       { status: 409 },
     )
   }
-  row.adminReviewState = 'RESOLVED'
-  row.adminDecision = decision
-  row.adminDecidedBy = CURRENT_ADMIN_USER_ID
-  row.adminDecidedAt = '2026-06-19T09:00:00'
-  row.adminNote = note
-  if (row.appealState === 'OPEN') {
-    row.appealState = decision === 'ALLOWED' ? 'ACCEPTED' : 'REJECTED'
-  }
-  if (row.targetType === 'PRODUCT') {
-    row.productInspectionStatus = decision === 'ALLOWED' ? 'APPROVED' : 'REJECTED'
-    row.productAdminDecision = decision
-  }
-  return new HttpResponse(null, { status: 204 })
+  return row
 }
 
-// ─── AI 검수 운영 지표 (admin 호스트 /admin/inspection-metrics) ────────────────
-// 응답 모양이 **배포 순서에 따라 두 가지**다. 지금 떠 있는 서버는 flat 창 필드 넷과
-// promotion·coverage·cost·backlog만 주고, 확장이 배포되면 window·alarms·funnel·judgment·
-// adminReview·latency·triageAudit와 cost.byStage가 함께 실린다. 둘 다 스텁으로 둬서 화면이
-// "서버가 아직 주지 않음"을 0으로 둔갑시키지 않는지 테스트가 고정한다.
+const isRejection = (result: AdminMemberWire | Response): result is Response =>
+  result instanceof Response
 
-export const ADMIN_INSPECTION_METRICS_URL = `${adminBase}/admin/inspection-metrics`
+/** 종단 상태 — 탈퇴는 30003, 영구 정지는 30018이고 운영자가 할 일이 서로 다르다. */
+function terminalStateError(row: AdminMemberWire): Response | null {
+  if (row.storedStatus === 'WITHDRAWN') {
+    return HttpResponse.json(errorBody(30003, '이미 탈퇴한 계정입니다.'), { status: 409 })
+  }
+  if (row.storedStatus === 'BANNED') {
+    return HttpResponse.json(
+      errorBody(30018, '영구 정지된 계정은 상태를 바꿀 수 없습니다.'),
+      { status: 409 },
+    )
+  }
+  return null
+}
 
-/** 확장 응답의 블록 모양. 화면이 읽는 필드만 적는다(서버 레코드와 이름이 같다). */
-export interface AdminInspectionMetricsWire {
-  windowFrom?: string
-  measuredAt?: string
-  windowHours?: number
-  needsAttention?: boolean
-  window?: {
-    from: string
-    to: string
-    measuredAt: string
-    windowHours?: number | null
-    policyVersion?: string | null
-    targetType?: 'PRODUCT' | 'REVIEW' | null
-    promptVersions?: Record<string, number>
-  }
-  alarms?: { code: string; message: string }[]
-  funnel?: {
-    settledCount: number
-    unclassifiedCount?: number
-    exits: {
-      stage: number
-      exit: string
-      label?: string | null
-      count: number
-      shareOfSettled?: number | null
-    }[]
-    stage1?: { name?: string; enteredCount: number; blockedCount: number; blockRate?: number | null }
-    stage2?: {
-      name?: string
-      enteredCount: number
-      clearedCount: number
-      promotedCount: number
-      callFailedCount?: number | null
-      bypassedByRuleHitCount?: number | null
-      skipRate?: number | null
-      promotionRate?: number | null
-      breakevenRate: number
-      overBreakeven: boolean
-    }
-    stage3?: {
-      name?: string
-      enteredCount: number
-      respondedCount: number
-      violationFoundCount: number
-      clearCount: number
-      detectionRate?: number | null
-    }
-    stage4?: {
-      name?: string
-      enteredCount: number
-      overturnedCount: number
-      upheldCount: number
-      overturnRate?: number | null
-      escalationObserved?: boolean | null
-    }
-    stage5?: {
-      name?: string
-      flagCount: number
-      passCount: number
-      failedCount: number
-      unjudgedCount: number
-    }
-  }
-  judgment?: {
-    settledCount: number
-    passCount: number
-    flagCount: number
-    unjudgedCount: number
-    failedCount: number
-    passRate?: number | null
-  }
-  promotion?: {
-    triagedCount: number
-    promotedCount: number
-    clearedCount: number
-    callFailedCount?: number | null
-    promotionRate?: number | null
-    breakevenRate: number
-    overBreakeven: boolean
-  }
-  coverage?: {
-    settledCount: number
-    unverifiedCount: number
-    unjudgedCount?: number
-    verdictFailedCount?: number
-    modelUnverifiedCount?: number
-    triageSkippedPassCount?: number
-    triageSkippedBlockedCount?: number
-    unverifiedRate?: number | null
-    triageMissConfirmed?: boolean
-  }
-  adminReview?: {
-    inflowCount: number
-    inflowRate?: number | null
-    inflowByReason?: Record<string, number>
-    appealInflowCount?: number
-    decidedCount: number
-    allowedCount: number
-    blockedCount: number
-    allowRate?: number | null
-    decisionLatency?: {
-      p50Minutes?: number | null
-      p95Minutes?: number | null
-      sampleCount: number
-    }
-  }
-  backlog?: {
-    openCount: number
-    staleOpenCount: number
-    oldestWaitingSince?: string | null
-    oldestWaitMinutes?: number | null
-    openByReason?: Record<string, number>
-    warnCount: number
-    warnAgeMinutes: number
-    breached: boolean
-  }
-  cost?: {
-    callCount: number
-    inspectionCount: number
-    totalCostMicroUsd: number
-    triageCostMicroUsd?: number
-    cacheMissCallCount?: number
-    costPerInspectionMicroUsd?: number | null
-    costPerSettledInspectionMicroUsd?: number | null
-    byStage?: Record<
-      string,
+
+// ─── 주문 배송 모니터링 (admin 호스트 /admin/orders) ───────────────────────────
+// BE AdminOrderMonitoringController + AdminOrderMonitoringService + AdminOrderDispatchNudgeService의
+// 가드와 집계 기준을 미러한다. 기준이 계약의 일부라서(결제대기 제외, 지연 판정은 서버가 쥔다,
+// 주문 금액만 취소를 뺀다, 독촉은 발송 전 상태 + 쿨다운) FE가 틀리면 이 스텁에서 드러난다.
+
+export type WireOrderStatus =
+  | 'PENDING_PAYMENT'
+  | 'PAID'
+  | 'PREPARING'
+  | 'DISPATCH_PENDING'
+  | 'SHIPPING'
+  | 'DELIVERED'
+  | 'PURCHASE_CONFIRMED'
+  | 'CANCELLED'
+
+export type WireOrderDelayReason = 'DISPATCH_OVERDUE' | 'DELIVERY_OVERDUE'
+
+/** 송장이 아직 붙지 않은 구간 — BE `OrderStatus.isAwaitingDispatch()`와 같은 집합이다. */
+const AWAITING_DISPATCH: WireOrderStatus[] = ['PAID', 'PREPARING', 'DISPATCH_PENDING']
+
+/** 결제대기는 모니터링 대상이 아니다 — 결제 전에도 주문 테이블에 남는 행이다. */
+const MONITORED: WireOrderStatus[] = [
+  'PAID',
+  'PREPARING',
+  'DISPATCH_PENDING',
+  'SHIPPING',
+  'DELIVERED',
+  'PURCHASE_CONFIRMED',
+  'CANCELLED',
+]
+
+export interface AdminOrderNudgeWire {
+  nudgeId: number
+  adminUserId: number
+  memo: string | null
+  nudgedAt: string
+}
+
+/** 상세 응답 모양의 서버 상태. 목록 행은 주문 단위 필드만 투영한다. */
+export interface AdminOrderWire {
+  orderId: string
+  status: WireOrderStatus
+  orderedAt: string
+  sellerId: number
+  sellerName: string | null
+  buyerNickname: string
+  totalProductAmount: number
+  sellerShippingFee: number
+  allocatedCouponDiscount: number
+  payableAmount: number
+  purchaseConfirmDueAt: string | null
+  /** 지연 판정은 서버가 쥔다 — 스텁도 날짜를 다시 세지 않고 이 값을 그대로 쓴다. */
+  delayReason: WireOrderDelayReason | null
+  shipment: {
+    courierCode: string
+    courierName: string
+    trackingNumber: string
+    dispatchedAt: string | null
+    deliveredAt: string | null
+    lastTrackingStatus: string | null
+  } | null
+  activeClaim: { claimId: string; claimType: string; status: string } | null
+  orderGroupId: string
+  items: {
+    orderItemId: number
+    productId: string
+    productName: string
+    optionName: string | null
+    quantity: number
+    unitPrice: number
+    discountAllocatedAmount: number
+    itemStatus: string
+  }[]
+  statusHistory: {
+    fromStatus: WireOrderStatus | null
+    toStatus: WireOrderStatus
+    triggeredBy: string
+    occurredAt: string
+  }[]
+  nudges: AdminOrderNudgeWire[]
+}
+
+let orders: AdminOrderWire[] = []
+let nudgeIdSeq = 0
+
+/** 쿨다운 안의 재독촉을 테스트가 만들 수 있게 '지금'을 스텁이 고정한다(BE 기본 6시간). */
+export const NUDGE_NOW = '2026-10-30T12:00:00'
+
+export function makeAdminOrderWire(overrides: Partial<AdminOrderWire> = {}): AdminOrderWire {
+  return {
+    orderId: '01HZXK0000000000000000O01',
+    status: 'PAID',
+    orderedAt: '2026-10-26T21:31:00',
+    sellerId: 7,
+    sellerName: '멍멍마켓',
+    buyerNickname: '코코맘',
+    totalProductAmount: 70_000,
+    sellerShippingFee: 3_000,
+    allocatedCouponDiscount: 0,
+    payableAmount: 73_000,
+    purchaseConfirmDueAt: null,
+    delayReason: null,
+    shipment: null,
+    activeClaim: null,
+    orderGroupId: '01HZXK0000000000000000G01',
+    items: [
       {
-        callCount: number
-        costMicroUsd: number
-        cacheMissCallCount?: number | null
-        costPerSettledMicroUsd?: number | null
-      }
-    >
-  }
-  latency?: {
-    endToEnd?: { p50Ms?: number | null; p95Ms?: number | null; sampleCount: number }
-    byStage?: Record<string, { p50Ms?: number | null; p95Ms?: number | null; sampleCount: number }>
-  }
-  triageAudit?: {
-    sampledCount: number
-    reviewedCount: number
-    violationFoundCount: number
-    undecidedCount?: number
-    missRate?: number | null
-    lastSampledAt?: string | null
-    populationCount?: number | null
-  }
-}
-
-/**
- * 확장이 배포된 서버의 응답 한 장.
- *
- * 승급률 37.6%에 서버 손익분기 45.7%를 둔 것은 일부러다 — BE 설정값이 그 숫자이고 측정 하네스
- * 정본(62.0%)과 어긋나 있어, 화면이 두 기준선을 함께 보여 주는지 테스트가 이 표본으로 고정한다.
- */
-export function makeAdminInspectionMetricsWire(
-  overrides: Partial<AdminInspectionMetricsWire> = {},
-): AdminInspectionMetricsWire {
-  return {
-    needsAttention: true,
-    window: {
-      from: '2026-10-22T00:00:00',
-      to: '2026-10-23T00:00:00',
-      measuredAt: '2026-10-23T09:00:00',
-      windowHours: 24,
-      policyVersion: null,
-      targetType: null,
-      promptVersions: { 'inspection-v1+policy-v1+triage-v2': 812, 'inspection-v1+policy-v1': 31 },
-    },
-    alarms: [{ code: 'BACKLOG_COUNT', message: '어드민 대기 61건이 임계 50건을 넘었어요.' }],
-    funnel: {
-      settledCount: 843,
-      unclassifiedCount: 0,
-      exits: [
-        { stage: 1, exit: 'RULE_BLOCKED', label: '룰 확정 차단', count: 96, shareOfSettled: 0.1139 },
-        { stage: 2, exit: 'TRIAGE_CLEARED', label: '선별 통과', count: 402, shareOfSettled: 0.4769 },
-        { stage: 3, exit: 'MODEL_CLEAR', label: '위반 없음', count: 221, shareOfSettled: 0.2621 },
-        { stage: 4, exit: 'CRITIC_OVERTURNED', label: '비평이 뒤집음', count: 14, shareOfSettled: 0.0166 },
-        { stage: 5, exit: 'MODEL_FLAG', label: '확정 위반', count: 88, shareOfSettled: 0.1044 },
-        { stage: 0, exit: 'VERDICT_FAILED', label: '판정 실패', count: 15, shareOfSettled: 0.0178 },
-        { stage: 0, exit: 'UNJUDGED', label: '미판정', count: 7, shareOfSettled: 0.0083 },
-      ],
-      stage1: { name: 'RULE', enteredCount: 836, blockedCount: 96, blockRate: 0.1148 },
-      stage2: {
-        name: 'TRIAGE',
-        enteredCount: 644,
-        clearedCount: 402,
-        promotedCount: 242,
-        callFailedCount: 3,
-        bypassedByRuleHitCount: 96,
-        skipRate: 0.6242,
-        promotionRate: 0.3758,
-        breakevenRate: 0.457,
-        overBreakeven: false,
+        orderItemId: 1,
+        productId: '01HZXK0000000000000000P01',
+        productName: '프리미엄 관절 영양제 180정',
+        optionName: '2개입',
+        quantity: 2,
+        unitPrice: 35_000,
+        discountAllocatedAmount: 0,
+        itemStatus: 'ORDERED',
       },
-      stage3: {
-        name: 'JUDGE',
-        enteredCount: 323,
-        respondedCount: 323,
-        violationFoundCount: 102,
-        clearCount: 221,
-        detectionRate: 0.3158,
+      {
+        orderItemId: 2,
+        productId: '01HZXK0000000000000000P02',
+        productName: '치석 제거 덴탈껌 30개',
+        optionName: null,
+        quantity: 1,
+        unitPrice: 12_000,
+        discountAllocatedAmount: 0,
+        itemStatus: 'ORDERED',
       },
-      stage4: {
-        name: 'CRITIC',
-        enteredCount: 102,
-        overturnedCount: 14,
-        upheldCount: 88,
-        overturnRate: 0.1373,
-        escalationObserved: true,
-      },
-      stage5: { name: 'FINAL', flagCount: 184, passCount: 637, failedCount: 15, unjudgedCount: 7 },
-    },
-    judgment: {
-      settledCount: 843,
-      passCount: 637,
-      flagCount: 184,
-      unjudgedCount: 7,
-      failedCount: 15,
-      passRate: 0.7557,
-    },
-    coverage: {
-      settledCount: 843,
-      unverifiedCount: 24,
-      unjudgedCount: 7,
-      verdictFailedCount: 15,
-      modelUnverifiedCount: 2,
-      triageSkippedPassCount: 402,
-      triageSkippedBlockedCount: 0,
-      unverifiedRate: 0.0285,
-      triageMissConfirmed: false,
-    },
-    adminReview: {
-      inflowCount: 119,
-      inflowRate: 0.1412,
-      inflowByReason: {
-        OVERBLOCK_SUSPECT: 71,
-        CRITIC_OVERTURNED: 14,
-        VERDICT_FAILED: 15,
-        UNJUDGED: 7,
-        MODEL_UNVERIFIED: 2,
-      },
-      appealInflowCount: 10,
-      decidedCount: 58,
-      allowedCount: 41,
-      blockedCount: 17,
-      allowRate: 0.7069,
-      decisionLatency: { p50Minutes: 94, p95Minutes: 1860, sampleCount: 58 },
-    },
-    backlog: {
-      openCount: 61,
-      staleOpenCount: 4,
-      oldestWaitingSince: '2026-10-21T03:12:00',
-      oldestWaitMinutes: 2748,
-      openByReason: { OVERBLOCK_SUSPECT: 48, SELLER_APPEAL: 9, CRITIC_OVERTURNED: 4 },
-      warnCount: 50,
-      warnAgeMinutes: 1440,
-      breached: true,
-    },
-    cost: {
-      callCount: 1507,
-      inspectionCount: 644,
-      totalCostMicroUsd: 2186400,
-      triageCostMicroUsd: 584200,
-      cacheMissCallCount: 644,
-      costPerInspectionMicroUsd: 3395,
-      costPerSettledInspectionMicroUsd: 2593,
-      byStage: {
-        TRIAGE: { callCount: 644, costMicroUsd: 584200, cacheMissCallCount: 644, costPerSettledMicroUsd: 693 },
-        DISPLAY_ADS: { callCount: 326, costMicroUsd: 612800, cacheMissCallCount: 11, costPerSettledMicroUsd: 727 },
-        CONDUCT_TRADE: { callCount: 325, costMicroUsd: 598300, cacheMissCallCount: 9, costPerSettledMicroUsd: 710 },
-        CRITIC: { callCount: 102, costMicroUsd: 304100, cacheMissCallCount: 2, costPerSettledMicroUsd: 361 },
-        REWRITE: { callCount: 88, costMicroUsd: 87000, cacheMissCallCount: 1, costPerSettledMicroUsd: 103 },
-      },
-    },
-    latency: {
-      endToEnd: { p50Ms: 4120, p95Ms: 38400, sampleCount: 836 },
-      byStage: {
-        TRIAGE: { p50Ms: 980, p95Ms: 2400, sampleCount: 644 },
-        DISPLAY_ADS: { p50Ms: 2610, p95Ms: 9100, sampleCount: 326 },
-        CRITIC: { p50Ms: 5900, p95Ms: 21300, sampleCount: 102 },
-      },
-    },
-    triageAudit: {
-      sampledCount: 60,
-      reviewedCount: 48,
-      violationFoundCount: 2,
-      undecidedCount: 3,
-      missRate: 0.0417,
-      lastSampledAt: '2026-10-23T04:00:00',
-      populationCount: 402,
-    },
+    ],
+    statusHistory: [
+      { fromStatus: null, toStatus: 'PAID', triggeredBy: 'BUYER', occurredAt: '2026-10-26T21:31:00' },
+    ],
+    nudges: [],
     ...overrides,
   }
 }
 
-/**
- * 지금 떠 있는 서버(확장 전)의 응답. 블록 넷과 flat 창 필드뿐이고 질의 파라미터를 무시한다.
- *
- * 이 모양을 스텁으로 들고 있는 이유: 화면이 `funnel`을 전제하고 짜여 있으면 실제 배포에서
- * 퍼널이 0건으로 그려지거나 백지가 된다. 그 회귀를 여기서 잡는다.
- */
-export function makeLegacyAdminInspectionMetricsWire(
-  overrides: Partial<AdminInspectionMetricsWire> = {},
-): AdminInspectionMetricsWire {
+const cloneOrder = (row: AdminOrderWire): AdminOrderWire => ({
+  ...row,
+  shipment: row.shipment ? { ...row.shipment } : null,
+  activeClaim: row.activeClaim ? { ...row.activeClaim } : null,
+  items: row.items.map(item => ({ ...item })),
+  statusHistory: row.statusHistory.map(entry => ({ ...entry })),
+  // 독촉 이력은 **서버가 돌려주는 순서로 쥔다** — id 내림차순
+  // (`findAllByOrderIdOrderByIdDesc`). 시드가 어떤 순서로 주든 여기서 서버 순서로 눕히므로,
+  // 핸들러가 "배열의 끝이 최신"에 기대면 그 자리에서 틀린 행을 고른다.
+  nudges: [...row.nudges].sort((a, b) => b.nudgeId - a.nudgeId).map(entry => ({ ...entry })),
+})
+
+export function seedAdminOrders(rows: AdminOrderWire[] = []): void {
+  orders = rows.map(cloneOrder)
+  // 시드된 이력과 번호가 겹치면 "가장 큰 id가 최신"이 깨져 쿨다운 판정이 꼬인다.
+  nudgeIdSeq = Math.max(0, ...orders.flatMap(row => row.nudges.map(entry => entry.nudgeId)))
+}
+
+/** 핸들러가 반영한 현재 주문 — 테스트가 독촉 기록을 읽는다. */
+export function currentAdminOrder(orderId: string): AdminOrderWire | null {
+  const found = orders.find(row => row.orderId === orderId)
+  return found ? cloneOrder(found) : null
+}
+
+function orderSummaryOf(row: AdminOrderWire) {
   return {
-    windowFrom: '2026-10-22T09:00:00',
-    measuredAt: '2026-10-23T09:00:00',
-    windowHours: 24,
-    needsAttention: true,
-    promotion: {
-      triagedCount: 644,
-      promotedCount: 242,
-      clearedCount: 402,
-      callFailedCount: 3,
-      promotionRate: 0.3758,
-      breakevenRate: 0.457,
-      overBreakeven: false,
-    },
-    coverage: {
-      settledCount: 843,
-      unverifiedCount: 24,
-      unjudgedCount: 7,
-      verdictFailedCount: 15,
-      modelUnverifiedCount: 2,
-      triageSkippedPassCount: 402,
-      triageSkippedBlockedCount: 0,
-      unverifiedRate: 0.0285,
-      triageMissConfirmed: false,
-    },
-    cost: {
-      callCount: 1507,
-      inspectionCount: 644,
-      totalCostMicroUsd: 2186400,
-      triageCostMicroUsd: 584200,
-      cacheMissCallCount: 644,
-      costPerInspectionMicroUsd: 3395,
-    },
-    backlog: {
-      openCount: 61,
-      staleOpenCount: 4,
-      oldestWaitingSince: '2026-10-21T03:12:00',
-      oldestWaitMinutes: 2748,
-      openByReason: { OVERBLOCK_SUSPECT: 48, SELLER_APPEAL: 9, CRITIC_OVERTURNED: 4 },
-      warnCount: 50,
-      warnAgeMinutes: 1440,
-      breached: true,
-    },
-    ...overrides,
+    orderId: row.orderId,
+    status: row.status,
+    orderedAt: row.orderedAt,
+    sellerId: row.sellerId,
+    sellerName: row.sellerName,
+    buyerNickname: row.buyerNickname,
+    // 서버가 품목에서 **파생시키는** 두 값이다(`AdminOrderSummaryResult.of`:
+    // `lines.firstOrNull()?.productName`, `lines.size`). 스텁이 따로 받게 두면 "대표 품목명은
+    // 급식기인데 품목 전문에는 영양제만 있는" 응답을 테스트가 만들 수 있고, 서버는 그런 응답을
+    // 보내지 못한다 — 목록 행과 상세가 어긋나는 FE 결함이 통과한다(교차검토로 드러난 자리).
+    representativeItemName: row.items[0]?.productName ?? null,
+    itemCount: row.items.length,
+    // 금액은 파생시키지 않고 그대로 싣는다 — FE 가 금액을 계산하지 않는다는 단언(AC-006)이
+    // 스텁의 산수와 겹치면 둘 다 틀렸을 때 서로를 가린다.
+    totalProductAmount: row.totalProductAmount,
+    sellerShippingFee: row.sellerShippingFee,
+    allocatedCouponDiscount: row.allocatedCouponDiscount,
+    payableAmount: row.payableAmount,
+    purchaseConfirmDueAt: row.purchaseConfirmDueAt,
+    // delayed는 delayReason != null과 같다 — 서버가 둘을 함께 내려 준다.
+    delayed: row.delayReason != null,
+    delayReason: row.delayReason,
+    shipment: row.shipment,
+    activeClaim: row.activeClaim,
   }
 }
 
-let metrics: AdminInspectionMetricsWire | null = null
-let metricsHonorsWindow = false
+/** 커서는 서버와 같은 모양(base64url "ao:주문시각마이크로:주문행id")이다. */
+const encodeOrderCursor = (index: number) =>
+  btoa(`ao:${index + 1}:${index + 1}`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-/**
- * 테스트마다 지표 응답을 세운다.
- *
- * `null`을 주면 서버가 권한으로 거절한다(403 errorCode 20011) — 어드민이 아닌 계정이 들어온
- * 경우다. `honorsWindow`는 질의 파라미터를 응답 `window`에 반영하는 서버(확장 뒤)를 뜻하고,
- * 끄면 파라미터를 무시하는 지금 서버를 흉내 낸다.
- */
-export function seedAdminInspectionMetrics(
-  body: AdminInspectionMetricsWire | null,
-  { honorsWindow = false }: { honorsWindow?: boolean } = {},
-): void {
-  metrics = body == null ? null : structuredClone(body)
-  metricsHonorsWindow = honorsWindow
+function decodeOrderCursor(raw: string): number | null {
+  try {
+    const parts = atob(raw.replace(/-/g, '+').replace(/_/g, '/')).split(':')
+    if (parts.length !== 3 || parts[0] !== 'ao') return null
+    const anchor = Number(parts[2])
+    return Number.isFinite(anchor) && anchor > 0 ? anchor : null
+  } catch {
+    return null
+  }
 }
 
-const metricsHandlers = [
-  http.get(ADMIN_INSPECTION_METRICS_URL, ({ request }) => {
-    if (metrics == null) {
-      return HttpResponse.json(errorBody(20011, '권한이 없습니다.'), { status: 403 })
-    }
+const hoursBetween = (from: string, to: string) =>
+  (new Date(to).getTime() - new Date(from).getTime()) / 3_600_000
+
+/**
+ * BE `AdminOrderMonitoringQueryAdapter.keywordMatches` 와 같은 집합 — 주문번호·셀러 상호·
+ * 상품명·옵션명이고 **구매자는 없다.** 닉네임이 user BC 테이블에 있어 그 쿼리가 조인하지 못한다.
+ *
+ * 스텁이 닉네임까지 찾아주면 "구매자로 검색된다"고 믿는 FE 가 테스트를 통과하고 실서버에서만
+ * 0건이 된다 — 스텁이 FE 결함을 가리는 자리라 BE 와 똑같이 못 찾아야 한다(교차검토 지적).
+ */
+function matchesKeyword(row: AdminOrderWire, keyword: string): boolean {
+  const needle = keyword.toLowerCase()
+  const has = (value: string | null) => (value ?? '').toLowerCase().includes(needle)
+  return (
+    has(row.orderId) ||
+    has(row.sellerName) ||
+    row.items.some(item => has(item.productName) || has(item.optionName))
+  )
+}
+
+const orderHandlers = [
+  http.get(ADMIN_ORDERS_URL, ({ request }) => {
     const params = new URL(request.url).searchParams
-    const body = structuredClone(metrics)
-    if (metricsHonorsWindow && body.window) {
-      // 확장 서버는 받은 창을 그대로 집계하고 응답에 되비춘다 — 화면이 그 값으로 "요청한 창이
-      // 반영됐는지"를 판단한다.
-      const from = params.get('from')
-      const to = params.get('to')
-      if (from) body.window.from = from
-      if (to) body.window.to = to
-      body.window.policyVersion = params.get('policyVersion')
+    const status = params.get('status')
+    // 결제대기는 모니터링 대상이 아니라 400이다 — 서버가 선택지에서 빼라고 말하는 자리다.
+    if (status === 'PENDING_PAYMENT') {
+      return HttpResponse.json(
+        errorBody(90001, 'status: 결제대기 주문은 조회 대상이 아닙니다.'),
+        { status: 400 },
+      )
     }
-    return HttpResponse.json({ data: body })
+    if (status != null && !MONITORED.includes(status as WireOrderStatus)) {
+      return HttpResponse.json(errorBody(90001, 'status: 잘못된 값입니다.'), { status: 400 })
+    }
+    const cursorParam = params.get('cursor')
+    let anchor: number | null = null
+    if (cursorParam != null) {
+      anchor = decodeOrderCursor(cursorParam)
+      if (anchor == null) {
+        return HttpResponse.json(errorBody(90002, '유효하지 않은 커서입니다.'), { status: 400 })
+      }
+    }
+    const sizeParam = params.get('size')
+    // size 범위 밖은 서버가 @Range로 거절한다(회원 목록처럼 절삭하지 않는다).
+    if (sizeParam != null) {
+      const size = Number(sizeParam)
+      if (!Number.isFinite(size) || size < 1 || size > 100) {
+        return HttpResponse.json(errorBody(90001, 'size는 1~100 사이여야 합니다.'), { status: 400 })
+      }
+    }
+    const size = sizeParam == null ? 20 : Number(sizeParam)
+    const keyword = params.get('keyword')
+    const delayedOnly = params.get('delayedOnly') === 'true'
+    const sellerId = params.get('sellerId')
+
+    const matched = orders
+      .filter(row => MONITORED.includes(row.status))
+      .filter(row => (status == null ? true : row.status === status))
+      .filter(row => (sellerId == null ? true : row.sellerId === Number(sellerId)))
+      .filter(row => (delayedOnly ? row.delayReason != null : true))
+      .filter(row => (keyword == null ? true : matchesKeyword(row, keyword)))
+
+    // 정렬은 서버가 소유한다 — orderedAt DESC, orderId DESC.
+    const sorted = [...matched].sort((a, b) =>
+      a.orderedAt === b.orderedAt
+        ? b.orderId.localeCompare(a.orderId)
+        : a.orderedAt < b.orderedAt
+          ? 1
+          : -1,
+    )
+    const afterCursor = anchor == null ? sorted : sorted.slice(anchor)
+    const page = afterCursor.slice(0, size)
+    const hasNext = afterCursor.length > size
+    return HttpResponse.json({
+      data: {
+        items: page.map(orderSummaryOf),
+        // 서버는 전체 건수를 세지 않는다 — 항상 null이다.
+        totalCount: null,
+        nextCursor: hasNext ? encodeOrderCursor((anchor ?? 0) + page.length - 1) : null,
+        hasNext,
+      },
+    })
+  }),
+
+  http.get(ADMIN_ORDER_METRICS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    // 날짜 축을 실제로 걸러 준다. 무시하면 FE가 `orderedFrom`/`orderedTo`를 안 보내도 테스트가
+    // 통과하고, 대시보드의 `오늘 거래액`이 플랫폼 전체 누적 금액을 오늘로 그린다.
+    // 서버는 `LocalDate`를 `[from 00:00, to+1일 00:00)` 반개구간으로 펴므로 날짜 문자열 비교로
+    // 같은 경계가 된다(`orderedAt`이 `YYYY-MM-DDTHH:mm:ss`라 앞 10자가 날짜다).
+    const from = params.get('orderedFrom')
+    const to = params.get('orderedTo')
+    const inRange = (row: AdminOrderWire) => {
+      const day = row.orderedAt.slice(0, 10)
+      return (from == null || day >= from) && (to == null || day <= to)
+    }
+    const monitored = orders.filter(row => MONITORED.includes(row.status)).filter(inRange)
+    return HttpResponse.json({
+      data: {
+        awaitingDispatchCount: monitored.filter(row => AWAITING_DISPATCH.includes(row.status)).length,
+        shippingCount: monitored.filter(row => row.status === 'SHIPPING').length,
+        delayedCount: monitored.filter(row => row.delayReason != null).length,
+        // 금액만 모수가 다르다 — 취소 주문이 빠진다(건수 카드 셋과 어긋나는 것이 정상이다).
+        // 필드명은 서버와 같아야 한다 — 어긋나면 화면이 undefined 를 포맷하다 떨어진다.
+        totalOrderAmount: monitored
+          .filter(row => row.status !== 'CANCELLED')
+          .reduce((sum, row) => sum + row.payableAmount, 0),
+      },
+    })
+  }),
+
+  http.get(ADMIN_ORDER_DETAIL_URL, ({ params }) => {
+    const row = orders.find(item => item.orderId === String(params['orderId']))
+    if (!row) {
+      return HttpResponse.json(errorBody(50000, '주문을 찾을 수 없습니다.'), { status: 404 })
+    }
+    return HttpResponse.json({
+      data: {
+        order: orderSummaryOf(row),
+        orderGroupId: row.orderGroupId,
+        purchaseConfirmedAt: row.status === 'PURCHASE_CONFIRMED' ? row.orderedAt : null,
+        confirmType: row.status === 'PURCHASE_CONFIRMED' ? 'MANUAL' : null,
+        items: row.items,
+        statusHistory: row.statusHistory,
+        // 쥔 순서가 이미 서버 순서(id 내림차순)다.
+        nudges: row.nudges,
+      },
+    })
+  }),
+
+  http.post(ADMIN_ORDER_NUDGE_URL, async ({ params, request }) => {
+    const body = (await request.json().catch(() => null)) as { memo?: string } | null
+    const memo = body?.memo ?? null
+    // @Valid가 먼저다 — 300자 초과는 상태 가드보다 앞에서 400이다.
+    if ((memo ?? '').length > 300) {
+      return HttpResponse.json(
+        errorBody(90001, '독촉 메모는 300자 이하여야 합니다.'),
+        { status: 400 },
+      )
+    }
+    const row = orders.find(item => item.orderId === String(params['orderId']))
+    if (!row) {
+      return HttpResponse.json(errorBody(50000, '주문을 찾을 수 없습니다.'), { status: 404 })
+    }
+    // BE 가드 순서: 발송 전 상태 → 쿨다운.
+    if (!AWAITING_DISPATCH.includes(row.status)) {
+      return HttpResponse.json(
+        errorBody(50500, '발송 전 상태의 주문만 발송 독촉할 수 있습니다.'),
+        { status: 409 },
+      )
+    }
+    // BE `findLatestByOrderId` 는 id 최대 행이다 — 배열 순서에 기대지 않고 같은 뜻으로 고른다.
+    const latest = row.nudges.reduce<AdminOrderNudgeWire | null>(
+      (newest, entry) => (newest == null || entry.nudgeId > newest.nudgeId ? entry : newest),
+      null,
+    )
+    if (latest && hoursBetween(latest.nudgedAt, NUDGE_NOW) < 6) {
+      return HttpResponse.json(
+        errorBody(50501, '직전 발송 독촉 이후 충분한 시간이 지나지 않았습니다.'),
+        { status: 409 },
+      )
+    }
+    nudgeIdSeq += 1
+    // 공백만 들어온 메모는 서버가 null로 접는다.
+    const normalized = memo?.trim() || null
+    const created: AdminOrderNudgeWire = {
+      nudgeId: nudgeIdSeq,
+      adminUserId: CURRENT_ADMIN_USER_ID,
+      memo: normalized,
+      nudgedAt: NUDGE_NOW,
+    }
+    // id 내림차순을 유지한다 — 새 기록이 가장 큰 id다.
+    row.nudges.unshift(created)
+    return HttpResponse.json({ data: created }, { status: 201 })
+  }),
+]
+
+// ── 상품 검수 큐 ───────────────────────────────────────────────────────────────
+
+type WireInspectionStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED'
+
+/**
+ * BE AdminProductInspectionSummary 모양. 목록만 받는다 — 상세·승인·반려는
+ * `features/ai-review-queue/__tests__`가 각자 `server.use`로 깐다.
+ */
+export interface AdminProductInspectionWire {
+  productId: string
+  productName: string
+  sellerName: string
+  status: WireInspectionStatus
+  latestJudgment: 'PASS' | 'FLAG' | 'UNJUDGED' | 'FAILED' | null
+  blindedAt: string
+  appealedAt: string | null
+}
+
+let productInspections: AdminProductInspectionWire[] = []
+
+export function makeAdminProductInspectionWire(
+  overrides: Partial<AdminProductInspectionWire> = {},
+): AdminProductInspectionWire {
+  return {
+    productId: '01JQUEUEPRODUCT00000000001',
+    productName: '연어 건사료 2kg',
+    sellerName: '애착상회',
+    status: 'PENDING_REVIEW',
+    latestJudgment: 'FLAG',
+    blindedAt: '2026-10-22T10:00:40',
+    appealedAt: null,
+    ...overrides,
+  }
+}
+
+export function seedAdminProductInspections(rows: AdminProductInspectionWire[] = []): void {
+  productInspections = rows.map(row => ({ ...row }))
+}
+
+/**
+ * 오프셋 페이지 목록. **`totalCount`는 필터 기준 전체 수이고 페이지 길이와 다르다** — 1건만
+ * 받아 건수를 읽는 호출부(대시보드)가 목록 길이로 세고 있으면 그 차이에서 드러난다.
+ */
+const inspectionHandlers = [
+  http.get(ADMIN_PRODUCT_INSPECTIONS_URL, ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const status = params.get('status')
+    const appealed = params.get('appealed')
+    const page = Number(params.get('page') ?? 0)
+    const size = Number(params.get('size') ?? 20)
+    const matched = productInspections
+      .filter(row => status == null || row.status === status)
+      // `appealed=false`는 보내지 않는 것이 FE 관례다 — 보내면 여기서도 이의 있는 것만 남는다.
+      .filter(row => appealed !== 'true' || row.appealedAt != null)
+    return HttpResponse.json({
+      data: {
+        items: matched.slice(page * size, page * size + size),
+        totalCount: matched.length,
+      },
+    })
   }),
 ]
 
 export const handlers = [
   ...applicationHandlers,
   ...rosterHandlers,
+  ...memberHandlers,
+  ...orderHandlers,
+  // 검수 큐 핸들러도 시드 없이 빈 목록으로 답한다 — 대시보드(`/`)가 검수 대기 수를 조회하고,
+  // 그 화면이 nav·예시 화면 테스트에서 열린다(핸들러가 없으면 onUnhandledRequest:'error').
   ...inspectionHandlers,
-  ...metricsHandlers,
+  // 상품 카탈로그 핸들러도 시드 없이 빈 목록으로 답한다 — `/products/catalog`이 nav 테스트에서
+  // 열리고, 승인·반려는 큐 경로(`/admin/product-inspections/:productId/approve|reject`)라
+  // 큐 목록 핸들러와 같은 접두를 쓴다(그 둘을 각자 `server.use`로 덮는 큐 테스트가 이긴다).
+  ...productHandlers,
+  ...inquiryHandlers,
+  ...claimHandlers,
+  ...reviewHandlers,
+  // 감사 로그 핸들러는 시드 없이도 빈 목록으로 답한다 — `/audit-log`가 클레임·문의·리뷰 테스트에서
+  // 이탈 가드의 '다른 화면' 목적지로 쓰이고, 핸들러가 없으면 onUnhandledRequest:'error'로 깨진다.
+  ...auditLogHandlers,
+  // 공지 핸들러도 시드 없이 빈 목록으로 답한다 — `/notices`가 nav 테스트에서 열린다.
+  ...noticeHandlers,
+  // 신고 핸들러도 같은 이유로 시드 없이 빈 목록으로 답한다 — `/reports`가 nav 테스트에서 열린다.
+  ...reportHandlers,
+  // 셀러 관리 핸들러도 시드 없이 빈 목록으로 답한다 — `/sellers`가 nav 테스트에서 열린다.
+  ...sellerHandlers,
+  // 검수 진행 현황 핸들러도 시드 없이 빈 목록으로 답한다 — `/inspections/monitoring`이 nav
+  // 테스트에서 열리고, 그 화면은 폴링이라 열려 있는 동안 주기적으로 같은 경로를 다시 부른다
+  // (핸들러가 없으면 onUnhandledRequest:'error'로 깨진다). 위 검수 **큐** 핸들러와 다른 경로다 —
+  // `/admin/product-inspections`는 관리자 확인이 남은 큐, 이쪽은 검수 건 자체의 진행이다.
+  ...inspectionMonitorHandlers,
+  // 검수 집계는 시드가 없으면 403으로 답한다(`seedAdminInspectionMetrics(null)`과 같다) —
+  // `/products/ai-metrics`를 여는 테스트는 먼저 시드한다.
+  ...inspectionMetricsHandlers,
 ]
 export const server = setupServer(...handlers)

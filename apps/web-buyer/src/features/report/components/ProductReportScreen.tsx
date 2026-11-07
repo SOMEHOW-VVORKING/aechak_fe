@@ -9,6 +9,7 @@ import {
   StatusPill,
   Textarea,
 } from '@aechak/design-system/web'
+import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { RadioList } from '@/shared/components/RadioList'
 import { ResultHero } from '@/shared/components/ResultHero'
@@ -21,10 +22,10 @@ import {
   PRODUCT_REPORT_REASONS,
   isValidReportReason,
 } from '../report.mock'
-import { useReportTarget, useSubmitReport } from '../report.queries'
+import { reportErrorMessage, useReportTarget, useSubmitReport } from '../report.queries'
 
 // 상품 신고(b8-st-1-product). 목업은 상품 위 BottomSheet지만 우리 앱에서는 전용 full-bleed
-// 라우트로 구현한다 — 대상 컨텍스트 카드 + 사유 라디오 5종 + 상세(선택) + 제출 → 접수 완료.
+// 라우트로 구현한다 — 대상 컨텍스트 카드 + 사유 라디오 5종 + 상세(선택, 기타 사유는 필수) + 제출 → 접수 완료.
 // SNS 게시물/유저 신고는 이번 범위 밖(상품 신고만).
 export function ProductReportScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
@@ -34,6 +35,7 @@ export function ProductReportScreen({ productId }: { productId: string }) {
   const [reason, setReason] = useState<ProductReportReason | ''>('')
   const [detail, setDetail] = useState('')
   const [done, setDone] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const goBack = useSafeBack({ to: '/products/$productId', params: { productId } })
 
@@ -83,13 +85,14 @@ export function ProductReportScreen({ productId }: { productId: string }) {
     )
   }
 
-  const canSubmit = isValidReportReason(reason)
+  // 기타 사유는 서버가 상세 내용을 요구한다(40300).
+  const canSubmit = isValidReportReason(reason) && (reason !== 'etc' || detail.trim() !== '')
 
   const handleSubmit = () => {
     if (!isValidReportReason(reason)) return
     submit.mutate(
       { productId, reason, detail },
-      { onSuccess: () => setDone(true) },
+      { onSuccess: () => setDone(true), onError: e => setErrorMessage(reportErrorMessage(e)) },
     )
   }
 
@@ -135,7 +138,7 @@ export function ProductReportScreen({ productId }: { productId: string }) {
         {/* 상세 내용(선택) */}
         <div className="flex flex-col gap-1.5">
           <span className="text-label font-semibold text-text-primary">
-            상세 내용 <span className="font-normal text-text-tertiary">(선택)</span>
+            상세 내용 <span className="font-normal text-text-tertiary">{reason === 'etc' ? '(필수)' : '(선택)'}</span>
           </span>
           <Textarea
             value={detail}
@@ -145,6 +148,13 @@ export function ProductReportScreen({ productId }: { productId: string }) {
           />
         </div>
       </div>
+      <AppToast
+        open={errorMessage != null}
+        onClose={() => setErrorMessage(null)}
+        message={errorMessage ?? ''}
+        variant="error"
+        aboveActionBar
+      />
     </MobileScreen>
   )
 }

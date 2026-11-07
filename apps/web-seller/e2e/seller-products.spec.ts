@@ -6,10 +6,13 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // withCredentials라 fulfill 응답에 CORS 헤더(정확한 origin + Allow-Credentials)가 필요하고
 // OPTIONS 프리플라이트도 받아 줘야 한다(seller-onboarding.spec의 CORS/fulfillJson을 그대로 쓴다).
 //
-// 삭제·임시저장·상품 수정 진입점은 BE에 대응이 없어 화면에서 막혔다 — 그 사실 자체를 AC-SPRD-E2E-003이
-// 고정한다.
+// 상품 삭제 진입점은 BE에 대응이 없어 화면에 없다 — 그 사실 자체를 AC-SPRD-E2E-003이 고정한다.
+// 임시저장은 `/sellers/me/product-drafts`가 생겨 되살렸고 그 왕복을 AC-SPRD-E2E-007이 고정한다.
 
-const ORIGIN = 'http://localhost:5173'
+// 5173이 기본이지만 다른 워크트리의 dev 서버가 그 포트를 쥐고 있으면 playwright의
+// reuseExistingServer가 그 브랜치의 앱을 테스트한다 — 포트를 비켜 돌릴 때 CORS 스텁의 origin도
+// 같이 움직여야 하므로 환경변수로 뺀다(CI는 기본값 그대로다).
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5173'
 // 스텁 글롭에 origin까지 적는다 — `**/api/v1/...`은 호스트를 가르지 않아서 요청이 엉뚱한 모듈로
 // 새도 같은 스텁이 받아 준다(그러면 E2E가 호스트 오배치를 영영 못 잡는다). 두 값은 main.tsx가
 // 환경변수 없을 때 쓰는 기본값이고, E2E는 .env 없이 `pnpm dev`로 뜨므로 실제로 이 origin이 쓰인다.
@@ -429,10 +432,140 @@ function stubSellerProducts(page: Page) {
   return { ready: route, queries, updateBodies }
 }
 
-async function stubAll(page: Page) {
+/**
+ * 배송 정책 요약 + 택배사 마스터 — 상품 등록/수정 폼의 배송 정책 칸이 둘 다 부른다(SCRUM-293).
+ * 스텁이 없으면 그 칸이 "불러오지 못했어요"로 떨어지고, 더 나쁘게는 요청이 엉뚱한 호스트로
+ * 새도 아무도 모른다. 두 경로 모두 seller 모듈이라 글롭에 seller origin을 적는다.
+ */
+async function stubShippingPolicy(page: Page) {
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/couriers`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        items: [
+          { courierCode: 'CJ', courierName: 'CJ대한통운', trackingFormatPattern: '^\\d{10,12}$' },
+          { courierCode: 'LOTTE', courierName: '롯데택배', trackingFormatPattern: null },
+        ],
+      },
+    }),
+  )
+  await page.route(`${SELLER_ORIGIN}/api/v1/sellers/me/shipping-policy`, route =>
+    fulfillJson(route, 200, {
+      data: {
+        defaultCourierCode: 'CJ',
+        baseShippingFee: 3000,
+        freeShippingThreshold: 30000,
+        originZipCode: '04035',
+        originRoadAddress: '서울 마포구 와우산로 00',
+        originDetailAddress: '물류 1센터',
+        returnSameAsOrigin: true,
+        returnZipCode: null,
+        returnRoadAddress: null,
+        returnDetailAddress: null,
+        jejuExtraFee: 3000,
+        remoteAreaExtraFee: 5000,
+        returnFee: 4000,
+        exchangeFee: 8000,
+        avgDispatchDays: 1,
+        shippingPolicyText: null,
+      },
+    }),
+  )
+}
+
+/**
+ * 임시저장(seller 모듈 `/sellers/me/product-drafts`) — 목록 머리말의 초안 수 버튼과 초안 Drawer가
+ * 이것을 읽는다. 따로 적는 이유는 상품 스텁 글롭(`.../products**`)이 이 경로를 받지 않기
+ * 때문이다(`products` ≠ `product-drafts`). 스텁이 없으면 조회가 실패해 버튼이 숨고,
+ * "진입점이 없다"가 거짓으로 통과한다.
+ */
+function stubProductDrafts(page: Page, seed: { draftId: string; productName: string | null; savedAt: string; categoryId?: number; regularPrice?: number }[]) {
+  const drafts = seed.map(d => ({ ...d }))
+  // 글롭 대신 정규식을 쓴다 — Playwright의 `**`는 경로 세그먼트 단위라 `product-drafts**`가
+  // `/product-drafts`를 받지 못한다(실측: 스텁이 안 걸려 버튼이 끝까지 안 뜬다).
+  return page.route(/\/api\/v1\/sellers\/me\/product-drafts(\/|$)/, async r => {
+    const request = r.request()
+    if (request.method() === 'OPTIONS') return fulfillJson(r, 204, null)
+    const draftId = new URL(request.url()).pathname.replace('/api/v1/sellers/me/product-drafts', '').replace(/^\//, '')
+    if (draftId === '') {
+      if (request.method() === 'GET') {
+        return fulfillJson(r, 200, {
+          data: {
+            items: drafts.map(d => ({ draftId: d.draftId, productName: d.productName, savedAt: d.savedAt })),
+            totalCount: drafts.length,
+          },
+        })
+      }
+      if (request.method() === 'POST') {
+        // 생성 — 201에 draftId·savedAt. 화면이 이 id를 URL에 심어야 다음 저장이 PUT이 된다.
+        const body = request.postDataJSON() as { productName?: string; regularPrice?: number }
+        const created = {
+          draftId: `01JE2ECREATED${String(drafts.length + 1).padStart(13, '0')}`,
+          productName: body.productName ?? null,
+          savedAt: '2026-10-20T16:20:00',
+          ...(body.regularPrice != null ? { regularPrice: body.regularPrice } : {}),
+        }
+        drafts.unshift(created)
+        return fulfillJson(r, 201, { data: { draftId: created.draftId, savedAt: created.savedAt } })
+      }
+      return fulfillJson(r, 404, { errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' })
+    }
+    const index = drafts.findIndex(d => d.draftId === draftId)
+    if (index < 0) return fulfillJson(r, 404, { errorCode: 40400, message: '임시저장한 상품을 찾을 수 없습니다.' })
+    if (request.method() === 'DELETE') {
+      drafts.splice(index, 1)
+      return r.fulfill({ status: 204, headers: CORS, body: '' })
+    }
+    if (request.method() === 'PUT') {
+      // 덮어쓰기 — 통째로 바꾸고 저장순 맨 앞으로 올린다(BE findAllLive).
+      const body = request.postDataJSON() as { productName?: string; regularPrice?: number }
+      const saved = {
+        draftId,
+        productName: body.productName ?? null,
+        savedAt: '2026-10-20T16:30:00',
+        ...(body.regularPrice != null ? { regularPrice: body.regularPrice } : {}),
+      }
+      drafts.splice(index, 1)
+      drafts.unshift(saved)
+      return fulfillJson(r, 200, { data: { draftId, savedAt: saved.savedAt } })
+    }
+    const draft = drafts[index]!
+    return fulfillJson(r, 200, {
+      data: {
+        draftId: draft.draftId,
+        savedAt: draft.savedAt,
+        categoryId: draft.categoryId ?? null,
+        productName: draft.productName,
+        description: null,
+        regularPrice: draft.regularPrice ?? null,
+        discountPrice: null,
+        discountStartAt: null,
+        discountEndAt: null,
+        thumbnailImageKey: null,
+        additionalImageKeys: [],
+        detailImageKeys: [],
+        optionGroups: [],
+        optionCombinations: [],
+      },
+    })
+  })
+}
+
+const E2E_DRAFTS = [
+  {
+    draftId: '01JE2EDRAFT00000000000001',
+    productName: '쓰다 만 자동 급식기',
+    savedAt: '2026-10-20T14:05:00',
+    categoryId: 20901,
+    regularPrice: 25000,
+  },
+]
+
+async function stubAll(page: Page, { drafts = E2E_DRAFTS }: { drafts?: typeof E2E_DRAFTS } = {}) {
   await stubSession(page)
   await stubCategories(page)
   await stubUpload(page)
+  await stubShippingPolicy(page)
+  await stubProductDrafts(page, drafts)
   const products = stubSellerProducts(page)
   await products.ready
   return products
@@ -442,6 +575,10 @@ async function openNewProductForm(page: Page) {
   await page.goto('/products')
   await page.getByRole('button', { name: '상품 등록' }).click()
   await expect(page.getByRole('heading', { name: '상품 등록' })).toBeVisible()
+  // 배송 정책 칸은 셀러 단위 정책을 읽어 요약만 보여 준다(상품 본문에 싣지 않는다).
+  await expect(
+    page.getByText('CJ대한통운 / 기본 배송비 3,000원 / 30,000원 이상 무료배송'),
+  ).toBeVisible()
 }
 
 test('[AC-SPRD-E2E-001] 상품 등록 → 목록 맨 앞 판매중 → 재고 0으로 자동 품절 → 판매 중지', async ({ page }) => {
@@ -546,14 +683,79 @@ test('[AC-SPRD-E2E-002] 목록 필터는 빈 값 없이 나가고 판매 상태�
   expect(queries.some(q => new URLSearchParams(q).get('createdTo') === '2026-10-06')).toBe(true)
 })
 
-test('[AC-SPRD-E2E-003] BE 미지원 기능(삭제·임시저장)은 진입점이 없다', async ({ page }) => {
-  await stubAll(page)
+test('[AC-SPRD-E2E-003] BE 미지원 기능(상품 삭제)은 진입점이 없다', async ({ page }) => {
+  await stubAll(page, { drafts: [] })
   await page.goto('/products')
   await expect(page.getByRole('row')).toHaveCount(4)
 
   await expect(page.getByRole('button', { name: '삭제', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /임시저장/ })).toHaveCount(0)
   await expect(page.getByText(/옵션 구성과 상품 삭제는 아직 바꿀 수 없어요/)).toBeVisible()
+  // 초안이 없으면 임시저장 버튼도 그리지 않는다 — 열어도 빈 Drawer뿐인 자리를 남기지 않는다.
+  await expect(page.getByRole('button', { name: /임시저장/ })).toHaveCount(0)
+})
+
+test('[AC-SPRD-E2E-007] 임시저장 → 목록에서 불러오기 → 이어서 쓰기가 한 줄로 돈다', async ({ page }) => {
+  await stubAll(page, { drafts: [] })
+
+  // 1) 등록 폼에서 필수값 없이 저장한다 — 데모의 첫 토막이다.
+  await page.goto('/products/new')
+  await page.getByLabel('상품명').fill('쓰다 만 자동 급식기')
+  await page.getByRole('button', { name: '임시저장' }).click()
+
+  await expect(page.getByText('16:20에 임시저장했어요.')).toBeVisible()
+  // 돌려받은 draftId가 URL에 심겨야 두 번째 저장이 PUT이 되고 초안이 둘로 늘지 않는다.
+  await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2ECREATED0000000000001$/)
+
+  // 2) 목록으로 돌아오면 머리말에 초안 수가 생긴다.
+  await page.goto('/products')
+  await page.getByRole('button', { name: '임시저장 1' }).click()
+  const drawer = page.getByRole('dialog', { name: '임시저장한 상품' })
+  await expect(drawer.getByText('쓰다 만 자동 급식기')).toBeVisible()
+  // 방금 저장한 시각이 그 자리에 보여야 "임시저장했어요"가 참이다.
+  await expect(drawer.getByText('2026.10.20 16:20 저장')).toBeVisible()
+
+  // 3) 이어쓰기 — 저장해 둔 값으로 폼이 열린다.
+  await drawer.getByRole('button', { name: '이어쓰기' }).click()
+  await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2ECREATED0000000000001$/)
+  await expect(page.getByLabel('상품명')).toHaveValue('쓰다 만 자동 급식기')
+  await shot(page, 'draft-resume')
+})
+
+test('[AC-SPRD-E2E-009] 이어쓰기는 초안의 카테고리와 가격까지 되살린다', async ({ page }) => {
+  await stubAll(page)
+  await page.goto('/products')
+
+  await page.getByRole('button', { name: '임시저장 1' }).click()
+  const drawer = page.getByRole('dialog', { name: '임시저장한 상품' })
+  await expect(drawer.getByText('2026.10.20 14:05 저장')).toBeVisible()
+  await drawer.getByRole('button', { name: '이어쓰기' }).click()
+  await expect(page).toHaveURL(/\/products\/new\?draftId=01JE2EDRAFT00000000000001$/)
+
+  // 초안의 값이 폼으로 되살아난다 — categoryId는 api 모듈 트리에서 소분류까지 복원된다.
+  await expect(page.getByLabel('상품명')).toHaveValue('쓰다 만 자동 급식기')
+  await expect(page.getByLabel('소분류')).toHaveValue('20901')
+  // 프리필은 서버 값을 그대로 넣는다 — 천 단위 구분은 타이핑 때만 붙는다.
+  await expect(page.getByLabel('정가')).toHaveValue('25000')
+})
+
+test('[AC-SPRD-E2E-008] 임시저장 삭제는 확인을 거친다', async ({ page }) => {
+  await stubAll(page)
+  await page.goto('/products')
+
+  await page.getByRole('button', { name: '임시저장 1' }).click()
+  const drawer = page.getByRole('dialog', { name: '임시저장한 상품' })
+  await drawer.getByRole('button', { name: '쓰다 만 자동 급식기 임시저장 삭제' }).click()
+
+  const confirm = page.getByRole('dialog', { name: '임시저장을 삭제할까요?' })
+  await expect(confirm.getByText(/되돌릴 수 없어요/)).toBeVisible()
+  await confirm.getByRole('button', { name: '취소' }).click()
+  await expect(drawer.getByText('쓰다 만 자동 급식기')).toBeVisible()
+
+  await drawer.getByRole('button', { name: '쓰다 만 자동 급식기 임시저장 삭제' }).click()
+  await page.getByRole('dialog', { name: '임시저장을 삭제할까요?' }).getByRole('button', { name: '삭제' }).click()
+
+  await expect(page.getByText('임시저장을 삭제했어요.')).toBeVisible()
+  await expect(drawer.getByText('임시저장한 상품이 없어요')).toBeVisible()
 })
 
 test('[AC-SPRD-E2E-005] 목록 수정 → 단건 조회 프리필 → 저장이 저장 키와 할인 시각을 그대로 되돌려 보낸다', async ({

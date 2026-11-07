@@ -134,8 +134,8 @@ function AiReviewMetricsPage() {
               </ul>
               {hasDerivedAlarm && (
                 <p className="mt-1.5 break-keep text-caption">
-                  서버가 문장을 주지 않아 화면이 만든 안내예요. 주기 로그의 경보 문장과 글자가
-                  다를 수 있어요.
+                  서버가 문장을 주지 않아 화면이 만든 안내예요. 주기 로그의 경보 문장과 글자가 다를
+                  수 있어요.
                 </p>
               )}
             </Alert>
@@ -189,8 +189,8 @@ function AiReviewMetricsPage() {
           {view.gaps.period && (
             // 이 안내가 없으면 화면이 24시간 집계를 7일치로 둔갑시킨다.
             <Alert variant="warning">
-              서버가 기간 선택을 반영하지 않았어요. 지금 보이는 숫자는 서버가 집계한{' '}
-              {windowLabel} 구간이에요.
+              서버가 기간 선택을 반영하지 않았어요. 지금 보이는 숫자는 서버가 집계한 {windowLabel}{' '}
+              구간이에요.
             </Alert>
           )}
 
@@ -209,8 +209,8 @@ function AiReviewMetricsPage() {
               <StageFunnel funnel={view.funnel} />
             ) : (
               <MissingBlock>
-                서버가 아직 단계별 집계를 주지 않아요. 단계별 탈출 분포는 확장이 배포된 뒤에
-                보여요 — 0건으로 그리면 아무 일도 없었던 것처럼 읽히니 비워 둬요.
+                서버가 아직 단계별 집계를 주지 않아요. 단계별 탈출 분포는 확장이 배포된 뒤에 보여요
+                — 0건으로 그리면 아무 일도 없었던 것처럼 읽히니 비워 둬요.
               </MissingBlock>
             )}
           </Section>
@@ -233,7 +233,11 @@ function AiReviewMetricsPage() {
             title="적체"
             description="사람이 볼 몫이 얼마나 쌓였는지. 임계를 넘으면 주기 로그도 같은 조건으로 경보해요."
             action={
-              <Button variant="secondary" size="sm" onClick={() => navigate({ to: '/products/ai-queue' })}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate({ to: '/products/ai-queue' })}
+              >
                 검수 큐 열기
               </Button>
             }
@@ -253,12 +257,14 @@ function AiReviewMetricsPage() {
                     variant={view.backlog.breachedBy.includes('age') ? 'urgent' : 'quiet'}
                     footer={`대기 임계 ${formatMinuteSpan(view.backlog.warnAgeMinutes)}`}
                   />
-                  <MetricCard
-                    label="지문이 어긋난 건"
-                    value={`${formatCount(view.backlog.staleOpenCount)}건`}
-                    variant="quiet"
-                    footer="셀러가 내용을 고쳐 이 검수로는 결정할 수 없어요"
-                  />
+                  {view.backlog.staleOpenCount != null && (
+                    <MetricCard
+                      label="지문이 어긋난 건"
+                      value={`${formatCount(view.backlog.staleOpenCount)}건`}
+                      variant="quiet"
+                      footer="셀러가 내용을 고쳐 이 검수로는 결정할 수 없어요"
+                    />
+                  )}
                 </div>
 
                 {view.backlog.breached && (
@@ -335,8 +341,8 @@ function AiReviewMetricsPage() {
                   />
                   {view.cost.hasUnattributed && (
                     <p className="break-keep text-caption text-warning-fg">
-                      단계를 가를 수 없는 행이 있어요. 비평과 수정 문구가 원장에 같은 관점으로
-                      적힌 구버전 데이터이고, 합계에서 빼지는 않았어요.
+                      단계를 가를 수 없는 행이 있어요. 비평과 수정 문구가 원장에 같은 관점으로 적힌
+                      구버전 데이터이고, 합계에서 빼지는 않았어요.
                     </p>
                   )}
                 </div>
@@ -365,10 +371,7 @@ function AiReviewMetricsPage() {
                       {formatMs(view.latency.endToEnd?.p95Ms ?? null)}
                     </dd>
                   </div>
-                  <CountFigure
-                    label="표본"
-                    count={view.latency.endToEnd?.sampleCount ?? null}
-                  />
+                  <CountFigure label="표본" count={view.latency.endToEnd?.sampleCount ?? null} />
                 </dl>
                 <div className="space-y-2 border-t border-border-subtle pt-3">
                   <p className="text-label font-semibold text-text-secondary">단계별 지연</p>
@@ -442,8 +445,8 @@ function AiReviewMetricsPage() {
                       // 등재 사유는 최초 이유만 남으므로 이의가 나중에 붙은 행은 처음 사유로
                       // 세어진다 — 적지 않으면 표가 잘못됐다고 읽힌다.
                       <p className="break-keep text-caption text-text-tertiary">
-                        사유별 합이 유입 건수보다 적어요. 등재 사유는 처음 큐에 올라온 까닭만
-                        남고, 나중에 붙은 이의는 이의 유입으로 따로 세고 있어요.
+                        사유별 합이 유입 건수보다 적어요. 등재 사유는 처음 큐에 올라온 까닭만 남고,
+                        나중에 붙은 이의는 이의 유입으로 따로 세고 있어요.
                       </p>
                     )}
                   </div>
@@ -484,8 +487,8 @@ function AiReviewMetricsPage() {
                 {/* 이 분자는 상품 경로에서 올라갈 수 없어 거의 항상 0이다. 0을 "놓친 게 없다"로
                     읽으면 선별형 설계의 핵심 위험을 못 보는 상태가 된다. */}
                 <p className="break-keep text-caption text-text-tertiary">
-                  선별 누락 확증은 구조적으로 거의 0이에요 — 확인된 건이 없다는 것이 놓친 게
-                  없다는 뜻은 아니에요. 그건 아래 표본 재검으로만 알 수 있어요.
+                  선별 누락 확증은 구조적으로 거의 0이에요 — 확인된 건이 없다는 것이 놓친 게 없다는
+                  뜻은 아니에요. 그건 아래 표본 재검으로만 알 수 있어요.
                 </p>
               </div>
             ) : (
@@ -505,7 +508,10 @@ function AiReviewMetricsPage() {
                   basis={`분모는 사람이 본 표본 ${formatCount(view.triageAudit.reviewedCount)}건`}
                 />
                 <CountFigure label="뽑은 표본" count={view.triageAudit.sampledCount} />
-                <CountFigure label="위반을 찾은 표본" count={view.triageAudit.violationFoundCount} />
+                <CountFigure
+                  label="위반을 찾은 표본"
+                  count={view.triageAudit.violationFoundCount}
+                />
                 <CountFigure label="판단 불가 표본" count={view.triageAudit.undecidedCount} />
                 <div>
                   <dt className="text-caption text-text-tertiary">마지막 표본 추출</dt>
@@ -516,8 +522,8 @@ function AiReviewMetricsPage() {
               </dl>
             ) : (
               <MissingBlock>
-                서버에 표본 재검 테이블이 아직 없어요. 같은 내용을 같은 정책으로 다시 검수할 수
-                없어 재검은 사람 눈이고, 그 결과를 적을 자리가 생기면 여기에 누락률이 보여요.
+                서버에 표본 재검 테이블이 아직 없어요. 같은 내용을 같은 정책으로 다시 검수할 수 없어
+                재검은 사람 눈이고, 그 결과를 적을 자리가 생기면 여기에 누락률이 보여요.
               </MissingBlock>
             )}
           </Section>

@@ -1,0 +1,24 @@
+/**
+ * 화면의 운영 진입 차단 스위치 — 라우트 게이트와 **그 화면으로 보내는 진입점**이
+ * 같은 값을 봐야 해서 shared로 올렸다.
+ *
+ * 둘이 갈리면 죽은 진입점이 생긴다: 대시보드 카드는 "목록이 열려요"라고 안내하는데 목적지
+ * 라우트가 차단 상태여서 "준비 중" 안내만 나오는 식이다(AGENTS.md가 금지하는 장식/죽은 UI).
+ * 스위치가 하나면 그런 상태를 만들 수 없다.
+ *
+ * **상수를 지우지 않는 이유**: 서버가 내려가거나 경로가 빠지면 이 값만 false로 내려 라우트와
+ * 대시보드 카드의 진입점을 한 번에 닫을 수 있어야 한다. 그래서 상수가 true여도 라우트의 게이트
+ * 분기는 남겨 둔다 — 분기를 지우면 되돌릴 자리가 없어진다.
+ *
+ * nav 항목은 이 상수를 보지 않는다(항목은 항상 올라간다) — 메뉴 구성을 숨기는 것이 목적이 아니라
+ * 저장되지 않는 화면에 운영자가 속지 않게 하는 것이 목적이라, 차단은 화면 안에서 알린다.
+ */
+
+/** `GET /sellers/me/orders` 외 5경로 연동 완료(SCRUM-291). dev seller 모듈에 배포돼 있다. */
+export const SERVER_ORDERS_AVAILABLE = true
+
+/** `GET /sellers/me/claims` 외 8경로 연동 완료(SCRUM-295). dev seller 모듈에 배포돼 있다. */
+export const SERVER_CLAIMS_AVAILABLE = true
+
+/** `GET /sellers/me/inquiries`와 답변 등록 연동 완료(SCRUM-316). dev seller 모듈에 배포돼 있다. */
+export const SERVER_INQUIRIES_AVAILABLE = true

@@ -1,51 +1,145 @@
+import { useEffect, useMemo } from 'react'
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type Query,
+  type QueryClient,
+  type QueryFilters,
   type QueryKey,
 } from '@tanstack/react-query'
 import {
   blockUser,
+  customInstance,
+  deleteSnsComment,
+  deleteSnsPost,
   errorResponse,
   followUser,
   getFollowers,
   getFollowings,
   getMyBlocks,
+  getMySnsSaves,
   getMyMutes,
   getMySnsProfile,
+  getSnsExploreFeed,
+  getSnsFollowingFeed,
+  getSnsHashtagPosts,
+  getSnsPopularFeed,
+  getSnsComment,
+  getSnsCommentLikers,
+  getSnsPost,
+  getSnsPostComments,
+  getSnsPostLikers,
   getSnsProfile,
+  getSnsUserPosts,
+  getSnsUserReposts,
+  getSnsUserVideos,
+  likeSnsComment,
+  likeSnsPost,
   muteUser,
+  repostSnsPost,
+  saveSnsPost,
+  searchSnsHashtagSegment,
+  searchSnsHashtags,
+  submitReport,
+  searchSnsPosts,
+  searchSnsUsers,
   unblockUser,
   unfollowUser,
+  unlikeSnsComment,
+  unlikeSnsPost,
   unmuteUser,
+  unrepostSnsPost,
+  unsaveSnsPost,
+  updateSnsComment,
+  updateSnsPost,
+  type SnsCommentItemResult,
+  type SnsCommentPageResult,
+  type SnsCommentResponse,
+  type SnsFeedItemResult,
+  type SnsFeedPageResult,
+  type SnsLikerListResult,
+  type SnsHashtagPostPageResult,
+  type SnsHashtagResult,
+  type SnsPostCreateRequest,
+  type SnsPostCreateResponse,
+  type SnsPostDetailResult,
+  type SnsPostGridItemResult,
+  type SnsPostGridPageResult,
+  type SnsPostUpdateRequest,
   type SnsProfileResult,
   type SnsRelationItemResult,
   type SnsRelationPageResult,
+  type SnsSearchHashtagPageResult,
+  type SnsSearchPostPageResult,
+  type SnsSearchSortParameter,
+  type SnsSearchUserItemResult,
+  type SnsSearchUserPageResult,
   type SnsUserItemResult,
   type SnsUserPageResult,
 } from '@aechak/api'
 import { useIsLoggedIn } from '@/shared/auth'
 
-// SNS-01(프로필, 팔로우, 차단, 뮤트)을 spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라
-// fetcher만 소비하고 여기서 자체 useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
+// SNS-01(프로필, 팔로우, 차단, 뮤트), SNS-02(게시물, 해시태그), SNS-03(피드, 리포스트, 저장, 프로필 탭), SNS-04(좋아요)를
+// spec/contracts/sns.yaml에 붙이는 어댑터. 생성된 react-query 훅이 아니라 fetcher만 소비하고 여기서 자체
+// useQuery/useInfiniteQuery로 감싼다(AGENTS.md 6절).
 
 export type SnsProfile = SnsProfileResult
 export type SnsUserItem = SnsUserItemResult
 export type SnsRelationItem = SnsRelationItemResult
+export type SnsPost = SnsPostDetailResult
+export type SnsFeedItem = SnsFeedItemResult
+export type SnsFeedKind = 'following' | 'explore' | 'popular'
+export type SnsGridItem = SnsPostGridItemResult
+export type SnsLikerList = SnsLikerListResult
+export type SnsComment = SnsCommentItemResult
+/** 프로필 게시물 탭. 저장됨은 내 프로필에만 있다 */
+export type SnsProfileTab = 'grid' | 'video' | 'repost' | 'saved'
+export type SnsUserPostTab = Exclude<SnsProfileTab, 'saved'>
 export type FollowDirection = 'followers' | 'followings'
 export type RelationKind = 'blocks' | 'mutes'
 export type SnsToggleKind = 'follow' | 'block' | 'mute'
+export type SnsReactionKind = 'repost' | 'save'
+/** 좋아요 대상. 게시물과 댓글이 같은 규칙이다(SNS-04 D3) */
+export type SnsLikeTarget = 'post' | 'comment'
+/** 좋아요 버튼이 그리는 값. 누르기 전 값으로 되돌릴 때도 쓴다 */
+export type SnsLikeState = Pick<SnsPostDetailResult, 'liked' | 'likeCount'>
+/** SNS 검색 세그먼트(b12-st-4) */
+export type SnsSearchSegment = 'posts' | 'users' | 'hashtags'
+/** 게시물 검색과 해시태그 게시물 목록의 정렬. 기본은 인기순이다(P6) */
+export type SnsSearchSort = SnsSearchSortParameter
+export type SnsSearchUser = SnsSearchUserItemResult
+export type SnsHashtag = SnsHashtagResult
 
-/** 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전, 나를 차단). 차단 사실을 드러내지 않으려고 한 코드로 온다(A7). */
+/**
+ * 볼 수 없는 사용자(없음, 탈퇴, 온보딩 전). 팔로워, 팔로잉 목록과 팔로우 요청은 나를 차단한 사용자에게도 이 코드다.
+ * 프로필 조회는 나를 차단한 사용자를 200 blockingMe=true 기본 프로필로 준다(R2-06).
+ */
 export const SNS_UNAVAILABLE = 130000
-/** 내가 차단한 사용자의 팔로워, 팔로잉 목록과 팔로우 요청 */
+/** 내가 차단한 사용자의 팔로워, 팔로잉 목록과 팔로우 요청. 내가 차단한 작성자의 게시물 상세(G4) */
 export const SNS_BLOCKED_BY_ME = 130001
 /** 자기 자신 팔로우 */
 export const SNS_SELF_FOLLOW = 130300
+/** 볼 수 없는 게시물(없음, 삭제, 작성자 탈퇴, 작성자가 나를 차단). 원인과 상관없이 삭제된 게시물 안내다(A7, P7) */
+export const SNS_POST_UNAVAILABLE = 130400
+/** 본인 게시물이 아닌 수정, 삭제 */
+export const SNS_POST_NOT_MINE = 130401
+/** 없거나 이미 쓴 tmp key. 작성 화면을 연 채 버킷 수명 규칙(expire-tmp)이 tmp 원본을 지웠을 때도 온다 */
+export const SNS_UPLOAD_NOT_FOUND = 100001
+/** 본인 원글 리포스트(SNS-03 초안). 리포스트 버튼은 본인 글에서 잠겨 있어 다시 실행한 요청에서만 온다 */
+export const SNS_REPOST_OWN_POST = 130600
+/** 이용 제한(RESTRICTED) 계정의 SNS 쓰기(UserStatusFilter) */
+export const SNS_ACCOUNT_RESTRICTED = 20013
+/** 잘못되거나 만료된 커서(인기 피드 31분, Redis 장애 포함). 그 목록을 첫 페이지부터 다시 연다(sns.yaml SNS-03 FE 3) */
+export const SNS_INVALID_CURSOR = 90002
 
 const PAGE_SIZE = 20
+/** 게시물 하나에 다는 해시태그 상한(A8). 넘으면 서버도 130406으로 거부한다 */
+export const HASHTAG_MAX = 30
+const HASHTAG_SEARCH_SIZE = 20
 
 export const snsKeys = {
   all: ['sns'] as const,
@@ -56,6 +150,41 @@ export const snsKeys = {
   followList: (publicId: string, direction: FollowDirection, nickname: string) =>
     ['sns', 'follows', publicId, direction, nickname] as const,
   relations: (kind: RelationKind) => ['sns', kind] as const,
+  posts: ['sns', 'post'] as const,
+  post: (publicId: string) => ['sns', 'post', publicId] as const,
+  hashtags: (query: string) => ['sns', 'hashtags', query] as const,
+  // 피드는 profiles 밖에 둔다. 팔로우 성공이 profiles를 무효화해 그 아래에 두면 모든 피드 페이지를 다시 읽는다(design 6절 3번).
+  feeds: ['sns', 'feed'] as const,
+  feed: (kind: SnsFeedKind, loggedIn: boolean) => ['sns', 'feed', kind, loggedIn] as const,
+  // 프로필 탭도 같은 이유로 profiles 밖에 둔다(design 6절 3번).
+  userPostLists: ['sns', 'user-posts'] as const,
+  userPosts: (publicId: string, tab: SnsUserPostTab, loggedIn: boolean) =>
+    ['sns', 'user-posts', publicId, tab, loggedIn] as const,
+  // 저장됨은 로그인한 나만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
+  saves: () => ['sns', 'saves'] as const,
+  // 좋아요 요청의 mutation 키. 같은 대상의 요청이 떠 있는지 화면과 상관없이 이 키로 본다(design 6절 2번).
+  like: (target: SnsLikeTarget, publicId: string) => ['sns', 'like', target, publicId] as const,
+  // 좋아요한 사람은 로그인한 사람만 본다. 로그아웃과 세션 만료가 캐시를 비운다.
+  likerLists: ['sns', 'likers'] as const,
+  likers: (publicId: string, target: SnsLikeTarget = 'post') =>
+    ['sns', 'likers', target, publicId] as const,
+  // 게시물 검색과 해시태그 게시물 목록은 피드 카드와 같은 항목이라 feeds 아래에 둔다. 리포스트, 저장, 수정, 삭제, 차단과 뮤트가
+  // 피드 카드에 하는 갱신을 그대로 받는다. 네 번째 자리가 세션 상태인 것도 피드와 같다.
+  searchPosts: (keyword: string, sort: SnsSearchSort, size: number, loggedIn: boolean) =>
+    ['sns', 'feed', 'search', loggedIn, keyword, sort, size] as const,
+  hashtagPosts: (name: string, sort: SnsSearchSort, loggedIn: boolean) =>
+    ['sns', 'feed', 'hashtag', loggedIn, name, sort] as const,
+  // 계정 검색은 팔로우 목록과 같은 행 모양이라 follows 아래에 둔다. 팔로우하면 그 행 버튼만 바뀌고 차단하면 다시 읽는다.
+  searchUsers: (keyword: string, size: number, loggedIn: boolean) =>
+    ['sns', 'follows', 'search', keyword, size, loggedIn] as const,
+  searchHashtags: (keyword: string, size: number) => ['sns', 'search-hashtags', keyword, size] as const,
+  // 댓글 목록은 비로그인 응답과 로그인 응답의 보는 사람 필드(isMine)와 숨김이 달라 세션 상태를 키에 넣는다.
+  commentLists: ['sns', 'comments'] as const,
+  comments: (postPublicId: string, loggedIn: boolean) =>
+    ['sns', 'comments', postPublicId, loggedIn] as const,
+  // 알림으로 연 댓글 하나와 최상위 댓글(로그인 전용)
+  commentThread: (commentPublicId: string) =>
+    ['sns', 'comments', 'thread', commentPublicId] as const,
 }
 
 export function snsErrorCode(error: unknown): number | undefined {
@@ -66,6 +195,177 @@ export function snsErrorCode(error: unknown): number | undefined {
 function retryTransient(failureCount: number, error: unknown): boolean {
   const status = errorResponse(error)?.status
   return (status == null || status >= 500) && failureCount < 1
+}
+
+/**
+ * 게시물 상세(GET /sns/posts/{publicId}). 비로그인도 된다. 프로필처럼 비로그인 응답과 로그인 응답의 보는 사람
+ * 필드(isMine, following, mutedByMe)와 차단 판정이 달라 세션 상태를 키에 넣는다.
+ */
+export function useSnsPost(publicId: string, { enabled = true }: { enabled?: boolean } = {}) {
+  const loggedIn = useIsLoggedIn()
+  return useQuery({
+    queryKey: [...snsKeys.post(publicId), loggedIn],
+    queryFn: async ({ signal }) => (await getSnsPost(publicId, signal)).data,
+    retry: retryTransient,
+    enabled,
+  })
+}
+
+/**
+ * 수정(PATCH). 바뀐 것이 없어도 204이고 수정됨 표시는 다시 읽은 상세의 edited를 따른다(P8). 그사이 지운
+ * 게시물(404 130400)이면 상세도 다시 읽는다. 캐시를 그대로 두면 돌아간 상세가 지운 게시물을 그린다.
+ * 성공하면 받아 둔 피드 카드도 다시 읽은 상세로 바꾸고 프로필 탭은 다음에 열 때 다시 읽는다. 그대로 두면 staleTime 안에
+ * 돌아간 목록이 고치기 전 내용을 그린다.
+ */
+export function useUpdateSnsPost(publicId: string) {
+  const queryClient = useQueryClient()
+  const refetchPost = () => queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+  return useMutation({
+    mutationFn: (body: SnsPostUpdateRequest) => updateSnsPost(publicId, body),
+    onSuccess: async () => {
+      await refetchPost()
+      // 수정은 로그인한 작성자만 해서 로그인 응답 상세를 읽는다. 피드는 다시 읽으면 보던 위치를 잃어 그 카드만 바꾼다.
+      const detailKey = [...snsKeys.post(publicId), true]
+      const post = queryClient.getQueryData<SnsPost>(detailKey)
+      // invalidateQueries는 다시 읽기 실패를 알리지 않고 상세에는 고치기 전 내용이 남는다. 그 내용을 적으면 피드가 새로 받은
+      // 것으로 표시돼 다시 읽지 않는다. 다시 읽지 못했으면 피드를 낡은 것으로만 표시해 다음에 열 때 다시 읽는다.
+      if (post && queryClient.getQueryState(detailKey)?.isInvalidated === false) {
+        const { caption, hashtags, edited } = post
+        queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+          mapPages(data, items =>
+            items.map(item =>
+              item.post.publicId === publicId ? { ...item, post: { ...item.post, caption, hashtags, edited } } : item,
+            ),
+          ),
+        )
+      } else {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
+      }
+      // 프로필 탭 칸의 본문 앞부분(captionPreview)은 서버가 잘라 주므로 칸은 고치지 않고 다음에 열 때 다시 읽는다.
+      void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists })
+      void queryClient.invalidateQueries({ queryKey: snsKeys.saves() })
+    },
+    onError: error => {
+      if (snsErrorCode(error) === SNS_POST_UNAVAILABLE) void refetchPost()
+    },
+  })
+}
+
+/**
+ * 삭제(DELETE). 다른 기기에서 이미 지운 게시물(404 130400)도 지운 것으로 본다(AC-SNS02-027). 게시물 수가 바뀌어 내
+ * 프로필을 다시 읽는다. 상세 캐시는 다음에 열 때 다시 읽도록 낡은 것으로만 표시한다. 지우면 이전 화면으로 가기 전의
+ * 열린 상세가 스켈레톤을 그리고 지운 게시물을 다시 읽는다(차단과 같다). 피드 카드에서도 지우므로 대상은 mutate로 받는다.
+ */
+export function useDeleteSnsPost() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (publicId: string) => {
+      try {
+        await deleteSnsPost(publicId)
+      } catch (error) {
+        if (snsErrorCode(error) !== SNS_POST_UNAVAILABLE) throw error
+      }
+    },
+    onSuccess: async (_data, publicId) => {
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId), refetchType: 'none' })
+      // 받아 둔 피드와 프로필 탭에서 그 게시물을 바로 뺀다(design 6절 4번). 다시 읽으면 보던 위치를 잃는다.
+      await Promise.all([
+        removeFromLists<InfiniteData<SnsFeedPageResult>>(queryClient, { queryKey: snsKeys.feeds }, data =>
+          mapPages(data, items => items.filter(item => item.post.publicId !== publicId)),
+        ),
+        removeGridCell(queryClient, { queryKey: snsKeys.userPostLists }, publicId),
+        removeGridCell(queryClient, { queryKey: snsKeys.saves() }, publicId),
+      ])
+      return refetchMyProfiles(queryClient)
+    },
+  })
+}
+
+/** 게시물 수가 바뀐 내 프로필. 내 프로필(GET /sns/me)과 주소로 연 내 공개 프로필(GET /sns/users/{내 publicId})이다 */
+function refetchMyProfiles(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: snsKeys.me }),
+    queryClient.invalidateQueries({
+      queryKey: snsKeys.profiles,
+      predicate: query => (query.state.data as SnsProfile | undefined)?.isMe === true,
+    }),
+  ])
+}
+
+export interface CreateSnsPostInput {
+  /** 작성 화면을 열 때 만든 키. 그 화면의 모든 게시 시도에 같은 값을 보낸다(design 6절 2번) */
+  idempotencyKey: string
+  body: SnsPostCreateRequest
+}
+
+// orval이 header 파라미터를 생성하지 않아 Idempotency-Key는 customInstance로 직접 붙인다(주문그룹 생성과 같다).
+export function createSnsPostWithKey(input: CreateSnsPostInput): Promise<SnsPostCreateResponse> {
+  return customInstance<SnsPostCreateResponse>({
+    url: '/sns/posts',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': input.idempotencyKey },
+    data: input.body,
+  })
+}
+
+/**
+ * 게시. 201이면 게시물 수가 바뀌어 내 프로필을 다시 읽는다(SNS-T04부터 postCount가 오른다). 내 프로필 탭도 무효화해
+ * 다음에 열 때 새 글이 맨 위에 나오게 한다. 그대로 두면 staleTime 안에는 수만 오르고 칸은 그대로다.
+ */
+export function useCreateSnsPost() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CreateSnsPostInput) => (await createSnsPostWithKey(input)).data,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: snsKeys.userPostLists, predicate: query => query.meta?.['mine'] === true })
+      return refetchMyProfiles(queryClient)
+    },
+  })
+}
+
+// 이용 제한(RESTRICTED) 계정의 SNS 쓰기(20013). 게시, 수정, 삭제와 켜기, 끄기가 같은 문구다.
+const RESTRICTED_COPY = '이용이 제한된 계정이라 이 기능을 사용할 수 없어요'
+
+// 게시, 수정, 삭제 실패 문구. 게시물 규칙(1304xx)과 해시태그 규칙(1305xx)은 코드별로 알리고 입력은 남긴다.
+// 키와 요청 형식 오류(100002, 100003, 90001, 90004)와 서버 오류는 일반 실패 문구다.
+const POST_ERROR_COPY: Record<number, string> = {
+  [SNS_ACCOUNT_RESTRICTED]: RESTRICTED_COPY,
+  130402: '캡션이나 사진, 영상 중 하나는 있어야 해요',
+  130403: '캡션은 2,200자까지 쓸 수 있어요',
+  130404: '사진은 10장까지, 영상은 1개만 올릴 수 있어요',
+  130405: '쓸 수 없는 단어가 많아 올릴 수 없어요. 내용을 고쳐 주세요',
+  130406: '해시태그는 30개까지 달 수 있어요',
+  130407: '60초 이하 영상만 올릴 수 있어요',
+  130500: '해시태그는 한글, 영문, 숫자, 밑줄만 쓸 수 있어요',
+  130501: '해시태그는 30자 이하로 써 주세요',
+  130502: '쓸 수 없는 단어가 든 해시태그가 있어요',
+}
+
+const RATE_LIMITED_COPY = '잠시 후 다시 시도해 주세요'
+
+// 빈도 제한은 errorCode가 아니라 HTTP 429로 분기한다(sns.yaml SNS-03 FE 5). develop의 90006은 404 경로 없음이라
+// errorCode로 보면 아직 그 경로가 없는 BE를 부를 때 잠시 후 다시 시도 안내가 나온다.
+const isRateLimited = (error: unknown) => errorResponse(error)?.status === 429
+
+export function snsPostErrorMessage(error: unknown, fallback: string): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
+  const code = snsErrorCode(error)
+  return (code != null && POST_ERROR_COPY[code]) || fallback
+}
+
+/**
+ * 해시태그 자동완성(GET /sns/hashtags). 빈 검색어는 EMPTY와 추천 태그다. 입력이 바뀌는 동안 이전 결과를 남겨
+ * 목록이 깜빡이지 않게 한다. 검색어 정규화와 상태 판정은 서버가 한다(design 6절 6번).
+ */
+export function useHashtagSearch(query: string) {
+  return useQuery({
+    queryKey: snsKeys.hashtags(query),
+    // 빈 검색어는 키째 뺀다(AGENTS.md 6절 6). 서버는 검색어가 없으면 EMPTY로 답한다.
+    queryFn: async ({ signal }) =>
+      (await searchSnsHashtags({ query: query || undefined, size: HASHTAG_SEARCH_SIZE }, signal)).data,
+    placeholderData: keepPreviousData,
+    retry: retryTransient,
+  })
 }
 
 /** publicId가 없으면 내 프로필(GET /sns/me, 로그인 필요)을 읽는다. 다른 사용자 프로필은 비로그인도 된다. */
@@ -136,10 +436,27 @@ const TOGGLE_FETCHERS: Record<SnsToggleKind, [(id: string) => Promise<unknown>, 
 
 // 켜기, 끄기 뒤 다시 읽을 캐시(design 6절 8). 팔로우는 대상과 목록 주인의 수가 바뀌어 열려 있는 프로필 전부와
 // 내 프로필, 차단은 두 방향 팔로우가 지워져 팔로우 목록까지, 뮤트는 대상 프로필과 뮤트 목록만 다시 읽는다.
+// 팔로우와 뮤트는 게시물 상세의 following, mutedByMe도 바꾸므로 게시물 상세도 다시 읽는다(SNS-02 상세).
+// 차단은 상세가 닫히고 이전 화면으로 가므로(P12) 열린 상세를 다시 읽지 않는다. 읽으면 닫히기 전에 차단 안내가 비친다.
+// 대신 다음에 열 때 다시 읽도록 게시물 캐시를 낡은 것으로만 표시한다(아래 onSuccess).
 const REFETCH_AFTER: Record<SnsToggleKind, (publicId: string) => QueryKey[]> = {
-  follow: () => [snsKeys.profiles, snsKeys.me],
-  block: publicId => [snsKeys.profile(publicId), snsKeys.me, snsKeys.follows, snsKeys.relations('blocks')],
-  mute: publicId => [snsKeys.profile(publicId), snsKeys.relations('mutes')],
+  follow: () => [snsKeys.profiles, snsKeys.me, snsKeys.posts],
+  block: publicId => [
+    snsKeys.profile(publicId),
+    snsKeys.me,
+    snsKeys.follows,
+    snsKeys.relations('blocks'),
+    // 차단 관계인 사용자는 좋아요한 사람에서 빠진다(A24).
+    snsKeys.likerLists,
+    // 댓글 작성자를 차단하면 그 사용자의 댓글과 그 아래 대댓글이 빠진다(P10).
+    snsKeys.commentLists,
+  ],
+  mute: publicId => [
+    snsKeys.profile(publicId),
+    snsKeys.relations('mutes'),
+    snsKeys.posts,
+    snsKeys.commentLists,
+  ],
 }
 
 // 켜기와 끄기는 화면에서 수를 직접 더하지 않고 성공 뒤 서버 값을 다시 읽는다.
@@ -165,27 +482,947 @@ export function useSnsToggle() {
             })),
           },
         )
+        // 좋아요한 사람 행의 팔로우 버튼도 바꾼다(design 6절 6번). 한 번에 받는 목록이라 다시 읽지 않는다.
+        queryClient.setQueriesData<SnsLikerList>({ queryKey: snsKeys.likerLists }, data =>
+          data && {
+            ...data,
+            items: data.items.map(item => (item.publicId === publicId ? { ...item, following: on } : item)),
+          },
+        )
+        // 화면에 없는 목록은 받아 둔 행만 고치면 새로 팔로우한 사람이 빠진 채 남는다. 다음에 열 때 다시 읽게 낡은 것으로만 표시한다.
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.follows,
+          refetchType: 'none',
+          predicate: query => query.getObserversCount() === 0,
+        })
+      }
+      if (kind === 'block') {
+        // 차단과 차단 해제는 게시물 상세 응답(403 130001)을 바꾼다. 다음에 열 때 캐시를 믿지 않고 서버에 다시 묻게 한다.
+        void queryClient.invalidateQueries({ queryKey: snsKeys.posts, refetchType: 'none' })
       }
       await refetch(REFETCH_AFTER[kind](publicId))
+      // 차단, 뮤트와 그 해제 뒤에는 숨었던 글이 다시 나오고 새로 숨을 글이 빠져야 해서 받아 둔 피드, 프로필 탭, 저장됨을
+      // 지운다(design 6절 7번). 열린 목록은 지우지 않고 비워 첫 페이지부터 다시 읽는다. 지우면 그 목록을 그리는 화면이 다시
+      // 그려질 때까지 지운 목록을 들고 있는데, 목록을 그리는 화면과 이 mutation을 쓰는 화면이 다를 수 있다. 팔로우는
+      // 다음 페이지부터 반영된다(G3).
+      if (kind !== 'follow') {
+        for (const queryKey of [snsKeys.feeds, snsKeys.userPostLists, snsKeys.saves()]) {
+          queryClient.removeQueries({ queryKey, predicate: query => query.getObserversCount() === 0 })
+          void queryClient.resetQueries({ queryKey })
+        }
+      }
     },
     // 재조회를 기다리지 않는다. 실패 안내와 행 잠금 해제가 재조회(와 그 재시도)에 묶이지 않게 한다.
     onError: (_error, { kind, publicId }) => {
       void refetch([
         ...REFETCH_AFTER[kind](publicId),
         // 성공 때는 행을 남기려고 목록을 다시 읽지 않지만, 실패하면 목록 행도 서버 값으로 맞춘다.
-        ...(kind === 'follow' ? [snsKeys.follows] : []),
+        ...(kind === 'follow' ? [snsKeys.follows, snsKeys.likerLists] : []),
       ])
     },
   })
 }
 
+// 켜기와 끄기 실패 문구. 팔로우, 차단, 뮤트와 SNS-03의 리포스트, 저장이 같이 쓴다. 게시물이 사라졌으면(130400)
+// 원인과 상관없이 삭제된 게시물 안내다(A7).
 export function snsToggleErrorMessage(error: unknown): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
   switch (snsErrorCode(error)) {
     case SNS_UNAVAILABLE:
       return '볼 수 없는 계정이에요'
     case SNS_BLOCKED_BY_ME:
       return '차단한 계정이에요'
+    case SNS_POST_UNAVAILABLE:
+      return '삭제된 게시물이에요'
+    case SNS_REPOST_OWN_POST:
+      return '내 게시물은 리포스트할 수 없어요'
+    case SNS_ACCOUNT_RESTRICTED:
+      return RESTRICTED_COPY
     default:
       return '요청을 처리하지 못했어요. 다시 시도해 주세요'
   }
+}
+
+// ── SNS-03 피드 ─────────────────────────────────────────────────────────────
+
+const FEED_FETCHERS = {
+  following: getSnsFollowingFeed,
+  explore: getSnsExploreFeed,
+  popular: getSnsPopularFeed,
+} satisfies Record<SnsFeedKind, unknown>
+
+/** 받아 둔 목록 페이지의 항목을 바꾼다. 데이터가 없는 캐시는 그대로 둔다 */
+function mapPages<T extends { items: unknown[] }>(
+  data: InfiniteData<T> | undefined,
+  map: (items: T['items']) => T['items'],
+) {
+  return data && { ...data, pages: data.pages.map(page => ({ ...page, items: map(page.items) })) }
+}
+
+/**
+ * 받아 둔 목록에서 항목을 뺀다. 빼기 전에 보낸 목록 조회는 뺀 항목을 다시 들고 올 수 있어 멈추고 뺀 뒤 그 목록만 다시
+ * 읽는다. 멈춘 조회는 조회 전 데이터로 돌아가고 첫 조회였으면 다시 읽어야 끝난다. 받는 중이 아니던 목록은 다시 읽지 않는다.
+ */
+async function removeFromLists<T>(
+  queryClient: QueryClient,
+  filters: QueryFilters,
+  remove: (data: T | undefined) => T | undefined,
+) {
+  const fetching = queryClient.getQueryCache().findAll(filters).filter(query => query.state.fetchStatus !== 'idle')
+  await queryClient.cancelQueries(filters)
+  queryClient.setQueriesData<T>(filters, remove)
+  if (fetching.length > 0) void queryClient.invalidateQueries({ predicate: query => fetching.includes(query) })
+}
+
+/** 받아 둔 프로필 탭에서 그 게시물 칸을 뺀다 */
+function removeGridCell(queryClient: QueryClient, filters: QueryFilters, publicId: string) {
+  return removeFromLists<InfiniteData<SnsPostGridPageResult>>(queryClient, filters, data =>
+    mapPages(data, items => items.filter(item => item.publicId !== publicId)),
+  )
+}
+
+// 팔로잉 피드는 페이지 사이에 같은 원글이 다시 올 수 있다(G3). 먼저 받은 자리 하나만 남긴다(design 6절 6번).
+function selectFeedItems(data: InfiniteData<{ items: SnsFeedItem[] }>): SnsFeedItem[] {
+  const seen = new Set<string>()
+  return data.pages
+    .flatMap(page => page.items)
+    .filter(item => {
+      if (seen.has(item.post.publicId)) return false
+      seen.add(item.post.publicId)
+      return true
+    })
+}
+
+// 다음 페이지나 다시 읽기가 400 90002면 그 목록을 첫 페이지부터 다시 연다(design 6절 6번). 첫 페이지는 커서가 없어
+// 90002가 오지 않으므로 받아 둔 페이지가 있을 때만 본다.
+function useRestartOnInvalidCursor(queryKey: QueryKey, error: unknown, hasData: boolean) {
+  const queryClient = useQueryClient()
+  const invalid = hasData && snsErrorCode(error) === SNS_INVALID_CURSOR
+  useEffect(() => {
+    if (invalid) void queryClient.resetQueries({ queryKey, exact: true })
+  }, [invalid, queryKey, queryClient])
+}
+
+/**
+ * 피드(GET /sns/feeds/{kind}). 비로그인 응답과 로그인 응답의 보는 사람 필드가 달라 세션 상태를 키에 넣는다.
+ * 팔로잉 피드는 로그인 필요라 비로그인이면 부르지 않는다.
+ */
+export function useSnsFeed(kind: SnsFeedKind) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.feed(kind, loggedIn), [kind, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await FEED_FETCHERS[kind]({ cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    select: selectFeedItems,
+    retry: retryTransient,
+    enabled: kind !== 'following' || loggedIn,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+// ── SNS-03 리포스트, 저장 ───────────────────────────────────────────────────
+
+const REACTION_FETCHERS: Record<SnsReactionKind, [(id: string) => Promise<unknown>, (id: string) => Promise<unknown>]> = {
+  repost: [repostSnsPost, unrepostSnsPost],
+  save: [saveSnsPost, unsaveSnsPost],
+}
+
+/** 리포스트는 상태가 바뀔 때만 수를 1 올리거나 내린다. 저장은 어떤 수도 바꾸지 않는다(A23) */
+function withReaction(post: SnsPost, kind: SnsReactionKind, on: boolean): SnsPost {
+  if (kind === 'save') return post.saved === on ? post : { ...post, saved: on }
+  if (post.reposted === on) return post
+  return { ...post, reposted: on, repostCount: Math.max(0, post.repostCount + (on ? 1 : -1)) }
+}
+
+const feedHasPost = (data: unknown, publicId: string) =>
+  (data as InfiniteData<SnsFeedPageResult> | undefined)?.pages.some(page =>
+    page.items.some(item => item.post.publicId === publicId),
+  ) ?? false
+
+/** 그 게시물이 든 캐시(상세, 피드 항목의 post)를 바꾼다 */
+function setReaction(queryClient: QueryClient, kind: SnsReactionKind, publicId: string, on: boolean) {
+  queryClient.setQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) }, post => post && withReaction(post, kind, on))
+  queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+    mapPages(data, items =>
+      items.map(item => (item.post.publicId === publicId ? { ...item, post: withReaction(item.post, kind, on) } : item)),
+    ),
+  )
+}
+
+// 같은 게시물에 이어서 누른 요청 묶음. latest는 마지막으로 누른 요청이고 confirmed는 성공한 요청까지 반영한 서버 값이다.
+// 묶음의 첫 confirmed는 바꾸기 전 캐시 값이다. 누른 값의 반대로 짐작하면 이미 켜진 글에 다시 켜기를 보내는 로그인 뒤 다시
+// 실행(A26)이 실패했을 때 꺼진 상태로 되돌린다. 받아 둔 곳이 없어 모르면 되돌리지 않는다. 요청은 차례로 가므로 앞 요청의
+// 실패는 뒤 요청이 덮는다. 마지막 요청이 실패할 때만 confirmed로 되돌린다.
+interface ReactionRun {
+  latest: number
+  confirmed: boolean | undefined
+}
+const reactionRuns = new WeakMap<QueryClient, Map<string, ReactionRun>>()
+let reactionSeq = 0
+
+function runsOf(queryClient: QueryClient) {
+  let runs = reactionRuns.get(queryClient)
+  if (!runs) reactionRuns.set(queryClient, (runs = new Map()))
+  return runs
+}
+
+/** 로그인 응답(상세, 피드 항목)에 받아 둔 그 게시물의 반응 값. 받아 둔 곳이 없으면 undefined */
+function cachedReaction(queryClient: QueryClient, kind: SnsReactionKind, publicId: string): boolean | undefined {
+  const post =
+    queryClient.getQueryData<SnsPost>([...snsKeys.post(publicId), true]) ??
+    queryClient
+      .getQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds, predicate: query => query.queryKey[3] === true })
+      .flatMap(([, data]) => data?.pages.flatMap(page => page.items) ?? [])
+      .find(item => item.post.publicId === publicId)?.post
+  return post && (kind === 'repost' ? post.reposted : post.saved)
+}
+
+/**
+ * 리포스트, 저장 켜기(POST 201)와 끄기(DELETE 204). design 6절 5번이다. 누르는 즉시 받는 중인 조회를 멈추고 그 게시물이 든
+ * 캐시를 바꾼 뒤 요청을 보낸다. 같은 게시물의 요청은 scope로 차례로 보낸다. 빠르게 켜고 끄면 POST와 DELETE가 거꾸로 도착할
+ * 수 있고 응답에 본문이 없어(D3) 서버와 화면이 어긋나도 맞출 수 없기 때문이다. 실패하면 되돌리고 안내는 부른 화면이 띄운다.
+ */
+export function useSnsReaction(kind: SnsReactionKind, publicId: string) {
+  const queryClient = useQueryClient()
+  const id = `${kind}:${publicId}`
+  return useMutation({
+    scope: { id },
+    mutationFn: (on: boolean) => REACTION_FETCHERS[kind][on ? 0 : 1](publicId),
+    // 멈춘 조회는 조회 전 값으로 돌아가므로 멈춘 뒤에 바꾼다. 차례를 기다리는 요청도 누른 즉시 여기까지 온다.
+    onMutate: on => {
+      const runs = runsOf(queryClient)
+      const seq = ++reactionSeq
+      const run = runs.get(id)
+      runs.set(id, { latest: seq, confirmed: run ? run.confirmed : cachedReaction(queryClient, kind, publicId) })
+      void queryClient.cancelQueries({ queryKey: snsKeys.post(publicId) })
+      void queryClient.cancelQueries({ queryKey: snsKeys.feeds, predicate: query => feedHasPost(query.state.data, publicId) })
+      setReaction(queryClient, kind, publicId, on)
+      return seq
+    },
+    onSuccess: (_data, on) => {
+      const run = runsOf(queryClient).get(id)
+      if (run) run.confirmed = on
+      // 내 리포스트 탭과 저장됨은 끄면 그 칸을 빼고 켜면 다음에 열 때 맨 위에 나오게 다시 읽는다. 끼워 넣지 않는다(P6).
+      const mine: QueryFilters =
+        kind === 'repost'
+          ? { queryKey: snsKeys.userPostLists, predicate: isMyRepostTab }
+          : { queryKey: snsKeys.saves() }
+      if (on) void queryClient.invalidateQueries(mine)
+      else void removeGridCell(queryClient, mine, publicId)
+    },
+    onError: (_error, _on, seq) => {
+      const run = runsOf(queryClient).get(id)
+      if (run && run.latest === seq && run.confirmed !== undefined) setReaction(queryClient, kind, publicId, run.confirmed)
+    },
+    // 묶음이 끝나면 열린 상세를 서버 값으로 다시 맞춘다. 멈춘 조회도 여기서 다시 읽는다. 피드는 다시 읽으면 보던 위치를
+    // 잃어 바꾼 값을 그대로 둔다. 기다리지 않는다. 기다리면 그사이 누른 다음 요청이 이 조회 뒤로 밀린다.
+    onSettled: (_data, _error, _on, seq) => {
+      const runs = runsOf(queryClient)
+      const run = runs.get(id)
+      if (!run || run.latest !== seq) return
+      runs.delete(id)
+      // 묶음 중에 새로 시작한 피드 조회(지금 탭 다시 누르기, 포커스 재조회)는 서버 반영 전 값을 받아 왔을 수 있어 서버 값을
+      // 한 번 더 적는다. 같은 값이면 그대로 두어 수가 두 번 바뀌지 않는다.
+      if (run.confirmed !== undefined) setReaction(queryClient, kind, publicId, run.confirmed)
+      // 아직 받는 중인 피드 조회는 그 뒤에 도착해 반영 전 값으로 덮어쓴다. 멈추고 서버 값을 다시 읽는다.
+      void removeFromLists(queryClient, { queryKey: snsKeys.feeds }, data => data)
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+    },
+  })
+}
+
+// ── SNS-03 프로필 탭 ────────────────────────────────────────────────────────
+
+const GRID_FETCHERS = {
+  grid: getSnsUserPosts,
+  video: getSnsUserVideos,
+  repost: getSnsUserReposts,
+} satisfies Record<SnsUserPostTab, unknown>
+
+const selectGridItems = (data: InfiniteData<SnsPostGridPageResult>) => data.pages.flatMap(page => page.items)
+
+/** 내 프로필의 리포스트 탭. 목록 주인이 나인지는 useSnsPostGrid가 남긴 meta.mine으로 안다 */
+function isMyRepostTab(query: Query) {
+  return query.queryKey[3] === 'repost' && query.meta?.['mine'] === true
+}
+
+/**
+ * 프로필 그리드, 영상, 리포스트 탭(GET /sns/users/{publicId}/{posts|videos|reposts})과 저장됨 탭(GET /sns/me/saves).
+ * 저장됨은 내 프로필에서만 부르고 나머지는 비로그인도 된다. 이어 불러오기와 90002 재시작은 피드와 같다. 차단 관계
+ * 프로필(blockedByMe, blockingMe)에서는 부르지 않는다(SNS-F04).
+ */
+export function useSnsPostGrid(profile: SnsProfile | undefined, tab: SnsProfileTab) {
+  const loggedIn = useIsLoggedIn()
+  const owner = profile?.publicId ?? ''
+  const queryKey = useMemo(
+    () => (tab === 'saved' ? snsKeys.saves() : snsKeys.userPosts(owner, tab, loggedIn)),
+    [owner, tab, loggedIn],
+  )
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) => {
+      const params = { cursor: pageParam, size: PAGE_SIZE }
+      return (tab === 'saved' ? await getMySnsSaves(params, signal) : await GRID_FETCHERS[tab](owner, params, signal))
+        .data
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    select: selectGridItems,
+    retry: retryTransient,
+    enabled: profile != null && !profile.blockedByMe && !profile.blockingMe && (tab !== 'saved' || profile.isMe),
+    meta: { mine: profile?.isMe === true },
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+// ── SNS-07 신고 ─────────────────────────────────────────────────────────────
+
+/** 신고 대상. 게시물은 게시물 publicId(리포스트 카드는 원글), 댓글은 댓글 publicId(대댓글은 그 대댓글), 사용자는 사용자 publicId다 */
+export interface SnsReportTarget {
+  type: 'SNS_POST' | 'SNS_COMMENT' | 'SNS_USER'
+  publicId: string
+  nickname: string
+  profileImageUrl: string | null
+  /** 게시물 대상 카드에 한 줄로 보이는 캡션이나 댓글 내용 */
+  caption?: string | null
+  /** 댓글이 달린 게시물. 거절되면 그 게시물의 상세와 댓글 목록을 다시 읽는다 */
+  postPublicId?: string
+}
+
+export type SnsReportReason = 'SPAM' | 'ABUSE' | 'INAPPROPRIATE' | 'FRAUD' | 'OTHER'
+
+export const postReportTarget = (post: SnsPost): SnsReportTarget => ({
+  type: 'SNS_POST',
+  publicId: post.publicId,
+  nickname: post.author.nickname,
+  profileImageUrl: post.author.profileImageUrl,
+  caption: post.caption,
+})
+
+export const commentReportTarget = (comment: SnsComment, postPublicId: string): SnsReportTarget => ({
+  type: 'SNS_COMMENT',
+  publicId: comment.publicId,
+  nickname: comment.author?.nickname ?? '',
+  profileImageUrl: comment.author?.profileImageUrl ?? null,
+  caption: comment.content,
+  postPublicId,
+})
+
+/** 이미 신고한 대상(409). 응답을 받지 못하고 다시 보낸 신고도 이 코드라 접수 확인으로 본다(P6, P15) */
+const ALREADY_REPORTED = [130802, 130804, 30202]
+
+export const isAlreadyReported = (error: unknown) => ALREADY_REPORTED.includes(snsErrorCode(error) ?? -1)
+
+/**
+ * 다시 보내도 같은 답인 거절. 볼 수 없는 게시물, 차단한 작성자, 볼 수 없는 계정, 볼 수 없는 댓글(130700), 본인 게시물,
+ * 본인 댓글, 자기 자신이다. 130700은 SNS_COMMENT_UNAVAILABLE이 이 파일 아래에서 선언돼 숫자로 적는다.
+ */
+const REPORT_FINAL = [SNS_POST_UNAVAILABLE, SNS_BLOCKED_BY_ME, SNS_UNAVAILABLE, 130700, 130800, 130803, 30200]
+
+export const isFinalReportError = (error: unknown) => REPORT_FINAL.includes(snsErrorCode(error) ?? -1)
+
+/**
+ * 신고 접수(POST /reports). 공백만 적은 상세 내용은 비운 것으로 보내고 서버도 그렇게 본다(P5).
+ * 게시물이 사라졌거나(130400) 작성자를 차단했으면(130001) 상세를 다시 읽어 화면을 그 안내로 바꾸고 받아 둔 피드는 다음에 열 때
+ * 다시 읽게 낡은 것으로만 표시한다. 계정을 볼 수 없으면(130000) 그 프로필을 다시 읽는다. 댓글 신고가 다시 보내도 같은 답으로
+ * 거절되면 그 게시물의 댓글 목록과 알림으로 연 댓글을 다시 읽고, 게시물이 사라졌거나 작성자를 차단했으면 상세도 다시 읽는다.
+ */
+export function useSubmitSnsReport() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      target,
+      reasonCode,
+      reasonText,
+    }: {
+      target: SnsReportTarget
+      reasonCode: SnsReportReason
+      reasonText: string
+    }) => {
+      const text = reasonText.trim()
+      await submitReport({
+        targetType: target.type,
+        targetId: target.publicId,
+        reasonCode,
+        reasonText: text === '' ? null : text,
+      })
+    },
+    onError: (error, { target }) => {
+      const code = snsErrorCode(error)
+      if (target.type === 'SNS_COMMENT') {
+        if (!isFinalReportError(error) || target.postPublicId == null) return
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, target.postPublicId] })
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        })
+        if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+          void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.postPublicId) })
+          void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
+        }
+      } else if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(target.publicId) })
+        void queryClient.invalidateQueries({ queryKey: snsKeys.feeds, refetchType: 'none' })
+      } else if (code === SNS_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.profile(target.publicId) })
+      }
+    },
+  })
+}
+
+// 신고 실패 문구. 게시물이 사라졌으면(130400) 원인과 상관없이 삭제된 게시물 안내다(A7). 댓글도 같다(130700, A15, A16).
+const REPORT_ERROR_COPY: Record<number, string> = {
+  130802: '이미 신고한 게시물이에요',
+  130804: '이미 신고한 댓글이에요',
+  130700: '삭제된 댓글이에요',
+  130803: '내 댓글은 신고할 수 없어요',
+  30202: '이미 신고한 계정이에요',
+  [SNS_POST_UNAVAILABLE]: '삭제된 게시물이에요',
+  [SNS_BLOCKED_BY_ME]: '차단한 계정의 게시물이에요',
+  130800: '내 게시물은 신고할 수 없어요',
+  130801: '기타 사유는 상세 내용을 적어 주세요',
+  30201: '기타 사유는 상세 내용을 적어 주세요',
+  [SNS_UNAVAILABLE]: '볼 수 없는 계정이에요',
+  30200: '나 자신은 신고할 수 없어요',
+}
+
+export function snsReportErrorMessage(error: unknown): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
+  const code = snsErrorCode(error)
+  return (code != null && REPORT_ERROR_COPY[code]) || '신고를 접수하지 못했어요. 다시 시도해 주세요'
+}
+
+// ── SNS-04 좋아요 ──────────────────────────────────────────────────────────
+
+/** 좋아요 상태와 수를 바꾼다. 수를 주지 않으면 상태가 바뀔 때만 1 올리거나 내린다 */
+function withLike<T extends SnsLikeState>(post: T, liked: boolean, likeCount?: number): T {
+  const count = likeCount ?? (post.liked === liked ? post.likeCount : Math.max(0, post.likeCount + (liked ? 1 : -1)))
+  return post.liked === liked && post.likeCount === count ? post : { ...post, liked, likeCount: count }
+}
+
+/** 그 게시물이 든 캐시(상세, 피드 항목의 post)의 좋아요를 바꾼다 */
+function setLike(queryClient: QueryClient, publicId: string, liked: boolean, likeCount?: number) {
+  queryClient.setQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) }, post => post && withLike(post, liked, likeCount))
+  queryClient.setQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds }, data =>
+    mapPages(data, items =>
+      items.map(item => (item.post.publicId === publicId ? { ...item, post: withLike(item.post, liked, likeCount) } : item)),
+    ),
+  )
+}
+
+/** 그 게시물이 든 캐시마다 누르기 전 좋아요. 캐시마다 받은 시각이 달라 값이 다를 수 있어 따로 둔다 */
+function snapshotLikes(queryClient: QueryClient, publicId: string): Array<[QueryKey, SnsLikeState]> {
+  const posts = queryClient
+    .getQueriesData<SnsPost>({ queryKey: snsKeys.post(publicId) })
+    .flatMap(([key, post]): Array<[QueryKey, SnsLikeState]> => (post ? [[key, { liked: post.liked, likeCount: post.likeCount }]] : []))
+  const feeds = queryClient
+    .getQueriesData<InfiniteData<SnsFeedPageResult>>({ queryKey: snsKeys.feeds })
+    .flatMap(([key, data]): Array<[QueryKey, SnsLikeState]> => {
+      const post = data?.pages.flatMap(page => page.items).find(item => item.post.publicId === publicId)?.post
+      return post ? [[key, { liked: post.liked, likeCount: post.likeCount }]] : []
+    })
+  return [...posts, ...feeds]
+}
+
+/** snapshotLikes로 남긴 값을 그 캐시에만 되돌린다. 다른 게시물과 다른 필드는 건드리지 않는다 */
+function restoreLikes(queryClient: QueryClient, publicId: string, snapshot: Array<[QueryKey, SnsLikeState]>) {
+  for (const [key, { liked, likeCount }] of snapshot) {
+    if (key[1] === 'post') {
+      queryClient.setQueryData<SnsPost>(key, post => post && withLike(post, liked, likeCount))
+    } else {
+      queryClient.setQueryData<InfiniteData<SnsFeedPageResult>>(key, data =>
+        mapPages(data, items =>
+          items.map(item => (item.post.publicId === publicId ? { ...item, post: withLike(item.post, liked, likeCount) } : item)),
+        ),
+      )
+    }
+  }
+}
+
+/**
+ * 게시물 좋아요 켜기(POST 201)와 끄기(DELETE 200). design 6절 2번이다. 누르는 즉시 채움과 수를 바꾸고 성공하면 응답의
+ * likeCount와 보낸 상태를 그 게시물이 든 캐시에 쓴다. 받아 둔 캐시는 다시 읽지 않는다. 실패하면 누르기 전 값으로 되돌리고
+ * 안내는 부른 화면이 띄운다. 요청이 끝날 때까지 같은 게시물의 다음 요청은 보내지 않는다. 상세와 피드 카드가 같은 키로
+ * 본다. 화면 상태는 누른 뒤 다시 그려야 바뀌어 연타를 막지 못하므로 mutation 캐시를 바로 읽는다.
+ */
+export function useSnsLike(publicId: string) {
+  const queryClient = useQueryClient()
+  const mutationKey = snsKeys.like('post', publicId)
+  const { mutate } = useMutation({
+    mutationKey,
+    mutationFn: async (on: boolean) => (await (on ? likeSnsPost : unlikeSnsPost)(publicId)).data.likeCount,
+    // 받는 중인 조회가 끝나며 누르기 전 값으로 덮어쓰지 않게 멈춘 뒤 바꾼다.
+    onMutate: async on => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: snsKeys.post(publicId) }),
+        queryClient.cancelQueries({ queryKey: snsKeys.feeds, predicate: query => feedHasPost(query.state.data, publicId) }),
+      ])
+      // 멈춘 조회가 데이터를 되돌린 뒤에 남긴다
+      const before = snapshotLikes(queryClient, publicId)
+      setLike(queryClient, publicId, on)
+      return before
+    },
+    onSuccess: (likeCount, on) => {
+      setLike(queryClient, publicId, on, likeCount)
+      // 좋아요한 사람은 다음에 열 때 다시 읽는다.
+      void queryClient.invalidateQueries({ queryKey: snsKeys.likers(publicId) })
+    },
+    onError: (error, _on, before) => {
+      if (before) restoreLikes(queryClient, publicId, before)
+      // 그사이 볼 수 없게 된 글이면 상세를 다시 읽어 삭제된 게시물이나 차단 안내로 바꾼다
+      const code = snsErrorCode(error)
+      if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+        void queryClient.invalidateQueries({ queryKey: snsKeys.post(publicId) })
+      }
+    },
+    // 요청 중에 새로 시작한 조회는 반영 전 값을 들고 올 수 있어 멈추고 다시 읽는다. 받는 중이 아니던 캐시는 그대로 둔다.
+    onSettled: () => {
+      void removeFromLists(queryClient, { queryKey: snsKeys.feeds }, data => data)
+      void removeFromLists(queryClient, { queryKey: snsKeys.post(publicId) }, data => data)
+    },
+  })
+  return (on: boolean, options?: Parameters<typeof mutate>[1]) => {
+    if (queryClient.isMutating({ mutationKey }) === 0) mutate(on, options)
+  }
+}
+
+/**
+ * 게시물이나 댓글 좋아요한 사람(GET /sns/posts/{publicId}/likers, /sns/comments/{commentPublicId}/likers). 로그인 전용이라
+ * 비로그인이면 부르지 않는다. 최근 100명을 한 번에 받는다
+ */
+export function useSnsLikers(publicId: string, enabled: boolean, target: SnsLikeTarget = 'post') {
+  return useQuery({
+    queryKey: snsKeys.likers(publicId, target),
+    queryFn: async ({ signal }) =>
+      (await (target === 'post' ? getSnsPostLikers : getSnsCommentLikers)(publicId, signal)).data,
+    retry: retryTransient,
+    enabled,
+  })
+}
+
+// ── SNS-06 검색, 해시태그 게시물 목록 ───────────────────────────────────────────
+
+/**
+ * 검색어를 서버에 보낼지. 서버는 앞뒤 공백을 지우고 앞의 # 하나를 뗀 뒤 찾고 남는 글자가 없으면 빈 결과라 부르지 않는다
+ * (sns.yaml SNS-06 FE 2). 검색어 자체는 입력한 그대로 보낸다. 100자를 넘으면 서버가 400 90001을 주므로 부르지 않고 빈 결과로 그린다.
+ */
+export const snsSearchable = (keyword: string) =>
+  keyword.length <= SNS_SEARCH_KEYWORD_MAX && keyword.trim().replace(/^#/, '').trim() !== ''
+
+const SNS_SEARCH_KEYWORD_MAX = 100
+
+/** 검색어가 #으로 시작하면 SNS 탭을 해시태그 세그먼트로 연다(P2) */
+export const defaultSnsSearchSegment = (keyword: string): SnsSearchSegment =>
+  keyword.startsWith('#') ? 'hashtags' : 'posts'
+
+/** 검색 라우트의 search(`?seg=&sort=`). 모르는 값은 버리고 기본값을 쓴다 */
+export function snsSearchSearch(search: Record<string, unknown>): { seg?: SnsSearchSegment; sort?: SnsSearchSort } {
+  const seg = (['posts', 'users', 'hashtags'] as const).find(value => value === search['seg'])
+  const sort = (['POPULAR', 'LATEST'] as const).find(value => value === search['sort'])
+  return { ...(seg && { seg }), ...(sort && { sort }) }
+}
+
+// 계정과 해시태그는 내리는 사이 팔로워 수나 게시글 수가 바뀌면 같은 행이 다시 올 수 있다. 먼저 받은 자리 하나만 남긴다(FE 5).
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    if (seen.has(key(item))) return false
+    seen.add(key(item))
+    return true
+  })
+}
+
+const nextCursor = (last: { hasNext: boolean; nextCursor: string | null }) =>
+  last.hasNext ? (last.nextCursor ?? undefined) : undefined
+
+const selectSearchPosts = (data: InfiniteData<SnsSearchPostPageResult>) => ({
+  items: selectFeedItems(data),
+  totalCount: data.pages[0]?.totalCount ?? 0,
+})
+const selectSearchUsers = (data: InfiniteData<SnsSearchUserPageResult>) =>
+  uniqueBy(data.pages.flatMap(page => page.items), item => item.publicId)
+const selectSearchHashtags = (data: InfiniteData<SnsSearchHashtagPageResult>) =>
+  uniqueBy(data.pages.flatMap(page => page.items), item => item.name)
+const selectHashtagPosts = (data: InfiniteData<SnsHashtagPostPageResult>) => ({
+  hashtag: data.pages[0]!.hashtag,
+  items: selectFeedItems(data),
+})
+
+/**
+ * 게시물 검색(GET /sns/search/posts). 전체 탭 SNS 섹션은 인기순 5개, 게시물 세그먼트는 고른 정렬로 부른다. totalCount는 첫
+ * 페이지 값이고 보이는 글보다 클 수 있다(P10). 로그인 사용자의 첫 페이지는 서버가 최근 검색어에 기록해서 onSearched로 검색
+ * 화면이 최근 검색어를 다시 읽게 한다(R1-32).
+ */
+export function useSnsSearchPosts(
+  keyword: string,
+  sort: SnsSearchSort,
+  { size = PAGE_SIZE, enabled = true, onSearched }: { size?: number; enabled?: boolean; onSearched?: () => void } = {},
+) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.searchPosts(keyword, sort, size, loggedIn), [keyword, sort, size, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) => {
+      const page = (await searchSnsPosts({ keyword, sort, cursor: pageParam, size }, signal)).data
+      if (pageParam === undefined) onSearched?.()
+      return page
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchPosts,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 계정 검색(GET /sns/search/users). 비로그인 응답과 로그인 응답의 관계 필드가 달라 세션 상태를 키에 넣는다 */
+export function useSnsSearchUsers(keyword: string, { size = PAGE_SIZE, enabled = true }: { size?: number; enabled?: boolean } = {}) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.searchUsers(keyword, size, loggedIn), [keyword, size, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) => (await searchSnsUsers({ keyword, cursor: pageParam, size }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchUsers,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 해시태그 검색(GET /sns/search/hashtags). 게시글 수는 보는 사람과 관계없이 같다(P10) */
+export function useSnsSearchHashtags(
+  keyword: string,
+  { size = PAGE_SIZE, enabled = true }: { size?: number; enabled?: boolean } = {},
+) {
+  const queryKey = useMemo(() => snsKeys.searchHashtags(keyword, size), [keyword, size])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await searchSnsHashtagSegment({ keyword, cursor: pageParam, size }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectSearchHashtags,
+    retry: retryTransient,
+    enabled: enabled && snsSearchable(keyword),
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 전체 탭 SNS 섹션의 미리보기 수(b12-st-2) */
+export const SNS_SECTION_SIZE = 5
+
+/**
+ * 통합 검색 SNS 탭 옆 결과 수. 전체 탭 SNS 섹션과 같은 조회(인기순 5개)의 totalCount라 전체 탭에서는 요청이 늘지 않는다(FE 1).
+ * 막아 둔 동안에는 받아 둔 수만 쓴다.
+ */
+export function useSnsSearchCount(keyword: string, { enabled, onSearched }: { enabled: boolean; onSearched?: () => void }) {
+  const posts = useSnsSearchPosts(keyword, 'POPULAR', { size: SNS_SECTION_SIZE, enabled, onSearched })
+  return snsSearchable(keyword) ? posts.data?.totalCount : 0
+}
+
+/** 해시태그 게시물 목록(GET /sns/hashtags/{name}/posts). 헤더의 게시글 수는 첫 페이지 값이다. 최근 검색어에 기록하지 않는다 */
+export function useSnsHashtagPosts(name: string, sort: SnsSearchSort) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.hashtagPosts(name, sort, loggedIn), [name, sort, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await getSnsHashtagPosts(encodeURIComponent(name), { sort, cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextCursor,
+    select: selectHashtagPosts,
+    retry: retryTransient,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+// ── SNS-04 댓글 ─────────────────────────────────────────────────────────────
+
+export const SNS_COMMENT_UNAVAILABLE = 130700
+export const SNS_COMMENT_BLOCKED = 130704
+export const SNS_COMMENT_REPLY_CLOSED = 130705
+
+/**
+ * 댓글 목록(GET /sns/posts/{publicId}/comments). 비로그인도 된다. 한 페이지는 최상위 댓글 20개와 그 아래 보이는 대댓글 전부이고
+ * items가 이미 스레드 순서라 그대로 이어 붙인다. 다른 게시물의 커서나 낡은 커서(90002)면 첫 페이지부터 다시 읽는다.
+ */
+export function useSnsComments(postPublicId: string, enabled: boolean) {
+  const loggedIn = useIsLoggedIn()
+  const queryKey = useMemo(() => snsKeys.comments(postPublicId, loggedIn), [postPublicId, loggedIn])
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam, signal }) =>
+      (await getSnsPostComments(postPublicId, { cursor: pageParam, size: PAGE_SIZE }, signal)).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
+    retry: retryTransient,
+    enabled,
+  })
+  useRestartOnInvalidCursor(queryKey, query.error, query.data != null)
+  return query
+}
+
+/** 알림으로 연 댓글과 그 최상위 댓글(GET /sns/comments/{commentPublicId}). 로그인 전용이라 비로그인이면 부르지 않는다 */
+export function useSnsCommentThread(commentPublicId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: snsKeys.commentThread(commentPublicId ?? ''),
+    queryFn: async ({ signal }) => (await getSnsComment(commentPublicId!, signal)).data,
+    retry: retryTransient,
+    enabled: enabled && commentPublicId != null,
+  })
+}
+
+export interface CreateSnsCommentInput {
+  content: string
+  /** 답글달기를 누른 댓글. 대댓글이면 서버가 그 최상위 댓글 아래 붙인다 */
+  parentPublicId: string | null
+  /** 그 입력의 모든 게시 시도에 같은 값을 보낸다(design 6절 5번) */
+  idempotencyKey: string
+}
+
+type CommentPages = InfiniteData<SnsCommentPageResult>
+
+/**
+ * 받아 둔 목록에 방금 쓴 댓글을 넣는다. 대댓글은 그 스레드 끝에, 최상위 댓글은 끝까지 불러온 목록의 끝에 넣는다.
+ * 더 불러올 페이지가 남았으면 넣지 않고 false다. 그때는 화면이 목록 아래 따로 붙여 보여준다(design 6절 7번).
+ */
+function insertComment(
+  queryClient: QueryClient,
+  postPublicId: string,
+  loggedIn: boolean,
+  item: SnsComment,
+): boolean {
+  // 지금 세션의 목록에만 넣는다. 다른 세션 키의 목록은 보는 사람 필드가 달라 낡은 것으로만 표시한다.
+  const key = snsKeys.comments(postPublicId, loggedIn)
+  void queryClient.invalidateQueries({
+    queryKey: [...snsKeys.commentLists, postPublicId],
+    predicate: query => query.queryKey[3] !== loggedIn,
+    refetchType: 'none',
+  })
+  const data = queryClient.getQueryData<CommentPages>(key)
+  if (!data) return false
+  const pages = data.pages.map(page => ({ ...page, items: [...page.items] }))
+  if (item.parentPublicId) {
+    // 스레드는 페이지 사이에서 나뉘지 않는다. 최상위 댓글이 든 페이지에서 그 스레드의 마지막 항목 뒤에 넣는다.
+    const page = pages.find(p => p.items.some(i => i.publicId === item.parentPublicId))
+    if (!page) return false
+    let last = -1
+    page.items.forEach((i, index) => {
+      if (i.publicId === item.parentPublicId || i.parentPublicId === item.parentPublicId)
+        last = index
+    })
+    page.items.splice(last + 1, 0, item)
+  } else {
+    const lastPage = pages[pages.length - 1]
+    if (!lastPage || lastPage.hasNext) return false
+    lastPage.items.push(item)
+  }
+  queryClient.setQueryData<CommentPages>(key, { ...data, pages })
+  return true
+}
+
+/**
+ * 댓글 작성. Idempotency-Key 헤더는 생성 fetcher가 만들지 않아 customInstance로 붙인다. 성공하면 받은 항목을 목록에 넣고
+ * 상세의 commentCount는 보는 사람별 값이라 다시 읽는다. 같은 키 재요청으로 온 항목이 ACTIVE가 아니면 넣지 않고 목록을 다시 읽는다.
+ * 넣었는지는 결과의 inserted로 알린다. mutate 콜백이 받도록 mutationFn 안에서 넣는다.
+ */
+export function useCreateSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  const loggedIn = useIsLoggedIn()
+  return useMutation({
+    mutationFn: async (input: CreateSnsCommentInput) => {
+      const item = (
+        await customInstance<SnsCommentResponse>({
+          url: `/sns/posts/${postPublicId}/comments`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': input.idempotencyKey },
+          data: { content: input.content, parentPublicId: input.parentPublicId },
+        })
+      ).data
+      void queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) })
+      if (item.status !== 'ACTIVE') {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+        return { item, inserted: true }
+      }
+      return { item, inserted: insertComment(queryClient, postPublicId, loggedIn, item) }
+    },
+    onError: error => refetchPostIfGone(queryClient, postPublicId, error),
+  })
+}
+
+/** 게시물을 볼 수 없게 됐으면(130400, 130001) 상세를 다시 읽어 삭제된 게시물이나 차단 안내로 바꾼다 */
+function refetchPostIfGone(queryClient: QueryClient, postPublicId: string, error: unknown) {
+  const code = snsErrorCode(error)
+  if (code === SNS_POST_UNAVAILABLE || code === SNS_BLOCKED_BY_ME) {
+    void queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) })
+  }
+}
+
+/** 받아 둔 목록과 알림으로 연 댓글에서 같은 publicId 항목을 바꾼다 */
+function replaceComment(queryClient: QueryClient, item: SnsComment) {
+  queryClient.setQueriesData<CommentPages>({ queryKey: snsKeys.commentLists }, data => {
+    if (!data || !('pages' in data)) return data
+    return {
+      ...data,
+      pages: data.pages.map(page => ({
+        ...page,
+        items: page.items.map(i => (i.publicId === item.publicId ? item : i)),
+      })),
+    }
+  })
+  queryClient.setQueryData(
+    snsKeys.commentThread(item.publicId),
+    (data: { comment: SnsComment; parent: SnsComment | null } | undefined) =>
+      data && { ...data, comment: item },
+  )
+}
+
+type CommentThread = { comment: SnsComment; parent: SnsComment | null }
+type CommentCache = CommentPages | CommentThread
+
+/** 댓글 목록 페이지나 알림으로 연 댓글 캐시에서 그 댓글 항목을 바꾼다 */
+function mapComment(
+  data: CommentCache | undefined,
+  publicId: string,
+  map: (item: SnsComment) => SnsComment,
+): CommentCache | undefined {
+  if (!data) return data
+  const one = (item: SnsComment) => (item.publicId === publicId ? map(item) : item)
+  if ('pages' in data) {
+    return { ...data, pages: data.pages.map(page => ({ ...page, items: page.items.map(one) })) }
+  }
+  return { comment: one(data.comment), parent: data.parent && one(data.parent) }
+}
+
+function findComment(data: CommentCache | undefined, publicId: string): SnsComment | undefined {
+  if (!data) return undefined
+  const items = 'pages' in data ? data.pages.flatMap(page => page.items) : [data.comment, data.parent]
+  return items.find(item => item?.publicId === publicId) ?? undefined
+}
+
+/**
+ * 댓글 좋아요 켜기(POST 201)와 끄기(DELETE 200). 게시물 좋아요와 같은 즉시 반영, 요청 잠금, 되돌리기이고 응답의 likeCount를
+ * 그 댓글이 든 목록 페이지와 알림으로 연 댓글 캐시에 쓴다. 그사이 볼 수 없게 된 댓글(130700)이면 목록을 다시 읽고 게시물을
+ * 볼 수 없게 됐으면 상세를 다시 읽는다. 안내는 부른 화면이 띄운다.
+ */
+export function useSnsCommentLike(postPublicId: string, commentPublicId: string) {
+  const queryClient = useQueryClient()
+  const mutationKey = snsKeys.like('comment', commentPublicId)
+  const filters: QueryFilters = {
+    queryKey: snsKeys.commentLists,
+    predicate: query => findComment(query.state.data as CommentCache | undefined, commentPublicId) != null,
+  }
+  const setLike = (liked: boolean, likeCount?: number) =>
+    queryClient.setQueriesData<CommentCache>(filters, data =>
+      mapComment(data, commentPublicId, item => withLike(item, liked, likeCount)),
+    )
+  const { mutate } = useMutation({
+    mutationKey,
+    mutationFn: async (on: boolean) =>
+      (await (on ? likeSnsComment : unlikeSnsComment)(commentPublicId)).data.likeCount,
+    // 받는 중인 조회가 끝나며 누르기 전 값으로 덮어쓰지 않게 멈춘 뒤 바꾼다. 캐시마다 받은 시각이 달라 값을 따로 남긴다.
+    onMutate: async on => {
+      await queryClient.cancelQueries(filters)
+      const before = queryClient
+        .getQueriesData<CommentCache>(filters)
+        .flatMap(([key, data]): Array<[QueryKey, SnsLikeState]> => {
+          const item = findComment(data, commentPublicId)
+          return item ? [[key, { liked: item.liked, likeCount: item.likeCount }]] : []
+        })
+      setLike(on)
+      return before
+    },
+    onSuccess: (likeCount, on) => {
+      setLike(on, likeCount)
+      void queryClient.invalidateQueries({ queryKey: snsKeys.likers(commentPublicId, 'comment') })
+    },
+    onError: (error, _on, before) => {
+      for (const [key, { liked, likeCount }] of before ?? []) {
+        queryClient.setQueryData<CommentCache>(key, data =>
+          mapComment(data, commentPublicId, item => withLike(item, liked, likeCount)),
+        )
+      }
+      if (snsErrorCode(error) === SNS_COMMENT_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+        void queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        })
+      }
+      refetchPostIfGone(queryClient, postPublicId, error)
+    },
+    // 요청 중에 새로 시작한 조회는 반영 전 값을 들고 올 수 있어 멈추고 다시 읽는다.
+    onSettled: () => void removeFromLists(queryClient, filters, data => data),
+  })
+  return (on: boolean, options?: Parameters<typeof mutate>[1]) => {
+    if (queryClient.isMutating({ mutationKey }) === 0) mutate(on, options)
+  }
+}
+
+/** 댓글 수정(PATCH). 200의 항목으로 같은 publicId 항목을 바꾼다. 그사이 지운 댓글(130700)이면 목록을 다시 읽는다 */
+export function useUpdateSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      commentPublicId,
+      content,
+    }: {
+      commentPublicId: string
+      content: string
+    }) => (await updateSnsComment(commentPublicId, { content })).data,
+    onSuccess: item => replaceComment(queryClient, item),
+    onError: error => {
+      if (snsErrorCode(error) === SNS_COMMENT_UNAVAILABLE) {
+        void queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] })
+      }
+      refetchPostIfGone(queryClient, postPublicId, error)
+    },
+  })
+}
+
+/**
+ * 댓글 삭제(DELETE). 이미 지운 댓글도 204다. 안내 문구로 남을지 사라질지는 서버가 정하므로 목록과 상세를 다시 읽는다.
+ */
+export function useDeleteSnsComment(postPublicId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (commentPublicId: string) => deleteSnsComment(commentPublicId),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: [...snsKeys.commentLists, postPublicId] }),
+        queryClient.invalidateQueries({
+          queryKey: snsKeys.commentLists,
+          predicate: q => q.queryKey[2] === 'thread',
+        }),
+        queryClient.invalidateQueries({ queryKey: snsKeys.post(postPublicId) }),
+      ]),
+  })
+}
+
+// 댓글 쓰기 실패 문구. 130702와 130703은 게시 버튼이 미리 막으므로 일반 실패 문구다(design 6절 8번).
+const COMMENT_ERROR_COPY: Record<number, string> = {
+  [SNS_COMMENT_UNAVAILABLE]: '댓글을 찾을 수 없어요',
+  [SNS_COMMENT_BLOCKED]: '부적절한 표현이 있어 등록할 수 없어요',
+  [SNS_COMMENT_REPLY_CLOSED]: '답글을 달 수 없는 댓글이에요',
+  [SNS_POST_UNAVAILABLE]: '삭제된 게시물이에요',
+  [SNS_BLOCKED_BY_ME]: '차단한 계정이에요',
+  [SNS_ACCOUNT_RESTRICTED]: RESTRICTED_COPY,
+}
+
+export function snsCommentErrorMessage(error: unknown, fallback: string): string {
+  if (isRateLimited(error)) return RATE_LIMITED_COPY
+  const code = snsErrorCode(error)
+  return (code != null && COMMENT_ERROR_COPY[code]) || fallback
 }

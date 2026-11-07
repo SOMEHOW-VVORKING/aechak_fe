@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WishlistRouteImport } from './routes/wishlist'
-import { Route as PreviewRouteImport } from './routes/preview'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as AddressesRouteImport } from './routes/addresses'
@@ -20,6 +19,7 @@ import { Route as SearchIndexRouteImport } from './routes/search/index'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as TabsIndexRouteImport } from './routes/_tabs/index'
 import { Route as SnsMeRouteImport } from './routes/sns/me'
+import { Route as SnsFeedRouteImport } from './routes/sns/feed'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings/notifications'
 import { Route as SettingsInquiryRouteImport } from './routes/settings/inquiry'
@@ -38,29 +38,35 @@ import { Route as MypageWithdrawRouteImport } from './routes/mypage/withdraw'
 import { Route as MypageVerifyRouteImport } from './routes/mypage/verify'
 import { Route as MypageSnsRelationsRouteImport } from './routes/mypage/sns-relations'
 import { Route as MypageProfileRouteImport } from './routes/mypage/profile'
+import { Route as MypageProductInquiriesRouteImport } from './routes/mypage/product-inquiries'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as TabsSnsRouteImport } from './routes/_tabs/sns'
 import { Route as TabsMypageRouteImport } from './routes/_tabs/mypage'
 import { Route as TabsMarketRouteImport } from './routes/_tabs/market'
 import { Route as TabsChatRouteImport } from './routes/_tabs/chat'
+import { Route as SettingsNoticesIndexRouteImport } from './routes/settings/notices/index'
 import { Route as ProductsProductIdIndexRouteImport } from './routes/products/$productId/index'
 import { Route as OrdersOrderIdIndexRouteImport } from './routes/orders/$orderId/index'
 import { Route as MypagePetsIndexRouteImport } from './routes/mypage/pets/index'
+import { Route as SnsPostsNewRouteImport } from './routes/sns/posts/new'
+import { Route as SnsHashtagsNameRouteImport } from './routes/sns/hashtags/$name'
+import { Route as SettingsNoticesNoticeIdRouteImport } from './routes/settings/notices/$noticeId'
 import { Route as ReviewsProductProductIdRouteImport } from './routes/reviews/product/$productId'
 import { Route as ProductsProductIdReportRouteImport } from './routes/products/$productId/report'
+import { Route as OrdersOrderIdClaimRouteImport } from './routes/orders/$orderId/claim'
 import { Route as OrdersOrderIdCancelRouteImport } from './routes/orders/$orderId/cancel'
 import { Route as MypagePetsNewRouteImport } from './routes/mypage/pets/new'
 import { Route as SnsUsersPublicIdIndexRouteImport } from './routes/sns/users/$publicId/index'
+import { Route as SnsPostsPublicIdIndexRouteImport } from './routes/sns/posts/$publicId/index'
 import { Route as SnsUsersPublicIdFollowsRouteImport } from './routes/sns/users/$publicId/follows'
+import { Route as SnsPostsPublicIdLikersRouteImport } from './routes/sns/posts/$publicId/likers'
+import { Route as SnsPostsPublicIdEditRouteImport } from './routes/sns/posts/$publicId/edit'
+import { Route as SnsCommentsCommentPublicIdLikersRouteImport } from './routes/sns/comments/$commentPublicId/likers'
+import { Route as ProductsProductIdInquiriesNewRouteImport } from './routes/products/$productId/inquiries/new'
 
 const WishlistRoute = WishlistRouteImport.update({
   id: '/wishlist',
   path: '/wishlist',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PreviewRoute = PreviewRouteImport.update({
-  id: '/preview',
-  path: '/preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutRoute = CheckoutRouteImport.update({
@@ -105,6 +111,11 @@ const TabsIndexRoute = TabsIndexRouteImport.update({
 const SnsMeRoute = SnsMeRouteImport.update({
   id: '/sns/me',
   path: '/sns/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsFeedRoute = SnsFeedRouteImport.update({
+  id: '/sns/feed',
+  path: '/sns/feed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
@@ -197,6 +208,11 @@ const MypageProfileRoute = MypageProfileRouteImport.update({
   path: '/mypage/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MypageProductInquiriesRoute = MypageProductInquiriesRouteImport.update({
+  id: '/mypage/product-inquiries',
+  path: '/mypage/product-inquiries',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginCompleteRoute = LoginCompleteRouteImport.update({
   id: '/login/complete',
   path: '/login/complete',
@@ -222,6 +238,11 @@ const TabsChatRoute = TabsChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => TabsRoute,
 } as any)
+const SettingsNoticesIndexRoute = SettingsNoticesIndexRouteImport.update({
+  id: '/settings/notices/',
+  path: '/settings/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsProductIdIndexRoute = ProductsProductIdIndexRouteImport.update({
   id: '/products/$productId/',
   path: '/products/$productId/',
@@ -237,6 +258,21 @@ const MypagePetsIndexRoute = MypagePetsIndexRouteImport.update({
   path: '/mypage/pets/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsNewRoute = SnsPostsNewRouteImport.update({
+  id: '/sns/posts/new',
+  path: '/sns/posts/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsHashtagsNameRoute = SnsHashtagsNameRouteImport.update({
+  id: '/sns/hashtags/$name',
+  path: '/sns/hashtags/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsNoticesNoticeIdRoute = SettingsNoticesNoticeIdRouteImport.update({
+  id: '/settings/notices/$noticeId',
+  path: '/settings/notices/$noticeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReviewsProductProductIdRoute = ReviewsProductProductIdRouteImport.update({
   id: '/reviews/product/$productId',
   path: '/reviews/product/$productId',
@@ -245,6 +281,11 @@ const ReviewsProductProductIdRoute = ReviewsProductProductIdRouteImport.update({
 const ProductsProductIdReportRoute = ProductsProductIdReportRouteImport.update({
   id: '/products/$productId/report',
   path: '/products/$productId/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersOrderIdClaimRoute = OrdersOrderIdClaimRouteImport.update({
+  id: '/orders/$orderId/claim',
+  path: '/orders/$orderId/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrdersOrderIdCancelRoute = OrdersOrderIdCancelRouteImport.update({
@@ -262,24 +303,51 @@ const SnsUsersPublicIdIndexRoute = SnsUsersPublicIdIndexRouteImport.update({
   path: '/sns/users/$publicId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsPublicIdIndexRoute = SnsPostsPublicIdIndexRouteImport.update({
+  id: '/sns/posts/$publicId/',
+  path: '/sns/posts/$publicId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SnsUsersPublicIdFollowsRoute = SnsUsersPublicIdFollowsRouteImport.update({
   id: '/sns/users/$publicId/follows',
   path: '/sns/users/$publicId/follows',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnsPostsPublicIdLikersRoute = SnsPostsPublicIdLikersRouteImport.update({
+  id: '/sns/posts/$publicId/likers',
+  path: '/sns/posts/$publicId/likers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsPostsPublicIdEditRoute = SnsPostsPublicIdEditRouteImport.update({
+  id: '/sns/posts/$publicId/edit',
+  path: '/sns/posts/$publicId/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnsCommentsCommentPublicIdLikersRoute =
+  SnsCommentsCommentPublicIdLikersRouteImport.update({
+    id: '/sns/comments/$commentPublicId/likers',
+    path: '/sns/comments/$commentPublicId/likers',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProductsProductIdInquiriesNewRoute =
+  ProductsProductIdInquiriesNewRouteImport.update({
+    id: '/products/$productId/inquiries/new',
+    path: '/products/$productId/inquiries/new',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof TabsIndexRoute
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -298,31 +366,42 @@ export interface FileRoutesByFullPath {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/orders/': typeof OrdersIndexRoute
   '/search/': typeof SearchIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/hashtags/$name': typeof SnsHashtagsNameRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/settings/notices/': typeof SettingsNoticesIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
+  '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/chat': typeof TabsChatRoute
   '/market': typeof TabsMarketRoute
   '/mypage': typeof TabsMypageRoute
   '/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -341,6 +420,7 @@ export interface FileRoutesByTo {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/': typeof TabsIndexRoute
   '/orders': typeof OrdersIndexRoute
@@ -348,12 +428,22 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/hashtags/$name': typeof SnsHashtagsNameRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets': typeof MypagePetsIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdIndexRoute
   '/products/$productId': typeof ProductsProductIdIndexRoute
+  '/settings/notices': typeof SettingsNoticesIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
+  '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRoutesById {
@@ -362,13 +452,13 @@ export interface FileRoutesById {
   '/addresses': typeof AddressesRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/preview': typeof PreviewRoute
   '/wishlist': typeof WishlistRoute
   '/_tabs/chat': typeof TabsChatRoute
   '/_tabs/market': typeof TabsMarketRoute
   '/_tabs/mypage': typeof TabsMypageRoute
   '/_tabs/sns': typeof TabsSnsRoute
   '/login/complete': typeof LoginCompleteRoute
+  '/mypage/product-inquiries': typeof MypageProductInquiriesRoute
   '/mypage/profile': typeof MypageProfileRoute
   '/mypage/sns-relations': typeof MypageSnsRelationsRoute
   '/mypage/verify': typeof MypageVerifyRoute
@@ -387,6 +477,7 @@ export interface FileRoutesById {
   '/settings/inquiry': typeof SettingsInquiryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/sns/feed': typeof SnsFeedRoute
   '/sns/me': typeof SnsMeRoute
   '/_tabs/': typeof TabsIndexRoute
   '/orders/': typeof OrdersIndexRoute
@@ -394,12 +485,22 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/mypage/pets/new': typeof MypagePetsNewRoute
   '/orders/$orderId/cancel': typeof OrdersOrderIdCancelRoute
+  '/orders/$orderId/claim': typeof OrdersOrderIdClaimRoute
   '/products/$productId/report': typeof ProductsProductIdReportRoute
   '/reviews/product/$productId': typeof ReviewsProductProductIdRoute
+  '/settings/notices/$noticeId': typeof SettingsNoticesNoticeIdRoute
+  '/sns/hashtags/$name': typeof SnsHashtagsNameRoute
+  '/sns/posts/new': typeof SnsPostsNewRoute
   '/mypage/pets/': typeof MypagePetsIndexRoute
   '/orders/$orderId/': typeof OrdersOrderIdIndexRoute
   '/products/$productId/': typeof ProductsProductIdIndexRoute
+  '/settings/notices/': typeof SettingsNoticesIndexRoute
+  '/products/$productId/inquiries/new': typeof ProductsProductIdInquiriesNewRoute
+  '/sns/comments/$commentPublicId/likers': typeof SnsCommentsCommentPublicIdLikersRoute
+  '/sns/posts/$publicId/edit': typeof SnsPostsPublicIdEditRoute
+  '/sns/posts/$publicId/likers': typeof SnsPostsPublicIdLikersRoute
   '/sns/users/$publicId/follows': typeof SnsUsersPublicIdFollowsRoute
+  '/sns/posts/$publicId/': typeof SnsPostsPublicIdIndexRoute
   '/sns/users/$publicId/': typeof SnsUsersPublicIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -409,13 +510,13 @@ export interface FileRouteTypes {
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/chat'
     | '/market'
     | '/mypage'
     | '/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -434,31 +535,42 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/orders/'
     | '/search/'
     | '/settings/'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
+    | '/sns/hashtags/$name'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/settings/notices/'
+    | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
+    | '/sns/posts/$publicId/edit'
+    | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/chat'
     | '/market'
     | '/mypage'
     | '/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -477,6 +589,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/'
     | '/orders'
@@ -484,12 +597,22 @@ export interface FileRouteTypes {
     | '/settings'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
+    | '/sns/hashtags/$name'
+    | '/sns/posts/new'
     | '/mypage/pets'
     | '/orders/$orderId'
     | '/products/$productId'
+    | '/settings/notices'
+    | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
+    | '/sns/posts/$publicId/edit'
+    | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId'
     | '/sns/users/$publicId'
   id:
     | '__root__'
@@ -497,13 +620,13 @@ export interface FileRouteTypes {
     | '/addresses'
     | '/cart'
     | '/checkout'
-    | '/preview'
     | '/wishlist'
     | '/_tabs/chat'
     | '/_tabs/market'
     | '/_tabs/mypage'
     | '/_tabs/sns'
     | '/login/complete'
+    | '/mypage/product-inquiries'
     | '/mypage/profile'
     | '/mypage/sns-relations'
     | '/mypage/verify'
@@ -522,6 +645,7 @@ export interface FileRouteTypes {
     | '/settings/inquiry'
     | '/settings/notifications'
     | '/settings/privacy'
+    | '/sns/feed'
     | '/sns/me'
     | '/_tabs/'
     | '/orders/'
@@ -529,12 +653,22 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/mypage/pets/new'
     | '/orders/$orderId/cancel'
+    | '/orders/$orderId/claim'
     | '/products/$productId/report'
     | '/reviews/product/$productId'
+    | '/settings/notices/$noticeId'
+    | '/sns/hashtags/$name'
+    | '/sns/posts/new'
     | '/mypage/pets/'
     | '/orders/$orderId/'
     | '/products/$productId/'
+    | '/settings/notices/'
+    | '/products/$productId/inquiries/new'
+    | '/sns/comments/$commentPublicId/likers'
+    | '/sns/posts/$publicId/edit'
+    | '/sns/posts/$publicId/likers'
     | '/sns/users/$publicId/follows'
+    | '/sns/posts/$publicId/'
     | '/sns/users/$publicId/'
   fileRoutesById: FileRoutesById
 }
@@ -543,9 +677,9 @@ export interface RootRouteChildren {
   AddressesRoute: typeof AddressesRoute
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
-  PreviewRoute: typeof PreviewRoute
   WishlistRoute: typeof WishlistRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
+  MypageProductInquiriesRoute: typeof MypageProductInquiriesRoute
   MypageProfileRoute: typeof MypageProfileRoute
   MypageSnsRelationsRoute: typeof MypageSnsRelationsRoute
   MypageVerifyRoute: typeof MypageVerifyRoute
@@ -564,18 +698,29 @@ export interface RootRouteChildren {
   SettingsInquiryRoute: typeof SettingsInquiryRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SnsFeedRoute: typeof SnsFeedRoute
   SnsMeRoute: typeof SnsMeRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
   SearchIndexRoute: typeof SearchIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   MypagePetsNewRoute: typeof MypagePetsNewRoute
   OrdersOrderIdCancelRoute: typeof OrdersOrderIdCancelRoute
+  OrdersOrderIdClaimRoute: typeof OrdersOrderIdClaimRoute
   ProductsProductIdReportRoute: typeof ProductsProductIdReportRoute
   ReviewsProductProductIdRoute: typeof ReviewsProductProductIdRoute
+  SettingsNoticesNoticeIdRoute: typeof SettingsNoticesNoticeIdRoute
+  SnsHashtagsNameRoute: typeof SnsHashtagsNameRoute
+  SnsPostsNewRoute: typeof SnsPostsNewRoute
   MypagePetsIndexRoute: typeof MypagePetsIndexRoute
   OrdersOrderIdIndexRoute: typeof OrdersOrderIdIndexRoute
   ProductsProductIdIndexRoute: typeof ProductsProductIdIndexRoute
+  SettingsNoticesIndexRoute: typeof SettingsNoticesIndexRoute
+  ProductsProductIdInquiriesNewRoute: typeof ProductsProductIdInquiriesNewRoute
+  SnsCommentsCommentPublicIdLikersRoute: typeof SnsCommentsCommentPublicIdLikersRoute
+  SnsPostsPublicIdEditRoute: typeof SnsPostsPublicIdEditRoute
+  SnsPostsPublicIdLikersRoute: typeof SnsPostsPublicIdLikersRoute
   SnsUsersPublicIdFollowsRoute: typeof SnsUsersPublicIdFollowsRoute
+  SnsPostsPublicIdIndexRoute: typeof SnsPostsPublicIdIndexRoute
   SnsUsersPublicIdIndexRoute: typeof SnsUsersPublicIdIndexRoute
 }
 
@@ -586,13 +731,6 @@ declare module '@tanstack/react-router' {
       path: '/wishlist'
       fullPath: '/wishlist'
       preLoaderRoute: typeof WishlistRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/preview': {
-      id: '/preview'
-      path: '/preview'
-      fullPath: '/preview'
-      preLoaderRoute: typeof PreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout': {
@@ -656,6 +794,13 @@ declare module '@tanstack/react-router' {
       path: '/sns/me'
       fullPath: '/sns/me'
       preLoaderRoute: typeof SnsMeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/feed': {
+      id: '/sns/feed'
+      path: '/sns/feed'
+      fullPath: '/sns/feed'
+      preLoaderRoute: typeof SnsFeedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/privacy': {
@@ -784,6 +929,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypageProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mypage/product-inquiries': {
+      id: '/mypage/product-inquiries'
+      path: '/mypage/product-inquiries'
+      fullPath: '/mypage/product-inquiries'
+      preLoaderRoute: typeof MypageProductInquiriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/complete': {
       id: '/login/complete'
       path: '/login/complete'
@@ -819,6 +971,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TabsChatRouteImport
       parentRoute: typeof TabsRoute
     }
+    '/settings/notices/': {
+      id: '/settings/notices/'
+      path: '/settings/notices'
+      fullPath: '/settings/notices/'
+      preLoaderRoute: typeof SettingsNoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/$productId/': {
       id: '/products/$productId/'
       path: '/products/$productId'
@@ -840,6 +999,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MypagePetsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/new': {
+      id: '/sns/posts/new'
+      path: '/sns/posts/new'
+      fullPath: '/sns/posts/new'
+      preLoaderRoute: typeof SnsPostsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/hashtags/$name': {
+      id: '/sns/hashtags/$name'
+      path: '/sns/hashtags/$name'
+      fullPath: '/sns/hashtags/$name'
+      preLoaderRoute: typeof SnsHashtagsNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/notices/$noticeId': {
+      id: '/settings/notices/$noticeId'
+      path: '/settings/notices/$noticeId'
+      fullPath: '/settings/notices/$noticeId'
+      preLoaderRoute: typeof SettingsNoticesNoticeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reviews/product/$productId': {
       id: '/reviews/product/$productId'
       path: '/reviews/product/$productId'
@@ -852,6 +1032,13 @@ declare module '@tanstack/react-router' {
       path: '/products/$productId/report'
       fullPath: '/products/$productId/report'
       preLoaderRoute: typeof ProductsProductIdReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/$orderId/claim': {
+      id: '/orders/$orderId/claim'
+      path: '/orders/$orderId/claim'
+      fullPath: '/orders/$orderId/claim'
+      preLoaderRoute: typeof OrdersOrderIdClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orders/$orderId/cancel': {
@@ -875,11 +1062,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SnsUsersPublicIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sns/posts/$publicId/': {
+      id: '/sns/posts/$publicId/'
+      path: '/sns/posts/$publicId'
+      fullPath: '/sns/posts/$publicId/'
+      preLoaderRoute: typeof SnsPostsPublicIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sns/users/$publicId/follows': {
       id: '/sns/users/$publicId/follows'
       path: '/sns/users/$publicId/follows'
       fullPath: '/sns/users/$publicId/follows'
       preLoaderRoute: typeof SnsUsersPublicIdFollowsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/posts/$publicId/likers': {
+      id: '/sns/posts/$publicId/likers'
+      path: '/sns/posts/$publicId/likers'
+      fullPath: '/sns/posts/$publicId/likers'
+      preLoaderRoute: typeof SnsPostsPublicIdLikersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/posts/$publicId/edit': {
+      id: '/sns/posts/$publicId/edit'
+      path: '/sns/posts/$publicId/edit'
+      fullPath: '/sns/posts/$publicId/edit'
+      preLoaderRoute: typeof SnsPostsPublicIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sns/comments/$commentPublicId/likers': {
+      id: '/sns/comments/$commentPublicId/likers'
+      path: '/sns/comments/$commentPublicId/likers'
+      fullPath: '/sns/comments/$commentPublicId/likers'
+      preLoaderRoute: typeof SnsCommentsCommentPublicIdLikersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/$productId/inquiries/new': {
+      id: '/products/$productId/inquiries/new'
+      path: '/products/$productId/inquiries/new'
+      fullPath: '/products/$productId/inquiries/new'
+      preLoaderRoute: typeof ProductsProductIdInquiriesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -908,9 +1130,9 @@ const rootRouteChildren: RootRouteChildren = {
   AddressesRoute: AddressesRoute,
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
-  PreviewRoute: PreviewRoute,
   WishlistRoute: WishlistRoute,
   LoginCompleteRoute: LoginCompleteRoute,
+  MypageProductInquiriesRoute: MypageProductInquiriesRoute,
   MypageProfileRoute: MypageProfileRoute,
   MypageSnsRelationsRoute: MypageSnsRelationsRoute,
   MypageVerifyRoute: MypageVerifyRoute,
@@ -929,18 +1151,29 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsInquiryRoute: SettingsInquiryRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SnsFeedRoute: SnsFeedRoute,
   SnsMeRoute: SnsMeRoute,
   OrdersIndexRoute: OrdersIndexRoute,
   SearchIndexRoute: SearchIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   MypagePetsNewRoute: MypagePetsNewRoute,
   OrdersOrderIdCancelRoute: OrdersOrderIdCancelRoute,
+  OrdersOrderIdClaimRoute: OrdersOrderIdClaimRoute,
   ProductsProductIdReportRoute: ProductsProductIdReportRoute,
   ReviewsProductProductIdRoute: ReviewsProductProductIdRoute,
+  SettingsNoticesNoticeIdRoute: SettingsNoticesNoticeIdRoute,
+  SnsHashtagsNameRoute: SnsHashtagsNameRoute,
+  SnsPostsNewRoute: SnsPostsNewRoute,
   MypagePetsIndexRoute: MypagePetsIndexRoute,
   OrdersOrderIdIndexRoute: OrdersOrderIdIndexRoute,
   ProductsProductIdIndexRoute: ProductsProductIdIndexRoute,
+  SettingsNoticesIndexRoute: SettingsNoticesIndexRoute,
+  ProductsProductIdInquiriesNewRoute: ProductsProductIdInquiriesNewRoute,
+  SnsCommentsCommentPublicIdLikersRoute: SnsCommentsCommentPublicIdLikersRoute,
+  SnsPostsPublicIdEditRoute: SnsPostsPublicIdEditRoute,
+  SnsPostsPublicIdLikersRoute: SnsPostsPublicIdLikersRoute,
   SnsUsersPublicIdFollowsRoute: SnsUsersPublicIdFollowsRoute,
+  SnsPostsPublicIdIndexRoute: SnsPostsPublicIdIndexRoute,
   SnsUsersPublicIdIndexRoute: SnsUsersPublicIdIndexRoute,
 }
 export const routeTree = rootRouteImport

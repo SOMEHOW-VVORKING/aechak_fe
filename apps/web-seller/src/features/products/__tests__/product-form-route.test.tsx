@@ -7,18 +7,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CATEGORIES_URL,
   SELLER_PRODUCTS_URL,
+  SELLER_PRODUCT_DRAFTS_URL,
+  SELLER_SHIPPING_POLICY_URL,
+  currentSellerProductDrafts,
   currentSellerProducts,
   lastSellerProductRegisterBody,
   lastSellerProductUpdateBody,
+  makeSellerProductDraftWire,
   makeSellerProductWire,
+  makeShippingPolicyWire,
+  seedSellerProductDrafts,
   seedSellerProducts,
+  seedShippingPolicy,
   server,
 } from '@/testing/msw/server'
-import { MOCK_CATEGORY_TREE, leafIdOf, mockFetchProductDrafts, resetProductsMock } from '../products.mock'
+import { MOCK_CATEGORY_TREE, leafIdOf, resetProductsMock } from '../products.mock'
 import { routeTree } from '../../../routeTree.gen'
 
-// 등록은 실 API(POST /sellers/me/products)로 나가고 이미지는 presigned 발급 → S3 PUT을 실제로 탄다
-// (MSW가 둘 다 가로챈다). 임시저장만 BE에 없어 목업 메모리 스토어를 쓴다.
+// 등록·임시저장 모두 실 API로 나가고(POST /sellers/me/products, /sellers/me/product-drafts) 이미지는
+// presigned 발급 → S3 PUT을 실제로 탄다 — MSW가 전부 가로챈다.
 function renderAt(path: string) {
   const router = createRouter({
     routeTree,
@@ -33,8 +40,6 @@ function renderAt(path: string) {
   // queryClient도 돌려준다 — 백그라운드 재조회(창 포커스 복귀) 실패를 테스트가 직접 일으킬 창구다.
   return { router, queryClient }
 }
-
-const drafts = async () => (await mockFetchProductDrafts()).data
 
 const png = (name = 'a.png') => new File(['png'], name, { type: 'image/png' })
 
@@ -395,42 +400,157 @@ describe('/products/new 등록 폼 (SCRUM-120)', () => {
     expect(screen.queryByRole('status', { name: '등록 양식을 불러오는 중' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SPRD-038] 배송 정책 칸은 목업 요약 대신 준비 중 안내만 보여준다(seller 모듈에 정책 API 없음)', async () => {
+  it('[AC-SPRD-038] 배송 정책 칸은 서버 정책 요약과 수정 링크를 보여준다(목업 수치 아님)', async () => {
+    seedShippingPolicy(
+      makeShippingPolicyWire({ defaultCourierCode: 'CJ', baseShippingFee: 3000, freeShippingThreshold: 30000 }),
+    )
     renderAt('/products/new')
 
-    expect(await screen.findByText('배송 정책 설정은 준비 중이에요')).toBeInTheDocument()
-    // 목업 수치(기본 배송비 3,000원)와 목업 화면으로 가는 링크는 실 등록 폼에 싣지 않는다.
-    expect(screen.queryByText(/기본 배송비/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '배송 정책 수정' })).not.toBeInTheDocument()
+    // 택배사 라벨도 서버 마스터(courierName)에서 온다 — FE가 코드를 라벨로 지어내지 않는다.
+    expect(await screen.findByText('CJ대한통운 / 기본 배송비 3,000원 / 30,000원 이상 무료배송')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '배송 정책 수정' })).toBeInTheDocument()
+    expect(screen.queryByText('배송 정책 설정은 준비 중이에요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-039] 배송 정책 조회가 실패해도 등록 폼은 열리고 실패를 드러낸다', async () => {
+    // 상품 등록은 정책 조회에 매여 있지 않다 — 빈 자리로 떨구지 말고 못 읽었다고 말한다.
+    server.use(
+      http.get(SELLER_SHIPPING_POLICY_URL, () =>
+        HttpResponse.json({ errorCode: 50000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    renderAt('/products/new')
+
+    expect(await screen.findByText('배송 정책을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.getByLabelText('상품명')).toBeInTheDocument()
   })
 })
 
-// 임시저장은 BE에 없어 진입점(버튼·Drawer)을 숨겼다 — 이어쓰기 배선과 목업 구현만 남겨 두었으므로
-// 주소로 직접 들어오는 경로로 프리필·승격을 검증한다(서버가 생기면 이 테스트가 그대로 계약이 된다).
-describe('/products/new?draftId= 이어쓰기 (목업 전용 — BE 임시저장 없음)', () => {
+// 임시저장은 실 API(`/sellers/me/product-drafts`)로 돈다. 데모의 한 줄("임시저장 → 목록에서 불러오기 →
+// 이어서 쓰기")이 여기서 끊기지 않는지, 그리고 저장 실패를 침묵하지 않는지를 고정한다.
+describe('/products/new 임시저장 (SCRUM-343)', () => {
+  const HARNESS_DRAFT = makeSellerProductDraftWire({
+    productName: '강아지 하네스 S',
+    categoryId: leafIdOf('강아지 > 산책용품 > 하네스'),
+    regularPrice: 25000,
+  })
+
   beforeEach(() => {
     seedSellerProducts([])
+    seedSellerProductDrafts([])
     resetProductsMock()
   })
 
   it('[AC-SPRD-036] 임시저장을 이어 등록하면 프리필된 값으로 POST하고 그 임시저장이 빠진다', async () => {
+    seedSellerProductDrafts([HARNESS_DRAFT])
     const user = userEvent.setup()
-    renderAt('/products/new?draftId=01JMOCKDRAFT00000000000001')
+    renderAt(`/products/new?draftId=${HARNESS_DRAFT.draftId}`)
 
     expect(await screen.findByLabelText('상품명')).toHaveValue('강아지 하네스 S')
-    // 임시저장의 categoryId가 실 API(GET /categories) 트리에서 소분류까지 되살아난다.
+    // 초안의 categoryId가 실 API(GET /categories) 트리에서 소분류까지 되살아난다.
     expect(screen.getByLabelText('소분류')).toHaveDisplayValue('하네스')
     await user.upload(fileInputOf('대표 썸네일')!, png())
     await user.type(screen.getByLabelText('재고'), '4')
     await user.click(screen.getByRole('button', { name: '등록하기' }))
 
     expect(await screen.findByText('상품을 등록했어요.')).toBeInTheDocument()
-    // 목록 재조회가 끝난 뒤에 서버/목업 상태를 읽는다(뒤늦은 state 반영이 act 밖으로 새지 않게).
+    // 목록 재조회가 끝난 뒤에 서버 상태를 읽는다(뒤늦은 state 반영이 act 밖으로 새지 않게).
     await screen.findByText('강아지 하네스 S')
     expect(currentSellerProducts()[0]).toMatchObject({ name: '강아지 하네스 S' })
-    expect((await drafts()).map(d => d.productId)).not.toContain('01JMOCKDRAFT00000000000001')
+    expect(currentSellerProductDrafts()).toEqual([])
   })
 
+  it('[AC-SPRD-067] 초안 삭제가 실패해도 등록 성공을 거짓으로 뒤집지 않는다', async () => {
+    seedSellerProductDrafts([HARNESS_DRAFT])
+    server.use(
+      http.delete(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, () =>
+        HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(`/products/new?draftId=${HARNESS_DRAFT.draftId}`)
+
+    await screen.findByLabelText('상품명')
+    await user.upload(fileInputOf('대표 썸네일')!, png())
+    await user.type(screen.getByLabelText('재고'), '4')
+    await user.click(screen.getByRole('button', { name: '등록하기' }))
+
+    expect(await screen.findByText('상품을 등록했어요.')).toBeInTheDocument()
+    expect(currentSellerProducts()[0]).toMatchObject({ name: '강아지 하네스 S' })
+  })
+
+  it('[AC-SPRD-068] 필수값을 안 채워도 임시저장되고 두 번 눌러도 초안이 하나다', async () => {
+    const user = userEvent.setup()
+    const { router } = renderAt('/products/new')
+
+    await user.type(await screen.findByLabelText('상품명'), '쓰던 하네스')
+    await user.click(screen.getByRole('button', { name: '임시저장' }))
+
+    expect(await screen.findByText(/임시저장했어요\.$/)).toBeInTheDocument()
+    const first = currentSellerProductDrafts()
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({ productName: '쓰던 하네스', regularPrice: null })
+    // 첫 저장이 돌려준 id가 URL에 심겨야 다음 저장이 PUT이 된다 — 안 심기면 초안이 둘로 늘고 상한에 걸린다.
+    await waitFor(() => expect(router.state.location.search).toEqual({ draftId: first[0]!.draftId }))
+
+    await user.type(screen.getByLabelText('정가'), '25000')
+    await user.click(screen.getByRole('button', { name: '임시저장' }))
+
+    await waitFor(() => expect(currentSellerProductDrafts()[0]).toMatchObject({ regularPrice: 25000 }))
+    expect(currentSellerProductDrafts()).toHaveLength(1)
+  })
+
+  it('[AC-SPRD-069] 임시저장 실패를 침묵하지 않는다 — 상한 초과를 문구로 알린다', async () => {
+    server.use(
+      http.post(SELLER_PRODUCT_DRAFTS_URL, () =>
+        HttpResponse.json({ errorCode: 40401, message: '임시저장은 최대 10개까지 보관할 수 있습니다.' }, { status: 422 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/products/new')
+
+    await user.type(await screen.findByLabelText('상품명'), '열한 번째 초안')
+    await user.click(screen.getByRole('button', { name: '임시저장' }))
+
+    expect(
+      await screen.findByText('임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.'),
+    ).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-078] 초안 조회가 404가 아닌 이유로 실패하면 "없다"고 말하지 않는다', async () => {
+    seedSellerProductDrafts([HARNESS_DRAFT])
+    const user = userEvent.setup()
+    let failing = true
+    server.use(
+      http.get(`${SELLER_PRODUCT_DRAFTS_URL}/:draftId`, () =>
+        failing
+          ? HttpResponse.json({ errorCode: 90000, message: '서버 오류' }, { status: 500 })
+          : HttpResponse.json({ data: HARNESS_DRAFT }),
+      ),
+    )
+    renderAt(`/products/new?draftId=${HARNESS_DRAFT.draftId}`)
+
+    // 초안은 서버에 그대로 있다 — "찾을 수 없어요 + 새로 등록하기"로 보내면 셀러가 쓰던 내용을 버린다.
+    expect(await screen.findByText('임시저장한 상품을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByText('임시저장한 상품을 찾을 수 없어요')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '새로 등록하기' })).not.toBeInTheDocument()
+
+    failing = false
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(await screen.findByLabelText('상품명')).toHaveValue('강아지 하네스 S')
+  })
+
+  it('[AC-SPRD-079] 없는 초안(40400)은 그대로 "찾을 수 없어요"로 보낸다', async () => {
+    const user = userEvent.setup()
+    renderAt('/products/new?draftId=01JGONEDRAFT0000000000001')
+
+    expect(await screen.findByText('임시저장한 상품을 찾을 수 없어요')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '새로 등록하기' }))
+
+    // 빈 폼으로 떨어지고 URL의 draftId도 지워져야 저장이 새 초안으로 나간다.
+    expect(await screen.findByLabelText('상품명')).toHaveValue('')
+  })
 })
 
 // 수정 폼은 실 API(GET /sellers/me/products/{productId} → PUT 같은 경로)로 돈다. 프리필에 필요한

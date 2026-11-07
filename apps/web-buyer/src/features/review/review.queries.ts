@@ -13,7 +13,7 @@ import {
   type WrittenReviewItemResponse,
 } from '@aechak/api'
 import type { Review } from '@aechak/domain'
-import { findMockProduct, findProduct, placeholderImage } from '@/shared/catalog'
+import { findMockProduct, placeholderImage } from '@/shared/catalog'
 import { removeReview, updateReview, useReviews } from '@/shared/review'
 import {
   filterPhotoReviews,
@@ -35,6 +35,11 @@ const MY_REVIEWS_KEY = ['reviews', 'mine'] as const
 // 수정/삭제 노출을 구분한다. 작성자 닉네임 비교 같은 추측 판별은 쓰지 않는다.
 export interface ProductReviewItem extends Review {
   isMine: boolean
+  /**
+   * 셀러가 이 리뷰에 남긴 답글(SCRUM-315). 리뷰당 하나이고 없으면 null이다.
+   * 목업 카탈로그 리뷰에는 답글 개념이 없어 늘 null이다 — 서버 리뷰에만 값이 실린다.
+   */
+  sellerReply: { content: string; repliedAt: string } | null
 }
 
 /**
@@ -91,6 +96,11 @@ function toReviewItem(productId: string, r: ReviewItemResponse): ProductReviewIt
     verifiedPurchase: false,
     createdAt: r.createdAt.slice(0, 10).replace(/-/g, '.'), // ISO 'YYYY-MM-DD...' -> 'YYYY.MM.DD'
     isMine: r.isMine,
+    // 답글 등록 시각도 카드 표기와 같은 'YYYY.MM.DD'로 맞춘다.
+    sellerReply: r.sellerReply && {
+      content: r.sellerReply.content,
+      repliedAt: r.sellerReply.repliedAt.slice(0, 10).replace(/-/g, '.'),
+    },
   }
 }
 
@@ -120,7 +130,8 @@ function mockPage(productId: string, sort: ReviewSort, photoOnly: boolean): Revi
   const mock = getProductReviewData(productId)
   if (!mock) return NOT_FOUND_PAGE
   const base = photoOnly ? filterPhotoReviews(mock.reviews) : mock.reviews
-  const items: ProductReviewItem[] = sortReviews(base, sort).map(r => ({ ...r, isMine: false }))
+  // 목업 리뷰에는 셀러 답글 개념이 없다 — 지어내지 않고 null로 둔다.
+  const items: ProductReviewItem[] = sortReviews(base, sort).map(r => ({ ...r, isMine: false, sellerReply: null }))
   return {
     summary: { average: mock.average, total: mock.total, distribution: mock.distribution },
     items,
@@ -214,7 +225,7 @@ export function useProductReviews(
     // 아직 서버에 없는 목업 작성분만 올린다.
     let mine: ProductReviewItem[] = userReviews
       .filter(r => r.productId === productId && serverReviewId(r.id) == null)
-      .map(r => ({ ...r, isMine: true }))
+      .map(r => ({ ...r, isMine: true, sellerReply: null }))
     if (photoOnly) mine = filterPhotoReviews(mine)
     return {
       average: summary.average,
@@ -249,6 +260,8 @@ export function useProductReviews(
 function invalidateReviewCaches(queryClient: QueryClient, productId: string): void {
   void queryClient.invalidateQueries({ queryKey: ['reviews', 'product', productId] })
   void queryClient.invalidateQueries({ queryKey: ['product', 'detail', productId] })
+  // 리뷰 AI 요약(product feature useProductReviewSummary)도 숨겨진 리뷰의 인용과 리뷰 수 기준이 바뀐다.
+  void queryClient.invalidateQueries({ queryKey: ['review-summary', productId] })
   // 내 리뷰 두 탭(작성 대기 개수, 작성 완료 목록)도 같은 리뷰를 담고 있다.
   void queryClient.invalidateQueries({ queryKey: MY_REVIEWS_KEY })
 }
@@ -449,9 +462,9 @@ function toPendingReview(r: UnreviewedOrderItemResponse): PendingReview {
 }
 
 export interface MyReviewTabView<T> {
-  /** 서버 항목 뒤에 목업 주문 항목을 붙인 목록. 서버 첫 페이지를 받기 전(로딩/실패)에는 null. */
+  /** 받아 둔 서버 페이지를 이은 목록. 서버 첫 페이지를 받기 전(로딩/실패)에는 null. */
   items: T[] | null
-  /** 탭 라벨 개수(서버 totalCount + 목업 항목 수). 첫 페이지를 받기 전에는 null. */
+  /** 탭 라벨 개수(서버 totalCount). 첫 페이지를 받기 전에는 null. */
   count: number | null
   isError: boolean
   hasNextPage: boolean
@@ -462,7 +475,6 @@ export interface MyReviewTabView<T> {
 function useMyReviewTab<T>(
   tab: ServerMyReviewTab,
   toItem: (item: WrittenReviewItemResponse | UnreviewedOrderItemResponse) => T[],
-  local: T[],
 ): MyReviewTabView<T> {
   const query = useInfiniteQuery({
     queryKey: [...MY_REVIEWS_KEY, tab],
@@ -479,10 +491,10 @@ function useMyReviewTab<T>(
     getNextPageParam: last => (last.hasNext ? (last.nextCursor ?? undefined) : undefined),
   })
   const pages = query.data?.pages
-  const items = useMemo(() => (pages ? [...pages.flatMap(p => p.items), ...local] : null), [pages, local])
+  const items = useMemo(() => (pages ? pages.flatMap(p => p.items) : null), [pages])
   return {
     items,
-    count: pages ? (pages[0]?.totalCount ?? 0) + local.length : null,
+    count: pages ? (pages[0]?.totalCount ?? 0) : null,
     isError: query.isError,
     hasNextPage: query.hasNextPage,
     fetchNextPage: () => void query.fetchNextPage(),
@@ -490,29 +502,18 @@ function useMyReviewTab<T>(
   }
 }
 
-const NO_LOCAL_PENDING: PendingReview[] = []
-
 /**
  * 내 리뷰 두 탭. 작성 대기는 GET /users/me/reviews?tab=unreviewed, 작성 완료는 tab=written이 원본이다.
- * 작성 대기는 서버 항목뿐이다(목업 주문 스토어 폐기). 작성 완료는 아직 로컬 스토어 리뷰(시드·수정분)를
- * 서버 항목 뒤에 붙인다.
+ * 두 탭 모두 서버 항목뿐이다 — 리뷰는 서버에만 저장하므로(useCreateReview) 로컬 스토어를 뒤에 붙이면
+ * 서버에 없는 리뷰와 부풀린 탭 개수가 보인다.
  */
 export function useMyReviews(): {
   pending: MyReviewTabView<PendingReview>
   completed: MyReviewTabView<MyWrittenReview>
 } {
-  const reviews = useReviews()
-  const localCompleted = useMemo<MyWrittenReview[]>(
-    () =>
-      reviews.map(r => {
-        const product = findProduct(r.productId)
-        return { ...r, productName: product?.name, thumbnailUrl: product?.thumbnailUrl }
-      }),
-    [reviews],
-  )
   return {
-    pending: useMyReviewTab('unreviewed', i => (i.type === 'UNREVIEWED' ? [toPendingReview(i)] : []), NO_LOCAL_PENDING),
-    completed: useMyReviewTab('written', i => (i.type === 'WRITTEN' ? [toWrittenReview(i)] : []), localCompleted),
+    pending: useMyReviewTab('unreviewed', i => (i.type === 'UNREVIEWED' ? [toPendingReview(i)] : [])),
+    completed: useMyReviewTab('written', i => (i.type === 'WRITTEN' ? [toWrittenReview(i)] : [])),
   }
 }
 

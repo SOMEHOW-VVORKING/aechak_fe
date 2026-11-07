@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, Flag, Heart, Share2, Truck } from 'lucide-react'
 import {
@@ -26,24 +26,25 @@ import { formatKRW } from '@/shared/formatKRW'
 import { errorResponse } from '@aechak/api'
 import { CART_MAX_QUANTITY, cartErrorMessage, useAddCartItem } from '@/shared/cart'
 import {
+  findMockProduct,
   hydrateLikedFromDetail,
   SUB_CATEGORIES,
   toggleWishlist,
   useIsWished,
 } from '@/shared/catalog'
-import { LoginGate, useIsLoggedIn, useLoginGate } from '@/shared/auth'
+import { LoginGate, useLoginGate, useSessionState } from '@/shared/auth'
 import {
   DETAIL_REVIEW_LIMIT,
   useProductDetail,
   useProductOptions,
   useProductReviewPreview,
+  useProductReviewSummary,
 } from '../product.queries'
 import type { ProductDetail } from '../product.mock'
 import { mockOptionsFromDetail, type OptionChoice, type ProductOptionsView } from '../product.map'
 import { AddedToCartSheet } from './AddedToCartSheet'
+import { ReviewAiSummary } from './ReviewAiSummary'
 
-// 옵션 선택 항목을 정한다. 실 옵션(useProductOptions) 우선, 없으면(mock id 404 등) 목업 상세 옵션,
-// 그래도 비면 기본 구성 하나로 채운다(옵션 없는 상품도 담기가 가능하게).
 // 담기(POST)는 서버가 이미 담긴 같은 옵션 수량과 합쳐 상한(99)을 판정한다 — 시트의 수량은 상한 안이므로
 // 90001은 합산 초과라 그 취지로 안내한다. 나머지는 장바구니 공용 문구.
 function addCartErrorMessage(error: unknown): string {
@@ -52,12 +53,16 @@ function addCartErrorMessage(error: unknown): string {
     : cartErrorMessage(error)
 }
 
+// 옵션 선택 항목을 정한다. 실 옵션 응답(useProductOptions)이 있으면 그것이 정본이라 조합 0건도
+// 0건 그대로 넘긴다 — 시트가 판매 준비 안 된 상품으로 떨어뜨린다. 실 응답이 없을 때(목업 상품의
+// 404 폴백, 아직 조회 전)만 목업 상세 옵션으로 채우고, 그래도 비면 기본 구성 하나로 둔다.
 function buildOptionChoices(
   raw: ProductOptionsView | null | undefined,
   detail: ProductDetail | null | undefined,
 ): OptionChoice[] {
-  const source = raw ?? (detail ? mockOptionsFromDetail(detail) : null)
-  if (source && source.choices.length > 0) return source.choices
+  if (raw != null) return raw.choices
+  const mock = detail ? mockOptionsFromDetail(detail) : null
+  if (mock && mock.choices.length > 0) return mock.choices
   return [
     {
       key: '기본 구성',
@@ -71,7 +76,18 @@ function buildOptionChoices(
 
 // 상품 상세(b1-st-2). 문의(채팅) 버튼 OFF, 쿠폰 트리거/시트 OFF. 옵션 선택 BottomSheet 포함.
 // 실 API(GET /products/{id}, /options)로 구동하되, mock id는 상세 쿼리가 목업으로 폴백한다.
-export function ProductDetailScreen({ productId }: { productId: string }) {
+export function ProductDetailScreen({
+  productId,
+  inquirySlot,
+}: {
+  productId: string
+  /**
+   * 상품 문의 영역(SCRUM-340). 다른 feature(features/product-inquiry)가 소유하고 라우트가
+   * 조립해 내려 준다 — feature 간 직접 import가 금지라 여기서 부를 수 없다. 자리만 비워 두고
+   * 구분선도 슬롯이 직접 그린다(목업 상품처럼 영역을 접는 경우 선만 남지 않게).
+   */
+  inquirySlot?: ReactNode
+}) {
   const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useProductDetail(productId)
 
@@ -91,13 +107,27 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 
   // 옵션은 시트를 열 때만 조회한다(상세 렌더가 옵션을 기다리지 않게 분리).
   const optionsQuery = useProductOptions(productId, { enabled: sheetOpen })
-  const isLoggedIn = useIsLoggedIn()
+  const sessionState = useSessionState()
+  const isLoggedIn = sessionState === 'member'
   // 목업 상품은 상세 뷰모델이 미리보기 리뷰를 이미 들고 있어 서버를 부르지 않는다(실 상품만 빈 배열).
-  // 리뷰 목록 API가 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
-  const reviewPreview = useProductReviewPreview(productId, {
-    enabled:
-      isLoggedIn && data != null && data.reviews.length === 0 && data.reviewSummary.total > 0,
-  })
+  // AI 요약은 비회원도 조회한다(SCRUM-351). 실 상품이고 리뷰가 있을 때만 부른다.
+  const canFetchReviewSummary =
+    data != null && data.reviews.length === 0 && data.reviewSummary.total > 0
+  const reviewAiSummary = useProductReviewSummary(productId, { enabled: canFetchReviewSummary })
+  // 리뷰 목록 API는 여전히 JWT 필수라 비회원은 호출 자체를 막는다 — 401이면 전역 리다이렉트로 상세를 잃는다.
+  const canFetchServerReviews = isLoggedIn && canFetchReviewSummary
+  // 미리보기를 못 채운 칸에 적을 사유. 목업 상품처럼 상세가 리뷰를 이미 들고 있으면 필요 없다
+  // (previewReviews가 채워진다). 세션 확인이 끝나지 않은 'unknown'에는 로그인 필요라고 적지 않는다 —
+  // refresh가 5xx·네트워크로 실패한 회원일 수 있어서, 그렇게 적으면 사실이 아닌 사유를 읽힌다.
+  const reviewsBlockedReason =
+    data == null || data.reviews.length > 0
+      ? null
+      : sessionState === 'guest'
+        ? '리뷰를 보려면 로그인이 필요해요.'
+        : sessionState === 'unknown'
+          ? '리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.'
+          : null
+  const reviewPreview = useProductReviewPreview(productId, { enabled: canFetchServerReviews })
   // 상세 리뷰 섹션은 최대 DETAIL_REVIEW_LIMIT개만 노출하고 나머지는 "전체보기"로 넘긴다.
   const previewReviews = data && data.reviews.length > 0 ? data.reviews : (reviewPreview.data ?? [])
   const optionChoices = buildOptionChoices(optionsQuery.data, data)
@@ -114,6 +144,31 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   const showToast = (message: string, variant: ToastVariant = 'success') =>
     setToast({ open: true, message, variant })
 
+  // 목업 상품(id가 mock 카탈로그에 있는 상품)은 서버에 없다. toggleWishlist가 서버 호출 없이
+  // 끝나고(shared/catalog의 wishlist.queries), /wishlist는 서버 pool을 찜 id-set으로 필터하므로
+  // 여기서 하트를 채우면 찜 목록에 나타나지 않는 찜이 생기고 새로고침하면 그 하트도 사라진다.
+  const wishUnavailable = findMockProduct(productId) != null
+
+  // SNS 프로필 공유(features/sns)와 같은 모양 — 실제로 클립보드에 쓰고 실패도 알린다.
+  const shareProduct = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/products/${productId}`)
+      showToast('상품 링크를 복사했어요.', 'info')
+    } catch {
+      showToast('링크를 복사하지 못했어요.', 'error')
+    }
+  }
+
+  const toggleWish = () =>
+    requireAuth('wish', () => {
+      if (wishUnavailable) {
+        showToast('미리보기 상품이라 찜 목록에 담기지 않아요.', 'info')
+        return
+      }
+      toggleWishlist(productId)
+      showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
+    })
+
   return (
     <MobileScreen
       header={
@@ -123,7 +178,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             <button
               type="button"
               aria-label="공유"
-              onClick={() => showToast('상품 링크를 복사했어요.', 'info')}
+              onClick={() => void shareProduct()}
               className="flex size-9 items-center justify-center rounded-full text-icon"
             >
               <Share2 className="size-[22px]" />
@@ -136,12 +191,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
           <ActionBar
             wished={wished}
             soldOut={data.isSoldOut}
-            onToggleWish={() =>
-              requireAuth('wish', () => {
-                toggleWishlist(productId)
-                showToast(wished ? '찜을 해제했어요.' : '찜했어요.')
-              })
-            }
+            wishUnavailable={wishUnavailable}
+            onToggleWish={toggleWish}
             onCart={() => requireAuth('cart', () => setSheetOpen(true))}
           />
         ) : undefined
@@ -255,6 +306,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               {data.reviewSummary.total > 0 ? (
                 <>
                   <ReviewSummaryCard summary={data.reviewSummary} />
+                  <ReviewAiSummary data={reviewAiSummary.data} isError={reviewAiSummary.isError} />
                   {/* 정렬 칩은 제거했다 — 상세에서는 최신 순 상위 3개만 미리 보여주고, 정렬·전체
                       목록은 위 "전체보기"(상품 리뷰 목록)에서만 제공한다. */}
                   {reviewPreview.isError ? (
@@ -263,12 +315,22 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                     <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
                       리뷰를 불러오지 못했어요. 전체보기에서 다시 확인해 주세요.
                     </Card>
-                  ) : reviewPreview.isPending && previewReviews.length === 0 ? (
+                  ) : // isPending이 아니라 isFetching을 본다 — react-query v5는 enabled:false인 쿼리도
+                  // isPending=true라서, 호출을 막은 비회원에게 스켈레톤 3장이 영구히 남는다
+                  // (실제로 요청이 떠 있는지를 묻는 건 isFetching이다). 아래 비회원 안내도 이
+                  // 조건을 통과해야 닿는다.
+                  reviewPreview.isFetching && previewReviews.length === 0 ? (
                     <div className="flex flex-col gap-3">
                       {[0, 1, 2].map(i => (
                         <Skeleton key={i} variant="rect" className="h-24 w-full" />
                       ))}
                     </div>
+                  ) : reviewsBlockedReason != null ? (
+                    // 상세 본문은 permitAll이라 비회원도 끝까지 보지만 리뷰 목록만 비어 있다 —
+                    // 그 칸을 빈 자리로 두지 않고 왜 비었는지 적는다.
+                    <Card className="px-4 py-5 text-center text-body-sm text-text-secondary">
+                      {reviewsBlockedReason}
+                    </Card>
                   ) : (
                     <div className="flex flex-col gap-3">
                       {previewReviews.slice(0, DETAIL_REVIEW_LIMIT).map((review, i) => {
@@ -300,6 +362,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 </Card>
               )}
             </div>
+
+            {inquirySlot}
 
             <Divider />
 
@@ -333,7 +397,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
             {/* 상품 신고 진입점 */}
             <button
               type="button"
-              onClick={() => navigate({ to: '/products/$productId/report', params: { productId } })}
+              onClick={() =>
+                requireAuth('report', () => navigate({ to: '/products/$productId/report', params: { productId } }))
+              }
               className="mt-1 flex items-center gap-1.5 self-start text-caption text-text-tertiary"
             >
               <Flag className="size-3.5" />
@@ -355,6 +421,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
           onClose={() => setSheetOpen(false)}
           onAddToCart={(choice, qty) => {
             // 장바구니는 서버 소유라 옵션 조합 id가 필수 — 목업 폴백 상품(실 옵션 없음)은 담을 수 없다.
+            // 실 상품의 조합 0건은 여기까지 오지 않는다(시트가 담기 버튼을 그리지 않는다).
             if (choice.optionCombinationId == null) {
               setSheetOpen(false)
               showToast('지금은 이 상품을 장바구니에 담을 수 없어요.', 'error')
@@ -366,7 +433,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
                 onSuccess: res => {
                   setSheetOpen(false)
                   setAddedCartItemId(res.cartItemId)
-                  // 토스트 대신 확인 바텀시트로 담긴 사실 + 추천 상품을 보여준다(액션바 가림 방지).
+                  // 토스트 대신 확인 바텀시트로 담긴 사실을 보여준다(액션바 가림 방지).
                   setAddedSheetOpen(true)
                 },
                 // 실패 시 시트를 열어둔다 — 수량/옵션을 바로 고쳐 다시 담을 수 있게(재고 부족 등).
@@ -508,11 +575,14 @@ function ImageCarousel({ images, sold }: { images: string[]; sold?: boolean }) {
 function ActionBar({
   wished,
   soldOut,
+  wishUnavailable,
   onToggleWish,
   onCart,
 }: {
   wished: boolean
   soldOut?: boolean
+  /** 서버에 없는 목업 상품 — 찜을 받아도 찜 목록에 남지 않아 눌러도 토글하지 않는다. */
+  wishUnavailable?: boolean
   onToggleWish: () => void
   onCart: () => void
 }) {
@@ -521,14 +591,17 @@ function ActionBar({
       className="flex items-center gap-2 border-t border-border-subtle bg-surface-base px-4 pt-2.5"
       style={{ paddingBottom: 'calc(10px + env(safe-area-inset-bottom))' }}
     >
+      {/* disabled가 아니라 aria-disabled인 이유: 이 버튼이 유일한 설명 자리다. 눌러야
+          "미리보기라 담기지 않는다"를 알릴 수 있어 클릭은 살려 두고 상태만 알린다. */}
       <button
         type="button"
         onClick={onToggleWish}
         aria-pressed={wished}
+        aria-disabled={wishUnavailable}
         aria-label={wished ? '찜 해제' : '찜하기'}
         className={[
           'flex size-12 flex-none items-center justify-center rounded-input border border-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-border',
-          wished ? 'text-brand' : 'text-icon',
+          wishUnavailable ? 'text-icon-muted' : wished ? 'text-brand' : 'text-icon',
         ].join(' ')}
       >
         <Heart className="size-[22px]" fill={wished ? 'currentColor' : 'none'} />
@@ -588,6 +661,18 @@ function OptionSheet({
           <Button variant="secondary" size="md" onClick={onRetry}>
             다시 시도
           </Button>
+        </div>
+      </BottomSheet>
+    )
+  }
+
+  // 실 옵션 응답의 조합이 0건이면 판매할 수 있는 옵션이 없는 상품이다. '기본 구성'을 지어내면
+  // 수량 스테퍼·합계·담기가 모두 활성이라 담기를 눌러야 비로소 막히고, 왜 안 되는지 읽을 데가 없다.
+  if (choices.length === 0) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="옵션 선택">
+        <div role="status" className="py-10 text-center text-body-sm text-text-secondary">
+          아직 판매 준비가 안 된 상품이에요
         </div>
       </BottomSheet>
     )

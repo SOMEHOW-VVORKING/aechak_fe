@@ -1,7 +1,9 @@
 export { OrderListScreen } from './components/OrderListScreen'
 export { OrderDetailScreen } from './components/OrderDetailScreen'
-export { OrderCancelScreen } from './components/OrderCancelScreen'
+export { OrderClaimRequestScreen } from './components/OrderClaimRequestScreen'
 export {
+  CLAIM_ACTION_LABEL,
+  CLAIM_COST_BEARER_LABEL,
   CLAIM_REFUND_STATUS_LABEL,
   CLAIM_STATUS_LABEL,
   CLAIM_STATUS_VARIANT,
@@ -10,8 +12,9 @@ export {
   ORDER_STATUS_VARIANT,
   ORDER_ITEM_STATUS_LABEL,
   ORDER_SEGMENTS,
+  claimTargetSummary,
+  claimTimelineAt,
   confirmDueRemaining,
-  isCancelable,
   isConfirmable,
   isReviewable,
   formatOrderedAt,

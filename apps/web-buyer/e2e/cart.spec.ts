@@ -1,11 +1,14 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type { CartEnvelope, CartItemResponse, CartSellerGroupResponse } from '@aechak/api'
 
 // 장바구니(b1-st-3) ↔ /carts 실 API 연동 E2E. 실백엔드 없이 page.route 상태형 스텁으로 서버 계약을
 // 재현한다(교차 출처 8080 + withCredentials라 정확한 origin·Allow-Credentials·OPTIONS 방어 필수).
 // PATCH는 절대값 대입, DELETE는 본문 {cartItemIds} — 요청 본문까지 단언한다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -142,6 +145,11 @@ async function stubCart(page: Page, rows: Row[]): Promise<Recorded> {
   })
   return recorded
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-CART-E2E-001] 셀러 2곳을 그룹으로 그리고 선택 해제 시 배송비·결제예정금액이 다시 계산된다', async ({
   page,

@@ -49,7 +49,7 @@ export const FAQ_ITEMS: FaqItem[] = [
     category: 'account',
     question: '로그인이 안 돼요.',
     answer:
-      '애착은 소셜 로그인(카카오/구글/Apple)만 지원해요. 처음 가입할 때 사용한 소셜 계정으로 다시 로그인해 주세요.',
+      '애착은 카카오 로그인만 지원해요. 처음 가입할 때 사용한 카카오 계정으로 다시 로그인해 주세요.',
   },
   {
     id: 'faq-withdraw',
@@ -112,14 +112,16 @@ export const GUIDELINE_BAD: string[] = [
 
 // ── 계정 및 데이터 삭제 안내(b11-st-7) ───────────────────────────────────────
 
+// 앱과 서버에 실재하는 것만 적는다 — 쿠폰·채팅·댓글·최근 본 상품은 화면도 API도 없어서,
+// 삭제/보관 방침을 적으면 없는 기능을 가진 것처럼 읽힌다(탈퇴 안내 카드와 같은 사정).
 export const DATA_DELETION_IMMEDIATE: string[] = [
   '프로필/펫 정보는 비활성화 후 파기돼요.',
-  '적립금/보유 쿠폰은 즉시 소멸되며 복구되지 않아요.',
-  '찜/팔로우/최근 본 상품은 삭제돼요.',
+  '적립금은 즉시 소멸되며 복구되지 않아요.',
+  '찜/팔로우는 삭제돼요.',
 ]
 
 export const DATA_RETENTION_ROWS: { label: string; period: string; variant: 'neutral' | 'muted' }[] = [
   { label: '거래/결제/정산 기록', period: '5년', variant: 'neutral' },
   { label: '전자금융/소비자 분쟁 기록', period: '5년', variant: 'neutral' },
-  { label: '채팅/댓글/리뷰/문의 내역', period: '익명 보관', variant: 'muted' },
+  { label: '리뷰/문의 내역', period: '익명 보관', variant: 'muted' },
 ]

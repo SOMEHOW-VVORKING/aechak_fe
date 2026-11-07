@@ -12,9 +12,9 @@ import { axiosInstance, getApiBaseURL, setAccessToken, setOnAuthExpired } from '
 //    `/admin/**` 호출이 403 errorCode 20011이 되므로, "로그인은 됐지만 권한이 없다"를 화면이 구분해
 //    보여 줘야 한다(features/admins의 에러 매핑).
 
-export type SocialProvider = 'kakao' | 'google' | 'apple'
+export type SocialProvider = 'kakao'
 
-/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 구글·애플은 서버 미지원이라 버튼 비활성. */
+/** 서버 웹 로그인(서버 콜백)이 열려 있는 provider — 로그인 수단은 카카오 하나다. */
 export const WEB_LOGIN_PROVIDERS: ReadonlySet<SocialProvider> = new Set<SocialProvider>(['kakao'])
 
 export function socialLoginRedirectUrl(provider: SocialProvider, returnUrl: string): string {
@@ -34,6 +34,43 @@ interface WebTokenData {
  */
 export async function bootstrapSession(): Promise<void> {
   const response = await axiosInstance.post<{ data: WebTokenData }>('/auth/web/refresh')
+  setAccessToken(response.data.data.accessToken)
+}
+
+/**
+ * 서버 세션 종료(`POST /auth/web/logout`) — 자격증명이 httpOnly refresh 쿠키라 body도
+ * Authorization도 없고, 쿠키가 없거나 이미 폐기된 토큰이어도 204를 주는 멱등 EP다.
+ *
+ * 구매자 앱(`web-buyer` shared/auth/auth.session.ts)과 **전송 실패 처리가 다르다**. 구매자는
+ * 실패를 삼키고 로컬 플래그만 내려도 로그아웃이 성립하지만, 어드민에서 세션의 유일한 증거는
+ * 이 쿠키다 — 호출이 실패하면 쿠키가 살아 있어 다음 요청의 refresh가 같은 계정을 되살린다.
+ * 그걸 "로그아웃됐다"고 보여 주면 운영자는 계정이 바뀐 줄 알고 데모를 이어 간다. 그래서 실패는
+ * 삼키지 않고 그대로 던지고, 화면이 사실대로 말한다.
+ */
+export async function endServerSession(): Promise<void> {
+  // `/auth/*`는 api 모듈에만 있어 경로 판정으로도 api 호스트로 나가지만, 어드민은 `/admin` 경로의
+  // credentials를 끄는 앱이라 표식을 명시해 둔다 — refresh와 같은 조합이고, 쿠키가 자격증명인
+  // 이 호출에서 credentials가 꺼지면 서버가 폐기할 토큰을 받지 못한다.
+  await axiosInstance.post('/auth/web/logout', undefined, {
+    forceApiHost: true,
+    withCredentials: true,
+  })
+}
+
+/**
+ * 아이디·비밀번호 로그인(`POST /auth/login/password`) — 소셜과 달리 리다이렉트 없이 한 번의 POST로
+ * 끝나고, access를 응답 body로 바로 받는다. refresh는 서버가 httpOnly 쿠키로 심으므로 여기서
+ * 만지지 않는다(소셜 복귀 뒤 bootstrapSession과 같은 세션 모양이 된다).
+ *
+ * `withCredentials`를 명시하는 이유는 로그아웃과 같다 — 어드민은 `/admin` 경로의 credentials를
+ * 끄는 앱이라, 서버가 Set-Cookie를 심는 이 호출에서 꺼지면 세션 쿠키가 브라우저에 남지 않는다.
+ */
+export async function loginWithPassword(loginId: string, password: string): Promise<void> {
+  const response = await axiosInstance.post<{ data: WebTokenData }>(
+    '/auth/login/password',
+    { loginId, password },
+    { forceApiHost: true, withCredentials: true },
+  )
   setAccessToken(response.data.data.accessToken)
 }
 

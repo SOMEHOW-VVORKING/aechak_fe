@@ -14,14 +14,15 @@ export const WITHDRAW_RETENTION_YEARS = 5
 export const WITHDRAW_REJOIN_BLOCK_DAYS = 30
 export const WITHDRAW_REJOIN_NOTICE = `탈퇴 후 ${WITHDRAW_REJOIN_BLOCK_DAYS}일 동안은 같은 소셜 계정으로 다시 가입할 수 없어요.`
 
-// 탈퇴 시 삭제/비활성화되는 정보(안내 카드).
+// 탈퇴 시 삭제/비활성화되는 정보(안내 카드). 앱과 서버에 실재하는 것만 적는다 — 쿠폰·채팅·댓글·
+// 최근 본 상품은 화면도 API도 없어서, 처리 방침을 적으면 없는 기능을 가진 것처럼 읽힌다.
 export const WITHDRAW_DELETED_INFO: { label: string; note: string }[] = [
   { label: '프로필 / 펫 정보', note: '비활성화' },
-  { label: '적립금 / 쿠폰', note: '즉시 소멸' },
+  { label: '적립금', note: '즉시 소멸' },
   { label: '찜 / 팔로우', note: '삭제' },
 ]
 
 // 법령에 따라 보존되는 정보(안내 카드).
 export const WITHDRAW_RETAINED_INFO: { label: string; note: string }[] = [
-  { label: '채팅 / 댓글 / 리뷰 / 문의', note: '익명 처리' },
+  { label: '리뷰 / 문의', note: '익명 처리' },
 ]

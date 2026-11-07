@@ -1,12 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { Review } from '@aechak/domain'
-import {
-  MobileScreen,
-  Modal,
-  ReviewCard,
-  Skeleton,
-} from '@aechak/design-system/web'
+import { MobileScreen, Modal, ReviewCard, Skeleton } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { FilterChip } from '@/shared/components/FilterChip'
@@ -14,7 +9,6 @@ import { RatingDistribution } from '@/shared/components/RatingDistribution'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
-import { useAccount } from '@/shared/account'
 import {
   reviewErrorMessage,
   serverReviewId,
@@ -25,6 +19,7 @@ import {
 import { REVIEW_SORTS, type ReviewSort } from '../review.mock'
 import { LoadMoreButton } from './LoadMoreButton'
 import { MyReviewCard } from './MyReviewCard'
+import { SellerReplyNote } from './SellerReplyNote'
 
 // 상품 리뷰 목록(b4-st-3). 별점 분포 + 정렬(최신순/별점높은순) + 포토리뷰만 필터 + 리뷰 카드 목록.
 // 정렬(2종)과 포토리뷰만(불리언)은 서버 계약대로 분리한 상태로 API에 파라미터로 넘긴다.
@@ -32,8 +27,15 @@ export function ProductReviewsScreen({ productId }: { productId: string }) {
   const navigate = useNavigate()
   const [sort, setSort] = useState<ReviewSort>('latest')
   const [photoOnly, setPhotoOnly] = useState(false)
-  const { data, isLoading, isError, isPlaceholderData, hasNextPage, fetchNextPage, isFetchingNextPage } =
-    useProductReviews(productId, sort, photoOnly)
+  const {
+    data,
+    isLoading,
+    isError,
+    isPlaceholderData,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useProductReviews(productId, sort, photoOnly)
 
   // 기본 필터(최신순 + 포토 off)에서 실패했으면 되돌릴 상태 자체가 없다.
   const isDefaultFilter = sort === 'latest' && !photoOnly
@@ -117,13 +119,16 @@ function ReviewsBody({
   isFetchingNextPage: boolean
 }) {
   const navigate = useNavigate()
-  const { nickname } = useAccount()
   const deleteReview = useDeleteReview()
   // 정렬/포토 필터는 서버가 적용한다 — 여기서 다시 정렬하지 않고 훅이 준 순서 그대로 그린다.
   const visible = data.reviews
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Review | null>(null)
-  const [toast, setToast] = useState<{ open: boolean; message: string; variant: 'success' | 'error' }>({
+  const [toast, setToast] = useState<{
+    open: boolean
+    message: string
+    variant: 'success' | 'error'
+  }>({
     open: false,
     message: '',
     variant: 'success',
@@ -183,7 +188,9 @@ function ReviewsBody({
           {photoOnly ? (
             <>
               <p className="text-body-sm text-text-secondary">사진이 있는 리뷰가 없어요</p>
-              <p className="text-caption text-text-tertiary">포토리뷰만 필터를 끄면 전체 리뷰를 볼 수 있어요.</p>
+              <p className="text-caption text-text-tertiary">
+                포토리뷰만 필터를 끄면 전체 리뷰를 볼 수 있어요.
+              </p>
             </>
           ) : (
             <>
@@ -194,39 +201,41 @@ function ReviewsBody({
         </div>
       ) : (
         <div className="flex flex-col gap-3 p-4">
-          {visible.map(review =>
-            review.isMine ? (
-              // 내가 쓴 리뷰: 작성자를 닉네임으로 표기하고 우측에 수정/삭제를 노출한다.
-              <MyReviewCard
-                key={review.id}
-                review={review}
-                nickname={nickname}
-                // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버에서 온 리뷰는
-                // 스토어에 없어 작성 화면이 대상을 못 찾으므로 버튼을 아예 내리고 삭제만 남긴다.
-                onEdit={
-                  serverReviewId(review.id) == null
-                    ? () => navigate({ to: '/reviews/write', search: { reviewId: review.id } })
-                    : undefined
-                }
-                onDelete={() => setDeleteTarget(review)}
-                onImageOpen={setLightboxSrc}
-              />
-            ) : (
-              <ReviewCard
-                key={review.id}
-                author={review.author}
-                rating={review.rating}
-                date={review.createdAt.slice(5)}
-                content={review.content}
-                images={review.images.length > 0 ? review.images : undefined}
-                onImageClick={
-                  review.images.length > 0
-                    ? index => setLightboxSrc(review.images[index] ?? null)
-                    : undefined
-                }
-              />
-            ),
-          )}
+          {visible.map(review => (
+            // 답글은 카드 바깥에 덧붙인다 — 두 카드가 각자 chrome을 그려 안에 넣을 자리가 없다.
+            <div key={review.id} className="flex flex-col gap-2">
+              {review.isMine ? (
+                // 내가 쓴 리뷰: 작성자를 닉네임으로 표기하고 우측에 수정/삭제를 노출한다.
+                <MyReviewCard
+                  review={review}
+                  nickname={review.author}
+                  // 수정은 서버 API가 없어 로컬 스토어 리뷰에서만 가능하다 — 서버에서 온 리뷰는
+                  // 스토어에 없어 작성 화면이 대상을 못 찾으므로 버튼을 아예 내리고 삭제만 남긴다.
+                  onEdit={
+                    serverReviewId(review.id) == null
+                      ? () => navigate({ to: '/reviews/write', search: { reviewId: review.id } })
+                      : undefined
+                  }
+                  onDelete={() => setDeleteTarget(review)}
+                  onImageOpen={setLightboxSrc}
+                />
+              ) : (
+                <ReviewCard
+                  author={review.author}
+                  rating={review.rating}
+                  date={review.createdAt.slice(5)}
+                  content={review.content}
+                  images={review.images.length > 0 ? review.images : undefined}
+                  onImageClick={
+                    review.images.length > 0
+                      ? index => setLightboxSrc(review.images[index] ?? null)
+                      : undefined
+                  }
+                />
+              )}
+              <SellerReplyNote reply={review.sellerReply} />
+            </div>
+          ))}
         </div>
       )}
 

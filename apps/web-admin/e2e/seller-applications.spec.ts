@@ -11,7 +11,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // — 즉 이 헤더의 부재 자체가 호스트/credentials 분기의 회귀 감시다.
 // 반대로 /auth/web/refresh는 httpOnly 쿠키를 왕복하는 credentials 요청이라 정확한 origin +
 // Allow-Credentials: true가 모두 필요하다.
-const ORIGIN = 'http://localhost:5174'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5174'
 
 // 스텁 글롭에 origin을 박아 둔다. `**/api/v1/admin/...`처럼 호스트를 비우면 요청이 api 호스트
 // (8080)로 잘못 나가도 같은 스텁이 받아 주어, E2E가 호스트 오배치를 전혀 잡지 못한다.
@@ -287,7 +289,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `test-results/pr-c/${name}.png`, animations: 'disabled' })
 }
 
-const REJECT_OPTION_CAPTION = '신청 반려 / 사유 통보 후 재제출 유도'
+const REJECT_OPTION_CAPTION = '신청 반려 / 사유 기록 후 재제출 유도'
 
 test('[AC-ADM-E2E-001] 목록 → 상세 Drawer → 반려 확인 Modal → 목록 반영', async ({ page }) => {
   await stubAdminApi(page)

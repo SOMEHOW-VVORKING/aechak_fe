@@ -12,6 +12,13 @@ import type {
   InspectionStatus,
   SaleStatus,
   SellerProductDetailData,
+  SellerProductDraftAutofillData,
+  SellerProductDraftAutofillRequest,
+  SellerProductDraftData,
+  SellerProductDraftOptionCombinationInput,
+  SellerProductDraftOptionGroupInput,
+  SellerProductDraftSaveRequest,
+  SellerProductInspection,
   SellerProductOptionCombinationInput,
   SellerProductOptionGroupInput,
   SellerProductRegisterRequest,
@@ -122,33 +129,71 @@ export const DEFAULT_PAGE_SIZE = 20
 // purpose=PRODUCT는 png/jpeg/webp만(그 외 400/100000). 받은 url에 같은 Content-Type으로 PUT(10분 유효)하고
 // key(`tmp/{userId}/products/{ULID}.{ext}`)를 등록/수정 본문에 싣는다. 서버 크기 제한은 없다.
 // 등록/수정은 tmp 키를 `products/{같은 파일명}`으로 복사한다(같은 tmp 키 → 같은 저장 키). tmp/는 S3 수명주기로
-// 1일 뒤 지워지므로, 하루 지난 tmp 키를 보내면 404/100001이다. 임시저장(BE 없음)이 tmp 키를 들고 있는 것도
-// 같은 제약을 받는다 — 임시저장 API를 정할 때 이미지 키 보존 방식을 함께 정한다.
+// 1일 뒤 지워지므로, 하루 지난 tmp 키를 보내면 404/100001이다. 임시저장도 승격 전 tmp 키를 그대로
+// 보관하므로 같은 제약을 받는다 — 하루 지난 초안으로 등록하면 이미지만 404/100001로 떨어진다.
 
 export const PRODUCT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
-// ─── BE 엔드포인트 없음(목업 전용) ─────────────────────────────────────────────
-// 임시저장은 BE에 아직 없다. products.mock.ts의 같은 이름 구역과 짝이다.
+// ─── /sellers/me/product-drafts (목록·단건·생성·덮어쓰기·삭제) ──────────────────
+// 전 필드가 선택이다 — 폼을 채우는 중에도 저장되어야 하므로 필수값·가격 범위·옵션 구성 검증은
+// 정식 등록만 건다. 남은 검증은 길이·개수 상한이고 위반은 400 errorCode 90001이다.
+// PUT은 통째로 덮어쓴다 — 보내지 않은 필드는 "유지"가 아니라 "비움"이다(BE ProductDraft.overwrite).
+// 보관은 셀러당 10건이고 마지막 저장으로부터 30일이다. 상한 초과는 422 errorCode 40401이지만
+// 덮어쓰기는 상한을 보지 않으므로 이어쓰기는 상한에 걸려도 계속 저장된다. 없는 초안·남의 초안·
+// 기간이 지난 초안은 전부 404 errorCode 40400으로 묶여 구별되지 않는다.
+// 이미지 키는 승격 전 tmp 키라 그대로 정식 등록 요청에 실을 수 있지만 tmp/는 S3 수명주기로 하루 뒤
+// 지워진다 — 하루 지난 초안으로 등록하면 404 errorCode 100001이다.
 
-/** 임시저장은 미완성 조합도 담는다. 비운 칸만 빠진다. */
-export type DraftOptionCombination = Pick<OptionCombinationRequest, 'optionValues'> &
-  Partial<Omit<OptionCombinationRequest, 'optionValues'>>
+/** 초안의 옵션 그룹. 등록 요청과 달리 이름이 비어 있어도, 값이 0개여도 된다. */
+export type DraftOptionGroup = SellerProductDraftOptionGroupInput
+/** 초안은 미완성 조합도 담는다. 비운 칸은 null이다. */
+export type DraftOptionCombination = SellerProductDraftOptionCombinationInput
 
-export type ProductDraftRequest = Partial<Omit<ProductRegisterRequest, 'optionCombinations'>> & {
-  optionCombinations?: DraftOptionCombination[]
+export type ProductDraftRequest = SellerProductDraftSaveRequest
+
+/** 등록 폼 프리필 — BE ProductDraftResponse 1:1. */
+export type ProductDraft = SellerProductDraftData
+
+export type {
+  /** 저장 응답. `savedAt`은 서버가 찍은 시각이라 "방금 저장"의 출처다. */
+  SellerProductDraftSaveData as ProductDraftSaveResponse,
+  /** Drawer 한 행. */
+  SellerProductDraftListItem as ProductDraftSummary,
+} from '@aechak/api'
+
+// ─── POST /sellers/me/products/{productId}/inspection/appeals ───────────────
+// 반려를 고치지 않고 관리자 재검토를 요청한다. 응답이 검수 조회와 같은 모양이라 제기 직후 조회
+// 캐시에 그대로 넣을 수 있다(products.queries의 `useAppealProductInspection`).
+// **거절 계약은 dev 스펙에 없다** — springdoc 자동 문서라 200만 적혀 있어 재제기·대상 상태의
+// errorCode를 확인하지 못했다. 지어내지 말고 공용 문구(`productErrorMessage`)로 떨어뜨린다.
+// 수정 경로도 없다(POST 하나뿐) — 한 번 보낸 사유를 고칠 방법이 계약에 없다.
+
+/** BE ProductInspectionAppealRequest.reason의 상한. */
+export const APPEAL_REASON_MAX_LENGTH = 500
+
+/**
+ * 이의 제기 입구를 내줄 것인가.
+ *
+ * 반려된 상품만 대상이다 — 통과·대기 중인 상품에 버튼을 내주면 제기할 이의가 없는 셀러가
+ * 누르고 서버에 거절당한다. `inspectionStatus`와 `progressStep`을 둘 다 보는 이유는, 관리자가
+ * 반려한 상품을 고쳐 AI를 통과하면 `progressStep`만 ADMIN_REVIEWING으로 앞서 가고
+ * `inspectionStatus`는 REJECTED로 남기 때문이다(그 상품도 아직 반려라 이의 대상이다).
+ *
+ * 제기 이력이 있으면 닫는다. 서버가 재제기를 어떻게 거절하는지 확인하지 못해(스펙에 에러 코드가
+ * 없다) 열어 두면 셀러가 눌러 보고 뜻을 알 수 없는 실패를 받는다.
+ * `appealCleared`는 뜻을 확인하지 못해 판정에 넣지 않는다(생성물 주석 참고).
+ */
+export function canAppealInspection(inspection: SellerProductInspection): boolean {
+  const rejected = inspection.inspectionStatus === 'REJECTED' || inspection.progressStep === 'REJECTED'
+  return rejected && inspection.appealedAt == null
 }
 
-export interface ProductDraftResponse {
-  productId: string
-  savedAt: string
-}
-
-export type ProductDraft = ProductDraftRequest & ProductDraftResponse
-
-export interface ProductDraftSummary {
-  productId: string
-  productName: string | null
-  savedAt: string
+/**
+ * BE LocalDateTime(오프셋 없는 KST 벽시계) 표기. Date로 바꾸지 않고 자리만 맞춘다 — Date로 파싱하면
+ * 런타임 타임존에 따라 날짜가 하루 밀린다. 분까지만 보여 준다(초는 운영에 쓰이지 않는다).
+ */
+export function formatLocalDateTime(value: string): string {
+  return value.slice(0, 16).replace('T', ' ').replaceAll('-', '.')
 }
 
 // ─── 화면 매핑 ────────────────────────────────────────────────────────────────
@@ -288,7 +333,11 @@ export function toFormValues(
 ): ProductFormValues {
   const path = src.categoryId != null ? findCategoryPath(tree, src.categoryId) : null
   const draft = src as ProductDraft
-  const groups = draft.optionGroups ?? []
+  // 초안의 그룹명은 nullable(빈 이름으로 저장할 수 있다)이고 폼은 문자열만 다룬다.
+  const groups: OptionGroupRequest[] = (draft.optionGroups ?? []).map(g => ({
+    name: g.name ?? '',
+    values: g.values,
+  }))
   const combinations = draft.optionCombinations ?? []
   const optionEnabled = groups.length > 0
   const defaultCombination = combinations.find(c => c.optionValues.length === 0)
@@ -322,7 +371,11 @@ export function toFormValues(
     optionGroups: groups,
     // 임시저장은 아무 값도 없는 행을 빼고 저장하므로 그룹으로 다시 펼쳐 빠진 행을 채운다.
     combinations: optionEnabled ? buildCombinations(groups, sourceRows) : [],
-    defaultStock: !optionEnabled && defaultCombination ? String(defaultCombination.stockQuantity) : '',
+    // 초안의 재고는 null일 수 있다 — String(null)이 'null'로 새면 폼이 거짓을 보여 준다.
+    defaultStock:
+      !optionEnabled && defaultCombination?.stockQuantity != null
+        ? String(defaultCombination.stockQuantity)
+        : '',
   }
 }
 
@@ -413,7 +466,10 @@ export function toRegisterRequest(v: ProductFormValues): ProductRegisterRequest 
 // 입력이 digitsOnly로 정규화돼 있어 빈 칸과 숫자만 구분하면 된다.
 const parseDigits = (value: string): number | undefined => (value === '' ? undefined : Number(value))
 
-/** 임시저장(목업 전용) — 필수 검증 없이 비운 칸만 뺀다. */
+/**
+ * 임시저장 요청 — 필수 검증 없이 비운 칸만 뺀다. PUT이 통째로 덮어쓰므로 "빼는 것"이 곧 "비우는 것"이고,
+ * 그래서 폼을 지운 뒤 다시 저장하면 서버 값도 지워진다(의도된 동작).
+ */
 export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
   const body: ProductDraftRequest = {}
   if (!isBlank(v.productName)) body.productName = v.productName.trim()
@@ -452,6 +508,84 @@ export function toDraftRequest(v: ProductFormValues): ProductDraftRequest {
   return body
 }
 
+// ─── POST /sellers/me/product-drafts/autofill ────────────────────────────────
+// 아무것도 저장하지 않는다. AI가 못 만들어도 200 + state다(OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴
+// 수 있어 열거로 가두지 않고 문자열로 다룬다). 쿨다운(셀러당 20초)만 429/40402다. 초안은 네 필드
+// (카테고리·설명·옵션 그룹·옵션 조합)만 들고 나머지는 늘 null이다 — 비어 있는 사유는 fieldStatus에 있다.
+
+export type ProductDraftAutofillRequest = SellerProductDraftAutofillRequest
+export type ProductDraftAutofillResult = SellerProductDraftAutofillData
+export const AUTOFILL_STATE_OK = 'OK'
+
+export type AutofillFilledField = 'category' | 'description' | 'options'
+
+export const AUTOFILL_FIELD_LABEL: Record<AutofillFilledField, string> = {
+  category: '카테고리',
+  description: '상세 설명',
+  options: '옵션',
+}
+
+/** 초안 요청. 셀러가 이미 쓴 설명·옵션은 lockedFields로 보내 AI가 그 전제로 나머지를 만들게 한다. */
+export function toAutofillRequest(v: ProductFormValues): ProductDraftAutofillRequest {
+  const description = v.description.trim()
+  const optionGroups = v.optionEnabled
+    ? v.optionGroups
+        .filter(g => !isBlank(g.name) && g.values.length > 0)
+        .map(g => ({ name: g.name.trim(), values: g.values }))
+    : []
+  const categoryId = v.categoryIds[2] ?? v.categoryIds[1] ?? v.categoryIds[0]
+  const lockedFields = {
+    ...(description && { description }),
+    ...(optionGroups.length > 0 && { optionGroups }),
+  }
+  return {
+    productName: v.productName.trim(),
+    ...(categoryId != null && { categoryId }),
+    ...(Object.keys(lockedFields).length > 0 && { lockedFields }),
+  }
+}
+
+/**
+ * 초안을 빈 칸에만 얹는다 — 셀러가 이미 쓴 값은 덮지 않는다. 카테고리는 한 단계도 안 고른 상태만,
+ * 옵션은 옵션을 안 켰고 단일 재고도 안 쓴 상태만 빈 칸으로 본다(단일 재고를 썼다면 옵션 없는
+ * 상품으로 정한 것이다). AI 카테고리는 depth 3이 아닐 수 있어 경로만큼만 채운다.
+ */
+export function applyAutofillDraft(
+  v: ProductFormValues,
+  draft: ProductDraftAutofillResult['draft'],
+  tree: CategoryNode[],
+): { values: ProductFormValues; filled: AutofillFilledField[] } {
+  const filled: AutofillFilledField[] = []
+  const next = { ...v }
+  const path = draft.categoryId != null ? findCategoryPath(tree, draft.categoryId) : null
+  if (path && v.categoryIds.every(id => id == null)) {
+    next.categoryIds = [path[0]?.categoryId ?? null, path[1]?.categoryId ?? null, path[2]?.categoryId ?? null]
+    filled.push('category')
+  }
+  const description = draft.description?.trim()
+  if (description && isBlank(v.description)) {
+    next.description = description
+    filled.push('description')
+  }
+  const groups = draft.optionGroups
+    .filter(g => g.values.length > 0)
+    .map(g => ({ name: g.name ?? '', values: g.values }))
+  const optionsEmpty = !v.optionEnabled && v.optionGroups.length === 0 && v.defaultStock === ''
+  if (groups.length > 0 && optionsEmpty) {
+    const rows: CombinationRow[] = draft.optionCombinations.map(c => ({
+      key: combinationKey(c.optionValues),
+      optionValues: c.optionValues,
+      additionalPrice: c.additionalPrice != null ? String(c.additionalPrice) : '0',
+      stockQuantity: c.stockQuantity != null ? String(c.stockQuantity) : '',
+    }))
+    next.optionEnabled = true
+    next.optionGroups = groups
+    next.combinations = buildCombinations(groups, rows)
+    filled.push('options')
+  }
+  return { values: next, filled }
+}
+
 // BE errorCode → FE 문구. 서버 message는 -습니다 격식체라 띄우지 않는다(카피 규칙).
 // 90002(INVALID_CURSOR)는 셀러 상품 API가 보내지 않는다.
 // 인증 계열은 공유 클라이언트가 먼저 전역 처리한다 — 401은 refresh 재시도 뒤에도 실패하면
@@ -475,6 +609,9 @@ const ERROR_MESSAGE: Record<number, string> = {
   40101: '선택한 카테고리를 쓸 수 없어요. 다시 선택해 주세요.',
   40200: '재고는 0 이상으로 입력해 주세요.',
   40201: '추가 금액은 0 이상으로 입력해 주세요.',
+  40402: 'AI 초안은 잠시 뒤 다시 받을 수 있어요.',
+  40400: '임시저장한 상품을 찾을 수 없어요. 목록을 새로고침해 주세요.',
+  40401: '임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.',
   90000: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   90001: '입력한 내용을 다시 확인해 주세요.',
   90003: '다른 곳에서 먼저 수정했어요. 새로고침 후 다시 시도해 주세요.',
@@ -485,7 +622,22 @@ const ERROR_MESSAGE: Record<number, string> = {
 }
 
 // axios 타입을 안 끌어오려고 duck-typing(store-settings 관례). 에러 본문은 `{ errorCode, message }`.
+const errorCodeOf = (error: unknown): number | undefined =>
+  (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+
 export function productErrorMessage(error: unknown): string {
-  const code = (error as { response?: { data?: { errorCode?: number } } }).response?.data?.errorCode
+  const code = errorCodeOf(error)
   return (code !== undefined && ERROR_MESSAGE[code]) || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
+}
+
+/** BE ProductErrorCode.PRODUCT_DRAFT_NOT_FOUND — 없는 초안·남의 초안·30일 지난 초안이 전부 이 코드다. */
+const PRODUCT_DRAFT_NOT_FOUND = 40400
+
+/**
+ * "그 초안이 없다"와 "초안을 못 읽었다"를 가른다. 둘을 한 문구로 묶으면 서버가 500을 돌려준 순간
+ * 화면이 "찾을 수 없어요"라는 거짓을 말하고, 셀러가 남아 있는 초안을 버리고 새로 쓴다.
+ * 코드가 40400일 때만 "없다"로 단정하고, 코드 없는 404·500·네트워크 실패는 "못 읽었다"로 남긴다.
+ */
+export function isProductDraftMissing(error: unknown): boolean {
+  return errorCodeOf(error) === PRODUCT_DRAFT_NOT_FOUND
 }

@@ -1,11 +1,17 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
+import { stubMemberSession } from './session'
 import type { ReviewItemResponse } from '@aechak/api'
+
+// 리뷰 AI 요약은 api 호스트로만 나가야 해서 origin까지 적어 호스트를 가른다
+const API_ORIGIN = 'http://localhost:8080'
 
 // 상품 리뷰 목록 ↔ reviews API(SCRUM-181) 연동 E2E. 실백엔드 없이 page.route 스텁으로 서버 계약을
 // 재현한다(product-detail/pet-breeds spec과 동일한 CORS/프리플라이트 규칙). 서버가 sort/photoOnly/cursor를
 // 실제로 반영한다고 보고, 스텁이 그 파라미터대로 응답을 만들어 정렬/포토 필터/페이지네이션을 검증한다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -98,6 +104,11 @@ async function stubReviews(page: Page, opts: number | StubOptions = 100) {
     return route.fulfill({ status: 200, headers: CORS, json: reviewsBody(url, pageSize) })
   })
 }
+
+// 회원 세션 전제 — 첫 진입 세션 확인(refresh)을 스텁하지 않으면 로그인 상태로 조건 건 조회가 안 나간다.
+test.beforeEach(async ({ page }) => {
+  await stubMemberSession(page)
+})
 
 test('[AC-REVIEW-E2E-001] 실 상품 리뷰 요약(평균)과 목록을 렌더한다', async ({ page }) => {
   await stubReviews(page, 100)
@@ -255,7 +266,7 @@ const DETAIL_FOR_PREVIEW = {
 test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3개를 채운다', async ({ page }) => {
   await stubReviews(page, 100)
   // API 경로를 통째로 지정한다 — `/products/{id}$` 같은 정규식은 페이지 내비게이션 URL
-  // (localhost:5175/products/{id})까지 잡아 앱 대신 JSON이 렌더된다(product-detail spec과 동일한 형태).
+  // (앱 origin의 /products/{id})까지 잡아 앱 대신 JSON이 렌더된다(product-detail spec과 동일한 형태).
   await page.route(`**/api/v1/products/${REAL_ID}`, (route: Route) =>
     route.request().method() === 'OPTIONS'
       ? route.fulfill({
@@ -263,6 +274,19 @@ test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3�
           headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
         })
       : route.fulfill({ status: 200, headers: CORS, json: DETAIL_FOR_PREVIEW }),
+  )
+  // 상세가 함께 부르는 리뷰 AI 요약(JWT 필수)도 스텁해 로컬 BE의 401 리다이렉트를 막는다.
+  await page.route(`${API_ORIGIN}/api/v1/products/${REAL_ID}/review-summary`, (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({
+          status: 200,
+          headers: CORS,
+          json: { data: { productSummary: null, similarPetSummary: null } },
+        }),
   )
   await page.goto(`/products/${REAL_ID}`)
   await expect(page.getByText('리얼 프리미엄 자동 급식기')).toBeVisible()
@@ -355,6 +379,30 @@ test('[AC-REVIEW-E2E-010] 작성 대기에서 쓴 리뷰는 POST /reviews로 저
       },
     })
   })
+  // 내 리뷰 카드의 작성자 닉네임은 GET /users/me에서 읽는다.
+  await page.route('http://localhost:8080/api/v1/users/me', (route: Route) =>
+    route.request().method() === 'OPTIONS'
+      ? route.fulfill({
+          status: 204,
+          headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' },
+        })
+      : route.fulfill({
+          status: 200,
+          headers: CORS,
+          json: {
+            data: {
+              status: 'ACTIVE',
+              nickname: '연어러버',
+              profileImageUrl: null,
+              profileImageKey: null,
+              bio: null,
+              email: null,
+              phoneNumber: null,
+              isPhoneVerified: true,
+            },
+          },
+        }),
+  )
   await page.goto('/reviews/mine')
   await page.getByRole('button', { name: '리뷰 쓰기' }).click()
   await expect(page.getByText('상품은 만족하셨나요?')).toBeVisible()
@@ -372,6 +420,7 @@ test('[AC-REVIEW-E2E-010] 작성 대기에서 쓴 리뷰는 POST /reviews로 저
   await expect(page).toHaveURL(/\/reviews\/mine/)
   await expect(page.getByText('배송도 빠르고 튼튼해서 아이가 잘 쓰고 있어요.')).toBeVisible()
   expect(posted).toMatchObject({ orderItemId: 77 })
+  await expect(page.getByText('리뷰가 등록됐어요. 적립금 300원 지급 예정')).toBeVisible()
   await shot(page, 'test-results/pr-c/03-my-reviews-after-write.png')
 })
 
