@@ -9,7 +9,7 @@ import {
 import { clearPendingAction } from '@/shared/auth'
 
 // TODO: placeholder brand marks (colored initial badges) — swap for
-// licensed Kakao/Google/Apple logos before shipping; sourcing/recreating
+// licensed Kakao logo before shipping; sourcing/recreating
 // real brand assets is explicitly deferred for this batch.
 const SOCIAL_OPTIONS: {
   provider: SocialProvider
@@ -18,13 +18,6 @@ const SOCIAL_OPTIONS: {
   badgeClassName: string
 }[] = [
   { provider: 'kakao', label: '카카오로 시작하기', initial: 'K', badgeClassName: 'bg-[#FEE500] text-[#191919]' },
-  {
-    provider: 'google',
-    label: '구글로 시작하기',
-    initial: 'G',
-    badgeClassName: 'border border-border bg-white text-text-primary',
-  },
-  { provider: 'apple', label: 'Apple로 시작하기', initial: 'A', badgeClassName: 'bg-black text-white' },
 ]
 
 export interface LoginSearch {
@@ -84,7 +77,7 @@ function SocialLoginRoute() {
             </Alert>
           )}
           {SOCIAL_OPTIONS.map(({ provider, label, initial, badgeClassName }) => {
-            // 서버 웹 로그인이 열린 provider만 활성 — 구글·애플은 서버 지원 후 개방
+            // 서버 웹 로그인이 열린 provider만 활성
             const supported = WEB_LOGIN_PROVIDERS.has(provider)
             return (
               <Button

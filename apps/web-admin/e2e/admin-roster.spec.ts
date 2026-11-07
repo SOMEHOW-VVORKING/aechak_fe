@@ -201,7 +201,7 @@ test('[AC-ADM-E2E-010] 로그인 화면은 카카오만 열려 있고 SideNav �
   await page.goto('/login')
 
   await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: '구글로 로그인 (준비 중)' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /구글|Apple/ })).toHaveCount(0)
   // BE에 POST /auth/login이 없다 — 이메일/비밀번호 폼은 제거됐다.
   await expect(page.getByLabel('Email')).toHaveCount(0)
   await expect(page.getByLabel('Password')).toHaveCount(0)

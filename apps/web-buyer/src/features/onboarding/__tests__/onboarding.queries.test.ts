@@ -12,9 +12,7 @@ describe('socialLoginRedirectUrl', () => {
 })
 
 describe('WEB_LOGIN_PROVIDERS', () => {
-  it('웹 로그인은 카카오만 열려 있다 — 구글·애플은 서버 미지원(버튼 비활성 근거)', () => {
-    expect(WEB_LOGIN_PROVIDERS.has('kakao')).toBe(true)
-    expect(WEB_LOGIN_PROVIDERS.has('google')).toBe(false)
-    expect(WEB_LOGIN_PROVIDERS.has('apple')).toBe(false)
+  it('웹 로그인은 카카오만 열려 있다', () => {
+    expect([...WEB_LOGIN_PROVIDERS]).toEqual(['kakao'])
   })
 })

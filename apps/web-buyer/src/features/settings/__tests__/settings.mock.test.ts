@@ -63,8 +63,7 @@ describe('settings.mock — 로그인 안내', () => {
     const faq = FAQ_ITEMS.find(item => item.id === 'faq-password')
     expect(faq).toBeDefined()
     // 서버 웹 로그인은 카카오만 열려 있고(onboarding.queries 의 WEB_LOGIN_PROVIDERS), 로그인
-    // 화면도 구글·애플 버튼을 '(준비 중)'으로 잠가 둔다. FAQ 가 셋을 지원한다고 적으면 로그인이
-    // 안 되는 사용자가 안내대로 구글·애플을 시도하고도 진행할 수 없다.
+    // 화면에도 카카오 버튼만 있다. FAQ 가 다른 수단을 적으면 사용자가 없는 버튼을 찾게 된다.
     expect(faq?.answer).toContain('카카오')
     expect(faq?.answer).not.toContain('구글')
     expect(faq?.answer).not.toContain('Apple')
