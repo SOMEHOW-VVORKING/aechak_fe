@@ -85,7 +85,7 @@ export const CATEGORY_FIXTURES = [
   },
 ]
 
-// 중분류 -> 대분류 부모 맵(카테고리 필터의 category.id==it OR parent.id==it 흉내용).
+// 중분류 -> 대분류 부모 맵(카테고리 필터가 받는 중분류를 가려내는 용도).
 const CATEGORY_PARENT: Record<number, number | undefined> = { 11: 1, 12: 1, 21: 2, 22: 2 }
 
 interface ProductFixture {
@@ -2188,9 +2188,14 @@ export const handlers = [
     let list = PRODUCT_FIXTURES
     if (catParam) {
       const id = Number(catParam)
-      list = PRODUCT_FIXTURES.filter(
-        f => f.categoryId === id || CATEGORY_PARENT[f.categoryId] === id,
-      )
+      // 실 서버와 같이 중분류만 받는다. 대분류와 소분류는 400으로 거절한다.
+      if (CATEGORY_PARENT[id] === undefined) {
+        return HttpResponse.json(
+          { errorCode: 40102, message: '카테고리 필터는 중분류만 사용할 수 있습니다.' },
+          { status: 400 },
+        )
+      }
+      list = PRODUCT_FIXTURES.filter(f => f.categoryId === id)
     }
     let products = list.map(f => f.product)
     if (sort === 'price_asc') {

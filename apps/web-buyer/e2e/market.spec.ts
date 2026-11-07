@@ -37,7 +37,10 @@ const CATEGORIES = {
       name: '고양이',
       iconUrl: null,
       sortOrder: 2,
-      children: [{ categoryId: 21, name: '위생/미용', iconUrl: null, sortOrder: 1, children: [] }],
+      children: [
+        { categoryId: 21, name: '위생/미용', iconUrl: null, sortOrder: 1, children: [] },
+        { categoryId: 22, name: '사료/간식', iconUrl: null, sortOrder: 2, children: [] },
+      ],
     },
   ],
 }
@@ -62,18 +65,16 @@ function product(productId: string, name: string) {
   }
 }
 
-// 카테고리별 상품(서버 category.id==it OR parent.id==it 흉내). 2=고양이 대분류, 21=고양이 위생/미용.
-// 대분류(2)는 고양이 상품 2개를 주고, 하위 중분류(21)는 그 중 1개만 주는 엄격한 부분집합이라 중분류
-// 필터가 실제로 결과를 좁히는지 검증할 수 있다. 강아지 서브(11 등)는 어떤 테스트도 클릭하지 않아
-// 픽스처를 두지 않는다(죽은 픽스처 제거).
+// 카테고리별 상품. 실 서버와 같이 중분류(21, 22)만 받고, 대분류(1, 2) 같은 다른 값은 400으로 거절한다.
+// 강아지 서브(11 등)는 어떤 테스트도 클릭하지 않아 픽스처를 두지 않는다(죽은 픽스처 제거).
 const BY_CATEGORY: Record<string, ReturnType<typeof product>[]> = {
   '': [
     product('e-dog-1', '강아지 연어 사료 2kg'),
     product('e-cat-1', '벤토나이트 고양이 모래 8.5L'),
     product('e-cat-2', '고양이 통살 캔 30개입'),
   ],
-  '2': [product('e-cat-1', '벤토나이트 고양이 모래 8.5L'), product('e-cat-2', '고양이 통살 캔 30개입')],
   '21': [product('e-cat-1', '벤토나이트 고양이 모래 8.5L')],
+  '22': [product('e-cat-2', '고양이 통살 캔 30개입')],
 }
 
 test.beforeEach(async ({ page }) => {
@@ -81,43 +82,46 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/categories', route => fulfillJson(route, 200, CATEGORIES))
   await page.route('**/api/v1/products?*', route => {
     const category = new URL(route.request().url()).searchParams.get('category') ?? ''
-    const products = BY_CATEGORY[category] ?? []
+    const products = BY_CATEGORY[category]
+    if (!products) {
+      return fulfillJson(route, 400, { errorCode: 40102, message: '카테고리 필터는 중분류만 사용할 수 있습니다.' })
+    }
     return fulfillJson(route, 200, { data: { products, totalCount: products.length, nextCursor: null, hasNext: false } })
   })
 })
 
-test('[AC-MARKET-E2E-001] 마켓은 실 API 상품을 보여주고 대분류 전환 시 결과가 걸러진다', async ({ page }) => {
+test('[AC-MARKET-E2E-001] 마켓은 실 API 상품을 보여주고 대분류 전환 시 첫 중분류로 걸러진다', async ({ page }) => {
   await page.goto('/market')
 
   // 전체(필터 없음) — 강아지/고양이 상품이 함께 보인다.
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
 
-  // 고양이 대분류로 전환하면 고양이 상품만 남는다. exact 필수 — 비exact 매칭은 상품 카드의
+  // 고양이 대분류로 전환하면 첫 중분류(위생/미용) 상품만 남는다. exact 필수 — 비exact 매칭은 상품 카드의
   // stretched 버튼 aria-label('벤토나이트 고양이 모래 8.5L 상세 보기')까지 잡아 strict mode 위반.
   await page.getByRole('button', { name: '고양이', exact: true }).click()
   await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
   await expect(page.getByText('강아지 연어 사료 2kg')).toHaveCount(0)
+  await expect(page.getByText('상품을 불러오지 못했어요')).toHaveCount(0)
 })
 
-test('[AC-MARKET-E2E-002] 중분류(위생/미용) 서브타일을 고르면 category=21로 결과가 부분집합으로 좁혀진다', async ({ page }) => {
+test('[AC-MARKET-E2E-002] 다른 중분류(사료/간식) 서브타일을 고르면 category=22로 결과가 바뀐다', async ({ page }) => {
   await page.goto('/market')
 
-  // 고양이 대분류(category=2)로 전환하면 고양이 상품 2개가 함께 보인다(중분류 그리드도 함께 펼쳐진다).
+  // 고양이 대분류로 전환하면 첫 중분류(category=21) 상품이 보이고 중분류 그리드도 함께 펼쳐진다.
   // exact 필수 — 비exact 매칭은 상품 카드 stretched 버튼의 aria-label까지 잡아 strict mode 위반.
   await page.getByRole('button', { name: '고양이', exact: true }).click()
   await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
-  await expect(page.getByText('고양이 통살 캔 30개입')).toBeVisible()
+  await expect(page.getByText('고양이 통살 캔 30개입')).toHaveCount(0)
 
-  // 위생/미용 서브타일을 누르면 category=21 요청이 실제로 발사된다(정말 서버에서 좁히는지 확인).
-  // 서브타일 accessible name은 catalog-route.test.tsx의 '위생/미용' 버튼 클릭 방식과 동일하게 라벨로 잡는다.
+  // 사료/간식 서브타일을 누르면 category=22 요청이 실제로 발사된다(정말 서버에서 좁히는지 확인).
+  // 서브타일 accessible name은 catalog-route.test.tsx의 버튼 클릭 방식과 동일하게 라벨로 잡는다.
   const subResponse = page.waitForResponse(
-    res => res.request().method() === 'GET' && /\/api\/v1\/products\?.*category=21/.test(res.url()),
+    res => res.request().method() === 'GET' && /\/api\/v1\/products\?.*category=22/.test(res.url()),
   )
-  await page.getByRole('button', { name: '위생/미용' }).click()
+  await page.getByRole('button', { name: '사료/간식' }).click()
   await subResponse
 
-  // 부분집합(벤토나이트 1개)만 남고 다른 고양이 상품(통살 캔)은 사라진다.
-  await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toBeVisible()
-  await expect(page.getByText('고양이 통살 캔 30개입')).toHaveCount(0)
+  await expect(page.getByText('고양이 통살 캔 30개입')).toBeVisible()
+  await expect(page.getByText('벤토나이트 고양이 모래 8.5L')).toHaveCount(0)
 })
