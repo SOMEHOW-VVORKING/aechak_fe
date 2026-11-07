@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Image, Sparkles } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Image, Sparkles } from 'lucide-react'
 import { Alert, Button, Checkbox, DataTable, Drawer, FilterBar, Modal, Textarea, Toast } from '@aechak/design-system/web'
 import type { Column } from '@aechak/design-system/web'
 import { ActorTag } from '@/shared/components/ActorTag'
@@ -24,6 +24,7 @@ import {
   decisionErrorMessage,
   isStaleDecision,
   loadErrorMessage,
+  type AiReviewDetailView,
   type AiReviewRowView,
   type QueueStatus,
 } from '../ai-review-queue.map'
@@ -96,6 +97,39 @@ function makeQueueColumns(onOpenDetail: (row: AiReviewRowView) => void): Column<
       render: row => <StatusMetaPill meta={QUEUE_STATUS_META[row.status]} />,
     },
   ]
+}
+
+// 운영자가 승인과 반려를 고르는 근거라 판정 값과 상관없이 목록이 있으면 그린다.
+function ViolationList({ violations }: { violations: AiReviewDetailView['violations'] }) {
+  if (violations.length === 0) return null
+  return (
+    <DetailField label="수정 필요 항목">
+      <ul className="space-y-1.5">
+        {violations.map((violation, index) => (
+          <li key={index} className="flex items-start gap-2 text-body-sm text-text-secondary">
+            <AlertTriangle className="mt-0.5 size-3.5 flex-none text-warning-fg" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-text-primary">{violation.categoryLabel}</p>
+              <dl>
+                {violation.quote && (
+                  <div className="flex gap-2">
+                    <dt className="flex-none text-text-tertiary">걸린 표현</dt>
+                    <dd className="min-w-0 break-words">{violation.quote}</dd>
+                  </div>
+                )}
+                {violation.suggestion && (
+                  <div className="flex gap-2">
+                    <dt className="flex-none text-text-tertiary">수정 제안</dt>
+                    <dd className="min-w-0 break-words">{violation.suggestion}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </DetailField>
+  )
 }
 
 // AI가 반려한 상품을 운영자가 확인해 오탐이면 승인하고 맞으면 반려를 확정한다. 상세는 목록과 별도 쿼리로 받는다 —
@@ -284,6 +318,7 @@ export function AiReviewQueuePage() {
                 </p>
               )}
               {detail.sellerNotice && <p className="text-body-sm text-text-secondary">{detail.sellerNotice}</p>}
+              <ViolationList violations={detail.violations} />
               <SummaryGrid
                 items={[
                   { label: '판정 시각', value: detail.settledAt },

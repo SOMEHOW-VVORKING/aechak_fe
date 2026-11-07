@@ -40,6 +40,7 @@ function inspectionWire(overrides: Partial<SellerProductInspection>): SellerProd
     rejectReason: null,
     requestedAt: '2026-10-22T10:00:00',
     settledAt: '2026-10-22T10:00:40',
+    violations: [],
     ...overrides,
   }
 }
@@ -232,5 +233,258 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '이의 제기' })).toBeDisabled())
     // 반려 내용은 지우지 않는다 — 마지막으로 본 것은 정보다.
     expect(screen.getByText('관절염 치료에 효과')).toBeInTheDocument()
+  })
+
+  // ─── 수정 필요 항목 ───────────────────────────────────────────────────────
+
+  const violationItem = (text: string) => screen.getByText(text).closest('li') as HTMLElement
+
+  it('[AC-SPRD-090] 반려 사유 아래에 위반마다 분류 이름과 걸린 표현과 수정 제안을 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        violations: [
+          {
+            category: 'MEDICAL_CLAIM',
+            quote: '슬개골 탈구와 관절염이 2주 만에 완치됩니다',
+            suggestion: '관절 건강 유지에 도움을 줄 수 있습니다',
+          },
+          { category: 'EFFICACY_OVERCLAIM', quote: '수술 없이도 100% 회복되며', suggestion: '개선에 도움을 줄 수 있습니다' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const title = await screen.findByText('수정 필요 항목')
+    expect(title.closest('[role="alert"]'), '사유 Alert 바깥에 둔다').toBeNull()
+    const notice = screen.getByText('치료 효능 표현을 고쳐 주세요.')
+    expect(notice.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING, '사유 아래에 둔다').toBeTruthy()
+
+    const first = violationItem('슬개골 탈구와 관절염이 2주 만에 완치됩니다')
+    expect(within(first).getByText('질병 치료 효능')).toBeInTheDocument()
+    expect(within(first).getByText('걸린 표현').nextElementSibling).toHaveTextContent(
+      '슬개골 탈구와 관절염이 2주 만에 완치됩니다',
+    )
+    expect(within(first).getByText('수정 제안').nextElementSibling).toHaveTextContent(
+      '관절 건강 유지에 도움을 줄 수 있습니다',
+    )
+
+    const second = violationItem('수술 없이도 100% 회복되며')
+    expect(within(second).getByText('효능 과장')).toBeInTheDocument()
+    expect(within(second).getByText('수정 제안').nextElementSibling).toHaveTextContent('개선에 도움을 줄 수 있습니다')
+  })
+
+  it('[AC-SPRD-091] 제안이나 걸린 표현이 null이면 그 줄을 그리지 않는다', async () => {
+    serveInspection(
+      inspectionWire({
+        violations: [
+          { category: 'CONTACT_INFO', quote: '010-1234-5678', suggestion: null },
+          { category: 'BANNED_INGREDIENT', quote: null, suggestion: '다른 성분으로 바꿔 주세요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const ruleViolation = (await screen.findByText('연락처 노출')).closest('li') as HTMLElement
+    expect(within(ruleViolation).getByText('010-1234-5678')).toBeInTheDocument()
+    expect(within(ruleViolation).queryByText('수정 제안')).not.toBeInTheDocument()
+
+    const noQuote = violationItem('금지 성분')
+    expect(within(noQuote).getByText('다른 성분으로 바꿔 주세요')).toBeInTheDocument()
+    expect(within(noQuote).queryByText('걸린 표현')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-092] 목록이 비면 영역을 그리지 않는다', async () => {
+    serveInspection(inspectionWire({ violations: [] }))
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-093] 걸린 표현과 제안의 HTML과 주소를 글자 그대로 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        violations: [
+          { category: 'SPAM', quote: '<img src=x onerror=alert(1)>', suggestion: 'https://example.com 으로 오세요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const item = (await screen.findByText('<img src=x onerror=alert(1)>')).closest('li') as HTMLElement
+    expect(within(item).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(item).getByText('https://example.com 으로 오세요')).toBeInTheDocument()
+    expect(within(item).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-094] 모르는 분류는 기타로 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        violations: [
+          { category: 'BRAND_NEW_CATEGORY', quote: '새 분류 표현', suggestion: null },
+          { category: 'constructor', quote: '객체 내장 키 표현', suggestion: null },
+          { category: 'IRRELEVANT', quote: '상품과 무관한 표현', suggestion: null },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const unknown = (await screen.findByText('새 분류 표현')).closest('li') as HTMLElement
+    expect(within(unknown).getByText('기타')).toBeInTheDocument()
+    expect(within(violationItem('객체 내장 키 표현')).getByText('기타')).toBeInTheDocument()
+    expect(within(violationItem('상품과 무관한 표현')).getByText('기타')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-095] 판정 실패 뒤에는 목록을 숨긴다', async () => {
+    serveInspection(
+      inspectionWire({
+        judgment: 'FAILED',
+        violations: [{ category: 'MEDICAL_CLAIM', quote: '이미 고친 문구', suggestion: '제안' }],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('반려된 상품이에요')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+    expect(screen.queryByText('이미 고친 문구')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-096] 응답에 violations가 없어도 사유를 보여 주고 목록 영역은 그리지 않는다', async () => {
+    serveInspection(inspectionWire({ violations: undefined as unknown as SellerProductInspection['violations'] }))
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('치료 효능 표현을 고쳐 주세요.')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-097] 통과 판정에 규칙 위반이 남아 있어도 목록을 그리지 않는다', async () => {
+    serveInspection(
+      inspectionWire({
+        inspectionStatus: 'APPROVED',
+        progressStep: 'APPROVED',
+        judgment: 'PASS',
+        reasonCode: 'BANNED_INGREDIENT',
+        reasonSummary: '코코넛오일',
+        sellerNotice: null,
+        violations: [{ category: 'BANNED_INGREDIENT', quote: '코코넛오일', suggestion: null }],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('검수를 통과했어요.')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+    expect(screen.queryByText('코코넛오일')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['REQUESTED', 'QUEUED', null, 'AI가 상품 내용을 검수하고 있어요. 보통 1분 안에 끝나요.'],
+    ['AI_REVIEWING', 'IN_FLIGHT', null, 'AI가 상품 내용을 검수하고 있어요. 보통 1분 안에 끝나요.'],
+    ['ADMIN_REVIEWING', 'SETTLED', 'PASS', '관리자가 다시 확인하고 있어요'],
+  ] as const)(
+    '[AC-SPRD-098] %s 단계에서는 위반이 있어도 목록을 그리지 않는다',
+    async (progressStep, processingState, judgment, guide) => {
+      serveInspection(
+        inspectionWire({
+          progressStep,
+          processingState,
+          judgment,
+          violations: [{ category: 'MEDICAL_CLAIM', quote: '직전 판정의 표현', suggestion: '직전 판정의 제안' }],
+        }),
+      )
+      renderAt('/products')
+
+      await openDrawer()
+
+      expect(await screen.findByText(guide)).toBeInTheDocument()
+      expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+      expect(screen.queryByText('직전 판정의 표현')).not.toBeInTheDocument()
+    },
+  )
+
+  it('[AC-SPRD-099] 관리자가 반려했고 판정이 FLAG이면 관리자 사유와 함께 목록을 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        rejectReason: '효능 표현을 빼고 다시 등록해 주세요.',
+        violations: [
+          { category: 'MEDICAL_CLAIM', quote: '슬개골 완치', suggestion: '건강 관리에 도움을 줄 수 있는' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('관리자가 반려했어요')).toBeInTheDocument()
+    expect(screen.getByText('효능 표현을 빼고 다시 등록해 주세요.')).toBeInTheDocument()
+    expect(screen.getByText('수정 필요 항목')).toBeInTheDocument()
+    const item = violationItem('슬개골 완치')
+    expect(within(item).getByText('질병 치료 효능')).toBeInTheDocument()
+    expect(within(item).getByText('수정 제안').nextElementSibling).toHaveTextContent('건강 관리에 도움을 줄 수 있는')
+  })
+
+  it('[AC-SPRD-100] 이의 접수 응답이 관리자 확인 단계로 캐시를 덮으면 제기 이력을 보여 주고 목록을 그리지 않는다', async () => {
+    const violations = [{ category: 'MEDICAL_CLAIM', quote: '슬개골 완치', suggestion: '건강 관리에 도움을 줄 수 있는' }]
+    serveInspection(inspectionWire({ violations }))
+    serveAppeal(
+      inspectionWire({
+        progressStep: 'ADMIN_REVIEWING',
+        appealedAt: '2026-10-23T09:12:00',
+        appealReason: '치료 효능이 아니라 성분 설명이에요.',
+        violations,
+      }),
+    )
+    renderAt('/products')
+
+    const user = await openDrawer()
+    expect(await screen.findByText('수정 필요 항목')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('이의 제기 사유'), '치료 효능이 아니라 성분 설명이에요.')
+    await user.click(screen.getByRole('button', { name: '이의 제기' }))
+
+    expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
+    expect(screen.getByText('관리자가 다시 확인하고 있어요')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-101] 이의 접수 응답에 violations가 없어도 제기 이력과 사유를 보여 주고 목록 영역은 그리지 않는다', async () => {
+    serveInspection(
+      inspectionWire({
+        violations: [{ category: 'MEDICAL_CLAIM', quote: '슬개골 완치', suggestion: '건강 관리에 도움을 줄 수 있는' }],
+      }),
+    )
+    serveAppeal(
+      inspectionWire({
+        appealedAt: '2026-10-23T09:12:00',
+        appealReason: '치료 효능이 아니라 성분 설명이에요.',
+        violations: undefined as unknown as SellerProductInspection['violations'],
+      }),
+    )
+    renderAt('/products')
+
+    const user = await openDrawer()
+    expect(await screen.findByText('수정 필요 항목')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('이의 제기 사유'), '치료 효능이 아니라 성분 설명이에요.')
+    await user.click(screen.getByRole('button', { name: '이의 제기' }))
+
+    expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
+    expect(screen.getByText('치료 효능 표현을 고쳐 주세요.')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
   })
 })

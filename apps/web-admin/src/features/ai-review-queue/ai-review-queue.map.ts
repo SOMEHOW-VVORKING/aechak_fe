@@ -5,6 +5,7 @@ import type {
   ReviewQueueStatus,
 } from '@aechak/api'
 import type { StatusPillVariant } from '@aechak/design-system/web'
+import { inspectionViolationCategoryLabel } from '@aechak/domain'
 
 // 어드민 상품 검토 큐 API(admin 모듈) 응답을 화면 모델로 옮기는 매퍼. 서버 enum은 이 파일과 queries에만
 // 가두고 화면은 여기서 나온 뷰 타입과 라벨만 읽는다.
@@ -59,6 +60,7 @@ export interface AiReviewDetailView {
   judgment: Judgment | 'IN_PROGRESS' | null
   reasonSummary: string | null
   sellerNotice: string | null
+  violations: { categoryLabel: string; quote: string | null; suggestion: string | null }[]
   settledAt: string
   rejections: { label: string; date: string }[]
   /** 셀러 이의. 제기가 없으면 null이고 화면은 그 자리를 그리지 않는다. */
@@ -99,6 +101,12 @@ export function toAiReviewDetail(detail: AdminProductInspectionDetail): AiReview
     judgment,
     reasonSummary: detail.reasonSummary,
     sellerNotice: detail.sellerNotice,
+    // BE 배포 전이나 되돌린 뒤의 응답에는 violations가 없을 수 있다.
+    violations: (detail.violations ?? []).map(violation => ({
+      categoryLabel: inspectionViolationCategoryLabel(violation.category),
+      quote: violation.quote ?? null,
+      suggestion: violation.suggestion ?? null,
+    })),
     settledAt: formatWireDateTime(detail.settledAt),
     rejections: detail.rejections.map(rejection => ({
       label: rejection.reason,

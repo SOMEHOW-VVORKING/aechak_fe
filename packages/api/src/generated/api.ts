@@ -5103,6 +5103,21 @@ export const ReviewQueueStatus = {
   SUPERSEDED: 'SUPERSEDED',
 } as const
 
+export interface InspectionViolation {
+  /** 위반 분류. 모르는 값이 올 수 있다 */
+  category: string
+  /**
+   * 걸린 표현. 금지 성분은 셀러가 쓴 문장이 아니라 성분 이름이다
+   * @nullable
+   */
+  quote?: string | null
+  /**
+   * AI 수정 제안. 규칙 단계 위반은 null
+   * @nullable
+   */
+  suggestion?: string | null
+}
+
 export interface SellerProductInspectionResponse {
   data: SellerProductInspection
 }
@@ -5142,6 +5157,8 @@ export interface SellerProductInspection {
    * @nullable
    */
   rejectReason?: string | null
+  /** reasonCode, reasonSummary, sellerNotice와 같은 판정의 위반 목록. 없으면 빈 배열이다 */
+  violations: InspectionViolation[]
   /**
    * 이의를 제기한 시각. null이면 제기한 적이 없다
    * @nullable
@@ -5249,6 +5266,8 @@ export interface AdminProductInspectionDetail {
   settledAt: string | null
   /** 이전 관리자 반려. 최근 것부터 */
   rejections: AdminProductRejection[]
+  /** reasonCode, reasonSummary, sellerNotice와 같은 판정의 위반 목록. 없으면 빈 배열이다 */
+  violations: InspectionViolation[]
 }
 
 export interface AdminProductRejection {
@@ -27710,7 +27729,7 @@ export const useDemoteAdmin = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * progressStep은 서버가 계산한다. 가장 최근 검수가 QUEUED면 REQUESTED, IN_FLIGHT면 AI_REVIEWING이다. 관리자가 반려한 상품을 고쳐 AI를 통과해 관리자 재확인을 기다리면 ADMIN_REVIEWING이고, 그 밖에는 상품 inspectionStatus(APPROVED, REJECTED)를 따르며 PENDING이면 REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께 reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다. rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를 타지 않은 상품은 inspectionStatus와 progressStep만 채워진다. 남의 상품·없는 상품은 404 errorCode 40000.
+ * progressStep은 서버가 계산한다. 가장 최근 검수가 QUEUED면 REQUESTED, IN_FLIGHT면 AI_REVIEWING이다. 관리자가 반려한 상품을 고쳐 AI를 통과해 관리자 재확인을 기다리면 ADMIN_REVIEWING이고, 그 밖에는 상품 inspectionStatus(APPROVED, REJECTED)를 따르며 PENDING이면 REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께 reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다. rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를 타지 않은 상품은 inspectionStatus와 progressStep만 채워지고 violations는 빈 배열이다. 남의 상품·없는 상품은 404 errorCode 40000.
  * @summary 내 상품 검수 진행 단계와 사유
  */
 export const getMyProductInspection = (productId: string, signal?: AbortSignal) => {
@@ -32392,7 +32411,7 @@ export function useGetAdminProductInspectionsSuspense<
 }
 
 /**
- * productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로, 설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는 상품이 한 번도 검수를 타지 않았으면 null이다. 없는 상품은 404 errorCode 40000.
+ * productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로, 설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는 상품이 한 번도 검수를 타지 않았으면 null이고 violations는 빈 배열이다. 없는 상품은 404 errorCode 40000.
  * @summary 어드민 상품 검토 상세
  */
 export const getAdminProductInspectionDetail = (productId: string, signal?: AbortSignal) => {
