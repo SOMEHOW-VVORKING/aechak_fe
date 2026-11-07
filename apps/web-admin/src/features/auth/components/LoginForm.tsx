@@ -1,14 +1,20 @@
-import type { ReactNode } from 'react'
-import { Alert, Button, Card } from '@aechak/design-system/web'
+import { type ReactNode, useState } from 'react'
+import { Alert, Button, Card, Input } from '@aechak/design-system/web'
 import { Apple, Globe, Info, MessageCircle } from 'lucide-react'
 import { WEB_LOGIN_PROVIDERS, type SocialProvider } from '../auth.session'
 
 interface LoginFormProps {
   onSocialLogin: (provider: SocialProvider) => void
+  /** 아이디·비밀번호 로그인 제출. */
+  onPasswordLogin: (loginId: string, password: string) => void
   /** 리다이렉트 중인 provider — 해당 버튼에 로딩, 나머지는 비활성. */
   redirecting?: SocialProvider | null
+  /** 비밀번호 로그인 요청 진행 중. */
+  passwordPending?: boolean
   /** 로그인 실패 복귀(?error=) 인라인 안내. */
   errorMessage?: string | null
+  /** 비밀번호 로그인 실패 인라인 안내. */
+  passwordErrorMessage?: string | null
 }
 
 const SOCIAL_BUTTONS: { provider: SocialProvider; label: string; icon: ReactNode }[] = [
@@ -17,7 +23,18 @@ const SOCIAL_BUTTONS: { provider: SocialProvider; label: string; icon: ReactNode
   { provider: 'apple', label: 'Apple로 로그인', icon: <Apple className="size-4" /> },
 ]
 
-export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: LoginFormProps) {
+export function LoginForm({
+  onSocialLogin,
+  onPasswordLogin,
+  redirecting = null,
+  passwordPending = false,
+  errorMessage,
+  passwordErrorMessage,
+}: LoginFormProps) {
+  const [loginId, setLoginId] = useState('')
+  const [password, setPassword] = useState('')
+  const canSubmit = loginId.trim() !== '' && password !== '' && !passwordPending && redirecting === null
+
   return (
     <Card className="flex w-[360px] flex-col gap-4 p-7">
       <div className="flex flex-col items-center gap-1">
@@ -26,6 +43,42 @@ export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: L
       </div>
 
       {errorMessage && <Alert variant="error">{errorMessage}</Alert>}
+
+      {/* 심사·운영 계정이 쓰는 채널이라 소셜보다 먼저 둔다. 카카오는 아래에 그대로 남는다. */}
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={event => {
+          event.preventDefault()
+          if (canSubmit) onPasswordLogin(loginId.trim(), password)
+        }}
+      >
+        <Input
+          label="아이디"
+          autoComplete="username"
+          value={loginId}
+          disabled={passwordPending}
+          onChange={event => setLoginId(event.target.value)}
+        />
+        <Input
+          label="비밀번호"
+          type="password"
+          autoComplete="current-password"
+          state={passwordErrorMessage != null ? 'error' : 'default'}
+          helperText={passwordErrorMessage ?? undefined}
+          value={password}
+          disabled={passwordPending}
+          onChange={event => setPassword(event.target.value)}
+        />
+        <Button type="submit" size="lg" fullWidth loading={passwordPending} disabled={!canSubmit}>
+          로그인
+        </Button>
+      </form>
+
+      <div className="flex items-center gap-2">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-caption text-text-tertiary">또는</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
 
       <div className="flex flex-col gap-2">
         {SOCIAL_BUTTONS.map(({ provider, label, icon }) => {
