@@ -4928,6 +4928,168 @@ export interface RejectAdminProductInspectionRequest {
   reason: string
 }
 
+/**
+ * 검수 대상 종류. PRODUCT면 targetRef가 상품 내부 id, REVIEW면 리뷰 id다
+ */
+export type InspectionTargetType = (typeof InspectionTargetType)[keyof typeof InspectionTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionTargetType = {
+  PRODUCT: 'PRODUCT',
+  REVIEW: 'REVIEW',
+} as const
+
+/**
+ * 검수 관점. 열거 순서가 파이프라인 순서(규칙 → 선별 → 표시·광고 → 거래 행위 → 통합)이고 상세 응답도 이 순서로 내려온다
+ */
+export type InspectionPerspectiveKind =
+  (typeof InspectionPerspectiveKind)[keyof typeof InspectionPerspectiveKind]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionPerspectiveKind = {
+  RULE: 'RULE',
+  TRIAGE: 'TRIAGE',
+  DISPLAY_ADS: 'DISPLAY_ADS',
+  CONDUCT_TRADE: 'CONDUCT_TRADE',
+  ALL: 'ALL',
+} as const
+
+/**
+ * 관점 하나의 결과. **UNCHECKED(가 봤지만 보지 못함)는 CLEAR(통과)가 아니다** — 한 칸에 묶어 그리면 운영자가 검수를 마친 건으로 읽는다
+ */
+export type PerspectiveOutcome = (typeof PerspectiveOutcome)[keyof typeof PerspectiveOutcome]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PerspectiveOutcome = {
+  VIOLATION: 'VIOLATION',
+  CLEAR: 'CLEAR',
+  UNCHECKED: 'UNCHECKED',
+} as const
+
+export interface AdminInspectionListResponse {
+  data: AdminInspectionListData
+}
+
+export interface AdminInspectionListData {
+  items: AdminInspectionSummary[]
+  /** 필터 기준 전체 행 수. 페이지 크기에 깎이지 않는다 */
+  totalCount: number
+}
+
+/**
+ * **널이면 아직 판정이 없다. PASS가 아니다.** UNJUDGED(기한 초과)·FAILED(처리 실패)도 통과가 아니다 — 화면에서도 코드에서도 그 셋을 PASS와 한 묶음으로 만들지 않는다
+ * @nullable
+ */
+export type AdminInspectionSummaryJudgment = InspectionJudgment | null
+
+export interface AdminInspectionSummary {
+  /** 검수 행 id. 상세 경로의 키다(상품 식별자가 아니다) */
+  inspectionId: number
+  targetType: InspectionTargetType
+  /** 대상의 내부 식별자. 종류마다 뜻이 다르다 */
+  targetRef: number
+  /**
+   * 상품 공개 식별자(ULID). 대상이 상품이고 그 행이 남아 있을 때만 온다
+   * @nullable
+   */
+  productId?: string | null
+  /**
+   * 같은 조건. 리뷰 검수이거나 상품 행이 지워지면 없다
+   * @nullable
+   */
+  productName?: string | null
+  processingState: InspectionProcessingState
+  /**
+   * **널이면 아직 판정이 없다. PASS가 아니다.** UNJUDGED(기한 초과)·FAILED(처리 실패)도 통과가 아니다 — 화면에서도 코드에서도 그 셋을 PASS와 한 묶음으로 만들지 않는다
+   * @nullable
+   */
+  judgment?: AdminInspectionSummaryJudgment
+  /** 발행 선점 횟수. 큐에만 있으면 0이고 0이 아니면 재시도를 거친 건이다 */
+  attempt: number
+  /** 최초 요청 시각. 재시도로 갱신되지 않는다(경과 시간의 시작점) */
+  requestedAt: string
+  /**
+   * 종결 시각. 진행 중이면 없다(경과 시간의 끝점)
+   * @nullable
+   */
+  settledAt?: string | null
+  policyVersion: string
+}
+
+export interface AdminInspectionDetailResponse {
+  data: AdminInspectionDetail
+}
+
+/**
+ * 널이면 아직 판정이 없다. PASS가 아니다
+ * @nullable
+ */
+export type AdminInspectionDetailJudgment = InspectionJudgment | null
+
+export interface AdminInspectionDetail {
+  inspectionId: number
+  targetType: InspectionTargetType
+  targetRef: number
+  /** @nullable */
+  productId?: string | null
+  /** @nullable */
+  productName?: string | null
+  processingState: InspectionProcessingState
+  /**
+   * 널이면 아직 판정이 없다. PASS가 아니다
+   * @nullable
+   */
+  judgment?: AdminInspectionDetailJudgment
+  attempt: number
+  requestedAt: string
+  /** @nullable */
+  settledAt?: string | null
+  policyVersion: string
+  /**
+   * 판정 전이면 없다
+   * @nullable
+   */
+  promptVersion?: string | null
+  /** 어느 내용을 본 판정인지. 64자 */
+  contentHash: string
+  /**
+   * **이 검수 행에 적힌 사유 코드**. 검수 큐 상세의 막고 있는 판정과 다르다
+   * @nullable
+   */
+  reasonCode?: string | null
+  /** @nullable */
+  reasonSummary?: string | null
+  /** @nullable */
+  sellerNotice?: string | null
+  /**
+   * 지금 이 건을 잡고 있는 워커 표식. 판정이 끝나면 비워진다
+   * @nullable
+   */
+  leaseOwner?: string | null
+  /**
+   * 점유가 풀리는 시각. 지난 시각이면 다음 주기 재발행 대상이다
+   * @nullable
+   */
+  leaseExpiresAt?: string | null
+  /** 파이프라인 순서로 온다. 기록이 없으면 빈 배열이고, **칸이 없는 관점과 UNCHECKED는 다르다**(앞은 거기까지 가지 못한 것, 뒤는 갔지만 보지 못한 것) */
+  perspectives: AdminInspectionPerspective[]
+}
+
+export interface AdminInspectionPerspective {
+  perspective: InspectionPerspectiveKind
+  outcome: PerspectiveOutcome
+  /**
+   * UNCHECKED에만 들어온다. 본 관점에는 없다
+   * @nullable
+   */
+  skipReason?: string | null
+  /**
+   * 위반 상세 **JSON 원문 문자열**이다. 파싱된 객체가 아니라 DB의 JSON 칼럼 텍스트고 모양은 AI 레포가 쥔다(MySQL이 공백을 정규화한다). 구조를 전제한 분기를 쓰지 말 것
+   * @nullable
+   */
+  violations?: string | null
+}
+
 export interface AdminProductListResponse {
   data: AdminProductListData
 }
@@ -6689,6 +6851,30 @@ export type GetAdminProductInspectionsParams = {
    * true면 셀러가 이의를 제기한 상품만 본다. **false의 뜻은 확인하지 못했다** — dev 스펙이 기본값 false만 적고 설명이 없다. 끄는 쪽은 파라미터를 보내지 말 것 (기본값과 같은 요청이고, false가 "이의 없는 것만"이면 전체 조회가 조용히 줄어든다).
    */
   appealed?: boolean
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminInspectionsParams = {
+  /**
+   * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체. 미지 값은 400/90001
+   */
+  processingState?: InspectionProcessingState
+  /**
+   * 생략하면 전체. 미지 값은 400/90001
+   */
+  targetType?: InspectionTargetType
+  /**
+   * 생략하면 전체. 미지 값은 400/90001. **"판정 없음"은 이 축으로 고를 수 없다** (processingState가 그 축이다)
+   */
+  judgment?: InspectionJudgment
   /**
    * @minimum 0
    */
@@ -28331,6 +28517,441 @@ export const useRejectAdminProductInspection = <TError = unknown, TContext = unk
   const mutationOptions = getRejectAdminProductInspectionMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011, 토큰 없음·만료는 401 errorCode 20004). **검수 건 하나하나의 진행 현황**이라 같은 BC의 기존 두 경로와 묻는 것이 다르다 — `/admin/product-inspections`는 관리자 확인이 남은 큐라 위반 판정 건만 올라오고, `/admin/inspection-metrics`는 창이 settled_at 기준인 집계라 끝난 건만 센다. 그래서 "방금 등록한 상품의 검수가 지금 어디까지 왔는지"는 둘 중 어느 것으로도 답할 수 없다. 이 경로는 노출 조건을 걸지 않아 판정 전·통과까지 전부 나온다. 식별자는 **검수 행의 id**(long)다 — 한 상품에 재시도·내용 수정으로 검수가 여러 건 쌓이므로 상품 식별자로는 한 건을 가리킬 수 없다. 정렬은 requestedAt 내림차순·inspectionId 내림차순 **고정**이고 정렬 파라미터를 받지 않는다. 필터 셋은 모두 선택이고 주지 않으면 전체다. 알 수 없는 열거 값은 400 errorCode 90001. page 음수는 0으로, size는 1~100으로 **서버가 보정**한다(절삭이고 거절이 아니다). 범위를 넘은 page는 빈 items에 totalCount는 그대로다. totalCount는 필터 기준 전체 행 수라 페이지 크기에 깎이지 않는다. **판정이 아직 없는 건은 judgment로 고를 수 없다** — 그 상태는 판정 칼럼이 빈 것이고 열거에 그 값이 없다. processingState=QUEUED 또는 IN_FLIGHT가 그 축이다. 판정에 "없음"을 끼워 두 축을 합치면 기한 초과(UNJUDGED)와 아직 안 끝난 건이 같은 칸에 섞인다. 임차(leaseOwner·leaseExpiresAt)는 **상세에만** 실린다 — 목록은 한 번에 100행까지 내보내는 자리라 워커 표식의 노출면이 행 수만큼 커진다.
+ * @summary 어드민 검수 진행 현황 목록
+ */
+export const getAdminInspections = (params?: GetAdminInspectionsParams, signal?: AbortSignal) => {
+  return customInstance<AdminInspectionListResponse>({
+    url: `/admin/inspections`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminInspectionsQueryKey = (params?: GetAdminInspectionsParams) => {
+  return [`/admin/inspections`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminInspectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspections>>> = ({ signal }) =>
+    getAdminInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspections>>
+>
+export type GetAdminInspectionsQueryError = unknown
+
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 목록
+ */
+
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInspectionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspections>>> = ({ signal }) =>
+    getAdminInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspections>>
+>
+export type GetAdminInspectionsSuspenseQueryError = unknown
+
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 목록
+ */
+
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행의 열한 필드에 관점별 결과·사유·버전·내용 해시·임차를 더한다. inspectionId는 long이고 숫자가 아니면 400 errorCode 90001, 없는 검수는 **404 errorCode 40508**이다. perspectives는 관점마다 한 칸이고 파이프라인 순서(RULE·TRIAGE·DISPLAY_ADS· CONDUCT_TRADE·ALL)로 내려오며 기록이 없으면 **빈 배열**이다. **칸이 없는 것과 UNCHECKED는 다르다** — 앞은 파이프라인이 그 관점까지 가지 못한 것이고 뒤는 거기까지는 갔지만 보지 못한 것이다. 어느 쪽도 CLEAR(통과)와 같은 칸에 그리지 않는다. 사유 셋(reasonCode·reasonSummary·sellerNotice)은 **이 검수 행에 적힌 값**이고, 검수 큐 상세가 "지금 그 상품을 막고 있는 판정"에서 읽는 것과 다르다. 임차 둘은 지금 이 건을 잡고 있는 워커와 그 점유가 풀리는 시각이다 — 멈춘 건을 진단하는 유일한 단서이고, 담기는 값은 워커 인스턴스 표식이지 사람에 관한 정보가 아니다. leaseExpiresAt이 지난 시각이면 다음 주기의 재발행 대상이다. **nextRetryAt은 없다** — QUEUED로 멈춘 건을 언제 다시 보내는지는 이 계약에 실리지 않는다. 널 필드는 키가 남은 채 null로 내려올 것으로 보이지만 **와이어 바이트로 확인되지 않았다**. 그래서 널을 허용하는 필드는 required에서 빼 뒀다 — 소비 쪽은 "키 없음"과 "null"을 둘 다 널로 다룬다.
+ * @summary 어드민 검수 진행 현황 상세
+ */
+export const getAdminInspectionDetail = (inspectionId: number, signal?: AbortSignal) => {
+  return customInstance<AdminInspectionDetailResponse>({
+    url: `/admin/inspections/${inspectionId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminInspectionDetailQueryKey = (inspectionId?: number) => {
+  return [`/admin/inspections/${inspectionId}`] as const
+}
+
+export const getGetAdminInspectionDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionDetail>>> = ({
+    signal,
+  }) => getAdminInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, enabled: !!inspectionId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionDetail>>
+>
+export type GetAdminInspectionDetailQueryError = unknown
+
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 상세
+ */
+
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionDetailQueryOptions(inspectionId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInspectionDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionDetail>>> = ({
+    signal,
+  }) => getAdminInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionDetail>>
+>
+export type GetAdminInspectionDetailSuspenseQueryError = unknown
+
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 상세
+ */
+
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionDetailSuspenseQueryOptions(inspectionId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
 }
 
 /**

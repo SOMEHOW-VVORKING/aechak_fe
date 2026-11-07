@@ -4625,6 +4625,106 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /admin/inspections:
+    get:
+      summary: "어드민 검수 진행 현황 목록"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011,
+        토큰 없음·만료는 401 errorCode 20004). **검수 건 하나하나의 진행 현황**이라 같은 BC의
+        기존 두 경로와 묻는 것이 다르다 — `/admin/product-inspections`는 관리자 확인이 남은
+        큐라 위반 판정 건만 올라오고, `/admin/inspection-metrics`는 창이 settled_at 기준인
+        집계라 끝난 건만 센다. 그래서 "방금 등록한 상품의 검수가 지금 어디까지 왔는지"는 둘
+        중 어느 것으로도 답할 수 없다. 이 경로는 노출 조건을 걸지 않아 판정 전·통과까지 전부
+        나온다.
+        식별자는 **검수 행의 id**(long)다 — 한 상품에 재시도·내용 수정으로 검수가 여러 건
+        쌓이므로 상품 식별자로는 한 건을 가리킬 수 없다.
+        정렬은 requestedAt 내림차순·inspectionId 내림차순 **고정**이고 정렬 파라미터를 받지 않는다.
+        필터 셋은 모두 선택이고 주지 않으면 전체다. 알 수 없는 열거 값은 400 errorCode 90001.
+        page 음수는 0으로, size는 1~100으로 **서버가 보정**한다(절삭이고 거절이 아니다).
+        범위를 넘은 page는 빈 items에 totalCount는 그대로다. totalCount는 필터 기준 전체 행
+        수라 페이지 크기에 깎이지 않는다.
+        **판정이 아직 없는 건은 judgment로 고를 수 없다** — 그 상태는 판정 칼럼이 빈 것이고
+        열거에 그 값이 없다. processingState=QUEUED 또는 IN_FLIGHT가 그 축이다. 판정에 "없음"을
+        끼워 두 축을 합치면 기한 초과(UNJUDGED)와 아직 안 끝난 건이 같은 칸에 섞인다.
+        임차(leaseOwner·leaseExpiresAt)는 **상세에만** 실린다 — 목록은 한 번에 100행까지
+        내보내는 자리라 워커 표식의 노출면이 행 수만큼 커진다.
+      operationId: "getAdminInspections"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: processingState
+          in: query
+          schema:
+            $ref: "#/components/schemas/InspectionProcessingState"
+          description: "대문자 enum 이름을 그대로 보낸다. 생략하면 전체. 미지 값은 400/90001"
+        - name: targetType
+          in: query
+          schema:
+            $ref: "#/components/schemas/InspectionTargetType"
+          description: "생략하면 전체. 미지 값은 400/90001"
+        - name: judgment
+          in: query
+          schema:
+            $ref: "#/components/schemas/InspectionJudgment"
+          description: >-
+            생략하면 전체. 미지 값은 400/90001. **"판정 없음"은 이 축으로 고를 수 없다**
+            (processingState가 그 축이다)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInspectionListResponse"
+  /admin/inspections/{inspectionId}:
+    get:
+      summary: "어드민 검수 진행 현황 상세"
+      description: >-
+        목록 행의 열한 필드에 관점별 결과·사유·버전·내용 해시·임차를 더한다. inspectionId는
+        long이고 숫자가 아니면 400 errorCode 90001, 없는 검수는 **404 errorCode 40508**이다.
+        perspectives는 관점마다 한 칸이고 파이프라인 순서(RULE·TRIAGE·DISPLAY_ADS·
+        CONDUCT_TRADE·ALL)로 내려오며 기록이 없으면 **빈 배열**이다. **칸이 없는 것과
+        UNCHECKED는 다르다** — 앞은 파이프라인이 그 관점까지 가지 못한 것이고 뒤는 거기까지는
+        갔지만 보지 못한 것이다. 어느 쪽도 CLEAR(통과)와 같은 칸에 그리지 않는다.
+        사유 셋(reasonCode·reasonSummary·sellerNotice)은 **이 검수 행에 적힌 값**이고,
+        검수 큐 상세가 "지금 그 상품을 막고 있는 판정"에서 읽는 것과 다르다.
+        임차 둘은 지금 이 건을 잡고 있는 워커와 그 점유가 풀리는 시각이다 — 멈춘 건을 진단하는
+        유일한 단서이고, 담기는 값은 워커 인스턴스 표식이지 사람에 관한 정보가 아니다.
+        leaseExpiresAt이 지난 시각이면 다음 주기의 재발행 대상이다.
+        **nextRetryAt은 없다** — QUEUED로 멈춘 건을 언제 다시 보내는지는 이 계약에 실리지 않는다.
+        널 필드는 키가 남은 채 null로 내려올 것으로 보이지만 **와이어 바이트로 확인되지 않았다**.
+        그래서 널을 허용하는 필드는 required에서 빼 뒀다 — 소비 쪽은 "키 없음"과 "null"을 둘 다
+        널로 다룬다.
+      operationId: "getAdminInspectionDetail"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inspectionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInspectionDetailResponse"
   /admin/products:
     get:
       summary: "어드민 상품 카탈로그 목록"
@@ -11229,6 +11329,175 @@ components:
           minLength: 1
           maxLength: 500
           description: "셀러에게 그대로 보이는 반려 사유. 공백만이면 400 errorCode 90001"
+    InspectionTargetType:
+      type: string
+      enum: [PRODUCT, REVIEW]
+      description: "검수 대상 종류. PRODUCT면 targetRef가 상품 내부 id, REVIEW면 리뷰 id다"
+    InspectionPerspectiveKind:
+      type: string
+      enum: [RULE, TRIAGE, DISPLAY_ADS, CONDUCT_TRADE, ALL]
+      description: >-
+        검수 관점. 열거 순서가 파이프라인 순서(규칙 → 선별 → 표시·광고 → 거래 행위 → 통합)이고
+        상세 응답도 이 순서로 내려온다
+    PerspectiveOutcome:
+      type: string
+      enum: [VIOLATION, CLEAR, UNCHECKED]
+      description: >-
+        관점 하나의 결과. **UNCHECKED(가 봤지만 보지 못함)는 CLEAR(통과)가 아니다** — 한 칸에
+        묶어 그리면 운영자가 검수를 마친 건으로 읽는다
+    AdminInspectionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminInspectionListData"
+    AdminInspectionListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInspectionSummary"
+        totalCount:
+          type: integer
+          format: int64
+          description: "필터 기준 전체 행 수. 페이지 크기에 깎이지 않는다"
+    AdminInspectionSummary:
+      type: object
+      required: [inspectionId, targetType, targetRef, processingState, attempt, requestedAt, policyVersion]
+      properties:
+        inspectionId:
+          type: integer
+          format: int64
+          description: "검수 행 id. 상세 경로의 키다(상품 식별자가 아니다)"
+        targetType:
+          $ref: "#/components/schemas/InspectionTargetType"
+        targetRef:
+          type: integer
+          format: int64
+          description: "대상의 내부 식별자. 종류마다 뜻이 다르다"
+        productId:
+          type: string
+          nullable: true
+          description: "상품 공개 식별자(ULID). 대상이 상품이고 그 행이 남아 있을 때만 온다"
+        productName:
+          type: string
+          nullable: true
+          description: "같은 조건. 리뷰 검수이거나 상품 행이 지워지면 없다"
+        processingState:
+          $ref: "#/components/schemas/InspectionProcessingState"
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+          description: >-
+            **널이면 아직 판정이 없다. PASS가 아니다.** UNJUDGED(기한 초과)·FAILED(처리 실패)도
+            통과가 아니다 — 화면에서도 코드에서도 그 셋을 PASS와 한 묶음으로 만들지 않는다
+        attempt:
+          type: integer
+          description: "발행 선점 횟수. 큐에만 있으면 0이고 0이 아니면 재시도를 거친 건이다"
+        requestedAt:
+          type: string
+          description: "최초 요청 시각. 재시도로 갱신되지 않는다(경과 시간의 시작점)"
+        settledAt:
+          type: string
+          nullable: true
+          description: "종결 시각. 진행 중이면 없다(경과 시간의 끝점)"
+        policyVersion:
+          type: string
+    AdminInspectionDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminInspectionDetail"
+    AdminInspectionDetail:
+      type: object
+      required:
+        [inspectionId, targetType, targetRef, processingState, attempt, requestedAt, policyVersion,
+         contentHash, perspectives]
+      properties:
+        inspectionId:
+          type: integer
+          format: int64
+        targetType:
+          $ref: "#/components/schemas/InspectionTargetType"
+        targetRef:
+          type: integer
+          format: int64
+        productId:
+          type: string
+          nullable: true
+        productName:
+          type: string
+          nullable: true
+        processingState:
+          $ref: "#/components/schemas/InspectionProcessingState"
+        judgment:
+          allOf:
+            - $ref: "#/components/schemas/InspectionJudgment"
+          nullable: true
+          description: "널이면 아직 판정이 없다. PASS가 아니다"
+        attempt:
+          type: integer
+        requestedAt:
+          type: string
+        settledAt:
+          type: string
+          nullable: true
+        policyVersion:
+          type: string
+        promptVersion:
+          type: string
+          nullable: true
+          description: "판정 전이면 없다"
+        contentHash:
+          type: string
+          description: "어느 내용을 본 판정인지. 64자"
+        reasonCode:
+          type: string
+          nullable: true
+          description: "**이 검수 행에 적힌 사유 코드**. 검수 큐 상세의 막고 있는 판정과 다르다"
+        reasonSummary:
+          type: string
+          nullable: true
+        sellerNotice:
+          type: string
+          nullable: true
+        leaseOwner:
+          type: string
+          nullable: true
+          description: "지금 이 건을 잡고 있는 워커 표식. 판정이 끝나면 비워진다"
+        leaseExpiresAt:
+          type: string
+          nullable: true
+          description: "점유가 풀리는 시각. 지난 시각이면 다음 주기 재발행 대상이다"
+        perspectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInspectionPerspective"
+          description: >-
+            파이프라인 순서로 온다. 기록이 없으면 빈 배열이고, **칸이 없는 관점과 UNCHECKED는
+            다르다**(앞은 거기까지 가지 못한 것, 뒤는 갔지만 보지 못한 것)
+    AdminInspectionPerspective:
+      type: object
+      required: [perspective, outcome]
+      properties:
+        perspective:
+          $ref: "#/components/schemas/InspectionPerspectiveKind"
+        outcome:
+          $ref: "#/components/schemas/PerspectiveOutcome"
+        skipReason:
+          type: string
+          nullable: true
+          description: "UNCHECKED에만 들어온다. 본 관점에는 없다"
+        violations:
+          type: string
+          nullable: true
+          description: >-
+            위반 상세 **JSON 원문 문자열**이다. 파싱된 객체가 아니라 DB의 JSON 칼럼 텍스트고
+            모양은 AI 레포가 쥔다(MySQL이 공백을 정규화한다). 구조를 전제한 분기를 쓰지 말 것
     AdminProductListResponse:
       type: object
       required: [data]
