@@ -363,7 +363,7 @@ describe('/reviews', () => {
     const dialog = await screen.findByRole('dialog', { name: '리뷰를 삭제할까요?' })
     await user.click(within(dialog).getByRole('button', { name: '삭제' }))
 
-    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
+    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '삭제' })).toBeDisabled())
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: '리뷰를 삭제할까요?' })).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: '취소' }))
@@ -406,7 +406,7 @@ describe('/reviews', () => {
     await user.click((await drawer()).getByRole('button', { name: '제출' }))
     const dialog = await screen.findByRole('dialog', { name: '리뷰를 삭제할까요?' })
     await user.click(within(dialog).getByRole('button', { name: '삭제' }))
-    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
+    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '삭제' })).toBeDisabled())
 
     // 막힌 이동의 약속은 다음 성공한 이동까지 매달려 있으므로(router commitLocation) await하지 않는다.
     await act(async () => {
@@ -453,7 +453,7 @@ describe('/reviews', () => {
     await user.click((await drawer()).getByRole('button', { name: '제출' }))
     const dialog = await screen.findByRole('dialog', { name: '리뷰를 삭제할까요?' })
     await user.click(within(dialog).getByRole('button', { name: '삭제' }))
-    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '' })).toBeDisabled())
+    await vi.waitFor(() => expect(within(dialog).getByRole('button', { name: '삭제' })).toBeDisabled())
 
     await act(async () => {
       void router.navigate({ to: '/login' })

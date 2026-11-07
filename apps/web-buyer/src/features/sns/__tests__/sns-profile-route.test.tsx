@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -9,9 +9,13 @@ import {
   SNS_BLOCKER,
   SNS_BLOCK_URL,
   SNS_COCO,
+  SNS_FOLLOW_URL,
   SNS_ME,
+  SNS_ME_URL,
   SNS_PROFILE_URL,
   SNS_MONG,
+  SNS_MUTE_URL,
+  SNS_MUTUAL,
   SNS_SPAM,
   SNS_TORI,
   WEB_REFRESH_URL,
@@ -20,7 +24,7 @@ import {
   server,
   snsRelation,
 } from '@/testing/msw/server'
-import { setAccessToken } from '@aechak/api'
+import { getMySnsProfile, setAccessToken } from '@aechak/api'
 import { routeTree } from '../../../routeTree.gen'
 
 function renderAt(
@@ -44,6 +48,20 @@ function asGuest() {
   seedSns({ viewer: null })
 }
 
+// 나를 차단한 사용자의 기본 프로필(A7): 기본 프로필 사진(닉네임 첫 글자)과 닉네임만 있고 수, 소개글, 펫, 탭,
+// 팔로우와 공유 버튼은 없다.
+async function expectBasicProfile(nickname: string) {
+  const avatar = await screen.findByLabelText(nickname)
+  expect(avatar).toHaveTextContent(nickname.charAt(0))
+  expect(within(avatar).queryByRole('img')).not.toBeInTheDocument()
+  expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
+  expect(screen.queryByText('게시물')).not.toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: '펫' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tablist', { name: '게시물 목록' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /팔로우|팔로잉|공유/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('볼 수 없는 계정이에요')).not.toBeInTheDocument()
+}
+
 // 로그인 사용자는 메모리 access 토큰이 있는 상태로 시작한다(SNS MSW는 Authorization 헤더로 보는 사람을 정한다).
 beforeEach(() => {
   resetAuth()
@@ -62,7 +80,8 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     expect(await screen.findByText('코코와 삽니다')).toBeInTheDocument()
     expect(screen.getAllByText('코코집사').length).toBeGreaterThan(0)
     expect(screen.getByRole('list', { name: '펫' })).toBeInTheDocument()
-    expect(stat('게시물')).toBe('0')
+    // 지운 글(SNS_POST_DELETED)은 세지 않는다.
+    expect(stat('게시물')).toBe('1')
     expect(stat('팔로워')).toBe('2')
     expect(stat('팔로잉')).toBe('1')
     // 메시지 버튼과 알림 버튼(R1-18)은 없다.
@@ -78,14 +97,31 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
     expect(screen.queryByRole('button', { name: '더보기' })).not.toBeInTheDocument()
   })
 
-  it('[AC-SNS01-002] 다른 사용자 프로필에는 저장됨 탭이 없고 탭 셋만 빈 상태로 보인다', async () => {
+  it('[AC-SNS01-002] 프로필 수정에서 닉네임을 바꾸고 돌아오면 앱과 같은 staleTime에서도 내 SNS 프로필에 바뀐 닉네임이 나온다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/sns/me', new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } }))
+    expect(await screen.findByRole('button', { name: '프로필 수정' })).toBeInTheDocument()
+    // SNS MSW는 계정 닉네임을 따로 들고 있어 저장한 뒤의 내 SNS 프로필을 직접 돌려준다.
+    const me = (await getMySnsProfile()).data
+    server.use(http.get(SNS_ME_URL, () => HttpResponse.json({ data: { ...me, nickname: '보리누나' } })))
+
+    await user.click(screen.getByRole('button', { name: '프로필 수정' }))
+    const nickname = await screen.findByLabelText('닉네임')
+    await waitFor(() => expect(nickname).not.toHaveValue(''))
+    await user.clear(nickname)
+    await user.type(nickname, '보리누나')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sns/me'), { timeout: 3000 })
+    expect((await screen.findAllByText('보리누나')).length).toBeGreaterThan(0)
+  })
+
+  it('[AC-SNS01-002][AC-SNS03-037] 다른 사용자 프로필에는 저장됨 탭이 없고 그리드, 영상, 리포스트 탭만 보인다', async () => {
     renderAt(`/sns/users/${SNS_COCO}`)
 
-    expect(await screen.findByRole('tab', { name: '그리드' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '영상' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '리포스트' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: '저장됨' })).not.toBeInTheDocument()
-    expect(screen.getByText('아직 게시물이 없어요')).toBeInTheDocument()
+    const tabs = within(await screen.findByRole('tablist', { name: '게시물 목록' }))
+    expect(tabs.getAllByRole('tab').map(tab => tab.getAttribute('aria-label'))).toEqual(['그리드', '영상', '리포스트'])
+    expect(tabs.getByRole('tab', { name: '그리드' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('[AC-SNS01-003] 펫이 여럿이면 대표 펫을 먼저 품종과 나이로 쓰고 생년월 없는 펫은 품종만 쓴다', async () => {
@@ -118,6 +154,43 @@ describe('/sns/users/$publicId 프로필 머리말', () => {
 
     expect(await screen.findByRole('button', { name: '팔로우' })).toBeInTheDocument()
     expect(stat('팔로워')).toBe('1')
+  })
+
+  it('[AC-SNS01-026] 프로필 다시 읽기가 실패하면 받아 둔 프로필과 켜진 팔로우 버튼 위에 실패 안내를 두고 다시 시도하면 안내가 사라진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`, new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } }))
+    expect(await screen.findByText('코코와 삽니다')).toBeInTheDocument()
+
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/프로필을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getByText('코코와 삽니다')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeEnabled()
+
+    server.resetHandlers()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(screen.queryByText(/프로필을 다시 불러오지 못했어요/)).not.toBeInTheDocument())
+    expect(screen.getByText('코코와 삽니다')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['내가 차단한 계정', SNS_SPAM, '차단한 계정이에요', true],
+    ['나를 차단한 계정', SNS_BLOCKER, '차단러', false],
+  ])('[AC-SNS01-026] %s의 프로필도 다시 읽기가 실패하면 받아 둔 화면 위에 실패 안내를 둔다', async (_, publicId, shown, unblock) => {
+    seedSns({ blocks: [...currentSns().blocks, snsRelation(SNS_ME, SNS_SPAM)] })
+    renderAt(`/sns/users/${publicId}`, new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } }))
+    // 나를 차단한 계정은 앱바 제목에도 닉네임이 나온다
+    expect((await screen.findAllByText(shown)).length).toBeGreaterThan(0)
+
+    server.use(http.get(SNS_PROFILE_URL, () => HttpResponse.json({ errorCode: 90000, message: '' }, { status: 500 })))
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(await screen.findByText(/프로필을 다시 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.getAllByText(shown).length).toBeGreaterThan(0)
+    if (unblock) expect(screen.getByRole('button', { name: '차단 해제' })).toBeEnabled()
   })
 })
 
@@ -196,6 +269,24 @@ describe('/sns/users/$publicId 팔로우', () => {
   })
 })
 
+describe('/sns/users/$publicId 요청 빈도 제한', () => {
+  it('[A27] 팔로우가 429 90012면 잠시 후 다시 시도해 달라는 안내가 뜨고 버튼과 수가 그대로다', async () => {
+    server.use(
+      http.post(SNS_FOLLOW_URL, () =>
+        HttpResponse.json({ errorCode: 90012, message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' }, { status: 429 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '팔로우' }))
+
+    expect(await screen.findByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeInTheDocument()
+    expect(stat('팔로워')).toBe('2')
+  })
+})
+
 describe('/sns/users/$publicId 차단과 뮤트', () => {
   it('[AC-SNS01-020] 차단은 확인 모달을 거치고 차단 뒤 차단한 계정 안내와 차단 해제 버튼만 보인다', async () => {
     seedSns({ follows: [snsRelation(SNS_ME, SNS_COCO), snsRelation(SNS_COCO, SNS_ME)] })
@@ -211,7 +302,10 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(screen.getByRole('button', { name: '차단 해제' })).toBeInTheDocument()
     expect(screen.queryByText('팔로워')).not.toBeInTheDocument()
     expect(screen.queryByText('코코와 삽니다')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /팔로우|팔로잉|더보기|공유/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /팔로우|팔로잉|공유/ })).not.toBeInTheDocument()
+    // 차단한 계정 안내의 더보기에는 신고만 있다(SNS-07 P11).
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getAllByRole('button').map(b => b.textContent)).toEqual(['신고하기'])
     // 서로 팔로우하던 사이였어도 두 방향 팔로우가 지워진다.
     expect(currentSns().follows.filter(r => [r.from, r.to].includes(SNS_COCO) && [r.from, r.to].includes(SNS_ME))).toEqual([])
   })
@@ -230,11 +324,8 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
   })
 
-  it.each([
-    ['나를 차단한 사용자', SNS_BLOCKER],
-    ['탈퇴했거나 없는 사용자', '01JZZZZZZZZZZZZZZZZZZZZZZZ'],
-  ])('[AC-SNS01-021] %s의 프로필 링크는 같은 볼 수 없는 계정 안내를 보여준다', async (_, publicId) => {
-    renderAt(`/sns/users/${publicId}`)
+  it('[AC-SNS01-021] 탈퇴했거나 없는 사용자의 프로필 링크는 볼 수 없는 계정 안내를 보여준다', async () => {
+    renderAt('/sns/users/01JZZZZZZZZZZZZZZZZZZZZZZZ')
 
     expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
     expect(screen.getByText('계정이 없거나 지금은 볼 수 없어요.')).toBeInTheDocument()
@@ -285,6 +376,27 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
     expect(await screen.findByText('뮤트한 계정이에요')).toBeInTheDocument()
   })
 
+  it('[AC-SNS01-026] 뮤트 요청 중에는 팔로우 버튼을 잠그고 더보기에 뮤트를 다시 두지 않는다', async () => {
+    let release: () => void = () => {}
+    server.use(
+      http.post(SNS_MUTE_URL, async () => {
+        await new Promise<void>(resolve => (release = resolve))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '뮤트하기' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '팔로우' })).toBeDisabled())
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog')).getAllByRole('button').map(b => b.textContent)).toEqual(['차단하기', '신고하기'])
+
+    release()
+    expect(await screen.findByText('뮤트했어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '팔로우' })).toBeEnabled()
+  })
+
   it('[AC-SNS01-026] 차단 요청이 실패하면 화면과 수가 요청 전 그대로이고 실패 안내가 뜨며 다시 보낼 수 있다', async () => {
     let calls = 0
     server.use(
@@ -311,6 +423,87 @@ describe('/sns/users/$publicId 차단과 뮤트', () => {
   })
 })
 
+describe('/sns/users/$publicId 나를 차단한 사용자와 서로 차단한 사용자의 기본 프로필(R2-06)', () => {
+  it('[AC-SNS01-021] 나를 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임만 보여주고 더보기에는 차단하기만 있다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    await expectBasicProfile('차단러')
+    expect(screen.queryByRole('button', { name: '차단 해제' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '더보기' }))
+    expect(await screen.findByRole('button', { name: '차단하기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /뮤트/ })).not.toBeInTheDocument()
+  })
+
+  it('[AC-SNS01-021] 프로필을 연 뒤 상대가 나를 차단해 팔로우가 404 130000이면 실패 안내 없이 기본 프로필로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_COCO}`)
+    const follow = await screen.findByRole('button', { name: '팔로우' })
+
+    const now = currentSns()
+    seedSns({ ...now, blocks: [...now.blocks, snsRelation(SNS_COCO, SNS_ME)] })
+    await user.click(follow)
+
+    // 처음 읽은 프로필은 이미지가 있는 보통 프로필이라 아바타가 첫 글자로 바뀌면 다시 읽은 기본 프로필이다.
+    await waitFor(() => expect(screen.getByLabelText('코코집사')).toHaveTextContent('코'))
+    // 볼 수 없는 계정이라는 실패 토스트도 없다.
+    await expectBasicProfile('코코집사')
+  })
+
+  it('[AC-SNS01-021] 기본 프로필에서 차단하면 확인 모달을 거쳐 서로 차단한 화면으로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_BLOCKER}`)
+
+    await user.click(await screen.findByRole('button', { name: '더보기' }))
+    await user.click(await screen.findByRole('button', { name: '차단하기' }))
+    expect(await screen.findByText('차단할까요?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '차단' }))
+
+    expect(await screen.findByText('차단했어요')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '차단 해제' })).toBeInTheDocument()
+    await expectBasicProfile('차단러')
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_BLOCKER)).toBe(true)
+    // 본문이 바뀌어도 포커스가 body로 떨어지지 않고 신고를 위해 남은 더보기로 돌아온다.
+    expect(screen.getByRole('button', { name: '더보기' })).toHaveFocus()
+  })
+
+  it('[AC-SNS01-030] 서로 차단한 사용자의 프로필은 기본 프로필 사진과 닉네임, 차단 해제 버튼만 보여준다', async () => {
+    renderAt(`/sns/users/${SNS_MUTUAL}`)
+
+    await expectBasicProfile('맞차단러')
+    expect(screen.getByRole('button', { name: '차단 해제' })).toBeInTheDocument()
+    // 이미지, 소개글, 펫이 있는 사용자여도 보이지 않고 내가 차단한 계정 안내 문구도 없다.
+    expect(screen.queryByText('서로 차단한 사이')).not.toBeInTheDocument()
+    expect(screen.queryByText('차단한 계정이에요')).not.toBeInTheDocument()
+    // 서로 차단이면 내가 건 차단이 있어 더보기에는 신고만 있다(SNS-07 P11).
+    await userEvent.setup().click(screen.getByRole('button', { name: '더보기' }))
+    expect(within(screen.getByRole('dialog', { name: '프로필 더보기' })).getAllByRole('button').map(b => b.textContent)).toEqual(['신고하기'])
+  })
+
+  it('[AC-SNS01-024] 서로 차단한 사이에서 차단을 해제해도 상대의 차단이 남아 기본 프로필이 이어진다', async () => {
+    const user = userEvent.setup()
+    renderAt(`/sns/users/${SNS_MUTUAL}`)
+
+    await user.click(await screen.findByRole('button', { name: '차단 해제' }))
+    expect(await screen.findByText('차단을 해제할까요?')).toBeInTheDocument()
+    // 상대의 차단이 남으므로 상대가 내 게시물과 프로필을 다시 볼 수 있다고 안내하지 않는다.
+    expect(
+      screen.getByText('회원님이 건 차단만 해제돼요. 맞차단러님과는 서로의 게시물과 프로필을 계속 볼 수 없어요.'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '해제' }))
+
+    expect(await screen.findByText('차단을 해제했어요')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '차단 해제' })).not.toBeInTheDocument())
+    await expectBasicProfile('맞차단러')
+    // 이제 나를 차단한 사용자의 기본 프로필이라 더보기에서 다시 차단할 수 있다.
+    expect(screen.getByRole('button', { name: '더보기' })).toBeInTheDocument()
+    expect(currentSns().blocks.some(r => r.from === SNS_ME && r.to === SNS_MUTUAL)).toBe(false)
+    // Modal을 연 차단 해제 버튼이 사라져도 포커스가 body로 떨어지지 않고 뒤로 가기 버튼에 있다.
+    expect(screen.getByRole('button', { name: '뒤로 가기' })).toHaveFocus()
+  })
+})
+
 describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토큰 없음)', () => {
   beforeEach(() => {
     // 새로고침은 메모리 토큰만 날리고 세션 유무는 미지 상태로 남긴다 — setAccessToken(null)은
@@ -331,7 +524,7 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
     expect(screen.getByText('뮤트한 계정이에요')).toBeInTheDocument()
   })
 
-  it('[AC-SNS01-021] 세션을 복원하면 나를 차단한 사용자의 링크도 볼 수 없는 계정 안내다', async () => {
+  it('[AC-SNS01-021] 세션을 복원하면 나를 차단한 사용자의 링크는 기본 프로필이다', async () => {
     server.use(
       http.post(WEB_REFRESH_URL, () =>
         HttpResponse.json({ data: { accessToken: 'restored', tokenType: 'Bearer', expiresIn: 900 } }),
@@ -339,7 +532,8 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
     )
     renderAt(`/sns/users/${SNS_BLOCKER}`)
 
-    expect(await screen.findByText('볼 수 없는 계정이에요')).toBeInTheDocument()
+    // 비로그인으로 보면 수와 팔로우 버튼이 있는 프로필이다. 복원한 토큰으로 불러야 기본 프로필이 된다.
+    await expectBasicProfile('차단러')
   })
 
   it('[AC-SNS01-010] refresh 쿠키가 없으면 비로그인으로 보여주고 팔로우를 누르면 요청 없이 로그인 안내 시트를 연다', async () => {
@@ -362,5 +556,24 @@ describe('/sns/users/$publicId 새로고침, 공유 링크 진입(메모리 토�
 
     expect(await screen.findByText(/팔로워\/팔로잉 목록은 로그인한 회원만 볼 수 있어요/)).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(`/sns/users/${SNS_COCO}/follows`)
+  })
+})
+
+describe('/sns/me 비로그인', () => {
+  it('비로그인이 주소로 바로 들어오면 요청 없이 로그인 안내 화면을 보여준다', async () => {
+    asGuest()
+    const snsRequests: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname.includes('/sns/')) snsRequests.push(request.url)
+    })
+    try {
+      const router = renderAt('/sns/me')
+      expect(await screen.findByText(/내 SNS 프로필은 로그인한 회원만 볼 수 있어요\./)).toBeInTheDocument()
+      expect(screen.getByText('내 SNS 프로필')).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/sns/me')
+      expect(snsRequests).toEqual([])
+    } finally {
+      server.events.removeAllListeners()
+    }
   })
 })

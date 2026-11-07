@@ -105,6 +105,7 @@ import 경로: `@aechak/design-system/web`
 | `onClose` | `() => void` | **필수** |
 | `children` | `ReactNode` | **필수** |
 | `title` | `string` | — |
+| `ariaLabel` | `string` | — (`title`이 있으면 무시) |
 | `showGrabber` | `boolean` | `true` |
 | `maxHeight` | `number` (px) | — (미지정 시 뷰포트 90%) |
 | `className` | `string` | — |
@@ -113,6 +114,9 @@ import 경로: `@aechak/design-system/web`
 쓴다. 스크림 클릭·ESC로 닫히고 포커스 트랩·바디 스크롤 잠금은 `Modal`/`Drawer`와 동일한 패턴. 옆에서
 나오는 패널이 필요하면 `Drawer`를 쓸 것 (`BottomSheet` ≠ `Drawer`). 네이티브 `BottomSheet`의 `visible`
 대신 `Modal`/`Drawer`와 맞춘 `open`을 쓴다.
+
+`title`을 그리지 않는 시트(비회원 게이트, 더보기 메뉴)는 `ariaLabel`로 dialog의 접근성 이름을 준다. 이름이
+없으면 스크린리더가 시트를 이름 없는 대화상자로 읽는다.
 
 ---
 
@@ -912,11 +916,11 @@ pathname을 넘길 때는 꼬리 슬래시·하위 경로를 직접 정규화할
 
 | prop | 타입 | 기본값 |
 |---|---|---|
-| `tabs` | `{ key: string; label: string; badge?: number }[]` | **필수** |
+| `tabs` | `{ key: string; label: string; badge?: number \| string }[]` | **필수** |
 | `activeKey` | `string` | **필수** |
 | `onSelect` | `(key: string) => void` | **필수** |
 
-페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`).
+페이지 내 콘텐츠 전환용 탭. 네비게이션이 필요하면 `SideNav` 사용 (`Tabs` ≠ `SideNav`). `badge`는 받은 값을 그대로 그리므로 천 단위 구분(`toLocaleString('ko-KR')`)은 호출부가 문자열로 넘긴다.
 
 ---
 

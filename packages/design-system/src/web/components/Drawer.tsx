@@ -14,7 +14,7 @@ const widthClass = {
   lg: 'w-[480px]',
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 export function Drawer({ open, onClose, title, width = 'md', children }: DrawerProps) {
   // Stay mounted during close animation; unmount only after transition ends.
@@ -22,9 +22,8 @@ export function Drawer({ open, onClose, title, width = 'md', children }: DrawerP
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
-  useEffect(() => {
-    if (open) setMounted(true)
-  }, [open])
+  // 렌더 중에 맞춘다. effect로 맞추면 open이 켜진 첫 커밋에 패널이 없어 포커스 이동과 트랩 effect가 패널을 찾지 못한다.
+  if (open && !mounted) setMounted(true)
 
   // Restore focus on close
   useEffect(() => {
@@ -53,10 +52,13 @@ export function Drawer({ open, onClose, title, width = 'md', children }: DrawerP
       if (!items.length) { e.preventDefault(); return }
       const first = items[0]!
       const last = items[items.length - 1]!
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 패널 뒤로 넘어간다.
+      // 포커스가 패널 밖에 있으면 아무것도 하지 않는다. 위에 겹쳐 뜬 오버레이의 Tab까지 처리하면 그 오버레이의 첫 항목에서 포커스가 움직이지 않는다.
       if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+        if (active === first || active === panel) { e.preventDefault(); last.focus() }
       } else {
-        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+        if (active === last || active === panel) { e.preventDefault(); first.focus() }
       }
     }
     document.addEventListener('keydown', handler)

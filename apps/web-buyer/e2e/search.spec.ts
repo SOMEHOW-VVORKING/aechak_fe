@@ -6,7 +6,9 @@ import { stubMemberSession } from './session'
 // 교차 출처 + withCredentials라 fulfill 응답에도 정확한 origin의 CORS 헤더가 필요하다). 각 상태에서
 // page.screenshot으로 PR 첨부용 캡처를 test-results/pr-c(gitignore)에 남긴다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -146,7 +148,7 @@ test('[AC-SEARCH-E2E-002] 결과 그리드(3-A)·필터 시트(3-B)와 카테고
   await page.route('**/api/v1/search/products*', stubProducts)
 
   // 3-A: 결과 그리드 + 결과 수.
-  await page.goto('/search/results?q=사료')
+  await page.goto('/search/results?q=사료&tab=market')
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await expect(page.getByText('고양이 그레인프리 사료 5kg')).toBeVisible()
   await expect(page.getByText('대형견 대용량 사료 15kg')).toBeVisible()
@@ -175,7 +177,7 @@ test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 추천 검색어�
     fulfillJson(route, 200, keywordsEnvelope(RECENT_KEYWORDS)),
   )
 
-  await page.goto('/search/results?q=없는키워드')
+  await page.goto('/search/results?q=없는키워드&tab=market')
   await expect(page.getByText('검색 결과가 없어요')).toBeVisible()
   await expect(page.getByText('이런 검색어는 어때요?')).toBeVisible()
   await shot(page, `${SHOTS}/05-no-results.png`)
@@ -183,7 +185,7 @@ test('[AC-SEARCH-E2E-003] 결과 없음(3-C)에 빈 상태와 추천 검색어�
   // 추천 검색어 칩을 눌러 같은 라우트로 재검색하면, 검색창이 새 키워드로 동기화되고(3-C의
   // useEffect(setDraftQuery,[query])) 결과가 다시 로드된다(3-C → 3-A).
   await page.getByRole('button', { name: SUGGESTED_QUERY }).click()
-  await expect(page.getByPlaceholder('상품, 브랜드 검색')).toHaveValue(SUGGESTED_QUERY)
+  await expect(page.getByPlaceholder('상품/계정/해시태그 검색')).toHaveValue(SUGGESTED_QUERY)
   await expect(page.getByText('강아지 연어 사료 2kg')).toBeVisible()
   await shot(page, `${SHOTS}/06-research.png`)
 })

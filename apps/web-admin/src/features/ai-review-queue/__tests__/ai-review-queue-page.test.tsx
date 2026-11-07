@@ -39,6 +39,7 @@ function detailWire(overrides: Partial<AdminProductInspectionDetail> = {}): Admi
     requestedAt: '2026-10-22T10:00:00',
     settledAt: '2026-10-22T10:00:40',
     rejections: [],
+    violations: [],
     ...overrides,
   }
 }
@@ -202,5 +203,148 @@ describe('AI 검수 큐 (SCRUM-283)', () => {
 
     await openDetail()
     expect(screen.queryByText('셀러가 이의를 제기했어요')).not.toBeInTheDocument()
+  })
+
+  // ─── 수정 필요 항목 ───────────────────────────────────────────────────────
+
+  const violationItem = (text: string) => screen.getByText(text).closest('li') as HTMLElement
+
+  it('[AC-AI-QUEUE-017] 판정 요약 안의 안내와 요약 칸 사이에 위반마다 분류 이름과 걸린 표현과 수정 제안을 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        violations: [
+          {
+            category: 'MEDICAL_CLAIM',
+            quote: '슬개골 탈구와 관절염이 2주 만에 완치됩니다',
+            suggestion: '관절 건강 유지에 도움을 줄 수 있습니다',
+          },
+          { category: 'EFFICACY_OVERCLAIM', quote: '수술 없이도 100% 회복되며', suggestion: '개선에 도움을 줄 수 있습니다' },
+        ],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    const title = screen.getByText('수정 필요 항목')
+    const notice = screen.getByText('치료 효능 표현을 고쳐 주세요.')
+    const summary = screen.getByText('판정 시각', { selector: 'dt' })
+    expect(notice.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING, '안내 아래에 둔다').toBeTruthy()
+    expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING, '요약 칸 위에 둔다').toBeTruthy()
+
+    const first = violationItem('슬개골 탈구와 관절염이 2주 만에 완치됩니다')
+    expect(within(first).getByText('질병 치료 효능')).toBeInTheDocument()
+    expect(within(first).getByText('걸린 표현').nextElementSibling).toHaveTextContent(
+      '슬개골 탈구와 관절염이 2주 만에 완치됩니다',
+    )
+    expect(within(first).getByText('수정 제안').nextElementSibling).toHaveTextContent(
+      '관절 건강 유지에 도움을 줄 수 있습니다',
+    )
+
+    const second = violationItem('수술 없이도 100% 회복되며')
+    expect(within(second).getByText('효능 과장')).toBeInTheDocument()
+    expect(within(second).getByText('수정 제안').nextElementSibling).toHaveTextContent('개선에 도움을 줄 수 있습니다')
+  })
+
+  it('[AC-AI-QUEUE-018] 제안이나 걸린 표현이 null이면 그 줄을 그리지 않는다', async () => {
+    serveQueue(
+      detailWire({
+        violations: [
+          { category: 'CONTACT_INFO', quote: '010-1234-5678', suggestion: null },
+          { category: 'BANNED_INGREDIENT', quote: null, suggestion: '다른 성분으로 바꿔 주세요' },
+        ],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    const ruleViolation = violationItem('연락처 노출')
+    expect(within(ruleViolation).getByText('010-1234-5678')).toBeInTheDocument()
+    expect(within(ruleViolation).queryByText('수정 제안')).not.toBeInTheDocument()
+
+    const noQuote = violationItem('금지 성분')
+    expect(within(noQuote).getByText('다른 성분으로 바꿔 주세요')).toBeInTheDocument()
+    expect(within(noQuote).queryByText('걸린 표현')).not.toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-019] 목록이 비면 영역을 그리지 않는다', async () => {
+    serveQueue(detailWire({ violations: [] }))
+    renderPage()
+    await openDetail()
+
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-020] 걸린 표현과 제안의 HTML과 주소를 글자 그대로 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        violations: [
+          { category: 'SPAM', quote: '<img src=x onerror=alert(1)>', suggestion: 'https://example.com 으로 오세요' },
+        ],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    const item = violationItem('<img src=x onerror=alert(1)>')
+    expect(within(item).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(item).getByText('https://example.com 으로 오세요')).toBeInTheDocument()
+    expect(within(item).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-021] 모르는 분류는 기타로 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        violations: [
+          { category: 'BRAND_NEW_CATEGORY', quote: '새 분류 표현', suggestion: null },
+          { category: 'constructor', quote: '객체 내장 키 표현', suggestion: null },
+          { category: 'IRRELEVANT', quote: '상품과 무관한 표현', suggestion: null },
+        ],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    expect(within(violationItem('새 분류 표현')).getByText('기타')).toBeInTheDocument()
+    expect(within(violationItem('객체 내장 키 표현')).getByText('기타')).toBeInTheDocument()
+    expect(within(violationItem('상품과 무관한 표현')).getByText('기타')).toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-022] 판정 실패여도 목록이 있으면 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        judgment: 'FAILED',
+        violations: [{ category: 'MEDICAL_CLAIM', quote: '직전 판정의 표현', suggestion: '직전 판정의 제안' }],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    expect(screen.getByText('수정 필요 항목')).toBeInTheDocument()
+    expect(within(violationItem('직전 판정의 표현')).getByText('직전 판정의 제안')).toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-023] 응답에 violations가 없어도 사유를 보여 주고 목록 영역은 그리지 않는다', async () => {
+    serveQueue(detailWire({ violations: undefined as unknown as AdminProductInspectionDetail['violations'] }))
+    renderPage()
+    await openDetail()
+
+    expect(screen.getByText('치료 효능 표현을 고쳐 주세요.')).toBeInTheDocument()
+    expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  it('[AC-AI-QUEUE-024] 통과 판정이어도 목록이 있으면 보여 준다', async () => {
+    serveQueue(
+      detailWire({
+        judgment: 'PASS',
+        violations: [{ category: 'BANNED_INGREDIENT', quote: '코코넛오일', suggestion: null }],
+      }),
+    )
+    renderPage()
+    await openDetail()
+
+    expect(screen.getByText('수정 필요 항목')).toBeInTheDocument()
+    const item = violationItem('코코넛오일')
+    expect(within(item).getByText('금지 성분')).toBeInTheDocument()
+    expect(within(item).queryByText('수정 제안')).not.toBeInTheDocument()
   })
 })

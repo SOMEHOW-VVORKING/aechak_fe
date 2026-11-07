@@ -376,7 +376,7 @@ describe('셀러 주문 처리 경계', () => {
     await user.selectOptions(await screen.findByLabelText('택배사'), 'CJ')
     await user.type(screen.getByLabelText('운송장 번호'), '601234567891')
     await user.click(screen.getByRole('button', { name: '발송 확정' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '발송 확정' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: '발송 확정' })).toBeDisabled())
 
     // DS Modal은 loading 중에도 취소·ESC·스크림을 onClose로 흘린다 — 되돌릴 수 없는 등록이 떠 있는
     // 동안 창만 닫히면 셀러는 취소된 줄로 읽는다. 호출부가 막는지 본다.

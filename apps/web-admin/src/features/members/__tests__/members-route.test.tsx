@@ -6,6 +6,8 @@ import { HttpResponse, http } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { routeTree } from '../../../routeTree.gen'
 import {
+  ADMIN_MEMBER_DETAIL_URL,
+  ADMIN_MEMBER_PROFILE_RESET_URL,
   ADMIN_MEMBERS_URL,
   CURRENT_ADMIN_USER_ID,
   currentAdminMember,
@@ -335,5 +337,102 @@ describe('/members', () => {
     expect(await screen.findByRole('button', { name: '2000' })).toBeInTheDocument()
     // 마지막 페이지에서는 더 보기가 사라진다.
     expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-MEMBER-012] 상세는 현재 프로필을 보여주고 초기화하면 이미지와 소개글만 비운다', async () => {
+    seedAdminMembers([
+      makeAdminMemberWire({
+        ...정상회원,
+        storedStatus: 'SUSPENDED',
+        sanctionUntil: '2099-01-01T00:00:00',
+        profileImageUrl: 'https://cdn.example.com/users/1001/profile.png',
+        bio: '괴롭힘 문구',
+      }),
+    ])
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+
+    let open = await drawer()
+    expect(open.getByRole('img', { name: '프로필 이미지' })).toHaveAttribute(
+      'src',
+      'https://cdn.example.com/users/1001/profile.png',
+    )
+    expect(open.getByText('괴롭힘 문구')).toBeInTheDocument()
+
+    await user.click(open.getByRole('button', { name: '프로필 초기화' }))
+    const confirm = within(await screen.findByRole('dialog', { name: '프로필을 초기화할까요?' }))
+    await user.click(confirm.getByRole('button', { name: '초기화' }))
+
+    await screen.findByText('프로필 이미지와 소개글을 초기화했어요.')
+    const after = currentAdminMember(1001)
+    expect(after?.profileImageUrl).toBeNull()
+    expect(after?.bio).toBeNull()
+    // 제재가 아니라 상태와 이력은 그대로다.
+    expect(after?.storedStatus).toBe('SUSPENDED')
+    expect(after?.sanctions).toHaveLength(0)
+    open = await drawer()
+    expect(await open.findByText('소개글이 없어요.')).toBeInTheDocument()
+    expect(open.getByText('기본 이미지')).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '프로필 초기화' })).toBeDisabled()
+  })
+
+  it('[AC-MEMBER-013] 이미 비어 있는 프로필은 초기화 버튼이 잠긴다', async () => {
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+
+    const open = await drawer()
+    expect(open.getByText('초기화할 이미지와 소개글이 없어요.')).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '프로필 초기화' })).toBeDisabled()
+  })
+
+  it('[AC-MEMBER-014] 프로필이 없어진 계정이면 30024 안내를 띄운다', async () => {
+    seedAdminMembers([makeAdminMemberWire({ ...정상회원, bio: '소개' })])
+    // 상세를 연 뒤 다른 운영자가 탈퇴 처리한 경우다.
+    server.use(
+      http.post(ADMIN_MEMBER_PROFILE_RESET_URL, () =>
+        HttpResponse.json(
+          { errorCode: 30024, message: '프로필이 없는 계정은 프로필을 초기화할 수 없습니다.' },
+          { status: 409 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+
+    await user.click((await drawer()).getByRole('button', { name: '프로필 초기화' }))
+    const confirm = within(await screen.findByRole('dialog', { name: '프로필을 초기화할까요?' }))
+    await user.click(confirm.getByRole('button', { name: '초기화' }))
+
+    expect(await screen.findByText(/프로필이 없는 계정\(가입 진행 중, 탈퇴\)이라 초기화할 수 없어요/)).toBeInTheDocument()
+  })
+
+  it('[AC-MEMBER-015] 상세 재조회가 실패하면 낡은 프로필로 초기화하지 못하게 버튼을 잠근다', async () => {
+    seedAdminMembers([makeAdminMemberWire({ ...정상회원, bio: '소개' })])
+    // 초기화가 30024로 실패하면 상세를 다시 불러오고, 그 재조회가 403으로 실패하는 경우다.
+    server.use(
+      http.post(ADMIN_MEMBER_PROFILE_RESET_URL, () =>
+        HttpResponse.json({ errorCode: 30024, message: '프로필이 없는 계정' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAt('/members')
+    await user.click(await screen.findByRole('button', { name: '1001' }))
+    await (await drawer()).findByText('소개')
+
+    server.use(
+      http.get(ADMIN_MEMBER_DETAIL_URL, () =>
+        HttpResponse.json({ errorCode: 20011, message: '접근 권한이 없습니다.' }, { status: 403 }),
+      ),
+    )
+    await user.click((await drawer()).getByRole('button', { name: '프로필 초기화' }))
+    const confirm = within(await screen.findByRole('dialog', { name: '프로필을 초기화할까요?' }))
+    await user.click(confirm.getByRole('button', { name: '초기화' }))
+
+    const open = await drawer()
+    expect(await open.findByText('상세를 불러오지 못했어요')).toBeInTheDocument()
+    expect(open.getByRole('button', { name: '프로필 초기화' })).toBeDisabled()
   })
 })

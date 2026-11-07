@@ -28,6 +28,7 @@ import {
   isWithinDocumentSizeLimit,
   missingDocuments,
   OVERSIZED_DOCUMENT_MESSAGE,
+  PhoneVerificationSection,
   sellerApplicationErrorMessage,
   UNSUPPORTED_DOCUMENT_MESSAGE,
   uploadSellerDocument,
@@ -403,11 +404,17 @@ function StoreSettingsRoute() {
             </Alert>
           )}
 
-          <StoreSettingsForm
-            value={form}
-            onChange={handleChange}
-            accountNumberMasked={application?.accountNumberMasked}
-          />
+          {/* BE requirePhoneVerified()가 임시저장부터 403/10103으로 막는다 — 폼을 다 채운 뒤에
+              막히지 않게 인증 블록을 신청 폼보다 먼저 둔다. */}
+          <PhoneVerificationSection />
+
+          <div className="mt-5">
+            <StoreSettingsForm
+              value={form}
+              onChange={handleChange}
+              accountNumberMasked={application?.accountNumberMasked}
+            />
+          </div>
 
           <div className="mt-5">
             <DocumentSection

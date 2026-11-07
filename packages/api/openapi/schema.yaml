@@ -464,7 +464,10 @@ paths:
         상품, 리뷰, 사용자를 신고한다. targetType에 따라 targetId와 reasonCode를 해석한다.
         PRODUCT는 상품 productId(ULID)와 사유 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER를 받는다.
         REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id를 받고 사유는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER다.
-        OTHER는 reasonText가 있어야 한다. 성공은 201이고 바디가 없다.
+        SNS_POST는 게시물 publicId, SNS_COMMENT는 댓글 publicId, SNS_USER는 사용자 publicId를 받고 사유는 SPAM, ABUSE, INAPPROPRIATE, FRAUD, OTHER다.
+        리포스트 카드에서 신고하면 원글 publicId를 보낸다. 대댓글은 그 대댓글의 publicId만 대상이다.
+        SNS_POST, SNS_COMMENT, SNS_USER는 합쳐 1분 5건과 1일 30건까지이고 넘으면 대상 판정보다 먼저 429 90012다.
+        OTHER는 reasonText가 있어야 하고 공백만 보낸 값은 비운 것으로 본다. 성공은 201이고 바디가 없다.
       operationId: "submitReport"
       security:
         - bearerAuth: []
@@ -479,11 +482,18 @@ paths:
           description: "Created"
         "400":
           description: >-
-            형식 오류(90001), 기타 사유인데 상세 사유 없음(상품 40300), 본인 상품 신고(40302)
+            형식 오류(90001), 기타 사유인데 상세 사유 없음(상품 40300, SNS 게시물과 댓글 130801, SNS 사용자 30201),
+            본인 상품 신고(40302), 본인 게시물 신고(130800), 본인 댓글 신고(130803), 자기 자신 신고(30200)
+        "403":
+          description: "내가 차단한 작성자의 게시물이나 그 게시물의 댓글(130001)"
         "404":
-          description: "신고할 상품 없음(40000)"
+          description: >-
+            신고할 상품 없음(40000), 볼 수 없는 게시물(130400, 댓글이 달린 게시물 포함), 볼 수 없는 댓글(130700),
+            볼 수 없는 계정(130000)
         "409":
-          description: "이미 신고한 상품(40303)"
+          description: "이미 신고한 상품(40303), 게시물(130802), 댓글(130804), 사용자(30202, 리뷰 화면 경로 포함)"
+        "429":
+          description: "SNS 신고 빈도 제한 초과(90012)"
   /reviews:
     post:
       summary: "리뷰 작성"
@@ -1450,9 +1460,10 @@ paths:
     get:
       summary: "다른 사용자의 SNS 프로필(비로그인 허용)"
       description: >-
-        비로그인이면 관계 필드(following, blockedByMe, mutedByMe, isMe)가 모두 false다. 볼 수 없는 사용자(없음·탈퇴·
-        온보딩 전·나를 차단)는 404 130000 하나로 온다. 내가 차단한 사용자는 200 + blockedByMe=true이고 bio·pets·세 수가 null이다.
-        토큰을 보냈을 때만 401 20004 / 403 20005 / 403 20006이 난다.
+        비로그인이면 관계 필드(following, blockedByMe, mutedByMe, blockingMe, isMe)가 모두 false다. 볼 수 없는 사용자(없음,
+        탈퇴, 온보딩 전)는 404 130000 하나로 온다. 내가 차단한 사용자는 200 + blockedByMe=true이고 bio, pets, 세 수가 null이다.
+        나를 차단한 사용자는 200 + blockingMe=true이고 nickname만 채운다(profileImageUrl, bio, pets, 세 수가 null). 서로 차단이면
+        blockedByMe도 true다(sns.yaml 0.3.0, R2-06). 토큰을 보냈을 때만 401 20004 / 403 20005 / 403 20006이 난다.
       operationId: "getSnsProfile"
       security:
         - {}
@@ -1523,7 +1534,7 @@ paths:
   /sns/users/{publicId}/follow:
     post:
       summary: "팔로우(멱등 켜기)"
-      description: "이미 팔로우 중이어도 201. 404 130000(볼 수 없음), 403 130001(내가 차단), 400 130300(본인)."
+      description: "이미 팔로우 중이어도 201. 404 130000(볼 수 없음), 403 130001(내가 차단), 400 130300(본인). 1분 30건과 1일 300건을 넘으면 429 90012."
       operationId: "followUser"
       security:
         - bearerAuth: []
@@ -1534,7 +1545,7 @@ paths:
           description: "Created(본문 없음)"
     delete:
       summary: "언팔로우(멱등 끄기)"
-      description: "팔로우하지 않은 상태여도 204. 없는 publicId만 404 130000이다."
+      description: "팔로우하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012."
       operationId: "unfollowUser"
       security:
         - bearerAuth: []
@@ -1546,7 +1557,7 @@ paths:
   /sns/users/{publicId}/block:
     post:
       summary: "차단(멱등 켜기)"
-      description: "이미 차단 중이어도 201. 두 방향 팔로우를 지운다. 404 130000(볼 수 없음), 400 130100(본인)."
+      description: "이미 차단 중이어도 201. 두 방향 팔로우를 지운다. 404 130000(볼 수 없음), 400 130100(본인). 1분 30건을 넘으면 429 90012."
       operationId: "blockUser"
       security:
         - bearerAuth: []
@@ -1557,7 +1568,7 @@ paths:
           description: "Created(본문 없음)"
     delete:
       summary: "차단 해제(멱등 끄기)"
-      description: "차단 때 지운 팔로우는 되살리지 않는다. 차단하지 않은 상태여도 204. 없는 publicId만 404 130000이다."
+      description: "차단 때 지운 팔로우는 되살리지 않는다. 차단하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012."
       operationId: "unblockUser"
       security:
         - bearerAuth: []
@@ -1569,7 +1580,7 @@ paths:
   /sns/users/{publicId}/mute:
     post:
       summary: "뮤트(멱등 켜기)"
-      description: "이미 뮤트 중이어도 201. 팔로우와 수는 바꾸지 않는다. 404 130000(볼 수 없음), 400 130200(본인)."
+      description: "이미 뮤트 중이어도 201. 팔로우와 수는 바꾸지 않는다. 404 130000(볼 수 없음), 400 130200(본인). 1분 30건을 넘으면 429 90012."
       operationId: "muteUser"
       security:
         - bearerAuth: []
@@ -1580,7 +1591,7 @@ paths:
           description: "Created(본문 없음)"
     delete:
       summary: "뮤트 해제(멱등 끄기)"
-      description: "뮤트하지 않은 상태여도 204. 없는 publicId만 404 130000이다."
+      description: "뮤트하지 않은 상태여도 204. 없는 publicId만 404 130000이다. 1분 30건을 넘으면 429 90012."
       operationId: "unmuteUser"
       security:
         - bearerAuth: []
@@ -1623,6 +1634,623 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnsRelationPageResponse"
+  # SNS-02 게시물과 해시태그. 원천은 spec/contracts/sns.yaml(0.3.0, 2026-10-23 contract 게이트 확정).
+  # 실패는 errorCode로 분기한다. 130400(404 볼 수 없는 게시물), 130001(403 내가 차단한 작성자), 130401(403 남의 게시물),
+  # 130402부터 130407까지(400 게시물 규칙), 130500부터 130502까지(400 해시태그 규칙), 90006(429 빈도 제한, SNS-T19부터).
+  /sns/posts:
+    post:
+      summary: "게시물 작성(Idempotency-Key 필수)"
+      description: >-
+        캡션, 사진(SNS_POST_IMAGE tmp key 0개부터 10개) 또는 영상 하나(SNS_POST_VIDEO key와 썸네일 key), 해시태그로 게시물을 만든다.
+        같은 Idempotency-Key로 이미 게시물이 생겼으면 본문이 달라도 그 publicId로 201이다. 응답이 없거나 4xx, 5xx면 같은 키로 다시 보낸다.
+        헤더가 없으면 400 90001, 비었거나 100자를 넘으면 400 90004다. 없거나 이미 쓴 tmp key는 404 100001,
+        남이 발급받은 key는 403 100002, 다른 용도로 발급받은 key는 400 100003이다.
+      operationId: "createSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: "작성 화면을 열 때 만든 UUID. 그 화면의 모든 게시 시도에 같은 값을 보낸다"
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsPostCreateRequest"
+      responses:
+        "201":
+          description: "Created(같은 키로 이미 생긴 게시물이면 그 publicId)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostCreateResponse"
+  /sns/posts/{publicId}:
+    get:
+      summary: "게시물 상세(비로그인 허용)"
+      description: >-
+        비로그인이면 isMine, following, mutedByMe가 모두 false다. 판정 순서는 없음이나 삭제, 작성자 탈퇴, 작성자가 나를 차단(모두 404 130400),
+        내가 작성자를 차단(403 130001, 본문에 작성자와 내용 없음)이다. 뮤트한 작성자의 게시물은 200과 mutedByMe=true다.
+        토큰을 보냈을 때만 401 20004, 403 20005, 403 20006이 난다.
+      operationId: "getSnsPost"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostDetailResponse"
+    patch:
+      summary: "게시물 수정(캡션과 해시태그 통째 교체)"
+      description: >-
+        caption과 hashtags를 함께 보내 통째로 바꾼다. 둘 중 하나라도 빠지면 400 90001이다. 바뀐 것이 없어도 204이고 edited는 그대로다.
+        규칙 검사(130403, 130405, 130406, 1305xx)가 게시물 조회보다 먼저다. 그 뒤 없거나 삭제된 게시물 404 130400, 남의 게시물 403 130401,
+        첨부 없는 게시물의 캡션을 비우면 400 130402다.
+      operationId: "updateSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsPostUpdateRequest"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+    delete:
+      summary: "게시물 삭제(멱등)"
+      description: "이미 지운 게시물도 204다. 없는 publicId는 404 130400, 남의 게시물은 403 130401이다."
+      operationId: "deleteSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음)"
+  /sns/hashtags:
+    get:
+      summary: "해시태그 자동완성과 추천 태그"
+      description: >-
+        검색어를 해시태그 표기 규칙으로 정규화해 status와 함께 돌려준다. 검색어 때문에 400을 내지 않는다(size 범위 밖만 400 90001).
+        EMPTY는 추천 태그, EXISTS는 exact 줄, NEW는 새 해시태그 만들기 줄이고 INVALID, TOO_LONG, BANNED는 추가하지 않는다.
+      operationId: "searchSnsHashtags"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: "모달 입력값 그대로. 서버가 정규화한다"
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsHashtagSearchResponse"
+  # SNS-03 리포스트, 저장, 피드, 프로필 게시물 탭. 원천은 spec/contracts/sns.yaml(0.4.0, 2026-11-05 SNS-03 부분 초안).
+  # 실패는 errorCode로 분기한다. 130400(404 볼 수 없는 게시물), 130000(404 볼 수 없는 목록 주인), 130001(403 내가 차단한
+  # 작성자나 목록 주인), 130600(400 본인 원글 리포스트), 20013(403 이용 제한 계정의 SNS 쓰기), 90002(400 잘못되거나 만료된 커서).
+  # 켜기와 끄기의 403은 계약의 SnsReactionForbidden(130001, 20005, 20006, 20013)과 SnsWriteRestricted(20005, 20006, 20013)다.
+  # 빈도 제한은 errorCode가 아니라 HTTP 429로 분기한다(develop의 90006은 404 경로 없음이다).
+  /sns/posts/{publicId}/repost:
+    post:
+      summary: "리포스트(멱등 켜기)"
+      description: >-
+        이미 리포스트 중이어도 201이고 수는 바뀌지 않는다. 판정 순서는 없거나 지운 원글 404 130400, 본인 원글 400 130600,
+        작성자 탈퇴나 작성자가 나를 차단 404 130400, 내가 작성자를 차단 403 130001이다. 이용 제한 계정은 403 20013이다.
+      operationId: "repostSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "201":
+          description: "Created(본문 없음, 이미 리포스트 중 포함)"
+    delete:
+      summary: "리포스트 취소(멱등 끄기)"
+      description: >-
+        리포스트하지 않은 상태여도 204다. 게시물은 publicId로만 찾고 상태와 관계를 보지 않아 없는 publicId만 404 130400이다.
+        이용 제한 계정은 403 20013이다.
+      operationId: "unrepostSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음, 리포스트하지 않은 상태 포함)"
+  /sns/posts/{publicId}/save:
+    post:
+      summary: "저장(멱등 켜기)"
+      description: >-
+        이미 저장 중이어도 201이다. 저장은 본인만 보고 어떤 수도 바꾸지 않는다. 내 글도 저장한다. 판정 순서는 없거나 지운 게시물과
+        작성자 탈퇴 404 130400, 작성자가 나를 차단 404 130400, 내가 작성자를 차단 403 130001이다. 이용 제한 계정은 403 20013이다.
+      operationId: "saveSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "201":
+          description: "Created(본문 없음, 이미 저장 중 포함)"
+    delete:
+      summary: "저장 취소(멱등 끄기)"
+      description: >-
+        저장하지 않은 상태여도 204다. 게시물은 publicId로만 찾고 없는 publicId만 404 130400이다. 이용 제한 계정은 403 20013이다.
+      operationId: "unsaveSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음, 저장하지 않은 상태 포함)"
+  /sns/feeds/following:
+    get:
+      summary: "팔로잉 피드(최신순, 로그인 필요)"
+      description: >-
+        나와 내가 팔로우하는 사용자의 원글과 리포스트다. 같은 원글은 보이는 이벤트 중 가장 늦은 시각에 한 번 나오고 그 시각이 리포스트면
+        repostedBy를 싣는다. 첫 페이지 요청 시각이 기준이라 그 뒤의 글과 리포스트는 커서 없이 다시 부를 때 나온다.
+      operationId: "getSnsFollowingFeed"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsFeedPageResponse"
+  /sns/feeds/explore:
+    get:
+      summary: "탐색 피드(최신순, 비로그인 허용)"
+      description: >-
+        첫 페이지 요청 시각부터 7일 안의 원글이다. 리포스트는 나오지 않는다. 로그인이면 내 글, 팔로우한 사용자, 차단 관계(양방향),
+        뮤트한 사용자의 글을 뺀다. 토큰을 보냈을 때만 401과 403이 난다.
+      operationId: "getSnsExploreFeed"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsFeedPageResponse"
+  /sns/feeds/popular:
+    get:
+      summary: "인기 피드(반응 점수순, 비로그인 허용)"
+      description: >-
+        72시간 안의 원글을 점수순으로 보여주고 점수가 0인 글은 뺀다. 첫 페이지를 부른 분의 순위를 다음 페이지도 30분 동안 따르고
+        31분이 지난 커서는 400 90002다. 로그인이면 차단 관계(양방향)와 뮤트한 사용자의 글을 뺀다.
+      operationId: "getSnsPopularFeed"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsFeedPageResponse"
+  /sns/users/{publicId}/posts:
+    get:
+      summary: "프로필 그리드 탭(최신순, 비로그인 허용)"
+      description: >-
+        목록 주인의 원글 전체(사진, 영상, 텍스트)다. 판정은 팔로워 목록과 같아 주인이 없거나 나를 차단했으면 404 130000,
+        내가 주인을 차단했으면 403 130001이다. 뮤트한 주인의 글도 그대로 나오고 지운 글은 주인 본인에게도 나오지 않는다.
+      operationId: "getSnsUserPosts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPublicId"
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostGridPageResponse"
+  /sns/users/{publicId}/videos:
+    get:
+      summary: "프로필 영상 탭(최신순, 비로그인 허용)"
+      description: "목록 주인의 영상 원글만이다. 판정, 숨김 규칙, 응답 형태는 그리드 탭과 같다."
+      operationId: "getSnsUserVideos"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPublicId"
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostGridPageResponse"
+  /sns/users/{publicId}/reposts:
+    get:
+      summary: "프로필 리포스트 탭(최근 리포스트순, 비로그인 허용)"
+      description: >-
+        목록 주인이 리포스트한 원글이다. 주인 판정은 그리드 탭과 같다. 지운 원글, 탈퇴한 작성자, 보는 사람과 차단 관계인 작성자의 글은
+        빠지고 주인이 아닌 보는 사람에게는 그 사람이 뮤트한 작성자의 글도 빠진다. 취소한 리포스트는 다음 페이지부터 빠진다.
+      operationId: "getSnsUserReposts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPublicId"
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostGridPageResponse"
+  /sns/me/saves:
+    get:
+      summary: "저장됨 탭(최근 저장순, 본인만)"
+      description: >-
+        내가 저장한 게시물이다. 지운 글과 탈퇴한 작성자의 글은 빠지고 작성자와 차단 관계이거나 작성자를 뮤트했으면 숨긴다(내 글은 늘 나온다).
+        차단이나 뮤트를 풀면 다시 나온다. 저장을 끈 글은 다음 페이지부터 빠진다.
+      operationId: "getMySnsSaves"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostListCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsPostGridPageResponse"
+  # SNS-04 좋아요와 댓글. 원천은 spec/contracts/sns.yaml(0.5.0, 2026-11-05 SNS-04 부분 초안, 제품 책임자 확인 전).
+  # 실패는 errorCode로 분기한다. 130400(404 볼 수 없는 게시물), 130001(403 내가 차단한 작성자), 130700(404 볼 수 없는 댓글),
+  # 130701(403 남의 댓글 수정과 삭제), 130702(400 빈 내용), 130703(400 500자 초과), 130704(400 금지어 비율 초과),
+  # 130705(409 안내 문구만 남은 스레드의 답글), 20013(403 이용 제한 계정의 SNS 쓰기). 빈도 제한은 HTTP 429로 분기한다.
+  /sns/posts/{publicId}/like:
+    post:
+      summary: "게시물 좋아요(멱등 켜기)"
+      description: >-
+        이미 좋아요했어도 201과 지금의 수다. 자기 게시물에도 누를 수 있다. 판정은 상세와 같아 볼 수 없는 게시물은 404 130400,
+        내가 작성자를 차단했으면 403 130001이다.
+      operationId: "likeSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "201":
+          description: "Created(이미 좋아요한 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+    delete:
+      summary: "게시물 좋아요 취소(멱등 끄기)"
+      description: >-
+        좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같아 볼 수 없게 된 게시물의 좋아요는 끌 수 없다(130400, 130001).
+      operationId: "unlikeSnsPost"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK(좋아요하지 않은 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+  /sns/posts/{publicId}/likers:
+    get:
+      summary: "게시물 좋아요한 사람(최근 100명)"
+      description: >-
+        최근에 누른 순서로 100명까지 한 번에 온다. 커서와 서버 검색은 없고 닉네임 검색은 FE가 items 안에서 한다. 차단 관계와 탈퇴한
+        사용자는 빠지고 뮤트한 사용자는 나온다. likeCount는 빠진 사용자도 센 전체 수다. 판정은 좋아요 켜기와 같다(130400, 130001).
+      operationId: "getSnsPostLikers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikerListResponse"
+  /sns/posts/{publicId}/comments:
+    get:
+      summary: "댓글 목록(오래된순, 비로그인 허용)"
+      description: >-
+        한 페이지는 최상위 댓글 size개와 그 아래 보이는 대댓글 전부이고 items는 이미 스레드 순서다. 차단 관계, 뮤트, 섀도우 처리로
+        숨긴 댓글은 그 아래 대댓글과 함께 빠진다. 대댓글이 남은 지운 최상위 댓글은 안내 문구 항목(DELETED, WITHDRAWN)이다.
+        판정은 상세와 같다(130400, 130001). 토큰을 보냈을 때만 401과 403 20005, 20006이 난다.
+      operationId: "getSnsPostComments"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+        - $ref: "#/components/parameters/SnsCommentCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentPageResponse"
+    post:
+      summary: "댓글과 대댓글 작성(Idempotency-Key 필수)"
+      description: >-
+        parentPublicId가 없으면 최상위 댓글이고 대댓글을 가리키면 그 최상위 댓글 아래 붙는다. 같은 작성자가 같은 게시물에 같은 키로
+        쓴 댓글이 있으면 본문이 달라도 그 댓글의 지금 항목으로 201이고 그사이 지웠으면 DELETED 항목이다. 판정 순서는 키(90001, 90004),
+        내용(130702, 130703, 130704), 게시물(130400, 130001), 답글 대상(130700, 130705)이다.
+      operationId: "createSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsPostPublicId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: "입력을 시작할 때 만든 UUID. 그 입력의 모든 게시 시도에 같은 값을 보내고 201 뒤 다음 입력에 새 키를 만든다"
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsCommentCreateRequest"
+      responses:
+        "201":
+          description: "Created(같은 키로 이 게시물에 이미 생긴 댓글이면 그 댓글의 지금 항목)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentResponse"
+  /sns/comments/{commentPublicId}:
+    get:
+      summary: "댓글 하나와 최상위 댓글(알림 진입, 댓글 좋아요한 사람)"
+      description: >-
+        대댓글이면 최상위 댓글을 parent로 함께 준다. 없거나 목록 규칙으로 보이지 않는 댓글은 404 130700이고 게시물 판정은 상세와 같다
+        (130400, 130001).
+      operationId: "getSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentThreadResponse"
+    patch:
+      summary: "본인 댓글 수정"
+      description: >-
+        content를 통째로 바꾸고 200과 바뀐 항목이다. 내용 규칙(130702, 130703, 130704)이 댓글 조회보다 먼저다. 그 뒤 없거나 지운 댓글
+        404 130700, 게시물 판정(130400, 130001), 남의 댓글 403 130701이다. 같은 내용이면 edited도 그대로다.
+      operationId: "updateSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnsCommentUpdateRequest"
+      responses:
+        "200":
+          description: "OK(바뀐 것이 없는 저장 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsCommentResponse"
+    delete:
+      summary: "본인 댓글 삭제(멱등)"
+      description: >-
+        이미 지운 댓글도 204다. 게시물 판정을 하지 않아 없는 publicId만 404 130700이고 남의 댓글은 403 130701이다.
+      operationId: "deleteSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "204":
+          description: "No Content(본문 없음, 이미 지운 댓글 포함)"
+  /sns/comments/{commentPublicId}/like:
+    post:
+      summary: "댓글 좋아요(멱등 켜기)"
+      description: >-
+        게시물 좋아요와 같은 규칙이다. 없거나 보이지 않거나 안내 문구만 남은 댓글은 404 130700, 게시물 판정은 상세와 같다(130400, 130001).
+      operationId: "likeSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "201":
+          description: "Created(이미 좋아요한 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+    delete:
+      summary: "댓글 좋아요 취소(멱등 끄기)"
+      description: "좋아요하지 않았어도 200과 지금의 수다. 판정은 켜기와 같다."
+      operationId: "unlikeSnsComment"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK(좋아요하지 않은 경우 포함)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikeResponse"
+  /sns/comments/{commentPublicId}/likers:
+    get:
+      summary: "댓글 좋아요한 사람(최근 100명)"
+      description: "게시물 좋아요한 사람과 같은 규칙과 응답이다. 판정은 댓글 좋아요 켜기와 같다(130700, 130400, 130001)."
+      operationId: "getSnsCommentLikers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsCommentPublicId"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsLikerListResponse"
+  # SNS-06 검색과 해시태그 게시물 목록. 원천은 spec/contracts/sns.yaml(0.5.0, 2026-11-06 SNS-06 부분 초안).
+  # 네 경로 모두 비로그인이 부를 수 있고 401과 403은 토큰을 보냈을 때만 난다. 새 에러 코드는 없고 잘못된 쿼리는 400 90001,
+  # 잘못되거나 만료된 커서는 400 90002다(90002면 첫 페이지부터 다시 부른다). 검색어는 입력한 그대로 보내고 서버가 앞의 # 하나를 뗀다.
+  # 뗀 값이 비면 빈 결과라 FE는 그때 요청하지 않는다. 로그인 사용자의 게시물 검색 첫 페이지만 최근 검색어에 기록된다.
+  /sns/search/posts:
+    get:
+      summary: "SNS 검색 게시물 세그먼트와 전체 탭 SNS 섹션(비로그인 허용)"
+      description: >-
+        캡션이나 해시태그에 검색어가 든 원글이다. 리포스트는 나오지 않고 로그인이면 차단 관계와 뮤트한 사용자의 글을 뺀다.
+        totalCount는 첫 페이지에만 싣고 보는 사람의 차단과 뮤트로 바꾸지 않아 items보다 클 수 있다. 인기순 커서는 인기 피드처럼
+        31분이 지나면 400 90002다. 전체 탭 SNS 섹션은 sort=POPULAR, size=5로 부르고 더보기는 hasNext로 고른다.
+      operationId: "searchSnsPosts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsSearchKeyword"
+        - $ref: "#/components/parameters/SnsSearchSort"
+        - $ref: "#/components/parameters/SnsSearchCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsSearchPostPageResponse"
+  /sns/search/users:
+    get:
+      summary: "SNS 검색 계정 세그먼트(비로그인 허용)"
+      description: >-
+        닉네임에 검색어(공백을 뺀 문자열)가 든 사용자다. 닉네임이 같은 계정, 검색어로 시작하는 계정, 나머지 순이고 같은 묶음은
+        팔로워 수가 많은 순이다. 내가 차단한 사용자는 빠지고 나를 차단한 사용자는 blockingMe=true 기본 프로필로 나온다.
+      operationId: "searchSnsUsers"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsSearchKeyword"
+        - $ref: "#/components/parameters/SnsSearchCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsSearchUserPageResponse"
+  /sns/search/hashtags:
+    get:
+      summary: "SNS 검색 해시태그 세그먼트(비로그인 허용)"
+      description: >-
+        이름에 검색어(공백을 뺀 뒤 해시태그 표기로 정규화한 값)가 들고 게시글 수가 1 이상인 태그를 게시글 수가 많은 순, 같으면
+        이름 순으로 준다. 게시글 수는 작성 화면 자동완성과 같은 값이다.
+      operationId: "searchSnsHashtagSegment"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsSearchKeyword"
+        - $ref: "#/components/parameters/SnsSearchCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsSearchHashtagPageResponse"
+  /sns/hashtags/{name}/posts:
+    get:
+      summary: "해시태그 게시물 목록(비로그인 허용)"
+      description: >-
+        그 태그와 정확히 같은 태그가 달린 원글이다. 거르는 규칙, 정렬, 커서는 게시물 검색과 같다. hashtag는 매 페이지에 싣고
+        없는 태그나 글이 모두 지워진 태그는 postCount 0과 빈 목록이다. 최근 검색어에 기록하지 않는다.
+      operationId: "getSnsHashtagPosts"
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SnsHashtagName"
+        - $ref: "#/components/parameters/SnsSearchSort"
+        - $ref: "#/components/parameters/SnsSearchCursor"
+        - $ref: "#/components/parameters/SnsSize"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnsHashtagPostPageResponse"
   /seller-applications:
     get:
       summary: "내 입점 신청 현황"
@@ -3308,7 +3936,7 @@ paths:
         REQUESTED다. AI가 위반을 찾으면 상품은 바로 REJECTED가 되고 judgment=FLAG와 함께
         reasonSummary(셀러가 쓴 문장 중 걸린 구절)와 sellerNotice(AI가 제안한 수정 방향)가 온다.
         rejectReason은 관리자가 반려한 상품일 때만 오고 AI가 반려했으면 null이다. 한 번도 검수를
-        타지 않은 상품은 inspectionStatus와 progressStep만 채워진다. 남의 상품·없는 상품은 404 errorCode 40000.
+        타지 않은 상품은 inspectionStatus와 progressStep만 채워지고 violations는 빈 배열이다. 남의 상품·없는 상품은 404 errorCode 40000.
       operationId: "getMyProductInspection"
       security:
         - bearerAuth: []
@@ -3388,7 +4016,7 @@ paths:
     get:
       summary: "어드민 회원 상세"
       description: >-
-        가입일·상태와 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다.
+        가입일·상태, 현재 프로필 이미지와 소개글, 제재 이력을 함께 준다. 이력은 최신순(sanctionId 내림차순)이고 최대 50건이다.
         404 errorCode 30000 USER_NOT_FOUND — 없는 계정과 **관리자 계정이 같은 응답이다**
         (관리자는 이 경로의 대상이 아니다).
       operationId: "getAdminMemberDetail"
@@ -3470,6 +4098,28 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ReleaseSanctionRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/members/{userId}/profile/reset:
+    post:
+      summary: "어드민 회원 프로필 초기화"
+      description: >-
+        신고된 회원의 프로필 이미지를 기본 이미지로 되돌리고 소개글을 비운다. 닉네임은 바꾸지 않는다.
+        제재가 아니라 계정 상태와 제재 이력은 그대로이고 회원은 그 뒤에 다시 바꿀 수 있다.
+        제재 중인 계정도 대상이다. 이미 비어 있어도 204다. 본문은 없다.
+        404 errorCode 30000 — 없는 계정과 관리자 계정.
+        409 errorCode 30024 — 프로필이 없는 계정(온보딩 전, 탈퇴).
+      operationId: "resetAdminMemberProfile"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         "204":
           description: "No Content"
@@ -4561,7 +5211,7 @@ paths:
       description: >-
         productId는 상품 공개 식별자(ULID)다. AI가 받은 것과 같은 상품 본문(상품명, 카테고리 경로,
         설명, 대표 이미지, 옵션 이름)과 가장 최근 검수, 이전 관리자 반려 이력을 준다. 검수 필드는
-        상품이 한 번도 검수를 타지 않았으면 null이다. 없는 상품은 404 errorCode 40000.
+        상품이 한 번도 검수를 타지 않았으면 null이고 violations는 빈 배열이다. 없는 상품은 404 errorCode 40000.
       operationId: "getAdminProductInspectionDetail"
       security:
         - bearerAuth: []
@@ -5177,7 +5827,11 @@ components:
           description: "낙관적 락 버전. 수정 API가 쓸 값이고 목록·수정 응답이 유일한 획득 경로다"
     UploadPurpose:
       type: string
-      enum: [USER_PROFILE, PET_PROFILE, SELLER_DOCUMENT, REVIEW_IMAGE, PRODUCT]
+      description: >-
+        업로드 용도(BE UploadPurpose enum 전체, sns.yaml 0.3.0). 허용 형식은 SELLER_DOCUMENT가 image/png, image/jpeg, image/webp,
+        application/pdf이고 SNS_POST_VIDEO가 video/mp4, video/quicktime이며 나머지 용도는 image/png, image/jpeg, image/webp다.
+        상한(contentLength 필수)은 SNS_POST_IMAGE 10MB(10,485,760바이트), SNS_POST_VIDEO 100MB(104,857,600바이트)이고 나머지 용도는 없다
+      enum: [USER_PROFILE, PET_PROFILE, PRODUCT, SELLER_STORE, SELLER_DOCUMENT, REVIEW_IMAGE, SNS_POST_IMAGE, SNS_POST_VIDEO]
     IssuePresignedUrlRequest:
       type: object
       required: [purpose, contentType]
@@ -5186,11 +5840,18 @@ components:
           $ref: "#/components/schemas/UploadPurpose"
         contentType:
           type: string
+          description: "올릴 파일의 MIME 형식. 용도가 허용하지 않으면 400 100000. PUT할 때 Content-Type을 이 값과 같게 보낸다"
+          example: "image/jpeg"
+        contentLength:
+          type: integer
+          format: int64
+          minimum: 1
           description: >-
-            프로필 사진(USER_PROFILE/PET_PROFILE)과 상품 이미지(PRODUCT)는 image/png·image/jpeg·image/webp,
-            셀러 서류(SELLER_DOCUMENT)는 여기에 application/pdf까지. 허용 밖이면 400 errorCode 100000.
-            발급받은 URL에 PUT할 때 Content-Type을 발급 때와 같게 보내야 한다(서명에 박혀 있다)
-          example: "image/png"
+            올릴 파일의 바이트 수. 보내면 용도와 상관없이 1 이상이어야 하고 아니면 400 90001이다.
+            SNS_POST_IMAGE와 SNS_POST_VIDEO는 필수이고 없으면 400 90001, 상한을 넘으면 400 100004다.
+            서버가 이 값을 PUT 서명에 넣으므로 PUT 본문 길이가 다르면 S3가 403으로 거부한다.
+            상한이 없는 기존 용도는 보내지 않아도 되고 보내도 서명에 넣지 않는다
+          example: 1843200
     PresignedUrlResponse:
       type: object
       required: [data]
@@ -6774,17 +7435,18 @@ components:
       properties:
         targetType:
           type: string
-          enum: [PRODUCT, REVIEW, USER]
+          enum: [PRODUCT, REVIEW, USER, SNS_POST, SNS_COMMENT, SNS_USER]
         targetId:
           type: string
-          description: "PRODUCT는 상품 productId(ULID), REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id"
+          description: "PRODUCT는 상품 productId(ULID), REVIEW는 리뷰 id, USER는 신고할 사용자가 쓴 리뷰 id, SNS_POST는 게시물 publicId, SNS_COMMENT는 댓글 publicId, SNS_USER는 사용자 publicId"
         reasonCode:
           type: string
-          description: "PRODUCT는 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER. REVIEW와 USER는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER"
+          description: "PRODUCT는 FALSE_AD, INFO_ERROR, ILLEGAL, INAPPROPRIATE, OTHER. REVIEW, USER, SNS_POST, SNS_COMMENT, SNS_USER는 FRAUD, ABUSE, SPAM, INAPPROPRIATE, OTHER"
         reasonText:
           type: string
           nullable: true
-          description: "상세 사유. 상품 신고는 500자까지"
+          maxLength: 500
+          description: "상세 사유. 500자까지이고 OTHER이면 필수다. 공백만 보내면 비운 것으로 본다"
     CreateReviewRequest:
       type: object
       required: [orderItemId, rating, content]
@@ -9503,10 +10165,18 @@ components:
           description: "조치 시각(오프셋 없는 LocalDateTime)"
     AdminMemberDetailData:
       type: object
-      required: [member, sanctions]
+      required: [member, profileImageUrl, bio, sanctions]
       properties:
         member:
           $ref: "#/components/schemas/AdminMemberSummary"
+        profileImageUrl:
+          type: string
+          nullable: true
+          description: "현재 프로필 이미지 주소. 기본 이미지이거나 프로필이 없는 계정이면 null"
+        bio:
+          type: string
+          nullable: true
+          description: "현재 소개글. 비었거나 프로필이 없는 계정이면 null"
         sanctions:
           type: array
           items:
@@ -10749,7 +11419,7 @@ components:
           minimum: 1
     SnsProfileResult:
       type: object
-      required: [publicId, nickname, profileImageUrl, bio, pets, postCount, followerCount, followingCount, isMe, following, blockedByMe, mutedByMe]
+      required: [publicId, nickname, profileImageUrl, bio, pets, postCount, followerCount, followingCount, isMe, following, blockedByMe, mutedByMe, blockingMe]
       properties:
         publicId:
           type: string
@@ -10758,15 +11428,16 @@ components:
         profileImageUrl:
           type: string
           nullable: true
+          description: "blockingMe=true면 null(기본 프로필 사진을 보여준다)"
         bio:
           type: string
           nullable: true
           maxLength: 150
-          description: "비었거나 blockedByMe=true면 null"
+          description: "비었거나 blockedByMe=true거나 blockingMe=true면 null"
         pets:
           type: array
           nullable: true
-          description: "대표 펫부터 ACTIVE 펫 전체. 없으면 빈 배열, blockedByMe=true면 null"
+          description: "대표 펫부터 ACTIVE 펫 전체. 없으면 빈 배열, blockedByMe=true거나 blockingMe=true면 null"
           items:
             $ref: "#/components/schemas/SnsPetResult"
         postCount:
@@ -10789,6 +11460,9 @@ components:
           type: boolean
         mutedByMe:
           type: boolean
+        blockingMe:
+          type: boolean
+          description: "이 사용자가 보는 사람을 차단했으면 true. true면 nickname만 채운 기본 프로필이고 팔로우 버튼을 숨긴다. 비로그인은 false"
     SnsProfileResponse:
       type: object
       required: [data]
@@ -10879,6 +11553,583 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SnsRelationPageResult"
+    SnsPostCreateRequest:
+      type: object
+      description: "게시 요청. 모든 필드를 생략할 수 있고 생략하면 null이나 빈 배열과 같다"
+      properties:
+        caption:
+          type: string
+          nullable: true
+          description: "서버가 NFC 정규화, \\r\\n 정리, 앞뒤 공백 지우기 뒤 코드 포인트로 세어 2,200자 이하(넘으면 130403). 공백뿐이면 캡션 없음"
+        photoKeys:
+          type: array
+          description: "SNS_POST_IMAGE로 올린 tmp key. 0개부터 10개까지이고 배열 순서가 보여주는 순서다"
+          items:
+            type: string
+        video:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostVideoRequest"
+          nullable: true
+          description: "영상 하나. photoKeys와 함께 보내면 130404다"
+        hashtags:
+          type: array
+          description: "해시태그 칩의 이름. 서버가 정규화하고 같은 태그는 합친다. 합친 뒤 30개를 넘으면 130406"
+          items:
+            type: string
+    SnsPostVideoRequest:
+      type: object
+      required: [key, durationMs]
+      properties:
+        key:
+          type: string
+          description: "SNS_POST_VIDEO로 올린 tmp key"
+        thumbnailKey:
+          type: string
+          nullable: true
+          description: "SNS_POST_IMAGE로 올린 썸네일 tmp key. FE는 언제나 보낸다. 없으면 130404"
+        durationMs:
+          type: integer
+          format: int32
+          minimum: 1
+          description: "FE가 영상 메타데이터에서 읽은 길이(밀리초). 60,000을 넘으면 130407"
+    SnsPostUpdateRequest:
+      type: object
+      required: [caption, hashtags]
+      description: "수정 요청. 두 값을 함께 보내 통째로 바꾼다(caption의 null은 캡션 삭제)"
+      properties:
+        caption:
+          type: string
+          nullable: true
+        hashtags:
+          type: array
+          description: "빈 배열이면 해시태그를 모두 뺀다. 순서만 바꿔도 수정으로 본다"
+          items:
+            type: string
+    SnsPostCreateResult:
+      type: object
+      required: [publicId]
+      properties:
+        publicId:
+          type: string
+    SnsPostCreateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsPostCreateResult"
+    SnsPostAuthorResult:
+      type: object
+      required: [publicId, nickname, profileImageUrl]
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+    SnsPostVideoResult:
+      type: object
+      required: [url, thumbnailUrl, durationMs]
+      properties:
+        url:
+          type: string
+          description: "서버가 변환하지 않은 MP4 또는 MOV 원본"
+        thumbnailUrl:
+          type: string
+        durationMs:
+          type: integer
+          format: int32
+    SnsPostDetailResult:
+      type: object
+      required: [publicId, author, pet, caption, hashtags, photoUrls, video, likeCount, commentCount, repostCount, edited, createdAt, isMine, following, mutedByMe, reposted, saved, liked]
+      description: "게시물 상세. SNS-03 피드 카드(SnsFeedItemResult의 post)도 같은 스키마다"
+      properties:
+        publicId:
+          type: string
+        author:
+          $ref: "#/components/schemas/SnsPostAuthorResult"
+        pet:
+          allOf:
+            - $ref: "#/components/schemas/SnsPetResult"
+          nullable: true
+          description: "게시할 때의 대표 펫(품종과 생년월은 지금 값). FE가 birthYearMonth와 createdAt으로 게시 당시 나이를 계산한다"
+        caption:
+          type: string
+          nullable: true
+          description: "금지어를 가린 뒤의 캡션. 없으면 null"
+        hashtags:
+          type: array
+          description: "작성자가 단 순서대로 정규화한 해시태그 이름(# 없음)"
+          items:
+            type: string
+        photoUrls:
+          type: array
+          description: "사진 표시용 URL. 첫 항목이 대표 이미지다. 사진 게시물이 아니면 빈 배열"
+          items:
+            type: string
+        video:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostVideoResult"
+          nullable: true
+          description: "영상 게시물이 아니면 null. photoUrls가 비고 video가 null이면 텍스트 게시물이다"
+        likeCount:
+          type: integer
+          format: int64
+          description: "좋아요 수. 보는 사람과 관계없이 같고 차단과 뮤트로 줄지 않는다(Q12)"
+        commentCount:
+          type: integer
+          format: int64
+          description: "댓글 수. 게시물 작성자가 뮤트한 사용자에게는 그 사용자의 숨긴 댓글까지 센 보는 사람별 값이다(R1-03). 안내 문구 자리는 세지 않는다"
+        repostCount:
+          type: integer
+          format: int64
+          description: "지금 남은 리포스트 수(보는 사람과 관계없이 같다). 저장 수 필드는 없다(누구에게도 보여주지 않는다)"
+        edited:
+          type: boolean
+          description: "캡션이나 해시태그를 고친 적이 있으면 true"
+        createdAt:
+          type: string
+          description: "게시 시각. ISO LocalDateTime(KST, 오프셋 없음)"
+        isMine:
+          type: boolean
+        following:
+          type: boolean
+        mutedByMe:
+          type: boolean
+        reposted:
+          type: boolean
+          description: "보는 사람이 리포스트했으면 true. 비로그인과 작성자 본인은 false"
+        saved:
+          type: boolean
+          description: "보는 사람이 저장했으면 true. 비로그인은 false"
+        liked:
+          type: boolean
+          description: "보는 사람이 좋아요했으면 true. 비로그인은 false(SNS-04)"
+    SnsPostDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsPostDetailResult"
+    SnsHashtagResult:
+      type: object
+      required: [name, postCount]
+      properties:
+        name:
+          type: string
+          description: "정규화한 태그 이름(# 없음)"
+        postCount:
+          type: integer
+          format: int32
+    SnsHashtagSearchStatus:
+      type: string
+      enum: [EMPTY, EXISTS, NEW, INVALID, TOO_LONG, BANNED]
+    SnsHashtagSearchResult:
+      type: object
+      required: [query, status, exact, items]
+      properties:
+        query:
+          type: string
+          description: "정규화한 검색어. EMPTY면 빈 문자열"
+        status:
+          $ref: "#/components/schemas/SnsHashtagSearchStatus"
+        exact:
+          allOf:
+            - $ref: "#/components/schemas/SnsHashtagResult"
+          nullable: true
+          description: "EXISTS일 때 정확히 같은 이름의 태그. items에는 다시 나오지 않는다"
+        items:
+          type: array
+          description: "추천 태그(EMPTY) 또는 부분 일치 태그. 게시글 수가 많은 순"
+          items:
+            $ref: "#/components/schemas/SnsHashtagResult"
+    SnsHashtagSearchResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsHashtagSearchResult"
+    SnsFeedReposterResult:
+      type: object
+      required: [publicId, nickname]
+      description: "팔로잉 피드 카드 위의 리포스트 표시"
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+    SnsFeedItemResult:
+      type: object
+      required: [post, repostedBy]
+      properties:
+        post:
+          $ref: "#/components/schemas/SnsPostDetailResult"
+        repostedBy:
+          allOf:
+            - $ref: "#/components/schemas/SnsFeedReposterResult"
+          nullable: true
+          description: "팔로잉 피드에서 카드 순서 시각에 이 원글을 리포스트한 사람(나 포함). 원글 게시로 들어왔거나 탐색, 인기 피드면 null"
+    SnsFeedPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          description: "같은 원글은 한 페이지에 한 번만 나온다. 팔로잉 피드는 페이지 사이에 같은 원글이 다시 올 수 있어 FE가 post.publicId로 뺀다"
+          items:
+            $ref: "#/components/schemas/SnsFeedItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsFeedPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsFeedPageResult"
+    SnsPostMediaType:
+      type: string
+      enum: [TEXT, PHOTO, VIDEO]
+    SnsPostGridItemResult:
+      type: object
+      required: [publicId, mediaType, thumbnailUrl, photoCount, captionPreview]
+      description: "프로필 그리드, 영상, 리포스트 탭과 저장됨 탭의 칸. 리포스트 탭도 원글의 publicId다"
+      properties:
+        publicId:
+          type: string
+        mediaType:
+          $ref: "#/components/schemas/SnsPostMediaType"
+        thumbnailUrl:
+          type: string
+          nullable: true
+          description: "사진 게시물은 첫 사진, 영상 게시물은 썸네일. 텍스트 게시물은 null"
+        photoCount:
+          type: integer
+          format: int32
+          description: "사진 장수. 2 이상이면 여러 장 표시. 사진 게시물이 아니면 0"
+        captionPreview:
+          type: string
+          nullable: true
+          description: "텍스트 게시물 캡션의 앞 100 코드 포인트. 사진과 영상 게시물은 null"
+    SnsPostGridPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnsPostGridItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsPostGridPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsPostGridPageResult"
+    SnsLikeResult:
+      type: object
+      required: [likeCount]
+      properties:
+        likeCount:
+          type: integer
+          format: int64
+          description: "요청을 처리한 뒤의 좋아요 수(보는 사람과 관계없이 같다)"
+    SnsLikeResponse:
+      type: object
+      required: [data]
+      description: "게시물과 댓글 좋아요 켜기, 끄기의 응답"
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsLikeResult"
+    SnsLikerItemResult:
+      type: object
+      required: [publicId, nickname, profileImageUrl, pet, isMe, following]
+      description: "좋아요한 사람 행. pet은 팔로우 목록 행의 petSummary와 모양이 다르다"
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+        pet:
+          allOf:
+            - $ref: "#/components/schemas/SnsPetResult"
+          nullable: true
+          description: "지금 대표 펫. 펫이 없으면 null. FE가 오늘 날짜로 나이를 계산한다"
+        isMe:
+          type: boolean
+          description: "보는 사람 본인 행이면 true(팔로우 버튼 대신 나 표시)"
+        following:
+          type: boolean
+          description: "보는 사람이 이 행 사용자를 팔로우 중이면 true. isMe면 false"
+    SnsLikerListResult:
+      type: object
+      required: [likeCount, hasMore, items]
+      properties:
+        likeCount:
+          type: integer
+          format: int64
+          description: "전체 좋아요 수. items에서 빠진 차단 관계 사용자도 센다"
+        hasMore:
+          type: boolean
+          description: "뺄 사용자를 뺀 뒤에도 100명을 넘게 남으면 true(하단 안내를 고른다)"
+        items:
+          type: array
+          maxItems: 100
+          description: "최근에 누른 순서로 100명까지"
+          items:
+            $ref: "#/components/schemas/SnsLikerItemResult"
+    SnsLikerListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsLikerListResult"
+    SnsCommentCreateRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: "서버가 NFC 정규화, 줄바꿈 정리, 앞뒤 공백 지우기 뒤 코드 포인트로 센다. 비면 130702, 500자를 넘으면 130703"
+        parentPublicId:
+          type: string
+          nullable: true
+          description: "답글달기를 누른 댓글의 publicId. 최상위 댓글이면 생략하거나 null"
+    SnsCommentUpdateRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: "작성과 같은 규칙"
+    SnsCommentStatus:
+      type: string
+      enum: [ACTIVE, DELETED, WITHDRAWN]
+    SnsCommentItemResult:
+      type: object
+      required: [publicId, parentPublicId, status, author, content, likeCount, liked, edited, replyable, isMine, createdAt]
+      description: >-
+        댓글 목록과 단건의 항목. status가 DELETED나 WITHDRAWN이면 안내 문구 항목이고 author와 content가 null, likeCount가 0이며
+        불리언이 모두 false다
+      properties:
+        publicId:
+          type: string
+        parentPublicId:
+          type: string
+          nullable: true
+          description: "대댓글이면 최상위 댓글의 publicId. 최상위 댓글이면 null"
+        status:
+          $ref: "#/components/schemas/SnsCommentStatus"
+        author:
+          allOf:
+            - $ref: "#/components/schemas/SnsPostAuthorResult"
+          nullable: true
+          description: "작성자. 안내 문구 항목이면 null"
+        content:
+          type: string
+          nullable: true
+          description: "금지어를 가린 뒤의 내용. 안내 문구 항목이면 null"
+        likeCount:
+          type: integer
+          format: int64
+        liked:
+          type: boolean
+          description: "보는 사람이 좋아요했으면 true. 비로그인과 안내 문구 항목은 false"
+        edited:
+          type: boolean
+          description: "내용을 고친 적이 있으면 true(수정됨 표시)"
+        replyable:
+          type: boolean
+          description: "이 항목과 그 최상위 댓글이 모두 ACTIVE면 true. true일 때만 답글달기를 보여준다"
+        isMine:
+          type: boolean
+          description: "보는 사람이 작성자면 true(수정과 삭제를 보여준다). 비로그인과 안내 문구 항목은 false"
+        createdAt:
+          type: string
+          description: "작성 시각. ISO LocalDateTime(KST, 오프셋 없음)"
+    SnsCommentPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      description: "댓글 목록 한 페이지. totalCount가 없고 헤더의 수는 상세 commentCount를 쓴다"
+      properties:
+        items:
+          type: array
+          description: "최상위 댓글 다음에 그 대댓글을 작성 순서로 이어 붙인 목록. 최상위 댓글은 오래된순이다"
+          items:
+            $ref: "#/components/schemas/SnsCommentItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsCommentPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentPageResult"
+    SnsCommentResponse:
+      type: object
+      required: [data]
+      description: "댓글 작성과 수정의 응답. 쓴 사람 기준 항목이다"
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentItemResult"
+    SnsCommentThreadResult:
+      type: object
+      required: [comment, parent]
+      properties:
+        comment:
+          $ref: "#/components/schemas/SnsCommentItemResult"
+        parent:
+          allOf:
+            - $ref: "#/components/schemas/SnsCommentItemResult"
+          nullable: true
+          description: "comment가 대댓글이면 그 최상위 댓글(안내 문구 항목일 수 있다). 최상위 댓글이면 null"
+    SnsCommentThreadResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsCommentThreadResult"
+    SnsSearchPostPageResult:
+      type: object
+      required: [items, totalCount, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          description: "피드 카드와 같은 모양이고 repostedBy는 늘 null이다. 같은 원글은 한 페이지에 한 번만 나온다"
+          items:
+            $ref: "#/components/schemas/SnsFeedItemResult"
+        totalCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "첫 페이지의 결과 수. 보는 사람의 차단과 뮤트로 바꾸지 않는다. 다음 페이지는 null"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsSearchPostPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsSearchPostPageResult"
+    SnsSearchUserItemResult:
+      type: object
+      required: [publicId, nickname, profileImageUrl, petSummary, followerCount, isMe, following, blockingMe]
+      description: "계정 세그먼트의 사용자 행. 누르면 프로필로 간다"
+      properties:
+        publicId:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+          description: "blockingMe면 null(기본 프로필 사진)"
+        petSummary:
+          allOf:
+            - $ref: "#/components/schemas/SnsPetSummaryResult"
+          nullable: true
+          description: "현재 대표 펫과 ACTIVE 펫 수. 펫이 없거나 blockingMe면 null"
+        followerCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "blockingMe면 null"
+        isMe:
+          type: boolean
+          description: "보는 사람 본인 행이면 true(팔로우 버튼을 숨긴다)"
+        following:
+          type: boolean
+          description: "보는 사람이 이 행 사용자를 팔로우 중이면 true. isMe나 blockingMe면 false"
+        blockingMe:
+          type: boolean
+          description: "이 사용자가 보는 사람을 차단했으면 true. 팔로우 버튼을 숨긴다"
+    SnsSearchUserPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnsSearchUserItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsSearchUserPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsSearchUserPageResult"
+    SnsSearchHashtagPageResult:
+      type: object
+      required: [items, nextCursor, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnsHashtagResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsSearchHashtagPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsSearchHashtagPageResult"
+    SnsHashtagHeaderResult:
+      type: object
+      required: [name, postCount]
+      properties:
+        name:
+          type: string
+          description: "정규화한 태그 이름(# 없음)"
+        postCount:
+          type: integer
+          format: int32
+          description: "이 태그가 달린 지우지 않은 게시물 수. 없는 태그는 0"
+    SnsHashtagPostPageResult:
+      type: object
+      required: [hashtag, items, nextCursor, hasNext]
+      properties:
+        hashtag:
+          $ref: "#/components/schemas/SnsHashtagHeaderResult"
+        items:
+          type: array
+          description: "피드 카드와 같은 모양이고 repostedBy는 늘 null이다"
+          items:
+            $ref: "#/components/schemas/SnsFeedItemResult"
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+    SnsHashtagPostPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SnsHashtagPostPageResult"
     InspectionProgressStep:
       type: string
       enum: [REQUESTED, AI_REVIEWING, ADMIN_REVIEWING, APPROVED, REJECTED]
@@ -10893,6 +12144,21 @@ components:
       type: string
       enum: [PENDING_REVIEW, APPROVED, REJECTED, SUPERSEDED]
       description: "관리자 검토 행 상태. SUPERSEDED는 셀러가 고친 내용이 AI를 통과해 관리자 확인 없이 닫힌 것"
+    InspectionViolation:
+      type: object
+      required: [category]
+      properties:
+        category:
+          type: string
+          description: "위반 분류. 모르는 값이 올 수 있다"
+        quote:
+          type: string
+          nullable: true
+          description: "걸린 표현. 금지 성분은 셀러가 쓴 문장이 아니라 성분 이름이다"
+        suggestion:
+          type: string
+          nullable: true
+          description: "AI 수정 제안. 규칙 단계 위반은 null"
     SellerProductInspectionResponse:
       type: object
       required: [data]
@@ -10901,7 +12167,7 @@ components:
           $ref: "#/components/schemas/SellerProductInspection"
     SellerProductInspection:
       type: object
-      required: [productId, inspectionStatus, progressStep]
+      required: [productId, inspectionStatus, progressStep, violations]
       properties:
         productId:
           type: string
@@ -10932,6 +12198,11 @@ components:
           type: string
           nullable: true
           description: "관리자 반려 사유. 관리자가 반려한 상품일 때만 온다. AI가 반려했으면 null"
+        violations:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionViolation"
+          description: "reasonCode, reasonSummary, sellerNotice와 같은 판정의 위반 목록. 없으면 빈 배열이다"
         appealedAt:
           type: string
           nullable: true
@@ -11005,7 +12276,7 @@ components:
       required:
         [productId, productName, sellerName, categoryNames, description, representativeImageUrl, optionNames,
          inspectionStatus, awaitingAdminReview, processingState, judgment, reasonCode, reasonSummary, sellerNotice,
-         requestedAt, settledAt, rejections]
+         requestedAt, settledAt, rejections, violations]
       properties:
         productId:
           type: string
@@ -11070,6 +12341,11 @@ components:
           items:
             $ref: "#/components/schemas/AdminProductRejection"
           description: "이전 관리자 반려. 최근 것부터"
+        violations:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionViolation"
+          description: "reasonCode, reasonSummary, sellerNotice와 같은 판정의 위반 목록. 없으면 빈 배열이다"
     AdminProductRejection:
       type: object
       required: [reason, rejectedAt]
@@ -11705,12 +12981,12 @@ components:
     AdminAuditAction:
       type: string
       description: >-
-        감사되는 운영 액션 17종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'·
+        감사되는 운영 액션 18종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'·
         '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
       enum:
         [SELLER_APPLICATION_APPROVED, SELLER_APPLICATION_REJECTED, ADMIN_PROMOTED, ADMIN_DEMOTED,
          PRODUCT_INSPECTION_APPROVED, PRODUCT_INSPECTION_REJECTED, CLAIM_INTERVENED,
-         MEMBER_SANCTIONED, MEMBER_SANCTION_RELEASED, INQUIRY_ANSWERED, REVIEW_BLINDED,
+         MEMBER_SANCTIONED, MEMBER_SANCTION_RELEASED, MEMBER_PROFILE_RESET, INQUIRY_ANSWERED, REVIEW_BLINDED,
          REVIEW_UNBLINDED, REVIEW_DELETED, ORDER_DISPATCH_NUDGED, NOTICE_UPDATED,
          NOTICE_PUBLISHED, NOTICE_UNPUBLISHED]
     AdminAuditTargetType:
@@ -11976,9 +13252,11 @@ components:
       description: >-
         신고 대상의 종류(be ReportTargetType). 신고 행이 어느 표에서 왔는지를 가리고
         **상세·조치 경로의 첫 세그먼트**다 — 세 신고 표가 각자 AUTO_INCREMENT라 번호만으로는
-        행을 가릴 수 없다. 비공개 전환(HIDE_TARGET)은 REVIEW에서만 받는다
-        (be hasHidableTarget — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다)
-      enum: [PRODUCT, REVIEW, USER]
+        행을 가릴 수 없다. 비공개 전환(HIDE_TARGET)은 REVIEW, SNS_POST, SNS_COMMENT에서만 받는다
+        (be hasHidableTarget — 사용자는 숨길 콘텐츠가 아니고 상품은 노출을 되돌릴 수단이 없다).
+        SNS_POST의 비공개 전환과 계정 제재는 게시물을 운영자 삭제로 지운다.
+        SNS_COMMENT의 비공개 전환과 계정 제재는 댓글을 운영자 삭제로 지우고, 대댓글이 있으면 삭제된 댓글 안내로 남는다
+      enum: [PRODUCT, REVIEW, USER, SNS_POST, SNS_COMMENT]
     ReportHandlingStatus:
       type: string
       description: >-
@@ -11991,14 +13269,14 @@ components:
       description: >-
         **접수** 사유 — 신고한 사람이 고른 값이다. 대상 종류별 어휘라 허용값이 갈린다
         (PRODUCT=FALSE_AD·INFO_ERROR·ILLEGAL·INAPPROPRIATE·OTHER,
-        REVIEW·USER=FRAUD·ABUSE·SPAM·INAPPROPRIATE·OTHER)이고 여덟은 그 **합집합**이라 한 대상에서
+        REVIEW·USER·SNS_POST·SNS_COMMENT=FRAUD·ABUSE·SPAM·INAPPROPRIATE·OTHER)이고 여덟은 그 **합집합**이라 한 대상에서
         다 쓰지 않는다. 처리 사유(ReportDecisionReason)와 FALSE_AD·ABUSE·ILLEGAL 셋이 겹쳐,
         한 라벨 표로 다루면 섞어 써도 라벨이 나와 조용히 틀린다
       enum: [ABUSE, FALSE_AD, FRAUD, ILLEGAL, INAPPROPRIATE, INFO_ERROR, OTHER, SPAM]
     ReportDecisionType:
       type: string
       description: >-
-        운영자의 처리 결정. HIDE_TARGET은 리뷰 신고에만 보낼 수 있고(아니면 400 errorCode 140002)
+        운영자의 처리 결정. HIDE_TARGET은 리뷰, SNS 게시물, SNS 댓글 신고에만 보낼 수 있고(아니면 400 errorCode 140002)
         SANCTION_ACCOUNT일 때만 `sanction`을 함께 보낸다
       enum: [DISMISS, HIDE_TARGET, SANCTION_ACCOUNT]
     ReportDecisionReason:
@@ -12016,7 +13294,7 @@ components:
       description: >-
         목록·상세의 신고 한 건. `targetKey`와 `targetName`이 **따로** 와서 화면이 복합 문자열을
         조립할 필요가 없다 — targetKey는 대상을 다시 여는 식별자(상품은 ULID, 리뷰·사용자는 내부
-        번호)고 targetName은 상품명·리뷰 본문이다
+        번호)고 targetName은 상품명, 리뷰 본문, SNS 게시물 캡션, SNS 댓글 내용이다
       properties:
         targetType:
           $ref: "#/components/schemas/ReportTargetType"
@@ -12025,11 +13303,11 @@ components:
           format: int64
         targetKey:
           type: string
-          description: "상품은 공개 식별자(ULID), 리뷰와 사용자는 내부 id다 — 종류마다 뜻이 다르다"
+          description: "상품은 공개 식별자(ULID), SNS 게시물은 게시물 publicId, SNS 댓글은 댓글 publicId, 리뷰와 사용자는 내부 id다 — 종류마다 뜻이 다르다"
         targetName:
           type: string
           nullable: true
-          description: "상품명·리뷰 본문. **사용자 신고에는 없다**(닉네임이 그 자리를 대신한다)"
+          description: "상품명, 리뷰 본문, SNS 게시물 캡션, SNS 댓글 내용. **사용자 신고에는 없다**(닉네임이 그 자리를 대신한다). 지운 SNS 게시물과 댓글은 null이다"
         targetOwnerUserId:
           type: integer
           format: int64
@@ -12349,6 +13627,65 @@ components:
       in: query
       required: false
       description: "닉네임 부분 일치. 서버가 trim + NFC 정규화하고 검색어로는 400을 내지 않는다"
+      schema:
+        type: string
+    SnsPostPublicId:
+      name: publicId
+      in: path
+      required: true
+      description: "게시물 공개 ID(ULID). 형식 검증 없이 찾지 못하면 404 130400"
+      schema:
+        type: string
+    SnsPostListCursor:
+      name: cursor
+      in: query
+      required: false
+      description: "이전 응답의 nextCursor. 피드는 첫 페이지 기준을 담고 프로필 탭과 저장됨은 목록 주인에도 묶인다. 어긋나거나 만료되면 400 90002"
+      schema:
+        type: string
+    SnsCommentPublicId:
+      name: commentPublicId
+      in: path
+      required: true
+      description: "댓글 공개 ID(ULID). 형식 검증 없이 찾지 못하면 404 130700"
+      schema:
+        type: string
+    SnsCommentCursor:
+      name: cursor
+      in: query
+      required: false
+      description: "이전 응답의 nextCursor. 게시물에 묶이고 다른 게시물이나 다른 목록의 커서면 400 90002"
+      schema:
+        type: string
+    SnsSearchKeyword:
+      name: keyword
+      in: query
+      required: true
+      description: "검색창 입력값 그대로. 서버가 앞뒤 공백을 지우고 NFC로 정규화한 뒤 앞의 # 하나를 뗀다. 100자를 넘으면 400 90001"
+      schema:
+        type: string
+        maxLength: 100
+    SnsSearchSort:
+      name: sort
+      in: query
+      required: false
+      description: "POPULAR 인기순(반응 점수, 기간 제한과 감쇠 없음), LATEST 최신순(작성 시각). 모르는 값은 400 90001"
+      schema:
+        type: string
+        enum: [POPULAR, LATEST]
+        default: POPULAR
+    SnsSearchCursor:
+      name: cursor
+      in: query
+      required: false
+      description: "이전 응답의 nextCursor. 목록 종류, 정렬, 검색어(해시태그 목록은 태그)에 묶이고 어긋나거나 만료되면 400 90002"
+      schema:
+        type: string
+    SnsHashtagName:
+      name: name
+      in: path
+      required: true
+      description: "해시태그 이름. 서버가 해시태그 표기 규칙으로 정규화하고 없는 태그도 404가 아니라 게시글 수 0과 빈 목록이다"
       schema:
         type: string
   securitySchemes:

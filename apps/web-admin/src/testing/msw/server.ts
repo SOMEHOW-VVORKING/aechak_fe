@@ -100,6 +100,7 @@ export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
 export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
 export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`
 export const ADMIN_MEMBER_RELEASE_URL = `${ADMIN_MEMBER_SANCTION_URL}/release`
+export const ADMIN_MEMBER_PROFILE_RESET_URL = `${ADMIN_MEMBER_DETAIL_URL}/profile/reset`
 export const ADMIN_ORDERS_URL = `${adminBase}/admin/orders`
 export const ADMIN_ORDER_METRICS_URL = `${ADMIN_ORDERS_URL}/metrics`
 export const ADMIN_ORDER_DETAIL_URL = `${ADMIN_ORDERS_URL}/:orderId`
@@ -485,6 +486,8 @@ export interface AdminMemberWire {
   reportCount: number
   joinedAt: string
   role: 'ADMIN' | 'GENERAL'
+  profileImageUrl: string | null
+  bio: string | null
   sanctions: MemberSanctionWire[]
 }
 
@@ -502,6 +505,8 @@ export function makeAdminMemberWire(overrides: Partial<AdminMemberWire> = {}): A
     reportCount: 0,
     joinedAt: '2026-05-02T09:00:00',
     role: 'GENERAL',
+    profileImageUrl: null,
+    bio: null,
     sanctions: [],
     ...overrides,
   }
@@ -626,6 +631,8 @@ const memberHandlers = [
     return HttpResponse.json({
       data: {
         member: memberSummaryOf(row),
+        profileImageUrl: row.profileImageUrl,
+        bio: row.bio,
         sanctions: [...row.sanctions].sort((a, b) => b.sanctionId - a.sanctionId),
       },
     })
@@ -701,6 +708,8 @@ const memberHandlers = [
       row.sanctionUntil = null
       // 탈퇴 처리는 닉네임 점유를 푼다(영구 정지는 유지한다).
       row.nickname = null
+      row.profileImageUrl = null
+      row.bio = null
     }
     sanctionIdSeq += 1
     row.sanctions.push({
@@ -713,6 +722,23 @@ const memberHandlers = [
       actedByAdminId: CURRENT_ADMIN_USER_ID,
       actedAt: '2026-10-27T09:00:00',
     })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // 프로필 초기화 — 관리자 계정은 조회처럼 404, 프로필이 없는 계정(온보딩 전, 탈퇴)은 30024다.
+  http.post(ADMIN_MEMBER_PROFILE_RESET_URL, ({ params }) => {
+    const row = members.find(item => item.userId === Number(params['userId']))
+    if (!row || row.role === 'ADMIN') {
+      return HttpResponse.json(errorBody(30000, '사용자를 찾을 수 없습니다.'), { status: 404 })
+    }
+    if (row.storedStatus === 'PENDING_ONBOARDING' || row.storedStatus === 'WITHDRAWN') {
+      return HttpResponse.json(
+        errorBody(30024, '프로필이 없는 계정은 프로필을 초기화할 수 없습니다.'),
+        { status: 409 },
+      )
+    }
+    row.profileImageUrl = null
+    row.bio = null
     return new HttpResponse(null, { status: 204 })
   }),
 
