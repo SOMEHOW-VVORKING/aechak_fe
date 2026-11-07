@@ -1,14 +1,25 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
-import { Alert, Button, Drawer, Skeleton, Textarea, Timeline, type TimelineStep } from '@aechak/design-system/web'
+import {
+  Alert,
+  Button,
+  Drawer,
+  Skeleton,
+  StatusPill,
+  Textarea,
+  Timeline,
+  type TimelineStep,
+} from '@aechak/design-system/web'
 import type { InspectionProgressStep, InspectionViolation, SellerProductInspection } from '@aechak/api'
 import { inspectionViolationCategoryLabel } from '@aechak/domain'
 import {
   APPEAL_REASON_MAX_LENGTH,
   canAppealInspection,
   formatLocalDateTime,
+  inspectionStageRows,
   productErrorMessage,
+  type InspectionStageRow,
 } from '../products.contract'
 import { PRODUCTS_QUERY_KEY, useAppealProductInspection, useProductInspection } from '../products.queries'
 
@@ -84,6 +95,7 @@ export function InspectionDrawer({ productId, onClose, onEdit }: InspectionDrawe
       {data && productId && (
         <div className="flex flex-col gap-6">
           <Timeline steps={toTimeline(data)} />
+          <StageList rows={inspectionStageRows(data.stages)} />
           <InspectionDetail inspection={data} onEdit={() => onEdit(productId)} />
           {/* 조회가 실패한 동안에는 제기를 막는다 — 낡은 값으로 보내면 이미 끝난 반려에 이의가 간다(규약 7). */}
           <AppealPanel productId={productId} inspection={data} blocked={inspection.isError} />
@@ -150,6 +162,30 @@ function InspectionDetail({ inspection, onEdit }: { inspection: SellerProductIns
     case 'APPROVED':
       return <p className="text-body-sm text-text-secondary">검수를 통과했어요.</p>
   }
+}
+
+/**
+ * 어느 단계까지 어떻게 보였는지. 서버가 세 줄을 늘 같은 순서로 주므로 단계 수를 세지 않고 받은
+ * 만큼 그린다 — 필드가 없는 응답(이 기능 전 배포)에서는 영역째 접힌다.
+ */
+function StageList({ rows }: { rows: InspectionStageRow[] }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="text-label font-medium text-text-secondary">검수 단계</h3>
+      <ul className="flex flex-col gap-2">
+        {rows.map(row => (
+          <li key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm">
+            <span className="text-text-primary">{row.label}</span>
+            <StatusPill variant={row.tone} size="sm">
+              {row.outcomeLabel}
+            </StatusPill>
+            {row.detail && <span className="w-full text-caption text-text-tertiary">{row.detail}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 // 판정 실패 뒤에는 목록이 셀러가 이미 고친 문구를 가리키므로 FLAG 분기에서만 그린다.

@@ -19,6 +19,8 @@ import {
   AUTOFILL_FIELD_LABEL,
   AUTOFILL_STATE_OK,
   applyAutofillDraft,
+  autofillFieldNotices,
+  autofillMode,
   discountRate,
   fieldDomId,
   MAX_ADDITIONAL_IMAGES,
@@ -27,6 +29,7 @@ import {
   toAutofillRequest,
   validateProductForm,
   type AutofillFilledField,
+  type AutofillMode,
   type CategoryNode,
   type ImageSlot,
   type ProductFormValues,
@@ -78,6 +81,36 @@ function sectionOf(key: string): number {
 
 const sectionDomId = (step: number) => `product-section-${step}`
 const AI_FILLED_TEXT = 'AI가 채웠어요. 내용을 확인하고 고쳐 주세요.'
+const AI_REFINED_TEXT = 'AI가 다시 썼어요. 내용을 확인하고 고쳐 주세요.'
+const AUTOFILL_HELP: Record<AutofillMode, string> = {
+  FILL: '상품명으로 카테고리/상세 설명/옵션 초안을 받아요. 이미 쓴 칸은 그대로 둬요.',
+  REFINE: '써 둔 본문을 AI가 다시 써요. 적용한 뒤 되돌릴 수 있어요.',
+}
+
+/**
+ * 다시 쓴 본문과 새로 채운 빈 칸을 가려 적는다 — 셀러가 확인할 자리가 다르다.
+ *
+ * REFINE인데 본문이 그대로인 경우를 따로 적는다. "본문 다듬기"를 누른 셀러에게 채운 칸만 열거하면
+ * 본문이 왜 그대로인지 알 길이 없다(AI가 다시 쓰지 못하면 원문을 그대로 돌려준다).
+ */
+function autofillSummary(filled: AutofillFilledField[], mode: AutofillMode): string {
+  const rewritten = mode === 'REFINE' && filled.includes('description')
+  const added = filled.filter(f => !(rewritten && f === 'description'))
+  const labels = added.map(f => AUTOFILL_FIELD_LABEL[f]).join('/')
+  if (rewritten) {
+    return added.length > 0
+      ? `AI가 본문을 다시 쓰고 ${labels}에 초안을 채웠어요. 확인하고 고쳐 주세요.`
+      : 'AI가 본문을 다시 썼어요. 확인하고 고쳐 주세요.'
+  }
+  if (mode === 'REFINE') {
+    return added.length > 0
+      ? `본문은 그대로 두고 ${labels}에 초안을 채웠어요. 확인하고 고쳐 주세요.`
+      : '본문을 다시 쓰지 못해 그대로 두었어요.'
+  }
+  if (added.length > 0) return `AI가 ${labels}에 초안을 채웠어요. 확인하고 고쳐 주세요.`
+  return '채울 빈 칸이 없어 그대로 두었어요.'
+}
+
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
 const toOptions = (nodes: CategoryNode[] | undefined) =>
   (nodes ?? []).map(n => ({ value: String(n.categoryId), label: n.name }))
@@ -103,7 +136,12 @@ export function ProductEditor({
   const autofill = useProductDraftAutofill()
   const [aiFilled, setAiFilled] = useState<ReadonlySet<AutofillFilledField>>(new Set())
   const [autofillNotice, setAutofillNotice] = useState<{ ok: boolean; text: string } | null>(null)
-  // 응답이 올 때의 폼을 본다 — 기다리는 사이 셀러가 쓴 값도 덮지 않는다(폼을 잠그지 않는다).
+  // AI가 비워 둔 칸의 사유(fieldStatus)와, 본문을 다시 쓰기 전 원문. 원문은 "되돌리기" 한 번만 쓴다.
+  const [fieldNotices, setFieldNotices] = useState<Partial<Record<AutofillFilledField, string>>>({})
+  const [refinedFrom, setRefinedFrom] = useState<string | null>(null)
+  // 응답이 올 때의 폼을 본다 -- 폼을 잠그지 않으므로 기다리는 사이 셀러가 쓴 값이 있다. FILL은 그
+  // 값을 덮지 않고, REFINE은 덮는다(다시 쓰라고 부른 칸이다) -- 그래서 되돌릴 원문도 응답이 올 때
+  // 값으로 잡는다. 클릭 시점 값을 들고 있으면 되돌리기가 기다리는 사이 쓴 글까지 날린다.
   const valuesRef = useRef(values)
   useEffect(() => {
     valuesRef.current = values
@@ -131,19 +169,35 @@ export function ProductEditor({
   function update(patch: Partial<ProductFormValues>) {
     setValues(prev => ({ ...prev, ...patch }))
     setTooltipKey(null)
-    if (aiFilled.size === 0) return
+    // 셀러가 본문을 직접 고치면 되돌릴 자리가 사라진다 — 되돌리면 그 수정까지 날아간다.
+    if ('description' in patch) setRefinedFrom(null)
     const touched: AutofillFilledField[] = []
     if ('description' in patch) touched.push('description')
     if ('categoryIds' in patch) touched.push('category')
     if ('optionGroups' in patch || 'optionEnabled' in patch) touched.push('options')
-    if (touched.length > 0) setAiFilled(prev => new Set([...prev].filter(f => !touched.includes(f))))
+    if (touched.length === 0) return
+    if (aiFilled.size > 0) setAiFilled(prev => new Set([...prev].filter(f => !touched.includes(f))))
+    setFieldNotices(prev => {
+      if (touched.every(f => prev[f] === undefined)) return prev
+      const next = { ...prev }
+      touched.forEach(f => delete next[f])
+      return next
+    })
   }
 
   function handleAutofill() {
     setAutofillNotice(null)
+    setFieldNotices({})
+    // 요청을 만들 때의 값으로 모드를 정한다 — 응답이 오는 사이 셀러가 본문을 지워도 적용 범위가
+    // 바뀌지 않는다(바뀌면 "다듬기"를 눌렀는데 빈 칸만 채우고 끝난다).
+    const mode = autofillMode(valuesRef.current)
     autofill.mutate(toAutofillRequest(valuesRef.current), {
       onSuccess: result => {
         const notice = result.sellerNotice?.trim()
+        // 실제로 덮이는 값이 되돌릴 자리다 -- 기다리는 사이 셀러가 더 쓴 본문도 REFINE이 덮는다.
+        const before = valuesRef.current.description
+        // 비운 사유는 실패한 호출에도 실린다 — 전 필드가 EMPTY_CALL_FAILED인 응답이 그렇다.
+        setFieldNotices(autofillFieldNotices(result.fieldStatus, mode))
         // 실패도 200 + state로 온다 — OK가 아니면 폼을 그대로 두고 직접 작성으로 안내한다.
         if (result.state !== AUTOFILL_STATE_OK) {
           setAutofillNotice({
@@ -152,19 +206,36 @@ export function ProductEditor({
           })
           return
         }
-        const { filled } = applyAutofillDraft(valuesRef.current, result.draft, categories)
-        setValues(prev => applyAutofillDraft(prev, result.draft, categories).values)
+        const { filled } = applyAutofillDraft(valuesRef.current, result, categories, mode)
+        setValues(prev => applyAutofillDraft(prev, result, categories, mode).values)
         setAiFilled(prev => new Set([...prev, ...filled]))
-        const summary =
-          filled.length > 0
-            ? `AI가 ${filled.map(f => AUTOFILL_FIELD_LABEL[f]).join('/')}에 초안을 채웠어요. 확인하고 고쳐 주세요.`
-            : '채울 빈 칸이 없어 그대로 두었어요.'
-        setAutofillNotice({ ok: true, text: [summary, notice].filter(Boolean).join(' ') })
+        // 셀러 문장을 덮었을 때만 되돌리기를 내준다. 복원은 메모리 원문으로 하고 서버를 부르지 않는다.
+        // 덮지 않은 호출은 직전 버퍼를 그대로 둔다 -- 복원할 원문이 아직 그 자리이기 때문이다.
+        if (mode === 'REFINE' && filled.includes('description')) setRefinedFrom(before)
+        setAutofillNotice({ ok: true, text: [autofillSummary(filled, mode), notice].filter(Boolean).join(' ') })
       },
       // 쿨다운(429/40402)과 그 밖의 거절은 productErrorMessage가 문구를 맡는다.
       onError: error => setAutofillNotice({ ok: false, text: productErrorMessage(error) }),
     })
   }
+
+  /** 다시 쓴 본문을 원문으로 돌린다. `update`가 되돌리기 자리와 AI 표시를 함께 거둔다. */
+  function handleUndoRefine() {
+    if (refinedFrom == null) return
+    update({ description: refinedFrom })
+    setAutofillNotice({ ok: true, text: '본문을 원래대로 되돌렸어요.' })
+  }
+
+  const autofillHint = (field: AutofillFilledField): { filled: boolean; text: string } | null => {
+    if (aiFilled.has(field)) {
+      return { filled: true, text: field === 'description' && refinedFrom != null ? AI_REFINED_TEXT : AI_FILLED_TEXT }
+    }
+    const text = fieldNotices[field]
+    return text ? { filled: false, text } : null
+  }
+
+  // 버튼 문구·요청 mode·적용 범위가 같은 판정을 본다(products.contract의 `autofillMode`).
+  const draftMode = autofillMode(values)
 
   const [largeId, middleId, leafId] = values.categoryIds
   const largeNode = categories.find(n => n.categoryId === largeId)
@@ -367,11 +438,14 @@ export function ProductEditor({
                     disabled={values.productName.trim() === ''}
                     onClick={handleAutofill}
                   >
-                    AI 초안 받기
+                    {draftMode === 'REFINE' ? '본문 다듬기' : 'AI 초안 받기'}
                   </Button>
-                  <span className="text-caption text-text-tertiary">
-                    상품명으로 카테고리/상세 설명/옵션 초안을 받아요. 이미 쓴 칸은 그대로 둬요.
-                  </span>
+                  {refinedFrom != null && (
+                    <Button variant="ghost" size="sm" onClick={handleUndoRefine}>
+                      되돌리기
+                    </Button>
+                  )}
+                  <span className="text-caption text-text-tertiary">{AUTOFILL_HELP[draftMode]}</span>
                 </div>
                 {autofillNotice &&
                   (autofillNotice.ok ? (
@@ -416,7 +490,7 @@ export function ProductEditor({
                 />
               </div>
             </FieldAnchor>
-            {aiFilled.has('category') && <p className="text-caption text-text-accent">{AI_FILLED_TEXT}</p>}
+            <AutofillHint hint={autofillHint('category')} />
           </Section>
 
           <Section step={3} invalid={invalidSections.has(3)}>
@@ -515,14 +589,14 @@ export function ProductEditor({
             <Textarea
               label="상세 설명"
               rows={5}
-              helperText={aiFilled.has('description') ? AI_FILLED_TEXT : undefined}
+              helperText={autofillHint('description')?.text}
               value={values.description}
               onChange={description => update({ description })}
             />
           </Section>
 
           <Section step={5} invalid={invalidSections.has(5)}>
-            {aiFilled.has('options') && <p className="text-caption text-text-accent">{AI_FILLED_TEXT}</p>}
+            <AutofillHint hint={autofillHint('options')} />
             {productId ? (
               <OptionStockReadOnly productId={productId} />
             ) : (
@@ -582,6 +656,11 @@ function OptionStockReadOnly({ productId }: { productId: string }) {
       />
     </div>
   )
+}
+
+function AutofillHint({ hint }: { hint: { filled: boolean; text: string } | null }) {
+  if (!hint) return null
+  return <p className={`text-caption ${hint.filled ? 'text-text-accent' : 'text-text-tertiary'}`}>{hint.text}</p>
 }
 
 function Section({ step, invalid, children }: { step: number; invalid: boolean; children: ReactNode }) {
