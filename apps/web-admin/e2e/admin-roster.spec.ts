@@ -265,19 +265,18 @@ test('[AC-ADM-E2E-011] 콜백 복귀 → refresh로 세션 수령 → 명부에�
   expect(bearerSeen.every(value => value === `Bearer ${VALID_ACCESS_TOKEN}`)).toBe(true)
 })
 
-test('[AC-ADM-E2E-015] 토큰 없이 명부에 들어가면 401 → refresh → 새 Bearer로 재시도해 열린다', async ({
+test('[AC-ADM-E2E-015] 토큰 없이 명부에 들어가면 화면보다 먼저 refresh해 첫 요청부터 새 Bearer를 단다', async ({
   page,
 }) => {
   const { bearerSeen } = await stubAdminApi(page)
 
-  // 새로고침·주소 직접 입력은 메모리 access가 없는 상태다. 공유 클라이언트의 401 인터셉터가
-  // refresh로 세션을 복원하고 **새 토큰으로** 원 요청을 재시도해야 화면이 열린다.
+  // 새로고침·주소 직접 입력은 메모리 access가 없는 상태다. __root가 화면보다 먼저 refresh로
+  // 세션을 복원하므로 토큰 없는 요청이 401을 받는 왕복이 없다(SCRUM-377).
   await page.goto('/admins')
 
   await expect(page.getByRole('row').filter({ hasText: '현재 운영자' })).toBeVisible()
-  // 첫 요청은 토큰 없이(또는 낡은 토큰으로) 나가 401을 받고, 재시도가 새 토큰을 달고 나간다.
-  expect(bearerSeen[0]).not.toBe(`Bearer ${VALID_ACCESS_TOKEN}`)
-  expect(bearerSeen).toContain(`Bearer ${VALID_ACCESS_TOKEN}`)
+  expect(bearerSeen.length).toBeGreaterThan(0)
+  expect(bearerSeen.every(b => b === `Bearer ${VALID_ACCESS_TOKEN}`)).toBe(true)
 })
 
 test('[AC-ADM-E2E-012] 비활성 계정 승격은 409 errorCode 30017 사유를 보여준다', async ({ page }) => {
