@@ -310,7 +310,7 @@ describe('/products/catalog', () => {
     await user.click(await screen.findByRole('button', { name: '원목 캣타워 대형' }))
 
     const open = await drawer()
-    // 막힌 행에 중지가 서면 서버가 409/40008로 거절할 조작을 운영자가 고를 수 있게 된다.
+    // 막힌 행에 중지가 서면 서버가 409/40012로 거절할 조작을 운영자가 고를 수 있게 된다.
     expect(open.queryByText(ACTION_CAPTION.suspend)).not.toBeInTheDocument()
     expect(open.getByText(ACTION_CAPTION.resume)).toBeInTheDocument()
     // 막을 때 적어 둔 사유와 시각이 그 행에 실려 온다(상세 조회 경로가 없다).
