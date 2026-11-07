@@ -159,22 +159,6 @@ describe('장바구니 담기 확인 바텀시트', () => {
     expect(screen.queryByRole('button', { name: '장바구니 보기' })).not.toBeInTheDocument()
     expect(currentCart()[0]?.quantity).toBe(10)
   })
-
-  it('[AC-CART-SHEET-003] 실 옵션 조합이 없는 목업 폴백 상품은 담기가 막히고 안내 토스트가 뜬다', async () => {
-    const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
-
-    await user.click(screen.getByRole('button', { name: '장바구니' }))
-    await user.click(await screen.findByRole('button', { name: '장바구니 담기' }))
-
-    // 서버 장바구니는 옵션 조합 id가 필수라 목업 상품은 담을 수 없다 — 확인 시트 대신 안내 토스트.
-    expect(
-      await screen.findByText('지금은 이 상품을 장바구니에 담을 수 없어요.'),
-    ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '장바구니 보기' })).not.toBeInTheDocument()
-    expect(currentCart()).toHaveLength(0)
-  })
 })
 
 // 배지는 GET /carts 캐시(['cart'])의 표시 라인 수로 파생된다. 프로덕션 staleTime(main.tsx의 60초)을

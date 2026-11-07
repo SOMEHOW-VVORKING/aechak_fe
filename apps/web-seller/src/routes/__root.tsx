@@ -2,6 +2,7 @@ import { createRootRoute, redirect } from '@tanstack/react-router'
 import { errorResponse, getAccessToken, getSellerApplication, restoreSession } from '@aechak/api'
 import { LogoutButton } from '@/features/auth'
 import { AppShell } from '../shared/components/AppShell'
+import { RouteNotFoundScreen } from '../shared/components/RouteFallbacks'
 
 // 로그아웃 진입점을 셸이 아니라 여기서 끼워 넣는다 — AppShell은 `src/shared/`라 `src/features/`를
 // import할 수 없다(boundaries). 라우트 파일은 그 경계 밖이라 둘을 조립할 수 있는 유일한 자리다.
@@ -92,4 +93,5 @@ export const Route = createRootRoute({
     }
   },
   component: SellerShell,
+  notFoundComponent: RouteNotFoundScreen,
 })
