@@ -2642,7 +2642,7 @@ export interface ShippingPolicyUpdateRequest {
 }
 
 /**
- * 셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 — 나머지는 403 errorCode 10002다.
+ * 셀러(스토어) 운영 상태. 스토어 설정 저장과 셀러센터 쓰기는 ACTIVE만 통과한다 — 나머지는 403 errorCode 10002다. 어드민 셀러 관리(`/admin/sellers`)가 읽고 쓰는 값도 같은 열거다. **SUSPENDED는 해제 예정 시각이 지나도 저절로 ACTIVE로 돌아가지 않는다** — 게이트가 status != ACTIVE만 보고 만료를 보지 않아 해제는 운영자 조치뿐이다. PAUSED·WITHDRAWN으로 가는 전이 코드는 아직 없어 그 상태의 셀러는 현재 생기지 않지만, 응답에는 실릴 수 있으므로 화면은 다섯 값을 다 읽을 수 있어야 한다.
  */
 export type SellerStatus = (typeof SellerStatus)[keyof typeof SellerStatus]
 
@@ -4442,6 +4442,203 @@ export interface RejectAdminSellerApplicationRequest {
   reason?: string | null
 }
 
+/**
+ * 목록 판매자 유형 필터. 응답의 businessType 세 값과 1:1이 아니다 — 거르는 축은 "사업자인가" 둘뿐이라 BUSINESS는 SOLE_PROPRIETORSHIP·CORPORATE를, INDIVIDUAL은 PERSONAL_GENERAL을 가리킨다. ALL·생략·알 수 없는 값은 모두 전체다. **ALL이 아닌 값을 주면 입점 신청서가 없는 셀러(businessType=null)는 결과에서 빠진다**
+ */
+export type AdminSellerTypeFilter =
+  (typeof AdminSellerTypeFilter)[keyof typeof AdminSellerTypeFilter]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AdminSellerTypeFilter = {
+  ALL: 'ALL',
+  BUSINESS: 'BUSINESS',
+  INDIVIDUAL: 'INDIVIDUAL',
+} as const
+
+/**
+ * 판매정지 이력 한 행의 조치. 이력은 추가 전용이라 해제도 RELEASE 행으로 쌓인다. 회원 제재의 SanctionAction과 다른 어휘다 — 이쪽이 막는 것은 판매뿐이다
+ */
+export type SellerSanctionAction = (typeof SellerSanctionAction)[keyof typeof SellerSanctionAction]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSanctionAction = {
+  SUSPEND: 'SUSPEND',
+  RELEASE: 'RELEASE',
+} as const
+
+/**
+ * 판매정지 사유 고정 어휘. 자유 문자열이 아닌 이유는 "같은 사유로 몇 번 정지했는가"를 답할 수 있어야 하기 때문이다. OTHER는 reasonDetail이 필수다(없으면 400 errorCode 10010). 사람이 읽는 라벨은 응답에 실리지 않아 화면이 들고 있어야 한다 — 상품 정보 허위 기재 / 신고 누적 / 결제·정산 이상 거래 / 기타
+ */
+export type SellerSanctionReasonCode =
+  (typeof SellerSanctionReasonCode)[keyof typeof SellerSanctionReasonCode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerSanctionReasonCode = {
+  FALSE_PRODUCT_INFO: 'FALSE_PRODUCT_INFO',
+  REPEATED_REPORT: 'REPEATED_REPORT',
+  ABNORMAL_TRANSACTION: 'ABNORMAL_TRANSACTION',
+  OTHER: 'OTHER',
+} as const
+
+/**
+ * 입점 신청서가 없는 셀러는 null — 유형을 모른다는 뜻이고 개인으로 접으면 거짓이 된다
+ * @nullable
+ */
+export type AdminSellerSummaryBusinessType = BusinessType | null
+
+/**
+ * 목록·상세의 한 셀러. 입점 신청서가 없는 셀러(시딩·과거 데이터)는 businessType과 representativeNameMasked가 **둘 다 null**이다 — 유형·대표자명이 sellers에 없고 서버가 신청서를 left join으로 붙이기 때문이다. 화면 목업의 '최근 접속'과 '신고 누적'은 이 응답에 없다 — users에 최근 접속 칼럼이 없고, 신고 대상 종류에 셀러가 없어 셀 수 있는 값이 아니다(지어내지 말 것)
+ */
+export interface AdminSellerSummary {
+  /** sellers.user_id — 모든 경로의 경로 변수이고 목록 정렬 키다 */
+  sellerId: number
+  storeName: string
+  status: SellerStatus
+  /**
+   * 입점 신청서가 없는 셀러는 null — 유형을 모른다는 뜻이고 개인으로 접으면 거짓이 된다
+   * @nullable
+   */
+  businessType: AdminSellerSummaryBusinessType
+  /**
+   * **서버가 가려서 내려준 값**이다(가운데를 가리고 성과 끝 글자만 남긴다) — 화면에서 또 가리지 말 것. 평문이 필요한 통장사본 대조는 입점 심사 상세가 담당한다: 목록은 한 요청에 최대 100행의 대표자명을 내보내는 자리라 평문을 실으면 노출면이 행 수만큼 커진다. 신청서가 없으면 null
+   * @nullable
+   */
+  representativeNameMasked: string | null
+  /** 그 셀러의 상품 행 수. **판매 상태로 거르지 않는다**(판매중지·블라인드도 들어간다) */
+  productCount: number
+  /** sellers.confirmed_order_count — **구매확정** 누적이다(주문 접수 누적이 아니다) */
+  cumulativeOrderCount: number
+  /** 지급 대기(PENDING) 정산 원장이 한 행이라도 있는지. **금액이 아니라 보유 여부** */
+  hasUnsettledAmount: boolean
+  /** 운영 상태가 마지막으로 바뀐 시각(오프셋 없는 LocalDateTime) */
+  statusChangedAt: string
+  /**
+   * 현재 정지의 해제 예정 시각. 무기한 정지와 정지 아닌 셀러는 null이다. **그 시각이 지나도 상태는 저절로 풀리지 않는다** — 해제는 운영자 조치이고 서버에 만료 처리가 없다(회원의 임시 정지와 다른 동작이다)
+   * @nullable
+   */
+  suspensionUntil: string | null
+}
+
+export interface AdminSellerListData {
+  items: AdminSellerSummary[]
+  /** 현재 필터 기준 전체 행 수(페이지 크기가 아니다) */
+  totalCount: number
+}
+
+export interface AdminSellerListResponse {
+  data: AdminSellerListData
+}
+
+/**
+ * RELEASE 행은 제재 어휘를 쓰지 않아 늘 null이다
+ * @nullable
+ */
+export type SellerSanctionHistoryReasonCode = SellerSanctionReasonCode | null
+
+/**
+ * 판매정지 이력 한 행. 추가 전용이라 해제도 action=RELEASE 행으로 쌓인다
+ */
+export interface SellerSanctionHistory {
+  sanctionId: number
+  action: SellerSanctionAction
+  /**
+   * RELEASE 행은 제재 어휘를 쓰지 않아 늘 null이다
+   * @nullable
+   */
+  reasonCode: SellerSanctionHistoryReasonCode
+  /**
+   * 운영자가 쓴 상세 사유. 공백뿐이면 서버가 null로 저장한다
+   * @nullable
+   */
+  reasonDetail: string | null
+  /**
+   * **그때 정한** 해제 예정 시각. 무기한 정지와 RELEASE 행은 null이다. 현재 값은 셀러의 suspensionUntil이고 이 값은 그 조치 시점의 기록이다
+   * @nullable
+   */
+  effectiveUntil: string | null
+  /**
+   * **그 조치 시점의** 운영자 메모 사본 — 현재 메모(internalMemo)와 다를 수 있다
+   * @nullable
+   */
+  memo: string | null
+  /** 조치한 운영자의 users.id */
+  actedByAdminId: number
+  /** 조치 시각(오프셋 없는 LocalDateTime) */
+  actedAt: string
+}
+
+/**
+ * 현재 정지의 사유 어휘. **정지 중이 아니면 null**이고 화면의 사유 선택을 채우는 값이다
+ * @nullable
+ */
+export type AdminSellerDetailDataSuspensionReasonCode = SellerSanctionReasonCode | null
+
+export interface AdminSellerDetailData {
+  seller: AdminSellerSummary
+  /**
+   * 현재 정지의 사유 어휘. **정지 중이 아니면 null**이고 화면의 사유 선택을 채우는 값이다
+   * @nullable
+   */
+  suspensionReasonCode: AdminSellerDetailDataSuspensionReasonCode
+  /**
+   * 사람이 읽는 현재 정지 사유 한 줄(`어휘 라벨` 또는 `어휘 라벨 — 상세`). 해제하면 null
+   * @nullable
+   */
+  suspensionReason: string | null
+  /**
+   * 셀러의 **현재** 운영자 메모. 셀러에게 보이지 않는다
+   * @nullable
+   */
+  internalMemo: string | null
+  /** 최신순, 최대 50건 */
+  sanctions: SellerSanctionHistory[]
+}
+
+export interface AdminSellerDetailResponse {
+  data: AdminSellerDetailData
+}
+
+export interface SuspendSellerRequest {
+  reasonCode: SellerSanctionReasonCode
+  /**
+   * reasonCode=OTHER면 필수(없으면 400 errorCode 10010)
+   * @maxLength 500
+   */
+  reasonDetail?: string
+  /**
+   * **생략·null이면 무기한 정지**다. 만료 시각은 서버가 계산한다
+   * @minimum 1
+   * @maximum 365
+   */
+  durationDays?: number
+  /**
+   * 비어 있지 않을 때만 현재 메모를 덮어쓴다 — 빈 값으로 기존 메모를 지우지 않는다
+   * @maxLength 500
+   */
+  memo?: string
+}
+
+/**
+ * 본문 전체를 생략할 수 있다(`{}`도 받는다). 고정 어휘 사유가 없는 조치라 상세 사유만 받는다
+ */
+export interface ReleaseSellerSuspensionRequest {
+  /** @maxLength 500 */
+  reasonDetail?: string
+  /**
+   * 비어 있지 않을 때만 현재 메모를 덮어쓴다
+   * @maxLength 500
+   */
+  memo?: string
+}
+
+/**
+ * 덮어쓰기다. **null·공백이면 메모를 지운다**(제재 조치에 딸린 memo와 규칙이 반대다)
+ */
+export interface SaveSellerMemoRequest {
+  /** @maxLength 500 */
+  memo?: string
+}
+
 export interface SnsPetResult {
   breedLabel: string
   /**
@@ -5336,6 +5533,237 @@ export interface RejectAdminProductInspectionRequest {
 }
 
 /**
+ * 검수 대상 종류. PRODUCT면 targetRef가 상품 내부 id, REVIEW면 리뷰 id다
+ */
+export type InspectionTargetType = (typeof InspectionTargetType)[keyof typeof InspectionTargetType]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionTargetType = {
+  PRODUCT: 'PRODUCT',
+  REVIEW: 'REVIEW',
+} as const
+
+/**
+ * 검수 관점. 열거 순서가 파이프라인 순서(규칙 → 선별 → 표시·광고 → 거래 행위 → 통합)이고 상세 응답도 이 순서로 내려온다
+ */
+export type InspectionPerspectiveKind =
+  (typeof InspectionPerspectiveKind)[keyof typeof InspectionPerspectiveKind]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionPerspectiveKind = {
+  RULE: 'RULE',
+  TRIAGE: 'TRIAGE',
+  DISPLAY_ADS: 'DISPLAY_ADS',
+  CONDUCT_TRADE: 'CONDUCT_TRADE',
+  ALL: 'ALL',
+} as const
+
+/**
+ * 관점 하나의 결과. **UNCHECKED(가 봤지만 보지 못함)는 CLEAR(통과)가 아니다** — 한 칸에 묶어 그리면 운영자가 검수를 마친 건으로 읽는다
+ */
+export type PerspectiveOutcome = (typeof PerspectiveOutcome)[keyof typeof PerspectiveOutcome]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PerspectiveOutcome = {
+  VIOLATION: 'VIOLATION',
+  CLEAR: 'CLEAR',
+  UNCHECKED: 'UNCHECKED',
+} as const
+
+export interface AdminInspectionListResponse {
+  data: AdminInspectionListData
+}
+
+export interface AdminInspectionListData {
+  items: AdminInspectionSummary[]
+  /** 필터 기준 전체 행 수. 페이지 크기에 깎이지 않는다 */
+  totalCount: number
+}
+
+/**
+ * **널이면 아직 판정이 없다. PASS가 아니다.** UNJUDGED(기한 초과)·FAILED(처리 실패)도 통과가 아니다 — 화면에서도 코드에서도 그 셋을 PASS와 한 묶음으로 만들지 않는다
+ * @nullable
+ */
+export type AdminInspectionSummaryJudgment = InspectionJudgment | null
+
+export interface AdminInspectionSummary {
+  /** 검수 행 id. 상세 경로의 키다(상품 식별자가 아니다) */
+  inspectionId: number
+  targetType: InspectionTargetType
+  /** 대상의 내부 식별자. 종류마다 뜻이 다르다 */
+  targetRef: number
+  /**
+   * 상품 공개 식별자(ULID). 대상이 상품이고 그 행이 남아 있을 때만 온다
+   * @nullable
+   */
+  productId?: string | null
+  /**
+   * 같은 조건. 리뷰 검수이거나 상품 행이 지워지면 없다
+   * @nullable
+   */
+  productName?: string | null
+  processingState: InspectionProcessingState
+  /**
+   * **널이면 아직 판정이 없다. PASS가 아니다.** UNJUDGED(기한 초과)·FAILED(처리 실패)도 통과가 아니다 — 화면에서도 코드에서도 그 셋을 PASS와 한 묶음으로 만들지 않는다
+   * @nullable
+   */
+  judgment?: AdminInspectionSummaryJudgment
+  /** 발행 선점 횟수. 큐에만 있으면 0이고 0이 아니면 재시도를 거친 건이다 */
+  attempt: number
+  /** 최초 요청 시각. 재시도로 갱신되지 않는다(경과 시간의 시작점) */
+  requestedAt: string
+  /**
+   * 종결 시각. 진행 중이면 없다(경과 시간의 끝점)
+   * @nullable
+   */
+  settledAt?: string | null
+  policyVersion: string
+}
+
+export interface AdminInspectionDetailResponse {
+  data: AdminInspectionDetail
+}
+
+/**
+ * 널이면 아직 판정이 없다. PASS가 아니다
+ * @nullable
+ */
+export type AdminInspectionDetailJudgment = InspectionJudgment | null
+
+export interface AdminInspectionDetail {
+  inspectionId: number
+  targetType: InspectionTargetType
+  targetRef: number
+  /** @nullable */
+  productId?: string | null
+  /** @nullable */
+  productName?: string | null
+  processingState: InspectionProcessingState
+  /**
+   * 널이면 아직 판정이 없다. PASS가 아니다
+   * @nullable
+   */
+  judgment?: AdminInspectionDetailJudgment
+  attempt: number
+  requestedAt: string
+  /** @nullable */
+  settledAt?: string | null
+  policyVersion: string
+  /**
+   * 판정 전이면 없다
+   * @nullable
+   */
+  promptVersion?: string | null
+  /** 어느 내용을 본 판정인지. 64자 */
+  contentHash: string
+  /**
+   * **이 검수 행에 적힌 사유 코드**. 검수 큐 상세의 막고 있는 판정과 다르다
+   * @nullable
+   */
+  reasonCode?: string | null
+  /** @nullable */
+  reasonSummary?: string | null
+  /** @nullable */
+  sellerNotice?: string | null
+  /**
+   * 지금 이 건을 잡고 있는 워커 표식. 판정이 끝나면 비워진다
+   * @nullable
+   */
+  leaseOwner?: string | null
+  /**
+   * 점유가 풀리는 시각. 지난 시각이면 다음 주기 재발행 대상이다
+   * @nullable
+   */
+  leaseExpiresAt?: string | null
+  /** 파이프라인 순서로 온다. 기록이 없으면 빈 배열이고, **칸이 없는 관점과 UNCHECKED는 다르다**(앞은 거기까지 가지 못한 것, 뒤는 갔지만 보지 못한 것) */
+  perspectives: AdminInspectionPerspective[]
+}
+
+export interface AdminInspectionPerspective {
+  perspective: InspectionPerspectiveKind
+  outcome: PerspectiveOutcome
+  /**
+   * UNCHECKED에만 들어온다. 본 관점에는 없다
+   * @nullable
+   */
+  skipReason?: string | null
+  /**
+   * 위반 상세 **JSON 원문 문자열**이다. 파싱된 객체가 아니라 DB의 JSON 칼럼 텍스트고 모양은 AI 레포가 쥔다(MySQL이 공백을 정규화한다). 구조를 전제한 분기를 쓰지 말 것
+   * @nullable
+   */
+  violations?: string | null
+}
+
+export interface AdminProductListResponse {
+  data: AdminProductListData
+}
+
+export interface AdminProductListData {
+  items: AdminProductSummary[]
+  /** **필터 기준 전체 행 수**(현재 페이지 길이가 아니다). 건수를 목록 길이로 세지 말 것 */
+  totalCount: number
+}
+
+/**
+ * 상품 목록의 한 행. **독립인 두 축을 함께 싣는다** — `inspectionStatus`가 구매자 노출을 켜고 끄는 축(검수 큐의 승인·반려가 소유)이고, `adminSaleSuspended`는 운영자가 검수와 무관한 이유로 판매를 잠근 축이다. 한 상품이 REJECTED + 막음 없음일 수도, APPROVED + 막음일 수도 있어 화면은 두 값을 각각 보여 줘야 한다(검수 승인이 막음을 풀지 않고, 판매 재개가 검수 반려를 풀지 않는다). 상세 조회 엔드포인트는 없고, 사유·막은 시각까지 이 행에 실려 있다.
+ */
+export interface AdminProductSummary {
+  /** 상품 공개 식별자(ULID 26자). 모든 쓰기 경로의 경로 변수다 */
+  productId: string
+  productName: string
+  /** 셀러 계정 식별자(sellers.user_id). 셀러 관리 화면의 식별자와 같다 */
+  sellerId: number
+  /**
+   * 셀러 상호명. **셀러 행이 없으면 null**이다 — products.seller_id는 FK 없는 값 참조라 상호를 못 찾는 상품도 목록에 남는다(떨어뜨리면 운영자가 손을 댈 수 없다). 화면은 null을 "조회 실패"로 읽지 말 것.
+   * @nullable
+   */
+  storeName: string | null
+  /** 상품이 달린 카테고리 노드 이름(보통 소분류). **상위 경로는 싣지 않는다** */
+  categoryName: string
+  regularPrice: number
+  /**
+   * 할인가. 할인 설정이 없으면 null. **할인 기간 판정을 적용한 값이 아니라 저장값 그대로다** — 지금 실제 판매가가 아니므로 화면이 "현재 판매가"로 그리면 안 된다(기간 필드는 이 응답에 없다).
+   * @nullable
+   */
+  discountPrice: number | null
+  saleStatus: SaleStatus
+  inspectionStatus: InspectionStatus
+  /** 그 상품에 쌓인 신고 행 수. **처리 상태로 거르지 않는다**(접수·이관 전부) */
+  reportCount: number
+  /** 운영자가 막아 둔 상품인지. 참이면 셀러의 판매 상태 변경이 409 errorCode 40010으로 거부된다. **saleStatus = SUSPENDED와 같은 뜻이 아니다** — 셀러가 스스로 내린 판매중지도 SUSPENDED라서, 운영자 조치만 가리려면 이 값을 봐야 한다(서버에 그 필터는 없다). */
+  adminSaleSuspended: boolean
+  /**
+   * 막은 시각(ISO-8601 local). 막혀 있지 않으면 null
+   * @nullable
+   */
+  adminSaleSuspendedAt: string | null
+  /**
+   * 막을 때 운영자가 쓴 사유. 셀러에게 보내는 문장이 아니라 운영 기록이고, 재개하면 null이 된다
+   * @nullable
+   */
+  adminSaleSuspendReason: string | null
+  /** 상품 등록 시각(ISO-8601 local) */
+  createdAt: string
+}
+
+export interface SuspendAdminProductSaleRequest {
+  /**
+   * 막는 근거. 필수다 — 셀러가 되돌릴 수 없는 조치라 근거 없는 행이 남으면 분쟁에서 설명할 수 없다. 공백만이면 400 errorCode 90001이고 앞뒤 공백은 서버가 제거해 저장한다.
+   * @minLength 1
+   * @maxLength 500
+   */
+  reason: string
+}
+
+export interface ResumeAdminProductSaleRequest {
+  /**
+   * 철회 근거. 선택이고 **본문 자체를 생략해도 된다**. 감사 로그에만 남고 상품에는 남지 않으며 공백뿐이면 적지 않은 것으로 본다
+   * @maxLength 500
+   */
+  reason?: string
+}
+
+/**
  * 상품 문의 유형
  */
 export type ProductInquiryCategory =
@@ -5815,7 +6243,7 @@ export interface MyProductInquiryListResponse {
 }
 
 /**
- * 감사되는 운영 액션 18종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'· '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
+ * 감사되는 운영 액션 24종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'은 이 열거에 없다. 셀러 제재·메모, 상품 판매 중지·재개, 신고 처리는 dev admin-api 응답 기준으로 옮겼다
  */
 export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAuditAction]
 
@@ -5823,10 +6251,15 @@ export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAudit
 export const AdminAuditAction = {
   SELLER_APPLICATION_APPROVED: 'SELLER_APPLICATION_APPROVED',
   SELLER_APPLICATION_REJECTED: 'SELLER_APPLICATION_REJECTED',
+  SELLER_SUSPENDED: 'SELLER_SUSPENDED',
+  SELLER_SUSPENSION_RELEASED: 'SELLER_SUSPENSION_RELEASED',
+  SELLER_MEMO_UPDATED: 'SELLER_MEMO_UPDATED',
   ADMIN_PROMOTED: 'ADMIN_PROMOTED',
   ADMIN_DEMOTED: 'ADMIN_DEMOTED',
   PRODUCT_INSPECTION_APPROVED: 'PRODUCT_INSPECTION_APPROVED',
   PRODUCT_INSPECTION_REJECTED: 'PRODUCT_INSPECTION_REJECTED',
+  PRODUCT_SALE_SUSPENDED: 'PRODUCT_SALE_SUSPENDED',
+  PRODUCT_SALE_RESUMED: 'PRODUCT_SALE_RESUMED',
   CLAIM_INTERVENED: 'CLAIM_INTERVENED',
   MEMBER_SANCTIONED: 'MEMBER_SANCTIONED',
   MEMBER_SANCTION_RELEASED: 'MEMBER_SANCTION_RELEASED',
@@ -5839,16 +6272,18 @@ export const AdminAuditAction = {
   NOTICE_UPDATED: 'NOTICE_UPDATED',
   NOTICE_PUBLISHED: 'NOTICE_PUBLISHED',
   NOTICE_UNPUBLISHED: 'NOTICE_UNPUBLISHED',
+  REPORT_DECIDED: 'REPORT_DECIDED',
 } as const
 
 /**
- * 액션이 가리킨 대상의 종류 9종(be AdminAuditTargetType). 종류마다 targetId의 뜻이 다르다 — 앞의 다섯은 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자
+ * 액션이 가리킨 대상의 종류 11종(be AdminAuditTargetType). 종류마다 targetId의 뜻이 다르다. SELLER·SELLER_APPLICATION·ADMIN_USER·MEMBER·INQUIRY·REVIEW는 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자, REPORT는 '종류/내부번호'
  */
 export type AdminAuditTargetType = (typeof AdminAuditTargetType)[keyof typeof AdminAuditTargetType]
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const AdminAuditTargetType = {
   SELLER_APPLICATION: 'SELLER_APPLICATION',
+  SELLER: 'SELLER',
   ADMIN_USER: 'ADMIN_USER',
   MEMBER: 'MEMBER',
   PRODUCT: 'PRODUCT',
@@ -5857,6 +6292,7 @@ export const AdminAuditTargetType = {
   REVIEW: 'REVIEW',
   ORDER: 'ORDER',
   NOTICE: 'NOTICE',
+  REPORT: 'REPORT',
 } as const
 
 /**
@@ -6362,6 +6798,375 @@ export interface NoticeDetailData {
 
 export interface NoticeDetailResponse {
   data: NoticeDetailData
+}
+
+export interface AdminInspectionMetricsResponse {
+  data: AdminInspectionMetricsData
+}
+
+/**
+ * 지표 한 장. **블록마다 선택**인 이유는 배포 순서다 — 확장 전 서버는 flat 창 필드 넷과 promotion·coverage·cost·backlog만 준다. 소비하는 쪽은 블록 유무를 먼저 보고 없으면 '미측정'으로 그려야 하고, 없는 값을 0으로 채우면 "집계가 0이다"라는 거짓을 말한다
+ */
+export interface AdminInspectionMetricsData {
+  /** 확장 전 서버의 창 시작. 확장 뒤에는 `window.from`이 정본이다 */
+  windowFrom?: string
+  /** 확장 전 서버의 집계 시각. 확장 뒤에는 `window.measuredAt`이 정본이다 */
+  measuredAt?: string
+  /** 확장 전 서버의 창 길이(시간). 창의 끝은 measuredAt이다 */
+  windowHours?: number
+  /** 주기 로그가 WARN으로 올리는 조건과 같은 판정. 어느 조건인지는 alarms[]가 말한다 */
+  needsAttention?: boolean
+  window?: InspectionMetricsWindow
+  /** 주기 로그의 경보 문장과 같은 값. 비어 있지 않으면 화면이 상단 배너로 띄운다 — 로그에만 문장이 있고 API에는 boolean만 나가면 화면과 로그가 다른 말을 한다 */
+  alarms?: InspectionMetricsAlarm[]
+  funnel?: InspectionMetricsFunnel
+  judgment?: InspectionMetricsJudgment
+  promotion?: InspectionMetricsPromotion
+  coverage?: InspectionMetricsCoverage
+  adminReview?: InspectionMetricsAdminReview
+  backlog?: InspectionMetricsBacklog
+  cost?: InspectionMetricsCost
+  latency?: InspectionMetricsLatency
+  triageAudit?: InspectionMetricsTriageAudit
+}
+
+/**
+ * @nullable
+ */
+export type InspectionMetricsWindowTargetType = InspectionTargetType | null
+
+/**
+ * 창 안의 프롬프트 버전 분포(버전 문자열 → 건수). 한 policyVersion 버킷에 둘 이상 실리면 BE 설정과 AI 정책 문구 버전이 어긋났다는 신호다
+ */
+export type InspectionMetricsWindowPromptVersions = { [key: string]: number }
+
+/**
+ * 서버가 **실제로** 집계한 창. 요청한 창과 다를 수 있고 그때는 이 값이 사실이다
+ */
+export interface InspectionMetricsWindow {
+  from: string
+  to: string
+  measuredAt: string
+  /** @nullable */
+  windowHours?: number | null
+  /**
+   * 적용된 정책 버전 필터. null이면 전체
+   * @nullable
+   */
+  policyVersion?: string | null
+  /** @nullable */
+  targetType?: InspectionMetricsWindowTargetType
+  /** 창 안의 프롬프트 버전 분포(버전 문자열 → 건수). 한 policyVersion 버킷에 둘 이상 실리면 BE 설정과 AI 정책 문구 버전이 어긋났다는 신호다 */
+  promptVersions?: InspectionMetricsWindowPromptVersions
+}
+
+export interface InspectionMetricsAlarm {
+  /** 경보 식별자(BACKLOG_COUNT·OVER_BREAKEVEN 등). 열거로 좁히지 않는다 — 서버가 조건을 더한다 */
+  code: string
+  /** 주기 로그와 같은 문장 */
+  message: string
+}
+
+/**
+ * 단계별 탈출 분포. 탈출은 **일곱 + 미분류 하나**다 — 다섯만 세면 판정 실패·미판정이 빠져 합이 100%가 되지 않는다
+ */
+export interface InspectionMetricsFunnel {
+  /** 창 안에 닫힌 검수 전수. 모든 share의 분모다 */
+  settledCount: number
+  /** 어느 탈출로도 분류되지 않은 건수. **0이 아니면 그 자체가 사건이다**(새 터미널이 생겼다는 뜻) */
+  unclassifiedCount?: number
+  /** 순서 고정. `stage: 0`은 퍼널 밖(실패 터미널)이라 세로 퍼널과 따로 그린다 */
+  exits: InspectionMetricsFunnelExit[]
+  stage1?: InspectionMetricsStage1
+  stage2?: InspectionMetricsStage2
+  stage3?: InspectionMetricsStage3
+  stage4?: InspectionMetricsStage4
+  stage5?: InspectionMetricsStage5
+}
+
+export interface InspectionMetricsFunnelExit {
+  /** 1~5는 퍼널 단계, 0은 퍼널 밖(판정 실패·미판정·미분류) */
+  stage: number
+  /** 탈출 식별자(RULE_BLOCKED·TRIAGE_CLEARED 등). 열거로 좁히지 않는다 — 터미널이 늘어난다 */
+  exit: string
+  /**
+   * 서버가 보낸 한국어 라벨. 없으면 화면이 자기 표를 쓰고 모르는 값은 원문과 함께 '알 수 없음'으로 적는다
+   * @nullable
+   */
+  label?: string | null
+  count: number
+  /** @nullable */
+  shareOfSettled?: number | null
+}
+
+/**
+ * 룰 단계 — 정규식·네거티브 리스트가 확정 차단한 비율. 분모에서 미판정은 빠진다(룰을 탄 적이 없다)
+ */
+export interface InspectionMetricsStage1 {
+  /** @nullable */
+  name?: string | null
+  enteredCount: number
+  blockedCount: number
+  /** @nullable */
+  blockRate?: number | null
+}
+
+/**
+ * 선별 단계. 분모는 **선별 호출이 나간 검수**다 — 관점 기록으로 세면 규칙 적중으로 선별을 묻지도 않고 승급한 건이 분모에 들어와 건너뛰기율이 낮게 나온다
+ */
+export interface InspectionMetricsStage2 {
+  /** @nullable */
+  name?: string | null
+  enteredCount: number
+  clearedCount: number
+  promotedCount: number
+  /**
+   * 선별 호출이 깨진 건수. 승급 분자에 포함된다 — 호출이 실제로 나갔으므로 비용으로는 같다
+   * @nullable
+   */
+  callFailedCount?: number | null
+  /**
+   * 규칙 적중으로 선별을 건너뛴 건수. 1단 통과 수와 2단 분모 사이의 차이를 설명한다
+   * @nullable
+   */
+  bypassedByRuleHitCount?: number | null
+  /** @nullable */
+  skipRate?: number | null
+  /** @nullable */
+  promotionRate?: number | null
+  /** 손익분기 승급률(설정값). 이 선을 넘으면 선별이 비용을 **더한다**. 서버 설정과 측정 하네스(`ai/harness/run.py`)의 값이 어긋날 수 있어 화면은 둘을 함께 보여 준다 — 그 사이 구간에서 경보가 거짓이 되기 때문이다 */
+  breakevenRate: number
+  /** 서버의 판정. breakevenRate와 같은 값으로 계산되므로 화면이 다시 계산하지 않는다 */
+  overBreakeven: boolean
+}
+
+/**
+ * 관점 판정 단계. 분모는 '3단을 탄 건'이 아니라 **응답이 온 건**이다 — 레이트 리밋으로 못 본 건을 넣으면 모델 품질이 아니라 가용성을 재게 된다
+ */
+export interface InspectionMetricsStage3 {
+  /** @nullable */
+  name?: string | null
+  enteredCount: number
+  respondedCount: number
+  violationFoundCount: number
+  clearCount: number
+  /** @nullable */
+  detectionRate?: number | null
+}
+
+/**
+ * 비평 단계. **분모가 조건부로 틀린다** — 승급(`enable_escalation`)이 꺼지면 비평이 돌지 않는데 모델 위반 건은 그대로 분모에 들어온다. escalationObserved가 그 신뢰 여부다
+ */
+export interface InspectionMetricsStage4 {
+  /** @nullable */
+  name?: string | null
+  enteredCount: number
+  overturnedCount: number
+  upheldCount: number
+  /** @nullable */
+  overturnRate?: number | null
+  /**
+   * 비평 호출이 원장에서 실제로 관측됐는가. false면 뒤집힘율 분모를 믿을 수 없다
+   * @nullable
+   */
+  escalationObserved?: boolean | null
+}
+
+/**
+ * 최종 터미널 건수. PASS = 2·3·4단 탈출의 합, FLAG = 1·5단 탈출의 합이어야 한다
+ */
+export interface InspectionMetricsStage5 {
+  /** @nullable */
+  name?: string | null
+  flagCount: number
+  passCount: number
+  failedCount: number
+  unjudgedCount: number
+}
+
+export interface InspectionMetricsJudgment {
+  settledCount: number
+  passCount: number
+  flagCount: number
+  unjudgedCount: number
+  failedCount: number
+  /** @nullable */
+  passRate?: number | null
+}
+
+/**
+ * 확장 전 서버의 승급률 블록. 확장 뒤에는 `funnel.stage2`가 같은 숫자를 더 넓은 맥락과 함께 들고 있어, 화면은 stage2를 먼저 보고 없으면 이쪽으로 떨어진다
+ */
+export interface InspectionMetricsPromotion {
+  triagedCount: number
+  promotedCount: number
+  clearedCount: number
+  /** @nullable */
+  callFailedCount?: number | null
+  /** @nullable */
+  promotionRate?: number | null
+  breakevenRate: number
+  overBreakeven: boolean
+}
+
+/**
+ * 누락률 — **아무도 내용을 보지 않은 채 닫힌 비율**이다. 선별이 놓친 비율이 아니다. `triageSkippedBlockedCount`는 상품 경로에서 올라갈 수 없어 구조적으로 거의 0이므로, 그 값이 0인 것을 '선별이 놓친 게 없다'로 읽으면 가장 위험한 쪽으로 틀린다
+ */
+export interface InspectionMetricsCoverage {
+  settledCount: number
+  unverifiedCount: number
+  /** @nullable */
+  unjudgedCount?: number | null
+  /** @nullable */
+  verdictFailedCount?: number | null
+  /** @nullable */
+  modelUnverifiedCount?: number | null
+  /** @nullable */
+  triageSkippedPassCount?: number | null
+  /** @nullable */
+  triageSkippedBlockedCount?: number | null
+  /** @nullable */
+  unverifiedRate?: number | null
+  /** @nullable */
+  triageMissConfirmed?: boolean | null
+}
+
+/**
+ * 키는 AdminReviewReason 이름
+ */
+export type InspectionMetricsAdminReviewInflowByReason = { [key: string]: number }
+
+/**
+ * 어드민 유입과 결정. **유입 사유별 분포의 합이 유입 건수보다 작을 수 있다** — `adminReviewReason`은 최초 사유만 남기므로 이의가 나중에 붙은 행은 처음 사유로 세어지고, 이의 유입은 `appealInflowCount`가 따로 센다
+ */
+export interface InspectionMetricsAdminReview {
+  inflowCount: number
+  /** @nullable */
+  inflowRate?: number | null
+  /** 키는 AdminReviewReason 이름 */
+  inflowByReason?: InspectionMetricsAdminReviewInflowByReason
+  /** @nullable */
+  appealInflowCount?: number | null
+  decidedCount: number
+  allowedCount: number
+  blockedCount: number
+  /**
+   * 허용 비율이 높으면 AI가 과탐이라는 뜻이다 — 뒤집힘율과 교차해 읽는 수치다
+   * @nullable
+   */
+  allowRate?: number | null
+  decisionLatency?: InspectionMetricsMinutePercentile
+}
+
+export interface InspectionMetricsMinutePercentile {
+  /** @nullable */
+  p50Minutes?: number | null
+  /** @nullable */
+  p95Minutes?: number | null
+  sampleCount: number
+}
+
+export type InspectionMetricsBacklogOpenByReason = { [key: string]: number }
+
+export interface InspectionMetricsBacklog {
+  /** 어드민 큐 목록과 **같은 필터**로 센 처리 대기 건수 */
+  openCount: number
+  /**
+   * 상품 지문이 지금 내용과 어긋난 행. 그 건은 이 검수로 결정할 수 없다(409 errorCode 40508). 2026-11-07 dev 서버는 이 필드를 주지 않는다
+   * @nullable
+   */
+  staleOpenCount?: number | null
+  /** @nullable */
+  oldestWaitingSince?: string | null
+  /** @nullable */
+  oldestWaitMinutes?: number | null
+  openByReason?: InspectionMetricsBacklogOpenByReason
+  /** 건수 임계(설정값). 넘으면 주기 로그가 WARN으로 올린다 */
+  warnCount: number
+  /** 대기 시간 임계(분, 설정값) */
+  warnAgeMinutes: number
+  breached: boolean
+}
+
+/**
+ * 단계별 지출(키는 관점 이름). 비평과 수정 문구는 원장에 둘 다 `ALL`로 적혀 `UNATTRIBUTED`로 묶여 올 수 있다 — 0이 아니면 구버전 데이터이고 합계에서 빼지는 않는다
+ */
+export type InspectionMetricsCostByStageProperty = { [key: string]: InspectionMetricsCostByStage }
+
+export interface InspectionMetricsCost {
+  callCount: number
+  /** 호출이 나간 검수 수. 룰이 무료로 차단한 건과 스텁 건은 여기 없다 */
+  inspectionCount: number
+  totalCostMicroUsd: number
+  /** @nullable */
+  triageCostMicroUsd?: number | null
+  /**
+   * 캐시를 못 읽은 호출 수. 선별 프롬프트가 Haiku의 최소 캐시 길이보다 짧아 cache_control이 조용히 무시되는 자리라, 선별은 0이 정상이 아니고 관점 호출이 0이면 사건이다
+   * @nullable
+   */
+  cacheMissCallCount?: number | null
+  /**
+   * **호출이 나간 건당**이다. 룰 차단분이 분모에서 빠져 1단 차단율만큼 과대 보고된다
+   * @nullable
+   */
+  costPerInspectionMicroUsd?: number | null
+  /**
+   * 닫힌 검수 전수를 분모로 한 진짜 건당 비용
+   * @nullable
+   */
+  costPerSettledInspectionMicroUsd?: number | null
+  /** 단계별 지출(키는 관점 이름). 비평과 수정 문구는 원장에 둘 다 `ALL`로 적혀 `UNATTRIBUTED`로 묶여 올 수 있다 — 0이 아니면 구버전 데이터이고 합계에서 빼지는 않는다 */
+  byStage?: InspectionMetricsCostByStageProperty
+}
+
+export interface InspectionMetricsCostByStage {
+  callCount: number
+  costMicroUsd: number
+  /** @nullable */
+  cacheMissCallCount?: number | null
+  /** @nullable */
+  costPerSettledMicroUsd?: number | null
+}
+
+export type InspectionMetricsLatencyByStage = { [key: string]: InspectionMetricsMsPercentile }
+
+/**
+ * 지연. 끝에서 끝은 단계별 지연의 합과 다르다 — 큐 대기·재시도·카프카 왕복이 거기 들어 있다
+ */
+export interface InspectionMetricsLatency {
+  endToEnd?: InspectionMetricsMsPercentile
+  byStage?: InspectionMetricsLatencyByStage
+}
+
+export interface InspectionMetricsMsPercentile {
+  /** @nullable */
+  p50Ms?: number | null
+  /** @nullable */
+  p95Ms?: number | null
+  sampleCount: number
+}
+
+/**
+ * 표본 재검 — 선별이 건너뛴 통과를 사람이 다시 본 결과다. 분모는 '추출한 표본'이 아니라 **사람이 본 표본**이다(안 본 표본이 쌓이면 비율이 희석된다). 선별형 설계의 위험을 숫자로 재는 유일한 수단이고, 서버에 표본 테이블이 생긴 뒤에 실린다
+ */
+export interface InspectionMetricsTriageAudit {
+  sampledCount: number
+  reviewedCount: number
+  violationFoundCount: number
+  /**
+   * 판단 불가로 적힌 표본. 분모에서 빼야 하는 건을 CLEAN으로 적으면 누락률이 낙관으로 기운다 — 그래서 따로 센다
+   * @nullable
+   */
+  undecidedCount?: number | null
+  /** @nullable */
+  missRate?: number | null
+  /** @nullable */
+  lastSampledAt?: string | null
+  /**
+   * 모집단(선별이 건너뛴 통과) 건수
+   * @nullable
+   */
+  populationCount?: number | null
 }
 
 /**
@@ -7205,6 +8010,30 @@ export type GetAdminSellerApplicationsParams = {
   size?: number
 }
 
+export type GetAdminSellersParams = {
+  /**
+   * 운영 상태. 대소문자는 무시된다. 생략하면 전체
+   */
+  status?: SellerStatus
+  /**
+   * 판매자 유형 축. 생략하면 ALL
+   */
+  sellerType?: AdminSellerTypeFilter
+  /**
+   * 상호명 부분일치. 빈 값은 키째 빼서 보낼 것
+   */
+  keyword?: string
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
 export type GetAdminProductInspectionsParams = {
   /**
    * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체
@@ -7214,6 +8043,58 @@ export type GetAdminProductInspectionsParams = {
    * true면 셀러가 이의를 제기한 상품만 본다. **false의 뜻은 확인하지 못했다** — dev 스펙이 기본값 false만 적고 설명이 없다. 끄는 쪽은 파라미터를 보내지 말 것 (기본값과 같은 요청이고, false가 "이의 없는 것만"이면 전체 조회가 조용히 줄어든다).
    */
   appealed?: boolean
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminInspectionsParams = {
+  /**
+   * 대문자 enum 이름을 그대로 보낸다. 생략하면 전체. 미지 값은 400/90001
+   */
+  processingState?: InspectionProcessingState
+  /**
+   * 생략하면 전체. 미지 값은 400/90001
+   */
+  targetType?: InspectionTargetType
+  /**
+   * 생략하면 전체. 미지 값은 400/90001. **"판정 없음"은 이 축으로 고를 수 없다** (processingState가 그 축이다)
+   */
+  judgment?: InspectionJudgment
+  /**
+   * @minimum 0
+   */
+  page?: number
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  size?: number
+}
+
+export type GetAdminProductsParams = {
+  /**
+   * 검수 상태. 생략하면 전체
+   */
+  inspectionStatus?: InspectionStatus
+  /**
+   * 판매 상태. 생략하면 전체
+   */
+  saleStatus?: SaleStatus
+  /**
+   * **그 노드와 하위 전부**(깊이 3 고정이라 대·중·소 어느 단계를 줘도 그 아래 상품이 잡힌다). 구매자 카탈로그의 `category`가 중분류만 받는 것과 다르다.
+   */
+  categoryId?: number
+  /**
+   * **상품명 또는 셀러 상호명** 부분일치(둘을 가르는 파라미터가 없다). 앞뒤 공백은 서버가 제거하고 공백뿐이면 조건 없음이다 — 빈 값은 키째 빼고 보낼 것.
+   */
+  keyword?: string
   /**
    * @minimum 0
    */
@@ -7327,6 +8208,25 @@ export type GetSellerNoticesParams = {
    * 1~100으로 절삭된다(범위를 벗어나도 400이 아니다)
    */
   size?: number
+}
+
+export type GetAdminInspectionMetricsParams = {
+  /**
+   * 집계 시작(포함). `content_inspections.settled_at` 기준, 오프셋 없는 LocalDateTime
+   */
+  from?: string
+  /**
+   * 집계 끝(배타). 생략하면 서버의 now
+   */
+  to?: string
+  /**
+   * 정책 버전. 생략하면 전체. BE 설정(`inspection.policy-version`)이 검수 행에 적는 값이고 AI의 실제 정책 문구 버전과 손으로 맞춰져 있어 어긋날 수 있다 — 응답의 `window.promptVersions` 분포가 그 어긋남을 드러낸다
+   */
+  policyVersion?: string
+  /**
+   * 대상 종류. 생략하면 전체(지금 쌓이는 것은 PRODUCT뿐이다)
+   */
+  targetType?: InspectionTargetType
 }
 
 /**
@@ -32235,6 +33135,680 @@ export const useRejectAdminSellerApplication = <TError = unknown, TContext = unk
 }
 
 /**
+ * 어드민 콘솔(admin 모듈) 전용. 전 요청이 ADMIN 역할을 요구한다(미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011 — 둘은 Security 필터 구간에서 끝나 감사 로그에 남지 않는다). 입점 심사(`/admin/seller-applications`)와 다른 층이다 — 여기서 막는 것은 **판매**이고, 계정 로그인 차단은 `/admin/members`가 users.status로 따로 다룬다(셀러도 role=GENERAL이라 한 계정이 양쪽 목록에 함께 등장할 수 있다). **오프셋 페이지네이션**이고 커서가 아니다. 정렬은 `sellerId` 내림차순(개점 역순) 고정이라 정렬 파라미터가 없다 — sellers는 user_id가 PK이고 별도 셀러 id가 없어 그것이 중복·누락 없는 유일한 키다. `status`·`sellerType` 형식 오류는 서버가 보정한다(대소문자 무시, 알 수 없는 status는 조건 없음, 알 수 없는 sellerType은 ALL) — **400을 내지 않는다.** page 음수는 0으로, size는 1~100으로 절삭한다. `keyword`는 상호명(storeName) 부분일치이고 앞뒤 공백을 떼며 공백뿐이면 조건이 없는 것으로 본다. **`sellerType`을 BUSINESS·INDIVIDUAL로 주면 입점 신청서가 없는 셀러는 결과에서 빠진다** (유형을 모르는 셀러를 어느 쪽으로도 세지 않는다) — 그 셀러는 businessType이 null이다. `totalCount`는 필터 기준 전체 행 수다(현재 페이지 크기가 아니다).
+ * @summary 어드민 입점 셀러 목록
+ */
+export const getAdminSellers = (params?: GetAdminSellersParams, signal?: AbortSignal) => {
+  return customInstance<AdminSellerListResponse>({
+    url: `/admin/sellers`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminSellersQueryKey = (params?: GetAdminSellersParams) => {
+  return [`/admin/sellers`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminSellersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellers>>> = ({ signal }) =>
+    getAdminSellers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellersQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminSellers>>>
+export type GetAdminSellersQueryError = unknown
+
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellersParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellers>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellers>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 목록
+ */
+
+export function useGetAdminSellers<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellersQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellersSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellersQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellers>>> = ({ signal }) =>
+    getAdminSellers(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellersSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellers>>
+>
+export type GetAdminSellersSuspenseQueryError = unknown
+
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminSellersParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 목록
+ */
+
+export function useGetAdminSellersSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellers>>,
+  TError = unknown,
+>(
+  params?: GetAdminSellersParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellers>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellersSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행과 **같은 스키마**의 셀러 하나에 현재 정지 사유·운영자 메모·제재 이력을 더한다. `suspensionReasonCode`는 화면의 사유 선택을 채우는 값이고 **정지 중이 아니면 null**이다 (서버가 sellers에 사유 코드를 또 두지 않고 이력의 최근 SUSPEND 행에서 읽는다 — 같은 사실을 두 곳에 적어 한쪽만 갱신되는 자리를 만들지 않았다). `suspensionReason`은 사람이 읽는 사유 한 줄(`어휘 라벨` 또는 `어휘 라벨 — 상세`)이고 해제하면 null이 된다. `internalMemo`는 **현재** 메모이고, 이력 행의 memo는 그 조치 시점의 사본이라 서로 다를 수 있다. `sanctions`는 최신순(sanctionId 내림차순)이고 최대 50건이다. 404 errorCode 10000 — 셀러가 아닌 식별자(없는 계정과 셀러로 등록되지 않은 계정이 같은 응답이다).
+ * @summary 어드민 입점 셀러 상세
+ */
+export const getAdminSellerDetail = (sellerId: number, signal?: AbortSignal) => {
+  return customInstance<AdminSellerDetailResponse>({
+    url: `/admin/sellers/${sellerId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminSellerDetailQueryKey = (sellerId?: number) => {
+  return [`/admin/sellers/${sellerId}`] as const
+}
+
+export const getGetAdminSellerDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerDetailQueryKey(sellerId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerDetail>>> = ({ signal }) =>
+    getAdminSellerDetail(sellerId, signal)
+
+  return { queryKey, queryFn, enabled: !!sellerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerDetail>>
+>
+export type GetAdminSellerDetailQueryError = unknown
+
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminSellerDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminSellerDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 상세
+ */
+
+export function useGetAdminSellerDetail<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerDetailQueryOptions(sellerId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminSellerDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminSellerDetailQueryKey(sellerId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminSellerDetail>>> = ({ signal }) =>
+    getAdminSellerDetail(sellerId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminSellerDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminSellerDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminSellerDetail>>
+>
+export type GetAdminSellerDetailSuspenseQueryError = unknown
+
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 입점 셀러 상세
+ */
+
+export function useGetAdminSellerDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminSellerDetail>>,
+  TError = unknown,
+>(
+  sellerId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminSellerDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminSellerDetailSuspenseQueryOptions(sellerId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 셀러 상태를 SUSPENDED로 옮기고 제재 이력 한 행(action=SUSPEND)을 남긴다. 성공은 204 No Content(본문 없음)다. 거부된 요청은 상태도 이력도 바꾸지 않는다. 막는 것은 판매뿐이다 — 셀러의 로그인은 끊기지 않고 `products.sale_status`도 건드리지 않는다. `durationDays`를 **생략하면 무기한 정지**이고 만료 시각은 서버 시계로 계산한다(클라이언트가 보낸 시각을 받지 않는다). **그 시각이 지나도 상태는 SUSPENDED로 남는다** — 자동 해제가 없다 (노출·쓰기 게이트가 status != ACTIVE만 보고 만료를 보지 않는다). 화면에 "기간이 지나면 자동으로 풀려요"라고 쓰면 거짓이 된다. `memo`는 **비어 있지 않을 때만** 현재 메모(`sellers.admin_memo`)를 덮어쓴다 — 공백·누락으로는 기존 메모를 지우지 않는다(지우는 경로는 메모 저장이다). **검증 순서가 계약의 일부다**: 식별자(404) → 이력 행 입력(10010·10011) → 상태 전이 (10007·10009). 이미 정지된 셀러에 기타 사유만 고르고 보내면 10007이 아니라 10010이 온다. 400 errorCode 90001 — reasonCode 누락, durationDays 범위 밖(1~365), reasonDetail·memo 500자 초과. 400 errorCode 10010 — reasonCode=OTHER인데 reasonDetail이 비었음. 400 errorCode 10011 — 사유·메모가 저장 한계(500자)를 넘음. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10007 — 이미 판매정지 상태. 409 errorCode 10009 — WITHDRAWN·WITHDRAWAL_REQUESTED 셀러(해제가 되돌릴 자리가 없다) 또는 **동시 조치 충돌**(낙관적 잠금). 둘 다 화면이 낡았다는 신호라 재조회가 답이다.
+ * @summary 어드민 셀러 판매정지
+ */
+export const suspendAdminSeller = (
+  sellerId: number,
+  suspendSellerRequest: SuspendSellerRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/suspensions`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: suspendSellerRequest,
+    signal,
+  })
+}
+
+export const getSuspendAdminSellerMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendAdminSeller>>,
+    TError,
+    { sellerId: number; data: SuspendSellerRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suspendAdminSeller>>,
+  TError,
+  { sellerId: number; data: SuspendSellerRequest },
+  TContext
+> => {
+  const mutationKey = ['suspendAdminSeller']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suspendAdminSeller>>,
+    { sellerId: number; data: SuspendSellerRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return suspendAdminSeller(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SuspendAdminSellerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suspendAdminSeller>>
+>
+export type SuspendAdminSellerMutationBody = SuspendSellerRequest
+export type SuspendAdminSellerMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 판매정지
+ */
+export const useSuspendAdminSeller = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof suspendAdminSeller>>,
+      TError,
+      { sellerId: number; data: SuspendSellerRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof suspendAdminSeller>>,
+  TError,
+  { sellerId: number; data: SuspendSellerRequest },
+  TContext
+> => {
+  const mutationOptions = getSuspendAdminSellerMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 정지 **직전 상태**로 되돌리고 해제 이력 한 행(action=RELEASE, reasonCode·effectiveUntil은 null)을 남긴다(UPDATE가 아니다). 직전 상태가 비어 있는 행(이 전이가 생기기 전에 정지된 셀러)은 ACTIVE로 되돌린다. 성공은 204 No Content(본문 없음)다. 본문은 생략할 수 있고 `{}`도 받는다. DELETE가 아닌 이유는 사유·메모를 본문으로 받기 때문이다 — 프록시가 DELETE 본문을 잘라 감사 기록의 사유 칸이 비면 안 된다(회원 제재 해제와 같은 결정). `memo`는 비어 있지 않을 때만 현재 메모를 덮어쓴다. 400 errorCode 10011 — 사유·메모 길이 초과. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10008 — 판매정지 상태가 아님. 409 errorCode 10009 — 동시 조치 충돌.
+ * @summary 어드민 셀러 판매정지 해제
+ */
+export const releaseAdminSellerSuspension = (
+  sellerId: number,
+  releaseSellerSuspensionRequest?: ReleaseSellerSuspensionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/suspensions/release`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: releaseSellerSuspensionRequest,
+    signal,
+  })
+}
+
+export const getReleaseAdminSellerSuspensionMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+    TError,
+    { sellerId: number; data: ReleaseSellerSuspensionRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+  TError,
+  { sellerId: number; data: ReleaseSellerSuspensionRequest },
+  TContext
+> => {
+  const mutationKey = ['releaseAdminSellerSuspension']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+    { sellerId: number; data: ReleaseSellerSuspensionRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return releaseAdminSellerSuspension(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ReleaseAdminSellerSuspensionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>
+>
+export type ReleaseAdminSellerSuspensionMutationBody = ReleaseSellerSuspensionRequest
+export type ReleaseAdminSellerSuspensionMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 판매정지 해제
+ */
+export const useReleaseAdminSellerSuspension = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+      TError,
+      { sellerId: number; data: ReleaseSellerSuspensionRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof releaseAdminSellerSuspension>>,
+  TError,
+  { sellerId: number; data: ReleaseSellerSuspensionRequest },
+  TContext
+> => {
+  const mutationOptions = getReleaseAdminSellerSuspensionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * `sellers.admin_memo`를 덮어쓴다(앞뒤 공백 제거). 성공은 204 No Content(본문 없음)다. **memo가 null·공백이면 메모를 지운다** — 본문 자체를 생략해도 같다. 제재 조치에 딸려 오는 memo와 규칙이 반대라는 점을 섞지 말 것(그쪽은 빈 값으로 지우지 않는다). **제재 이력 행은 남지 않는다** — 누가 언제 바꿨는지는 감사 로그 (`/admin/audit-logs`의 SELLER_MEMO_UPDATED)가 받는다. 이력 행의 memo는 그 조치 시점의 사본이라 이 경로로 바뀌지 않는다. 400 errorCode 10011 — 500자 초과. 404 errorCode 10000 — 셀러가 아닌 식별자. 409 errorCode 10009 — 동시 조치 충돌(메모 저장도 같은 행의 version을 올린다).
+ * @summary 어드민 셀러 내부 메모 저장
+ */
+export const saveAdminSellerMemo = (
+  sellerId: number,
+  saveSellerMemoRequest?: SaveSellerMemoRequest,
+) => {
+  return customInstance<void>({
+    url: `/admin/sellers/${sellerId}/memo`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    data: saveSellerMemoRequest,
+  })
+}
+
+export const getSaveAdminSellerMemoMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+    TError,
+    { sellerId: number; data: SaveSellerMemoRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+  TError,
+  { sellerId: number; data: SaveSellerMemoRequest },
+  TContext
+> => {
+  const mutationKey = ['saveAdminSellerMemo']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+    { sellerId: number; data: SaveSellerMemoRequest }
+  > = props => {
+    const { sellerId, data } = props ?? {}
+
+    return saveAdminSellerMemo(sellerId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SaveAdminSellerMemoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>
+>
+export type SaveAdminSellerMemoMutationBody = SaveSellerMemoRequest
+export type SaveAdminSellerMemoMutationError = unknown
+
+/**
+ * @summary 어드민 셀러 내부 메모 저장
+ */
+export const useSaveAdminSellerMemo = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+      TError,
+      { sellerId: number; data: SaveSellerMemoRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof saveAdminSellerMemo>>,
+  TError,
+  { sellerId: number; data: SaveSellerMemoRequest },
+  TContext
+> => {
+  const mutationOptions = getSaveAdminSellerMemoMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
  * 어드민 콘솔(admin 모듈) 전용이며 권한 없음은 403 errorCode 20011. AI가 위반으로 반려한 상품과, 관리자가 반려한 상품을 고쳐 AI를 통과한 상품이 PENDING_REVIEW로 쌓인다. 오프셋 페이지네이션이고 정렬은 판정 시각(blindedAt) 내림차순·id 내림차순이다. status를 주지 않으면 전체다. page 음수는 0으로, size는 1~100으로 서버가 보정한다.
  * @summary 어드민 상품 검토 큐 목록
  */
@@ -32858,6 +34432,815 @@ export const useRejectAdminProductInspection = <TError = unknown, TContext = unk
   TContext
 > => {
   const mutationOptions = getRejectAdminProductInspectionMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용이며 전 요청이 ADMIN 역할을 요구한다(403 errorCode 20011, 토큰 없음·만료는 401 errorCode 20004). **검수 건 하나하나의 진행 현황**이라 같은 BC의 기존 두 경로와 묻는 것이 다르다 — `/admin/product-inspections`는 관리자 확인이 남은 큐라 위반 판정 건만 올라오고, `/admin/inspection-metrics`는 창이 settled_at 기준인 집계라 끝난 건만 센다. 그래서 "방금 등록한 상품의 검수가 지금 어디까지 왔는지"는 둘 중 어느 것으로도 답할 수 없다. 이 경로는 노출 조건을 걸지 않아 판정 전·통과까지 전부 나온다. 식별자는 **검수 행의 id**(long)다 — 한 상품에 재시도·내용 수정으로 검수가 여러 건 쌓이므로 상품 식별자로는 한 건을 가리킬 수 없다. 정렬은 requestedAt 내림차순·inspectionId 내림차순 **고정**이고 정렬 파라미터를 받지 않는다. 필터 셋은 모두 선택이고 주지 않으면 전체다. 알 수 없는 열거 값은 400 errorCode 90001. page 음수는 0으로, size는 1~100으로 **서버가 보정**한다(절삭이고 거절이 아니다). 범위를 넘은 page는 빈 items에 totalCount는 그대로다. totalCount는 필터 기준 전체 행 수라 페이지 크기에 깎이지 않는다. **판정이 아직 없는 건은 judgment로 고를 수 없다** — 그 상태는 판정 칼럼이 빈 것이고 열거에 그 값이 없다. processingState=QUEUED 또는 IN_FLIGHT가 그 축이다. 판정에 "없음"을 끼워 두 축을 합치면 기한 초과(UNJUDGED)와 아직 안 끝난 건이 같은 칸에 섞인다. 임차(leaseOwner·leaseExpiresAt)는 **상세에만** 실린다 — 목록은 한 번에 100행까지 내보내는 자리라 워커 표식의 노출면이 행 수만큼 커진다.
+ * @summary 어드민 검수 진행 현황 목록
+ */
+export const getAdminInspections = (params?: GetAdminInspectionsParams, signal?: AbortSignal) => {
+  return customInstance<AdminInspectionListResponse>({
+    url: `/admin/inspections`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminInspectionsQueryKey = (params?: GetAdminInspectionsParams) => {
+  return [`/admin/inspections`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminInspectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspections>>> = ({ signal }) =>
+    getAdminInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspections>>
+>
+export type GetAdminInspectionsQueryError = unknown
+
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspections>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspections>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 목록
+ */
+
+export function useGetAdminInspections<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInspectionsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspections>>> = ({ signal }) =>
+    getAdminInspections(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspections>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspections>>
+>
+export type GetAdminInspectionsSuspenseQueryError = unknown
+
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 목록
+ */
+
+export function useGetAdminInspectionsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspections>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspections>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 목록 행의 열한 필드에 관점별 결과·사유·버전·내용 해시·임차를 더한다. inspectionId는 long이고 숫자가 아니면 400 errorCode 90001, 없는 검수는 **404 errorCode 40508**이다. perspectives는 관점마다 한 칸이고 파이프라인 순서(RULE·TRIAGE·DISPLAY_ADS· CONDUCT_TRADE·ALL)로 내려오며 기록이 없으면 **빈 배열**이다. **칸이 없는 것과 UNCHECKED는 다르다** — 앞은 파이프라인이 그 관점까지 가지 못한 것이고 뒤는 거기까지는 갔지만 보지 못한 것이다. 어느 쪽도 CLEAR(통과)와 같은 칸에 그리지 않는다. 사유 셋(reasonCode·reasonSummary·sellerNotice)은 **이 검수 행에 적힌 값**이고, 검수 큐 상세가 "지금 그 상품을 막고 있는 판정"에서 읽는 것과 다르다. 임차 둘은 지금 이 건을 잡고 있는 워커와 그 점유가 풀리는 시각이다 — 멈춘 건을 진단하는 유일한 단서이고, 담기는 값은 워커 인스턴스 표식이지 사람에 관한 정보가 아니다. leaseExpiresAt이 지난 시각이면 다음 주기의 재발행 대상이다. **nextRetryAt은 없다** — QUEUED로 멈춘 건을 언제 다시 보내는지는 이 계약에 실리지 않는다. 널 필드는 키가 남은 채 null로 내려올 것으로 보이지만 **와이어 바이트로 확인되지 않았다**. 그래서 널을 허용하는 필드는 required에서 빼 뒀다 — 소비 쪽은 "키 없음"과 "null"을 둘 다 널로 다룬다.
+ * @summary 어드민 검수 진행 현황 상세
+ */
+export const getAdminInspectionDetail = (inspectionId: number, signal?: AbortSignal) => {
+  return customInstance<AdminInspectionDetailResponse>({
+    url: `/admin/inspections/${inspectionId}`,
+    method: 'GET',
+    signal,
+  })
+}
+
+export const getGetAdminInspectionDetailQueryKey = (inspectionId?: number) => {
+  return [`/admin/inspections/${inspectionId}`] as const
+}
+
+export const getGetAdminInspectionDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionDetail>>> = ({
+    signal,
+  }) => getAdminInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, enabled: !!inspectionId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionDetail>>
+>
+export type GetAdminInspectionDetailQueryError = unknown
+
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionDetail>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 상세
+ */
+
+export function useGetAdminInspectionDetail<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionDetailQueryOptions(inspectionId, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInspectionDetailSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionDetailQueryKey(inspectionId)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionDetail>>> = ({
+    signal,
+  }) => getAdminInspectionDetail(inspectionId, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionDetailSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionDetail>>
+>
+export type GetAdminInspectionDetailSuspenseQueryError = unknown
+
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 검수 진행 현황 상세
+ */
+
+export function useGetAdminInspectionDetailSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionDetail>>,
+  TError = unknown,
+>(
+  inspectionId: number,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionDetail>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionDetailSuspenseQueryOptions(inspectionId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 플랫폼 전체 상품. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다 (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011). **구매자 노출 조건을 하나도 걸지 않는다** — 검수 반려 상품, 판매중지 상품, 비활성 카테고리의 상품, 비활성·탈퇴 셀러의 상품이 전부 나온다. 필터를 주지 않으면 그것이 곧 전수다. 검토 큐(`/admin/product-inspections`)와 **모수가 다르다** — 큐에는 관리자 확인이 남은 행만 쌓이고 여기는 큐에 올라온 적 없는 상품까지 보여 준다. 정렬은 상품 내부 id 내림차순(= 등록 역순) 고정이고 정렬 파라미터가 없다. **오프셋 페이지네이션이고 page·size는 거절하지 않고 보정한다** — page 음수는 0으로, size는 1~100으로 절삭한다(상한을 넘겨도 400이 아니다). `inspectionStatus`·`saleStatus`는 **대소문자를 무시하고 알 수 없는 값은 400이 아니라 조건 없음**으로 본다(필터 오타로 화면이 비는 대신 전체가 나온다 — 화면은 서버 enum 이름을 그대로 보낼 것).
+ * @summary 어드민 상품 카탈로그 목록
+ */
+export const getAdminProducts = (params?: GetAdminProductsParams, signal?: AbortSignal) => {
+  return customInstance<AdminProductListResponse>({
+    url: `/admin/products`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminProductsQueryKey = (params?: GetAdminProductsParams) => {
+  return [`/admin/products`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>>
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProducts>>> = ({ signal }) =>
+    getAdminProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminProducts>>>
+export type GetAdminProductsQueryError = unknown
+
+export function useGetAdminProducts<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminProductsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProducts<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminProducts>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminProducts>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProducts<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 카탈로그 목록
+ */
+
+export function useGetAdminProducts<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminProductsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminProductsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminProducts>>> = ({ signal }) =>
+    getAdminProducts(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminProducts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminProductsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminProducts>>
+>
+export type GetAdminProductsSuspenseQueryError = unknown
+
+export function useGetAdminProductsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminProductsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminProductsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 상품 카탈로그 목록
+ */
+
+export function useGetAdminProductsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminProducts>>,
+  TError = unknown,
+>(
+  params?: GetAdminProductsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminProducts>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminProductsSuspenseQueryOptions(params, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 판매 상태를 SUSPENDED로 옮기고 **운영자 막음 표시** (시각·사유·행위자·막기 직전 상태)를 남긴다. SUSPENDED는 노출 화이트리스트와 구매·주문 판정에서 모두 빠지므로 목록·검색·찜·상세·옵션·주문이 한꺼번에 끊긴다 — 따로 가리는 조치가 없는 이유다. **핵심 성질: 막음 표시가 있는 동안 셀러가 그 상품의 판매 상태를 되돌릴 수 없다** (`PATCH /sellers/me/products/{productId}/status`가 409 errorCode 40010으로 거절한다). 판매중과 판매중지 재지정이 모두 막히며, SUSPENDED 재지정까지 막는 이유는 통과시키면 보관해 둔 직전 상태가 셀러 값으로 덮여 재개가 되돌릴 자리를 잃기 때문이다. 검수 상태(`inspectionStatus`)는 건드리지 않는다 — 두 축은 독립이고, 검수 승인이 이 조치를 풀지 않는다. 사유 누락·공백·500자 초과와 본문 없음·파싱 실패는 400 errorCode 90001. 없는 상품은 404 errorCode 40000. 이미 운영자가 막아 둔 상품은 409 errorCode 40012이고 **그 거부된 시도는 기존 사유·행위자를 덮지 않는다**. 운영자 둘이 중지와 재개를 동시에 누른 동시 조치 충돌은 409 errorCode 40011이라 다시 조회한 뒤 재시도해야 한다.
+ * @summary 어드민 상품 판매중지
+ */
+export const suspendAdminProductSale = (
+  productId: string,
+  suspendAdminProductSaleRequest: SuspendAdminProductSaleRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/products/${productId}/sale-suspensions`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: suspendAdminProductSaleRequest,
+    signal,
+  })
+}
+
+export const getSuspendAdminProductSaleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendAdminProductSale>>,
+    TError,
+    { productId: string; data: SuspendAdminProductSaleRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suspendAdminProductSale>>,
+  TError,
+  { productId: string; data: SuspendAdminProductSaleRequest },
+  TContext
+> => {
+  const mutationKey = ['suspendAdminProductSale']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suspendAdminProductSale>>,
+    { productId: string; data: SuspendAdminProductSaleRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return suspendAdminProductSale(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type SuspendAdminProductSaleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suspendAdminProductSale>>
+>
+export type SuspendAdminProductSaleMutationBody = SuspendAdminProductSaleRequest
+export type SuspendAdminProductSaleMutationError = unknown
+
+/**
+ * @summary 어드민 상품 판매중지
+ */
+export const useSuspendAdminProductSale = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof suspendAdminProductSale>>,
+      TError,
+      { productId: string; data: SuspendAdminProductSaleRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof suspendAdminProductSale>>,
+  TError,
+  { productId: string; data: SuspendAdminProductSaleRequest },
+  TContext
+> => {
+  const mutationOptions = getSuspendAdminProductSaleMutationOptions(options)
+
+  return useMutation(mutationOptions, queryClient)
+}
+
+/**
+ * 성공은 204 No Content(빈 바디)다. 막음 표시를 지우고 **막기 직전 상태로 되돌린 뒤** 재고와 동기화한다 — 막기 전 판매중이고 재고가 있으면 ON_SALE, 재고가 없으면 OUT_OF_STOCK, 막기 전 셀러가 스스로 내려 둔 상품이면 SUSPENDED가 유지된다(운영자 조치를 푸는 것이지 셀러 의사를 뒤집는 것이 아니다). 그래서 **재개가 곧 판매중은 아니다** — 화면이 ON_SALE을 단정하면 안 되고 응답 뒤 목록을 다시 받아야 한다. 사유는 선택이고 **감사 로그에만 남는다**(막음 표시가 지워지므로 상품에 적을 자리가 없다). 공백뿐이면 적지 않은 것으로 본다. DELETE가 아니라 POST로 받는 이유는 본문(사유)이 프록시에 잘려 감사 기록의 사유 칸이 비는 것을 막기 위해서다(셀러 판매정지 해제와 같은 결). 500자 초과는 400 errorCode 90001. 없는 상품은 404 errorCode 40000. 운영자가 막은 상품이 아니면 409 errorCode 40009. 동시 조치 충돌은 409 errorCode 40011.
+ * @summary 어드민 상품 판매 재개
+ */
+export const resumeAdminProductSale = (
+  productId: string,
+  resumeAdminProductSaleRequest?: ResumeAdminProductSaleRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/admin/products/${productId}/sale-suspensions/release`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: resumeAdminProductSaleRequest,
+    signal,
+  })
+}
+
+export const getResumeAdminProductSaleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resumeAdminProductSale>>,
+    TError,
+    { productId: string; data: ResumeAdminProductSaleRequest },
+    TContext
+  >
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resumeAdminProductSale>>,
+  TError,
+  { productId: string; data: ResumeAdminProductSaleRequest },
+  TContext
+> => {
+  const mutationKey = ['resumeAdminProductSale']
+  const { mutation: mutationOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resumeAdminProductSale>>,
+    { productId: string; data: ResumeAdminProductSaleRequest }
+  > = props => {
+    const { productId, data } = props ?? {}
+
+    return resumeAdminProductSale(productId, data)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type ResumeAdminProductSaleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resumeAdminProductSale>>
+>
+export type ResumeAdminProductSaleMutationBody = ResumeAdminProductSaleRequest
+export type ResumeAdminProductSaleMutationError = unknown
+
+/**
+ * @summary 어드민 상품 판매 재개
+ */
+export const useResumeAdminProductSale = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof resumeAdminProductSale>>,
+      TError,
+      { productId: string; data: ResumeAdminProductSaleRequest },
+      TContext
+    >
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof resumeAdminProductSale>>,
+  TError,
+  { productId: string; data: ResumeAdminProductSaleRequest },
+  TContext
+> => {
+  const mutationOptions = getResumeAdminProductSaleMutationOptions(options)
 
   return useMutation(mutationOptions, queryClient)
 }
@@ -34966,6 +37349,231 @@ export function useGetSellerNoticeSuspense<
   queryClient?: QueryClient,
 ): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetSellerNoticeSuspenseQueryOptions(noticeId, options)
+
+  const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+/**
+ * 어드민 콘솔(admin 모듈) 전용. 주기 로그(api `InspectionMetricsSchedule`)와 **같은 집계**를 한 장으로 돌려준다 — 화면과 로그가 다른 판정을 내리지 않게 한 곳에서만 센다. 비율은 0~1 실수이고 **분모가 0이면 null**이다(0으로 바꾸면 "한 건도 안 돌았다"와 "돌았는데 전부 건너뛰었다"가 같은 숫자가 된다 — 화면은 null을 '미측정'으로 쓴다). 금액은 백만분의 1 USD로만 온다(환율 환산은 보는 쪽 몫). 시각은 오프셋 없는 LocalDateTime이라 **질의 파라미터도 오프셋 없이 보내야 한다** — UTC 표기(`Z`)로 보내면 서버가 시간대만큼 밀린 창을 집계한다. **블록이 통째로 빠져 올 수 있다.** 지금 배포된 서버는 flat `windowFrom`·`measuredAt`· `windowHours`·`needsAttention` + `promotion`·`coverage`·`cost`·`backlog` 넷만 주고, `window`·`alarms`·`funnel`·`judgment`·`adminReview`·`latency`·`triageAudit`와 `cost.byStage`는 확장이 배포된 뒤에 실린다. 그래서 화면은 블록이 없으면 0이 아니라 '서버가 아직 주지 않음'으로 그려야 한다. 질의 파라미터는 **전부 선택**이고 하나도 없으면 설정된 창(`window-hours`, 기본 24)이다. 확장 전 서버는 파라미터를 무시하고 늘 그 창을 돌려주므로, 화면은 요청한 창과 응답이 밝힌 창을 맞춰 보고 어긋나면 그 사실을 운영자에게 알려야 한다.
+ * @summary 어드민 AI 검수 운영 지표
+ */
+export const getAdminInspectionMetrics = (
+  params?: GetAdminInspectionMetricsParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AdminInspectionMetricsResponse>({
+    url: `/admin/inspection-metrics`,
+    method: 'GET',
+    params,
+    signal,
+  })
+}
+
+export const getGetAdminInspectionMetricsQueryKey = (params?: GetAdminInspectionMetricsParams) => {
+  return [`/admin/inspection-metrics`, ...(params ? [params] : [])] as const
+}
+
+export const getGetAdminInspectionMetricsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionMetricsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionMetrics>>> = ({
+    signal,
+  }) => getAdminInspectionMetrics(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionMetricsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionMetrics>>
+>
+export type GetAdminInspectionMetricsQueryError = unknown
+
+export function useGetAdminInspectionMetrics<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionMetricsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionMetrics>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionMetrics<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminInspectionMetrics>>
+        >,
+        'initialData'
+      >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionMetrics<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 운영 지표
+ */
+
+export function useGetAdminInspectionMetrics<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionMetricsQueryOptions(params, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  query.queryKey = queryOptions.queryKey
+
+  return query
+}
+
+export const getGetAdminInspectionMetricsSuspenseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+) => {
+  const { query: queryOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminInspectionMetricsQueryKey(params)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminInspectionMetrics>>> = ({
+    signal,
+  }) => getAdminInspectionMetrics(params, signal)
+
+  return { queryKey, queryFn, ...queryOptions } as UseSuspenseQueryOptions<
+    Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAdminInspectionMetricsSuspenseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminInspectionMetrics>>
+>
+export type GetAdminInspectionMetricsSuspenseQueryError = unknown
+
+export function useGetAdminInspectionMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params: undefined | GetAdminInspectionMetricsParams,
+  options: {
+    query: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAdminInspectionMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 어드민 AI 검수 운영 지표
+ */
+
+export function useGetAdminInspectionMetricsSuspense<
+  TData = Awaited<ReturnType<typeof getAdminInspectionMetrics>>,
+  TError = unknown,
+>(
+  params?: GetAdminInspectionMetricsParams,
+  options?: {
+    query?: Partial<
+      UseSuspenseQueryOptions<Awaited<ReturnType<typeof getAdminInspectionMetrics>>, TError, TData>
+    >
+  },
+  queryClient?: QueryClient,
+): UseSuspenseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminInspectionMetricsSuspenseQueryOptions(params, options)
 
   const query = useSuspenseQuery(queryOptions, queryClient) as UseSuspenseQueryResult<
     TData,

@@ -7,6 +7,11 @@ import { inquiryHandlers } from './inquiries.handlers'
 import { claimHandlers } from './claims.handlers'
 import { reviewHandlers } from './reviews.handlers'
 import { reportHandlers } from './reports.handlers'
+import { inspectionMonitorHandlers } from './inspection-monitor.handlers'
+import { inspectionMetricsHandlers } from './inspection-metrics.handlers'
+// 검토 큐 목록 핸들러가 쓰는 경로 상수도 그 모듈이 소유한다(승인·반려가 거기서 상품 상태를 바꾼다).
+import { ADMIN_PRODUCT_INSPECTIONS_URL, productHandlers } from './products.handlers'
+import { sellerHandlers } from './sellers.handlers'
 
 // vitest 공용 MSW 서버(test-setup.ts가 수명주기를 관리) — web-seller의 src/testing/msw 관례를
 // web-admin에 이식했다. 모듈 모킹 대신 네트워크 레벨에서 가로채 실제 HTTP 경로(URL·봉투·에러
@@ -27,6 +32,20 @@ export {
   seedAdminReports,
   type AdminReportWire,
 } from './reports.handlers'
+export {
+  ADMIN_SELLERS_URL,
+  ADMIN_SELLER_DETAIL_URL,
+  ADMIN_SELLER_MEMO_URL,
+  ADMIN_SELLER_RELEASE_URL,
+  ADMIN_SELLER_SUSPEND_URL,
+  SANCTION_HISTORY_LIMIT,
+  currentAdminSeller,
+  lastAdminSellerWrite,
+  makeAdminSellerWire,
+  seedAdminSellers,
+  type AdminSellerWire,
+  type SellerSanctionHistoryWire,
+} from './sellers.handlers'
 export {
   ADMIN_AUDIT_LOGS_URL,
   makeAdminAuditLogWire,
@@ -64,6 +83,34 @@ export {
   type AdminInquiryWire,
 } from './inquiries.handlers'
 export {
+  ADMIN_PRODUCTS_URL,
+  ADMIN_PRODUCT_APPROVE_URL,
+  ADMIN_PRODUCT_INSPECTIONS_URL,
+  ADMIN_PRODUCT_REJECT_URL,
+  ADMIN_PRODUCT_RESUME_URL,
+  ADMIN_PRODUCT_SUSPEND_URL,
+  currentAdminProduct,
+  makeAdminProductWire,
+  seedAdminProducts,
+  type AdminProductWire,
+} from './products.handlers'
+export {
+  ADMIN_INSPECTIONS_URL,
+  ADMIN_INSPECTION_DETAIL_URL,
+  makeAdminInspectionPerspectiveWire,
+  makeAdminInspectionWire,
+  seedAdminInspections,
+  type AdminInspectionPerspectiveWire,
+  type AdminInspectionWire,
+} from './inspection-monitor.handlers'
+export {
+  ADMIN_INSPECTION_METRICS_URL,
+  makeAdminInspectionMetricsWire,
+  makeLegacyAdminInspectionMetricsWire,
+  seedAdminInspectionMetrics,
+  type AdminInspectionMetricsWire,
+} from './inspection-metrics.handlers'
+export {
   ADMIN_REVIEWS_URL,
   ADMIN_REVIEW_BLIND_URL,
   ADMIN_REVIEW_DETAIL_URL,
@@ -80,7 +127,6 @@ export const ADMIN_APPLICATIONS_URL = `${adminBase}/admin/seller-applications`
 export const ADMIN_APPLICATION_DETAIL_URL = `${adminBase}/admin/seller-applications/:applicationId`
 export const ADMIN_APPLICATION_APPROVE_URL = `${ADMIN_APPLICATION_DETAIL_URL}/approve`
 export const ADMIN_APPLICATION_REJECT_URL = `${ADMIN_APPLICATION_DETAIL_URL}/reject`
-export const ADMIN_PRODUCT_INSPECTIONS_URL = `${adminBase}/admin/product-inspections`
 export const ADMIN_MEMBERS_URL = `${adminBase}/admin/members`
 export const ADMIN_MEMBER_DETAIL_URL = `${ADMIN_MEMBERS_URL}/:userId`
 export const ADMIN_MEMBER_SANCTION_URL = `${ADMIN_MEMBER_DETAIL_URL}/sanctions`
@@ -1246,6 +1292,10 @@ export const handlers = [
   // 검수 큐 핸들러도 시드 없이 빈 목록으로 답한다 — 대시보드(`/`)가 검수 대기 수를 조회하고,
   // 그 화면이 nav·예시 화면 테스트에서 열린다(핸들러가 없으면 onUnhandledRequest:'error').
   ...inspectionHandlers,
+  // 상품 카탈로그 핸들러도 시드 없이 빈 목록으로 답한다 — `/products/catalog`이 nav 테스트에서
+  // 열리고, 승인·반려는 큐 경로(`/admin/product-inspections/:productId/approve|reject`)라
+  // 큐 목록 핸들러와 같은 접두를 쓴다(그 둘을 각자 `server.use`로 덮는 큐 테스트가 이긴다).
+  ...productHandlers,
   ...inquiryHandlers,
   ...claimHandlers,
   ...reviewHandlers,
@@ -1256,5 +1306,15 @@ export const handlers = [
   ...noticeHandlers,
   // 신고 핸들러도 같은 이유로 시드 없이 빈 목록으로 답한다 — `/reports`가 nav 테스트에서 열린다.
   ...reportHandlers,
+  // 셀러 관리 핸들러도 시드 없이 빈 목록으로 답한다 — `/sellers`가 nav 테스트에서 열린다.
+  ...sellerHandlers,
+  // 검수 진행 현황 핸들러도 시드 없이 빈 목록으로 답한다 — `/inspections/monitoring`이 nav
+  // 테스트에서 열리고, 그 화면은 폴링이라 열려 있는 동안 주기적으로 같은 경로를 다시 부른다
+  // (핸들러가 없으면 onUnhandledRequest:'error'로 깨진다). 위 검수 **큐** 핸들러와 다른 경로다 —
+  // `/admin/product-inspections`는 관리자 확인이 남은 큐, 이쪽은 검수 건 자체의 진행이다.
+  ...inspectionMonitorHandlers,
+  // 검수 집계는 시드가 없으면 403으로 답한다(`seedAdminInspectionMetrics(null)`과 같다) —
+  // `/products/ai-metrics`를 여는 테스트는 먼저 시드한다.
+  ...inspectionMetricsHandlers,
 ]
 export const server = setupServer(...handlers)
