@@ -5275,6 +5275,148 @@ paths:
       responses:
         "204":
           description: "No Content"
+  /admin/products:
+    get:
+      summary: "어드민 상품 카탈로그 목록"
+      description: >-
+        플랫폼 전체 상품. 어드민 콘솔(admin 모듈) 전용이고 전 요청이 ADMIN 역할을 요구한다
+        (미인증 401 errorCode 20004, 비ADMIN 403 errorCode 20011).
+        **구매자 노출 조건을 하나도 걸지 않는다** — 검수 반려 상품, 판매중지 상품, 비활성 카테고리의
+        상품, 비활성·탈퇴 셀러의 상품이 전부 나온다. 필터를 주지 않으면 그것이 곧 전수다.
+        검토 큐(`/admin/product-inspections`)와 **모수가 다르다** — 큐에는 관리자 확인이 남은 행만
+        쌓이고 여기는 큐에 올라온 적 없는 상품까지 보여 준다.
+        정렬은 상품 내부 id 내림차순(= 등록 역순) 고정이고 정렬 파라미터가 없다.
+        **오프셋 페이지네이션이고 page·size는 거절하지 않고 보정한다** — page 음수는 0으로,
+        size는 1~100으로 절삭한다(상한을 넘겨도 400이 아니다).
+        `inspectionStatus`·`saleStatus`는 **대소문자를 무시하고 알 수 없는 값은 400이 아니라 조건
+        없음**으로 본다(필터 오타로 화면이 비는 대신 전체가 나온다 — 화면은 서버 enum 이름을
+        그대로 보낼 것).
+      operationId: "getAdminProducts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: inspectionStatus
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/InspectionStatus"
+          description: "검수 상태. 생략하면 전체"
+        - name: saleStatus
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SaleStatus"
+          description: "판매 상태. 생략하면 전체"
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: >-
+            **그 노드와 하위 전부**(깊이 3 고정이라 대·중·소 어느 단계를 줘도 그 아래 상품이 잡힌다).
+            구매자 카탈로그의 `category`가 중분류만 받는 것과 다르다.
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            **상품명 또는 셀러 상호명** 부분일치(둘을 가르는 파라미터가 없다). 앞뒤 공백은 서버가
+            제거하고 공백뿐이면 조건 없음이다 — 빈 값은 키째 빼고 보낼 것.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProductListResponse"
+  /admin/products/{productId}/sale-suspensions:
+    post:
+      summary: "어드민 상품 판매중지"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 판매 상태를 SUSPENDED로 옮기고 **운영자 막음 표시**
+        (시각·사유·행위자·막기 직전 상태)를 남긴다. SUSPENDED는 노출 화이트리스트와 구매·주문
+        판정에서 모두 빠지므로 목록·검색·찜·상세·옵션·주문이 한꺼번에 끊긴다 — 따로 가리는 조치가
+        없는 이유다.
+        **핵심 성질: 막음 표시가 있는 동안 셀러가 그 상품의 판매 상태를 되돌릴 수 없다**
+        (`PATCH /sellers/me/products/{productId}/status`가 409 errorCode 40010으로 거절한다).
+        판매중과 판매중지 재지정이 모두 막히며, SUSPENDED 재지정까지 막는 이유는 통과시키면
+        보관해 둔 직전 상태가 셀러 값으로 덮여 재개가 되돌릴 자리를 잃기 때문이다.
+        검수 상태(`inspectionStatus`)는 건드리지 않는다 — 두 축은 독립이고, 검수 승인이 이 조치를
+        풀지 않는다.
+        사유 누락·공백·500자 초과와 본문 없음·파싱 실패는 400 errorCode 90001.
+        없는 상품은 404 errorCode 40000. 이미 운영자가 막아 둔 상품은 409 errorCode 40012이고
+        **그 거부된 시도는 기존 사유·행위자를 덮지 않는다**. 운영자 둘이 중지와 재개를 동시에
+        누른 동시 조치 충돌은 409 errorCode 40011이라 다시 조회한 뒤 재시도해야 한다.
+      operationId: "suspendAdminProductSale"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "상품 공개 식별자(ULID 26자). 검토 큐 경로와 같은 식별자다"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendAdminProductSaleRequest"
+      responses:
+        "204":
+          description: "No Content"
+  /admin/products/{productId}/sale-suspensions/release:
+    post:
+      summary: "어드민 상품 판매 재개"
+      description: >-
+        성공은 204 No Content(빈 바디)다. 막음 표시를 지우고 **막기 직전 상태로 되돌린 뒤** 재고와
+        동기화한다 — 막기 전 판매중이고 재고가 있으면 ON_SALE, 재고가 없으면 OUT_OF_STOCK,
+        막기 전 셀러가 스스로 내려 둔 상품이면 SUSPENDED가 유지된다(운영자 조치를 푸는 것이지
+        셀러 의사를 뒤집는 것이 아니다). 그래서 **재개가 곧 판매중은 아니다** — 화면이 ON_SALE을
+        단정하면 안 되고 응답 뒤 목록을 다시 받아야 한다.
+        사유는 선택이고 **감사 로그에만 남는다**(막음 표시가 지워지므로 상품에 적을 자리가 없다).
+        공백뿐이면 적지 않은 것으로 본다.
+        DELETE가 아니라 POST로 받는 이유는 본문(사유)이 프록시에 잘려 감사 기록의 사유 칸이
+        비는 것을 막기 위해서다(셀러 판매정지 해제와 같은 결).
+        500자 초과는 400 errorCode 90001. 없는 상품은 404 errorCode 40000. 운영자가 막은 상품이
+        아니면 409 errorCode 40009. 동시 조치 충돌은 409 errorCode 40011.
+      operationId: "resumeAdminProductSale"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "상품 공개 식별자(ULID 26자)"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeAdminProductSaleRequest"
+      responses:
+        "204":
+          description: "No Content"
   /admin/orders:
     get:
       summary: "어드민 주문 목록"
@@ -12363,6 +12505,112 @@ components:
           minLength: 1
           maxLength: 500
           description: "셀러에게 그대로 보이는 반려 사유. 공백만이면 400 errorCode 90001"
+    AdminProductListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminProductListData"
+    AdminProductListData:
+      type: object
+      required: [items, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProductSummary"
+        totalCount:
+          type: integer
+          format: int64
+          description: "**필터 기준 전체 행 수**(현재 페이지 길이가 아니다). 건수를 목록 길이로 세지 말 것"
+    AdminProductSummary:
+      type: object
+      description: >-
+        상품 목록의 한 행. **독립인 두 축을 함께 싣는다** — `inspectionStatus`가 구매자 노출을
+        켜고 끄는 축(검수 큐의 승인·반려가 소유)이고, `adminSaleSuspended`는 운영자가 검수와
+        무관한 이유로 판매를 잠근 축이다. 한 상품이 REJECTED + 막음 없음일 수도, APPROVED +
+        막음일 수도 있어 화면은 두 값을 각각 보여 줘야 한다(검수 승인이 막음을 풀지 않고,
+        판매 재개가 검수 반려를 풀지 않는다). 상세 조회 엔드포인트는 없고, 사유·막은 시각까지
+        이 행에 실려 있다.
+      required:
+        [productId, productName, sellerId, storeName, categoryName, regularPrice, discountPrice, saleStatus,
+         inspectionStatus, reportCount, adminSaleSuspended, adminSaleSuspendedAt, adminSaleSuspendReason, createdAt]
+      properties:
+        productId:
+          type: string
+          description: "상품 공개 식별자(ULID 26자). 모든 쓰기 경로의 경로 변수다"
+        productName:
+          type: string
+        sellerId:
+          type: integer
+          format: int64
+          description: "셀러 계정 식별자(sellers.user_id). 셀러 관리 화면의 식별자와 같다"
+        storeName:
+          type: string
+          nullable: true
+          description: >-
+            셀러 상호명. **셀러 행이 없으면 null**이다 — products.seller_id는 FK 없는 값 참조라
+            상호를 못 찾는 상품도 목록에 남는다(떨어뜨리면 운영자가 손을 댈 수 없다).
+            화면은 null을 "조회 실패"로 읽지 말 것.
+        categoryName:
+          type: string
+          description: "상품이 달린 카테고리 노드 이름(보통 소분류). **상위 경로는 싣지 않는다**"
+        regularPrice:
+          type: integer
+          format: int64
+        discountPrice:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            할인가. 할인 설정이 없으면 null. **할인 기간 판정을 적용한 값이 아니라 저장값 그대로다**
+            — 지금 실제 판매가가 아니므로 화면이 "현재 판매가"로 그리면 안 된다(기간 필드는 이
+            응답에 없다).
+        saleStatus:
+          $ref: "#/components/schemas/SaleStatus"
+        inspectionStatus:
+          $ref: "#/components/schemas/InspectionStatus"
+        reportCount:
+          type: integer
+          format: int64
+          description: "그 상품에 쌓인 신고 행 수. **처리 상태로 거르지 않는다**(접수·이관 전부)"
+        adminSaleSuspended:
+          type: boolean
+          description: >-
+            운영자가 막아 둔 상품인지. 참이면 셀러의 판매 상태 변경이 409 errorCode 40010으로
+            거부된다. **saleStatus = SUSPENDED와 같은 뜻이 아니다** — 셀러가 스스로 내린 판매중지도
+            SUSPENDED라서, 운영자 조치만 가리려면 이 값을 봐야 한다(서버에 그 필터는 없다).
+        adminSaleSuspendedAt:
+          type: string
+          nullable: true
+          description: "막은 시각(ISO-8601 local). 막혀 있지 않으면 null"
+        adminSaleSuspendReason:
+          type: string
+          nullable: true
+          description: "막을 때 운영자가 쓴 사유. 셀러에게 보내는 문장이 아니라 운영 기록이고, 재개하면 null이 된다"
+        createdAt:
+          type: string
+          description: "상품 등록 시각(ISO-8601 local)"
+    SuspendAdminProductSaleRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: >-
+            막는 근거. 필수다 — 셀러가 되돌릴 수 없는 조치라 근거 없는 행이 남으면 분쟁에서
+            설명할 수 없다. 공백만이면 400 errorCode 90001이고 앞뒤 공백은 서버가 제거해 저장한다.
+    ResumeAdminProductSaleRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: >-
+            철회 근거. 선택이고 **본문 자체를 생략해도 된다**. 감사 로그에만 남고 상품에는 남지
+            않으며 공백뿐이면 적지 않은 것으로 본다
     ProductInquiryCategory:
       type: string
       description: "상품 문의 유형"

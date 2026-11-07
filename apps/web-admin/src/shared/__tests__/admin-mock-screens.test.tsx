@@ -37,7 +37,7 @@ function recordRequests(): string[] {
  * 예시 화면에서 **유일하게 허용되는 요청** — 셸이 nav 배지를 채우려고 부르는 입점 심사 대기 수.
  *
  * "버튼을 누른 뒤에 늘어난 요청"을 보는 방식으로는 쓰기 회귀를 못 잡는다. 확인 Modal이 없는
- * 흐름(셀러 `저장`·상품 `검수 통과`)은 **액션 클릭 자체가 쓰기 실행**이라, 기준선을 그 클릭
+ * 흐름(여기서는 셀러 관리의 `저장`)은 **액션 클릭 자체가 쓰기 실행**이라, 기준선을 그 클릭
  * 뒤에 잡으면 그 요청이 기준선에 삼켜져 단언이 영원히 통과한다(2026-10-27 실측: `handleSaveMemo`에
  * `POST /admin/admins`를 넣어도 통과했고, 확인 Modal이 있는 회원 관리에서는 같은 주입이
  * 잡혔다). 그래서 기준선을 쓰지 않고 **셸 조회 하나만 허용 목록에 두고 나머지 전부**를 본다 —
@@ -61,11 +61,15 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
 /**
  * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 3화면.
  *
- * 셋 중 '상품 검수 관리'(`/products/review`)만 **nav 입구가 없다**(SCRUM-313 — 같은 '검수'
- * 그룹에 실연동 'AI 검수 큐'가 있어 운영자가 이름이 맞는 가짜 쪽을 먼저 눌렀다). 입구가 없어도
- * URL로는 닿으므로 띠와 쓰기 차단은 그대로 필요하고, nav에 없는 탓에 `admin-nav.test.tsx`의
- * 분류(AC-ADMIN-NAV-004)에서 빠져 **이 파일이 그 화면의 유일한 띠 가드다** — SCREENS·WRITE_FLOWS에서
- * 빼면 띠가 사라져도 아무것도 깨지지 않는다.
+ * 둘 다 nav에 "준비 중" 꼬리표를 달고 올라 있으므로 `admin-nav.test.tsx`의 분류
+ * (AC-ADMIN-NAV-004)가 같은 화면의 띠를 nav 쪽에서 한 번 더 본다 — **nav에 없는 예시 화면은
+ * 이제 없다.** 한때 그런 화면이 하나 있었다(`/products/review`, SCRUM-313에서 입구를 내렸다):
+ * nav 분류에서 빠져 이 파일이 그 화면의 유일한 띠 가드였고, 그래서 SCREENS·WRITE_FLOWS에서
+ * 빼면 띠가 사라져도 아무것도 깨지지 않는 자리였다. 그 화면은 2026-11-05에 `/admin/products`
+ * 셋에 실연동되면서 이름·자리·경로를 함께 바꿔 nav로 돌아갔다('상품 카탈로그 관리',
+ * `/products/catalog`, SCRUM-363) — 그 계약은 `features/product-catalog/__tests__`가 본다.
+ * 같은 날 셀러 관리도 `/admin/sellers` 다섯에 실연동돼 빠졌다(SCRUM-362).
+ * **다시 nav 없는 예시 화면이 생기면 여기 더하고 이 단락을 되살릴 것.**
  * (일반 회원 관리는 `/admin/members` 넷, 주문 배송 모니터링은 `/admin/orders` 넷, AI 검수 큐는
  *  `/admin/product-inspections` 넷이 생겨 빠졌고, 서비스 문의·클레임·리뷰는 2026-10-30 실측에서
  *  `/admin/inquiries`·`/admin/claims`·`/admin/reviews`가 확인돼 빠졌다. 어드민 액션 로그는
@@ -92,7 +96,6 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
  */
 const SCREENS = [
   ['대시보드', '/', '확인이 필요한 일'],
-  ['상품 검수 관리', '/products/review', '동결건조 닭가슴살 100g'],
   ['채팅 CS 모니터링', '/chat-monitoring', 'ROOM-4821'],
 ] as const satisfies readonly (readonly [string, string, string])[]
 
@@ -102,35 +105,16 @@ const TABLE_SCREENS = SCREENS.filter(([, path]) => path !== '/')
 /**
  * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이다.
  *
- * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러다(상품 검수의
- * `handlePass`/`handleKeepBlinded`/`handleConfirmStopSale`). 대표 하나만 누르면 나머지
- * 핸들러에 요청이 들어가도 잡히지 않는다(교차검토 2라운드 지적).
+ * **화면마다 한 흐름만 넣으면 안 된다** — 한 화면의 액션들은 각자 다른 핸들러이고, 대표 하나만
+ * 누르면 나머지 핸들러에 요청이 들어가도 잡히지 않는다(교차검토 2라운드 지적). 지금 남은 화면은
+ * 액션이 하나뿐이라 그 예가 없지만, 액션이 둘 이상인 예시 화면이 생기면 전부 넣는다.
  *
- * 2026-11-05까지 있던 셀러 관리 둘(메모 저장·판매정지)은 `/admin/sellers` 실연동으로 빠졌다
- * (SCRUM-362). 버튼이 잠긴 흐름을 열어 주던 `prefill`도 남은 넷이 쓰지 않아 함께 걷었다 —
+ * 2026-11-05에 둘이 실연동으로 빠졌다 — 셀러 관리의 메모 저장·판매정지(`/admin/sellers`,
+ * SCRUM-362)와 상품 검수 관리의 검수 통과·블라인드 유지·판매 중지(`/admin/products`와 검토 큐,
+ * SCRUM-363)다. 버튼이 잠긴 흐름을 열어 주던 `prefill`도 남은 하나가 쓰지 않아 함께 걷었다 —
  * 다시 그런 예시 화면이 생기면 되살린다.
  */
 const WRITE_FLOWS = [
-  {
-    screen: '상품 검수 관리 — 검수 통과',
-    path: '/products/review',
-    openRow: '동결건조 닭가슴살 100g',
-    action: '검수 통과',
-  },
-  {
-    screen: '상품 검수 관리 — 블라인드 유지',
-    path: '/products/review',
-    openRow: '동결건조 닭가슴살 100g',
-    action: '블라인드 유지',
-  },
-  {
-    screen: '상품 검수 관리 — 판매 중지',
-    path: '/products/review',
-    openRow: '동결건조 닭가슴살 100g',
-    action: '판매 중지',
-    // 드로어 액션과 Modal 확인 버튼이 같은 이름이라, 확인은 Modal 안으로 좁혀서 누른다.
-    confirm: { dialog: '상품을 판매 중지할까요?', button: '판매 중지' },
-  },
   {
     screen: '채팅 CS 모니터링',
     path: '/chat-monitoring',
