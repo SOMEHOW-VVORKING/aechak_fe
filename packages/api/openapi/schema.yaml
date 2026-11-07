@@ -4711,7 +4711,7 @@ paths:
         검수 상태(`inspectionStatus`)는 건드리지 않는다 — 두 축은 독립이고, 검수 승인이 이 조치를
         풀지 않는다.
         사유 누락·공백·500자 초과와 본문 없음·파싱 실패는 400 errorCode 90001.
-        없는 상품은 404 errorCode 40000. 이미 운영자가 막아 둔 상품은 409 errorCode 40008이고
+        없는 상품은 404 errorCode 40000. 이미 운영자가 막아 둔 상품은 409 errorCode 40012이고
         **그 거부된 시도는 기존 사유·행위자를 덮지 않는다**. 운영자 둘이 중지와 재개를 동시에
         누른 동시 조치 충돌은 409 errorCode 40011이라 다시 조회한 뒤 재시도해야 한다.
       operationId: "suspendAdminProductSale"

@@ -8,7 +8,7 @@ import { adminBase, clampSize, errorBody } from './base'
 // 지킨다(둘을 다른 모듈에 두면 그 독립성을 아무도 확인하지 않는다).
 //
 // 거절 분기를 서버와 같게 두는 것이 이 파일의 목적이다. 화면의 에러 문구가 errorCode로
-// 갈라지므로(40500·40008·40009·40011), 더블이 코드를 뭉개면 "낡은 화면"과 "권한 없음"을 같은
+// 갈라지므로(40500·40012·40009·40011), 더블이 코드를 뭉개면 "낡은 화면"과 "권한 없음"을 같은
 // 문장으로 안내하는 회귀가 통과한다.
 
 export const ADMIN_PRODUCTS_URL = `${adminBase}/admin/products`
@@ -223,7 +223,7 @@ export const productHandlers = [
     if (!row) return notFound()
     if (row.adminSaleSuspended) {
       // 거부된 시도는 **기존 사유·시각을 덮지 않는다** — 덮으면 분쟁에서 처음 막은 근거를 잃는다.
-      return HttpResponse.json(errorBody(40008, '이미 판매중지된 상품입니다.'), { status: 409 })
+      return HttpResponse.json(errorBody(40012, '이미 판매중지된 상품입니다.'), { status: 409 })
     }
     row.saleStatusBeforeSuspension = row.saleStatus
     row.saleStatus = 'SUSPENDED'
