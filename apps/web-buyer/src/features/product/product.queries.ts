@@ -9,7 +9,7 @@ import {
   type ProductReviewSummaryResponse,
 } from '@aechak/api'
 import { findMockProduct, registerProducts } from '@/shared/catalog'
-import { getProductDetailMock, type ProductDetail, type ProductReviewEntry } from './product.mock'
+import type { ProductDetail, ProductReviewEntry } from './product.mock'
 import {
   mapProductDetail,
   mapProductOptions,
@@ -18,14 +18,14 @@ import {
   type ProductOptionsView,
 } from './product.map'
 
-// 미존재 상품(404)일 때만 목업으로 폴백하고, 다른 오류(500 등)는 그대로 던진다.
+// 404만 not-found로 읽고, 다른 오류(500 등)는 그대로 던진다.
 function isNotFound(e: unknown): boolean {
   return errorResponse(e)?.status === 404
 }
 
-// 상품 상세 — 실 id는 실 API(GET /products/{id}), mock id는 실 API 404 -> 목업 폴백(홈/검색/찜 등
-// 목업 진입점이 안 깨지게). 성공 시 실 상품을 레지스트리에 등록해 장바구니/주문(findProduct)에서
-// 해석되게 한다. 404가 아닌 오류(500 등)는 그대로 던져 not-found로 오인하지 않는다.
+// 상품 상세(GET /products/{id}). 404는 목업 id여도 null(not-found)이다. 목업 상세로 되살리면
+// 직접 주소로 들어온 사람에게 없는 상점과 리뷰 수를 보여 준다. 성공 시 실 상품을 레지스트리에
+// 등록해 장바구니/주문(findProduct)에서 해석되게 한다. 404가 아닌 오류는 그대로 던진다.
 export function useProductDetail(id: string) {
   return useQuery<ProductDetail | null>({
     queryKey: ['product', 'detail', id],
@@ -36,7 +36,7 @@ export function useProductDetail(id: string) {
         registerProducts([toCatalogProduct(res.data)])
         return mapProductDetail(res.data)
       } catch (e) {
-        if (isNotFound(e)) return getProductDetailMock(id)
+        if (isNotFound(e)) return null
         throw e
       }
     },

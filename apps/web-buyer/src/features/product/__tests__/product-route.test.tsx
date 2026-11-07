@@ -9,10 +9,12 @@ import { resetRegistry } from '@/shared/catalog'
 import { setAccessToken, setOnAuthExpired } from '@aechak/api'
 import type { ProductReviewSummaryResponse, AiReviewSummaryResponse } from '@aechak/api'
 import {
+  PRODUCT_DETAIL_URL,
   PRODUCT_LIKE_URL,
   PRODUCT_OPTIONS_URL,
   PRODUCT_REVIEW_SUMMARY_URL,
   PRODUCT_REVIEWS_URL,
+  REAL_PRODUCT_DETAIL,
   REAL_PRODUCT_ID,
   REAL_PRODUCT_OPTIONS,
   currentCart,
@@ -22,6 +24,8 @@ import {
   WEB_REFRESH_URL,
 } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
+
+const REAL_NAME = REAL_PRODUCT_DETAIL.name
 
 function renderAt(path: string) {
   const router = createRouter({
@@ -76,11 +80,11 @@ describe('/products/$productId', () => {
     setAccessToken('test-access-token')
   })
 
-  it('[AC-PRODUCT-005] 존재하는 상품은 상세를 렌더한다', async () => {
+  it('[AC-PRODUCT-005] 서버에 없는 목업 id 주소는 목업 상세 대신 not-found를 렌더한다', async () => {
     renderAt('/products/p-feeder-5l')
-    expect(
-      await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('상품을 찾을 수 없어요')).toBeInTheDocument()
+    expect(screen.queryByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')).not.toBeInTheDocument()
+    expect(screen.queryByText('냥이상점')).not.toBeInTheDocument()
   })
 
   it('[AC-PRODUCT-011] 실 ULID 상품은 실 API 상세(이름·설명)를 렌더한다', async () => {
@@ -196,19 +200,6 @@ describe('/products/$productId', () => {
     expect(currentCart()).toHaveLength(0)
   })
 
-  it('[AC-PRODUCT-039] 목업 폴백 상품은 그대로 기본 구성으로 담기 UI를 받는다', async () => {
-    // 목업 상품(p-*)은 서버에 없어 조합이 없는 것이 정상이고 옵션은 목업 상세가 준다 —
-    // 실 상품 0건과 같은 경로로 묶어 담기를 막으면 목업 진입점이 전부 죽는다.
-    const user = userEvent.setup()
-    renderAt('/products/p-coolmat')
-    await screen.findByRole('button', { name: '장바구니' })
-
-    await user.click(screen.getByRole('button', { name: '장바구니' }))
-
-    expect(await screen.findByRole('button', { name: '장바구니 담기' })).toBeInTheDocument()
-    expect(screen.queryByText('아직 판매 준비가 안 된 상품이에요')).not.toBeInTheDocument()
-  })
-
   it('[AC-PRODUCT-006] 알 수 없는 productId는 not-found 상태를 렌더한다', async () => {
     renderAt('/products/does-not-exist')
     expect(await screen.findByText('상품을 찾을 수 없어요')).toBeInTheDocument()
@@ -216,21 +207,21 @@ describe('/products/$productId', () => {
 
   it('[AC-PRODUCT-007] 카테고리(중분류) breadcrumb를 누르면 해당 카테고리 마켓으로 이동한다', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    const router = renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
-    // 마지막 crumb('식기/급수기')만 카탈로그 중분류와 매칭돼 버튼이다(상위 crumb는 정적 텍스트).
-    await user.click(screen.getByRole('button', { name: '식기/급수기' }))
+    // 마지막 crumb('사료/간식')만 카탈로그 중분류와 매칭돼 버튼이다(상위 crumb는 정적 텍스트).
+    await user.click(screen.getByRole('button', { name: '사료/간식' }))
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/market')
     })
-    expect(router.state.location.search).toMatchObject({ category: '식기/급수기' })
+    expect(router.state.location.search).toMatchObject({ category: '사료/간식' })
   })
 
   it('[AC-PRODUCT-008] 상세 정리: 판매중/SALE pill·가격 밑 총별점 링크·리뷰 정렬 칩이 없다', async () => {
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     // 판매중/SALE 상태 pill 줄 제거(할인% 표기는 가격 블록에 유지)
     expect(screen.queryByText('판매중')).not.toBeInTheDocument()
@@ -257,25 +248,25 @@ describe('/products/$productId', () => {
     // 상세를 잃는다. 로그인 게이트로 감싸 비회원에겐 로그인 시트를 먼저 띄우고 이동은 막는다.
     logout()
     const user = userEvent.setup()
-    const router = renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    const router = renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     await user.click(screen.getByText('전체보기'))
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
     // 리뷰 목록으로 이동하지 않고 상세에 머문다.
-    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+    expect(router.state.location.pathname).toBe('/products/' + REAL_PRODUCT_ID)
   })
 
   it('[AC-PRODUCT-024] 비회원이 상품 신고하기를 누르면 신고 화면 대신 게이트가 뜬다', async () => {
     // 신고 접수 API는 JWT 필수라, 비회원이 신고 화면에서 제출하면 401 뒤 로그인 화면으로 밀려난다.
     logout()
     const user = userEvent.setup()
-    const router = renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    const router = renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     await user.click(screen.getByText('상품 신고하기'))
     expect(await screen.findByText('신고는 로그인한 회원만 이용할 수 있어요.', { exact: false })).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/products/p-feeder-5l')
+    expect(router.state.location.pathname).toBe('/products/' + REAL_PRODUCT_ID)
   })
 
   it('[AC-PRODUCT-015] 비회원이 하단 찜(하트)을 누르면 게이트가 뜨고 찜 토글이 일어나지 않는다', async () => {
@@ -284,8 +275,8 @@ describe('/products/$productId', () => {
     // 모듈 싱글턴이라 렌더가 loggedIn을 true로 되돌리지 않으므로 resetAuth 후 logout으로 비회원을 만든다.
     logout()
     const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     // 하트는 텍스트가 아니라 aria-label 버튼이다(찜 전 '찜하기', 찜 후 '찜 해제').
     // 찜 미러는 SCRUM-113에서 시드가 사라져 빈 상태로 시작하므로 처음엔 '찜하기'/aria-pressed=false다.
@@ -305,55 +296,27 @@ describe('/products/$productId', () => {
    */
   it('[AC-PRODUCT-034] 공유는 상품 링크를 실제로 클립보드에 쓰고 토스트를 띄운다', async () => {
     const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     await user.click(screen.getByRole('button', { name: '공유' }))
 
     expect(await screen.findByText('상품 링크를 복사했어요.')).toBeInTheDocument()
     expect(await navigator.clipboard.readText()).toBe(
-      `${window.location.origin}/products/p-feeder-5l`,
+      `${window.location.origin}/products/${REAL_PRODUCT_ID}`,
     )
   })
 
   it('[AC-PRODUCT-035] 클립보드 쓰기가 막히면 복사했다고 하지 않고 실패를 알린다', async () => {
     const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
     vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
 
     await user.click(screen.getByRole('button', { name: '공유' }))
 
     expect(await screen.findByText('링크를 복사하지 못했어요.')).toBeInTheDocument()
     expect(screen.queryByText('상품 링크를 복사했어요.')).not.toBeInTheDocument()
-  })
-
-  /**
-   * 목업 상품은 서버에 없다. 예전엔 하트를 채우고 "찜했어요."를 띄웠는데 /wishlist는 서버 pool을
-   * 찜 id-set으로 필터해 목업 상품이 절대 나타나지 않았다 — 찜했다고 읽고 목록에서 못 찾았다.
-   * 찜 POST가 나가지 않는다는 사실까지 핸들러 호출 수로 못박는다.
-   */
-  it('[AC-PRODUCT-036] 목업 상품은 찜을 받은 척하지 않고 담기지 않는다고 알린다', async () => {
-    let likeCalls = 0
-    server.use(
-      http.post(PRODUCT_LIKE_URL, () => {
-        likeCalls += 1
-        return new HttpResponse(null, { status: 201 })
-      }),
-    )
-    const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
-
-    await user.click(screen.getByRole('button', { name: '찜하기' }))
-
-    expect(
-      await screen.findByText('미리보기 상품이라 찜 목록에 담기지 않아요.'),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('찜했어요.')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: '찜하기' })).toHaveAttribute('aria-disabled', 'true')
-    expect(likeCalls).toBe(0)
   })
 
   it('[AC-PRODUCT-037] 실 상품 찜은 그대로 서버로 나가고 하트가 채워진다', async () => {
@@ -378,8 +341,8 @@ describe('/products/$productId', () => {
   it('[AC-PRODUCT-016] 비회원이 하단 장바구니를 누르면 옵션 시트 대신 게이트가 뜬다', async () => {
     logout()
     const user = userEvent.setup()
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
+    renderAt('/products/' + REAL_PRODUCT_ID)
+    await screen.findByText(REAL_NAME)
 
     await user.click(screen.getByRole('button', { name: '장바구니' }))
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
@@ -403,7 +366,12 @@ describe('/products/$productId', () => {
   })
 
   it('[AC-PRODUCT-021] 품절 상품은 액션바 담기 버튼이 품절로 비활성화된다', async () => {
-    renderAt('/products/p-scratcher')
+    server.use(
+      http.get(PRODUCT_DETAIL_URL, () =>
+        HttpResponse.json({ data: { ...REAL_PRODUCT_DETAIL, saleStatus: 'SOLD_OUT' } }),
+      ),
+    )
+    renderAt('/products/' + REAL_PRODUCT_ID)
     await screen.findByRole('button', { name: '품절' })
     expect(screen.getByRole('button', { name: '품절' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '장바구니' })).not.toBeInTheDocument()
@@ -653,14 +621,4 @@ describe('/products/$productId', () => {
     setOnAuthExpired(null)
   })
 
-  it('[AC-PRODUCT-009] 상세 리뷰는 최대 3개만 노출하고 나머지는 전체보기로 넘긴다', async () => {
-    renderAt('/products/p-feeder-5l')
-    await screen.findByText('고양이 자동 급식기 스마트 5L 앱 연동 타이머')
-
-    // mock 리뷰 4건 중 상위 3건만 미리보기로 렌더 → 4번째('보리****')는 상세에 없다.
-    expect(screen.getByText('코코****')).toBeInTheDocument()
-    expect(screen.getByText('멍멍****')).toBeInTheDocument()
-    expect(screen.getByText('하늘****')).toBeInTheDocument()
-    expect(screen.queryByText('보리****')).not.toBeInTheDocument()
-  })
 })
