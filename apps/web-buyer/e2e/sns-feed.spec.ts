@@ -11,8 +11,8 @@ import type {
 // SNS-03 피드(b7-st-1), 리포스트와 저장, 프로필 탭과 저장됨(b7-st-4) E2E. jsdom에서는 볼 수 없는 실제 브라우저 동작,
 // 즉 IntersectionObserver로 목록 끝에서 다음 페이지를 부르는지, 같은 게시물의 켜기와 끄기 요청이 앞 요청이 끝난 뒤에
 // 나가는지를 여기서 확인한다. 실백엔드 없이 page.route 스텁으로 contracts/sns.yaml 0.4.0을 재현한다(교차 출처 8080 +
-// withCredentials라 정확한 origin과 Allow-Credentials, OPTIONS 방어 필수). 하단 SNS 탭은 SNS_SERVER_AVAILABLE=false라
-// 피드는 /sns/feed로 연다. 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
+// withCredentials라 정확한 origin과 Allow-Credentials, OPTIONS 방어 필수). 피드는 하단 SNS 탭과 같은 화면인
+// /sns/feed로 연다. 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
 const ORIGIN = 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'

@@ -5,7 +5,7 @@ import type { SnsHashtagSearchResult, SnsPostDetailResult } from '@aechak/api'
 // 실백엔드 없이 page.route 스텁으로 contracts/sns.yaml을 재현한다(교차 출처 8080 + withCredentials라 정확한 origin과
 // Allow-Credentials, OPTIONS 방어 필수). jsdom에서는 볼 수 없는 실제 브라우저 동작, 즉 사진을 캔버스로 다시 인코딩한
 // JPEG의 크기와 발급 요청의 contentLength가 같은지, 긴 변이 2,048px 이하인지, 디코딩하지 못하는 영상의 error
-// 이벤트를 여기서 확인한다. 글쓰기 진입점은 SNS_SERVER_AVAILABLE=false로 숨어 있어 경로로 바로 연다.
+// 이벤트를 여기서 확인한다. 작성 화면은 경로로 바로 연다.
 // 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
 const ORIGIN = 'http://localhost:5175'
@@ -163,6 +163,8 @@ async function stubSns(page: Page, opts: StubOptions = {}) {
   })
 
   await page.route(`${API}/sns/posts/*/comments*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
+  // 삭제 뒤 돌아가는 하단 SNS 탭이 피드를 부른다.
+  await page.route(`${API}/sns/feeds/*`, route => fulfill(route, 200, { data: { items: [], nextCursor: null, hasNext: false } }))
 
   await page.route(`${API}/sns/posts`, route => {
     if (route.request().method() === 'OPTIONS') return fulfill(route, 204)
