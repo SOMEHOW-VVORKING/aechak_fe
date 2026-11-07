@@ -27,6 +27,7 @@ import { Route as ProductsCatalogRouteImport } from './routes/products/catalog'
 import { Route as ProductsAiQueueRouteImport } from './routes/products/ai-queue'
 import { Route as OrdersMonitoringRouteImport } from './routes/orders/monitoring'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
+import { Route as InspectionsMonitoringRouteImport } from './routes/inspections/monitoring'
 
 const ReviewsRoute = ReviewsRouteImport.update({
   id: '/reviews',
@@ -118,6 +119,11 @@ const LoginCompleteRoute = LoginCompleteRouteImport.update({
   path: '/login/complete',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InspectionsMonitoringRoute = InspectionsMonitoringRouteImport.update({
+  id: '/inspections/monitoring',
+  path: '/inspections/monitoring',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   '/notices': typeof NoticesRoute
   '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
+  '/inspections/monitoring': typeof InspectionsMonitoringRoute
   '/login/complete': typeof LoginCompleteRoute
   '/orders/monitoring': typeof OrdersMonitoringRoute
   '/products/ai-queue': typeof ProductsAiQueueRoute
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
@@ -233,6 +244,7 @@ export interface FileRouteTypes {
     | '/notices'
     | '/reports'
     | '/reviews'
+    | '/inspections/monitoring'
     | '/login/complete'
     | '/orders/monitoring'
     | '/products/ai-queue'
@@ -254,6 +266,7 @@ export interface RootRouteChildren {
   NoticesRoute: typeof NoticesRoute
   ReportsRoute: typeof ReportsRoute
   ReviewsRoute: typeof ReviewsRoute
+  InspectionsMonitoringRoute: typeof InspectionsMonitoringRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   OrdersMonitoringRoute: typeof OrdersMonitoringRoute
   ProductsAiQueueRoute: typeof ProductsAiQueueRoute
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inspections/monitoring': {
+      id: '/inspections/monitoring'
+      path: '/inspections/monitoring'
+      fullPath: '/inspections/monitoring'
+      preLoaderRoute: typeof InspectionsMonitoringRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -406,6 +426,7 @@ const rootRouteChildren: RootRouteChildren = {
   NoticesRoute: NoticesRoute,
   ReportsRoute: ReportsRoute,
   ReviewsRoute: ReviewsRoute,
+  InspectionsMonitoringRoute: InspectionsMonitoringRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   OrdersMonitoringRoute: OrdersMonitoringRoute,
   ProductsAiQueueRoute: ProductsAiQueueRoute,
