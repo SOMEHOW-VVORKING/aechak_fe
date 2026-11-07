@@ -15,7 +15,6 @@ import { Route as NoticesRouteImport } from './routes/notices'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as InquiriesRouteImport } from './routes/inquiries'
 import { Route as ClaimsRouteImport } from './routes/claims'
-import { Route as ChatMonitoringRouteImport } from './routes/chat-monitoring'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AdminsRouteImport } from './routes/admins'
 import { Route as IndexRouteImport } from './routes/index'
@@ -56,11 +55,6 @@ const InquiriesRoute = InquiriesRouteImport.update({
 const ClaimsRoute = ClaimsRouteImport.update({
   id: '/claims',
   path: '/claims',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatMonitoringRoute = ChatMonitoringRouteImport.update({
-  id: '/chat-monitoring',
-  path: '/chat-monitoring',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditLogRoute = AuditLogRouteImport.update({
@@ -123,7 +117,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
@@ -143,7 +136,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
@@ -164,7 +156,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admins': typeof AdminsRoute
   '/audit-log': typeof AuditLogRoute
-  '/chat-monitoring': typeof ChatMonitoringRoute
   '/claims': typeof ClaimsRoute
   '/inquiries': typeof InquiriesRoute
   '/members': typeof MembersRoute
@@ -186,7 +177,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
@@ -206,7 +196,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
@@ -226,7 +215,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admins'
     | '/audit-log'
-    | '/chat-monitoring'
     | '/claims'
     | '/inquiries'
     | '/members'
@@ -247,7 +235,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminsRoute: typeof AdminsRoute
   AuditLogRoute: typeof AuditLogRoute
-  ChatMonitoringRoute: typeof ChatMonitoringRoute
   ClaimsRoute: typeof ClaimsRoute
   InquiriesRoute: typeof InquiriesRoute
   MembersRoute: typeof MembersRoute
@@ -306,13 +293,6 @@ declare module '@tanstack/react-router' {
       path: '/claims'
       fullPath: '/claims'
       preLoaderRoute: typeof ClaimsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chat-monitoring': {
-      id: '/chat-monitoring'
-      path: '/chat-monitoring'
-      fullPath: '/chat-monitoring'
-      preLoaderRoute: typeof ChatMonitoringRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audit-log': {
@@ -399,7 +379,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminsRoute: AdminsRoute,
   AuditLogRoute: AuditLogRoute,
-  ChatMonitoringRoute: ChatMonitoringRoute,
   ClaimsRoute: ClaimsRoute,
   InquiriesRoute: InquiriesRoute,
   MembersRoute: MembersRoute,

@@ -55,10 +55,10 @@ const normalizePath = (pathname: string) =>
  * 신고 제재 관리도 실연동이 됐다(SCRUM-241). 2026-11-05에 둘이 함께 실연동으로 옮겼다.
  * `/admin/sellers` 다섯(목록·상세·판매정지·해제·메모)으로 셀러 관리가(SCRUM-362),
  * `/admin/products` 셋(목록·판매중지·재개)으로 상품 카탈로그 관리가(SCRUM-363) 열렸다.
- * 둘의 성격이 다르다 — 셀러 관리는 준비 중에서 **옮겨왔고**, 상품 카탈로그 관리는 nav에 없던
- * 목데이터 '상품 검수 관리'가 **이름·자리·경로를 바꿔 돌아온 것**이라 실연동 분류로 새로
- * 들어왔다. 그래서 준비 중은 셋에서 **둘**이 된다(셀러 관리만 빠진다).
- * 항목이 늘어나면 아래 두 배열 사이로 옮기고 `__root.tsx`에서 `tag`를 떼면 된다.
+ * 2026-11-07에는 **대시보드**가 더해졌다 — 전용 집계 경로가 생긴 것이 아니라, 위 목록·지표
+ * 경로를 1건짜리 조회로 불러 `totalCount`만 모아 칸과 할 일 줄을 전부 실 집계로 채웠다(칸별
+ * 계약은 `features/dashboard/__tests__`가 본다). 같은 날 BE가 없는 '채팅 CS 모니터링'은 nav와
+ * 라우트째 걷었다(SCRUM-377). 그래서 nav 전부가 실연동이다.
  */
 const LIVE_LABELS = [
   '셀러 입점 심사',
@@ -74,30 +74,24 @@ const LIVE_LABELS = [
   '알림/공지 관리',
   '어드민 액션 로그',
   '신고 제재 관리',
+  '대시보드',
 ] as const
 
 /**
- * 서버가 없어 들어가면 예시 데이터만 보이는 항목 — nav에서는 "준비 중" 꼬리표로 드러나고
- * 화면에서는 상단 띠로 드러난다(SCRUM-308).
+ * "준비 중" 꼬리표가 붙은 항목은 **하나도 없다.** 셀러 관리(SCRUM-362)와 대시보드(SCRUM-313)가
+ * 실연동으로 옮겼고, 채팅 CS 모니터링은 BE가 없어 nav째 걷었다(SCRUM-377). 예시 데이터 화면도
+ * 함께 사라졌다.
  *
- * 목데이터 화면은 **이 둘이 전부**이고 둘 다 nav에 올라 있다 — nav에 없는 예시 화면은 없다.
- * 한때 하나 있었다('상품 검수 관리' `/products/review`, 같은 '검수' 그룹에 실연동 'AI 검수 큐'가
- * 있어 입구를 내린 것 — SCRUM-313). 그 화면은 2026-11-05에 실연동되면서 이름과 경로를 바꿔
- * nav로 돌아갔고(위 `LIVE_LABELS`의 '상품 카탈로그 관리'), 그래서 지금은 `NAV_DESTINATIONS`와
- * 두 분류 배열이 같은 집합을 덮는다(AC-ADMIN-NAV-011이 그것을 고정한다).
+ * 그래서 준비 중 분류 배열을 두지 않는다. 빈 배열에 `it.each`를 걸면 0회 돌고 통과해 **가드가
+ * 사라진 것**을 녹색으로 보여 준다. 대신 AC-ADMIN-NAV-004가 "꼬리표도 띠도 없다"를 직접
+ * 단언한다. 꼬리표가 다시 생기면 그 테스트가 깨지고, 그때 분류 배열을 되살린다.
  */
-const PENDING_LABELS = [
-  '대시보드',
-  '채팅 CS 모니터링',
-] as const
-
-/** 꼬리표 글자는 버튼 접근명 끝에 붙는다 — 어느 항목에 붙었는지까지 이름으로 확인할 수 있다. */
-const pendingName = (label: string) => `${label} 준비 중`
+const PENDING_TAG = '준비 중'
 
 /**
  * nav 항목이 **어느 화면으로 가는지**. 주소로 직접 열어 보는 단언은 라벨과 `key`가 어긋난 것을
  * 잡지 못한다 — 라벨은 그대로 두고 `key`만 다른 경로로 바꿔도 통과하므로, 실제로 눌러서 도착지를
- * 확인한다. 15항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
+ * 확인한다. 14항목의 화면 제목(h1)은 전부 nav 라벨과 같은 글자라, 제목이 라벨과 다르면 엉뚱한
  * 화면에 떨어진 것이다.
  */
 const NAV_DESTINATIONS = [
@@ -112,14 +106,10 @@ const NAV_DESTINATIONS = [
   ['주문 배송 모니터링', '/orders/monitoring'],
   ['취소/반품/교환', '/claims'],
   ['리뷰 관리', '/reviews'],
-  ['채팅 CS 모니터링', '/chat-monitoring'],
   ['관리자 관리', '/admins'],
   ['알림/공지 관리', '/notices'],
   ['어드민 액션 로그', '/audit-log'],
 ] as const satisfies readonly (readonly [string, string])[]
-
-const navButtonName = (label: string) =>
-  (PENDING_LABELS as readonly string[]).includes(label) ? pendingName(label) : label
 
 // SCRUM-238(26e4b89)이 BE 없는 화면의 운영 진입을 막으면서 nav 항목까지 걷어내, 어드민 메뉴가
 // 홈·입점 심사·관리자 관리 셋만 남았다. 규약 10의 목적은 "메뉴를 숨겨라"가 아니라 "운영자가
@@ -130,7 +120,8 @@ describe('어드민 nav', () => {
   beforeEach(() => {
     // 심사 대기 0건 → 입점 심사 항목에 숫자 배지가 붙지 않는 상태가 기본값이다.
     seedAdminApplications()
-    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회하고, 대시보드도 검수 대기 수를 받아 온다.
+    // AI 검수 큐는 실연동이라 열리자마자 목록을 조회한다. 대시보드도 이제 실 집계라, 아래
+    // 시드 전부가 그 첫 화면의 건수 조회(`size=1` + `totalCount`)에 함께 쓰인다.
     seedAdminProductInspections()
     // 주문 배송 모니터링은 실연동이라 이 화면을 열면 목록·지표 조회가 나간다.
     seedAdminOrders()
@@ -150,7 +141,7 @@ describe('어드민 nav', () => {
     seedAdminSellers()
   })
 
-  it('[AC-ADMIN-NAV-001] 5그룹 15항목이 이름으로 모두 렌더된다', async () => {
+  it('[AC-ADMIN-NAV-001] 5그룹 14항목이 이름으로 모두 렌더된다', async () => {
     renderAt('/')
 
     for (const label of LIVE_LABELS) {
@@ -160,14 +151,12 @@ describe('어드민 nav', () => {
     for (const group of ['운영', '검수', '신고 / 문의', '주문 / 클레임', '운영 관리']) {
       expect(screen.getByText(group)).toBeInTheDocument()
     }
-    for (const label of PENDING_LABELS) {
-      expect(screen.getByRole('button', { name: pendingName(label) })).toBeInTheDocument()
-    }
+    expect(screen.queryByText(PENDING_TAG)).not.toBeInTheDocument()
   })
 
   /**
    * 차단 이전 nav의 그룹 배치 + 그 뒤 생긴 `/admins`·`/products/catalog`. 머리글과 항목을 각각
-   * 전역에서 찾기만 하면 **항목이 다른 그룹으로 옮겨가도 통과한다** — 머리글 5개와 항목 15개는
+   * 전역에서 찾기만 하면 **항목이 다른 그룹으로 옮겨가도 통과한다** — 머리글 5개와 항목 14개는
    * 그대로이기 때문이다. 운영자가 메뉴에서 읽는 정보의 절반이 "무엇이 무엇과 묶여 있나"라
    * 소속까지 고정한다.
    */
@@ -179,11 +168,13 @@ describe('어드민 nav', () => {
     // 판정 대기열만 남겨 한 항목뿐이다 — 아래 항목 수 단언이 이름 닮은 항목이 되올라오는 것을 잡는다.
     ['검수', ['AI 검수 큐']],
     ['신고 / 문의', ['신고 제재 관리', '서비스 문의 관리']],
-    ['주문 / 클레임', ['주문 배송 모니터링', '취소/반품/교환', '리뷰 관리', '채팅 CS 모니터링']],
+    // '채팅 CS 모니터링'을 내려 셋뿐이다(2026-11-07, `__root.tsx` nav 주석에 사유) — 아래 항목
+    // 수 단언이 그 항목이 되올라오는 것을 잡는다.
+    ['주문 / 클레임', ['주문 배송 모니터링', '취소/반품/교환', '리뷰 관리']],
     ['운영 관리', ['관리자 관리', '알림/공지 관리', '어드민 액션 로그']],
   ] as const satisfies readonly (readonly [string, readonly string[]])[]
 
-  it('[AC-ADMIN-NAV-008] 15항목이 정해진 5그룹에 소속되어 묶인다', async () => {
+  it('[AC-ADMIN-NAV-008] 14항목이 정해진 5그룹에 소속되어 묶인다', async () => {
     renderAt('/')
 
     expect(await screen.findByRole('button', { name: '관리자 관리' })).toBeInTheDocument()
@@ -191,7 +182,7 @@ describe('어드민 nav', () => {
       // SideNav가 머리글을 `aria-labelledby`로 그룹에 묶어 주므로 그룹 이름으로 좁힐 수 있다.
       const section = screen.getByRole('group', { name: group })
       for (const label of labels) {
-        expect(within(section).getByRole('button', { name: navButtonName(label) })).toBeInTheDocument()
+        expect(within(section).getByRole('button', { name: label })).toBeInTheDocument()
       }
       // 그 그룹에 **그 항목들만** 있어야 한다(다른 그룹 항목이 섞이면 개수가 어긋난다).
       expect(within(section).getAllByRole('button')).toHaveLength(labels.length)
@@ -217,28 +208,26 @@ describe('어드민 nav', () => {
   ])('[AC-ADMIN-NAV-009] %s 로 들어와도 %s 항목이 현재 위치로 표시된다', async (path, label) => {
     renderAt(path)
 
-    const item = await screen.findByRole('button', { name: navButtonName(label) })
+    const item = await screen.findByRole('button', { name: label })
     expect(item).toHaveAttribute('aria-current', 'page')
     // 활성이 한 항목뿐이어야 한다 — 접두 일치로 느슨하게 맞추면 여러 항목이 함께 켜진다.
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
   })
 
-  it('[AC-ADMIN-NAV-002] 꼬리표는 BE가 없는 항목에만 붙고 실연동 항목에는 붙지 않는다', async () => {
+  it('[AC-ADMIN-NAV-002] 실연동 항목에는 준비 중 꼬리표가 붙지 않는다', async () => {
     renderAt('/')
 
     for (const label of LIVE_LABELS) {
       // 실연동 항목의 접근명은 라벨 그대로다 — 꼬리표가 붙으면 이름이 달라져 여기서 깨진다.
       expect(await screen.findByRole('button', { name: label })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: pendingName(label) })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: `${label} ${PENDING_TAG}` }),
+      ).not.toBeInTheDocument()
     }
-    for (const label of PENDING_LABELS) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
-    }
-    // 꼬리표 자체는 준비 중 항목 수만큼 그려진다(숫자가 아니라 글자로 구별된다).
-    expect(screen.getAllByText('준비 중')).toHaveLength(PENDING_LABELS.length)
+    expect(screen.queryAllByText(PENDING_TAG)).toHaveLength(0)
   })
 
-  it('[AC-ADMIN-NAV-003] 숫자 배지와 준비 중 꼬리표는 서로 다른 자리를 쓴다', async () => {
+  it('[AC-ADMIN-NAV-003] 숫자 배지는 서버 대기 수를 그대로 받는다', async () => {
     seedAdminApplications([
       makeAdminApplicationWire({ applicationId: 11, status: 'SUBMITTED' }),
       makeAdminApplicationWire({ applicationId: 12, status: 'SUBMITTED' }),
@@ -246,12 +235,10 @@ describe('어드민 nav', () => {
 
     renderAt('/')
 
-    // 입점 심사는 서버 대기 수를 숫자로 받는다(꼬리표 자리와 겹치지 않는다).
+    // 입점 심사는 서버 대기 수를 숫자로 받는다.
     expect(await screen.findByRole('button', { name: '셀러 입점 심사 2' })).toBeInTheDocument()
-    // 준비 중 항목은 숫자 배지를 받지 않는다 — 상수 배지는 AGENTS.md가 금지한 장식 UI다.
-    expect(
-      screen.getByRole('button', { name: pendingName('채팅 CS 모니터링') }),
-    ).toBeInTheDocument()
+    // 숫자 배지는 그 한 항목뿐이다 — 상수 배지는 AGENTS.md가 금지한 장식 UI다.
+    expect(screen.queryAllByRole('button', { name: /\s\d+$/ })).toHaveLength(1)
   })
 
   /**
@@ -261,7 +248,7 @@ describe('어드민 nav', () => {
    * "표가 없다"를 단언했다. 그런데 그 방식은 운영자가 기능의 모양조차 볼 수 없게 만들어
    * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적을 받았다(SCRUM-308). 지금은 화면을
    * 열고 **예시임을 띠로 밝히고 쓰기를 막는** 방식이라, 고정해야 하는 계약이 뒤집혔다 —
-   * 꼬리표가 붙은 2항목의 목적지에는 띠가 **있어야** 하고, 실연동 13항목에는 **없어야** 한다.
+   * 꼬리표가 붙은 항목이 남아 있지 않으니 nav 14항목 전부의 목적지에 띠가 **없어야** 한다.
    *
    * 한쪽만 단언하면 반쪽이 썩는다: 띠만 보면 실데이터 화면에 띠를 붙여도 통과하고(실데이터를
    * 예시로 의심하게 만든다), 없음만 보면 예시 화면에서 띠가 빠져도 통과한다(저장된 줄 안다).
@@ -279,35 +266,40 @@ describe('어드민 nav', () => {
    * 실연동 작업은 항목을 한 배열에서 다른 배열로 옮기는 일이라, **옮기다 흘리는 것**이 이 파일의
    * 실제 실패 모양이다. 그래서 두 배열이 `NAV_DESTINATIONS`를 빠짐없이, 겹치지 않게 덮는지
    * 여기서 고정한다. `NAV_DESTINATIONS` 자체는 AC-ADMIN-NAV-008이 렌더된 nav와 맞춰 두므로
-   * (그룹마다 항목 수까지 센다) 이 둘을 합치면 nav에 올라온 15항목 전부가 분류를 받는다.
+   * (그룹마다 항목 수까지 센다) 이 둘을 맞대면 nav에 올라온 14항목 전부가 분류를 받는다.
    */
-  it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동/준비 중 한쪽으로만 분류된다', () => {
-    const classified = [...LIVE_LABELS, ...PENDING_LABELS]
+  it('[AC-ADMIN-NAV-011] nav 목적지는 빠짐없이 실연동으로 분류된다', () => {
+    const classified = [...LIVE_LABELS]
     const destinations = NAV_DESTINATIONS.map(([label]) => label)
 
     // 합이 nav 항목 수와 같아야 한다 — 모자라면 그 화면은 띠 단언을 아예 받지 않는다.
     expect(classified).toHaveLength(destinations.length)
     // 개수만 맞고 이름이 어긋난 것(옮기면서 라벨을 잘못 적은 것)까지 본다.
     expect([...classified].sort()).toEqual([...destinations].sort())
-    // 양쪽에 동시에 올라 있으면 "띠가 있어야 한다"와 "없어야 한다"를 함께 요구해 반드시 하나가 거짓이다.
-    expect(LIVE_LABELS.filter(label => (PENDING_LABELS as readonly string[]).includes(label))).toEqual(
-      [],
-    )
+    // 겹쳐 적으면 길이는 맞는데 다른 화면이 빠진다.
+    expect(new Set(classified).size).toBe(classified.length)
   })
 
-  it.each(destinationsFor(PENDING_LABELS))(
-    '[AC-ADMIN-NAV-004] 꼬리표가 붙은 %s(%s) 화면은 예시 데이터 띠를 달고 열린다',
-    async (label, path) => {
-      renderAt(path)
+  /**
+   * 준비 중 항목이 하나도 없다는 것을 **직접** 단언한다. 분류 배열에 `it.each`를 걸면 배열이 빈
+   * 지금 0회 돌고 통과해, 꼬리표가 되살아나도 아무것도 잡지 못한다.
+   */
+  it('[AC-ADMIN-NAV-004] 꼬리표가 붙은 항목도 예시 데이터 화면도 nav에 없다', async () => {
+    renderAt('/')
 
-      // 경로만 맞고 라우트가 없으면 404라 제목이 없다 — 띠보다 화면이 열렸는지를 먼저 본다.
-      expect(await screen.findByRole('heading', { name: label })).toBeInTheDocument()
-      const notice = screen.getByRole('alert')
-      expect(notice).toHaveTextContent('예시 데이터예요')
-      // 제목만 보면 "저장되지 않는다"를 뺀 띠도 통과한다 — 그 문장이 규약의 핵심이다.
-      expect(notice).toHaveTextContent('저장되지 않아요')
-    },
-  )
+    expect(await screen.findByRole('button', { name: '관리자 관리' })).toBeInTheDocument()
+    expect(screen.queryAllByText(PENDING_TAG)).toHaveLength(0)
+    expect(screen.queryByText('예시 데이터예요')).not.toBeInTheDocument()
+    // nav 버튼 전부가 실연동 라벨 중 하나다(배지 숫자가 붙은 입점 심사는 접두로 맞춘다).
+    const names = screen
+      .getAllByRole('group')
+      .flatMap(group => within(group).getAllByRole('button'))
+      .map(button => button.textContent ?? '')
+    expect(names).toHaveLength(LIVE_LABELS.length)
+    for (const name of names) {
+      expect(LIVE_LABELS.some(label => name.startsWith(label))).toBe(true)
+    }
+  })
 
   it.each(destinationsFor(LIVE_LABELS))(
     '[AC-ADMIN-NAV-010] 실연동 %s(%s) 화면에는 예시 데이터 띠를 붙이지 않는다',
@@ -323,8 +315,10 @@ describe('어드민 nav', () => {
     const user = userEvent.setup()
     const { router } = renderAt('/')
 
-    // 대시보드 지표는 예시지만 **심사 대기 수만 실 API 값**이고, 그 카드가 유일한 실연동
-    // 진입점이다(routes/index.tsx). 카드 존재만 보면 onClick을 떼어도 통과한다 — 도착지까지 본다.
+    // 대시보드 지표는 전부 실 집계이고 그 칸들이 nav 말고 두 번째 진입점이다(routes/index.tsx).
+    // 심사 대기 수는 nav 배지와 같은 queryKey를 써 이 파일에서 함께 보는 값이라 여기로 골랐다.
+    // 카드 존재만 보면 onClick을 떼어도 통과한다 — 도착지까지 본다(칸별 집계 계약과 나머지 칸의
+    // 목적지는 `features/dashboard/__tests__`의 AC-ADMIN-DASH-006이 본다).
     await user.click(await screen.findByRole('button', { name: /셀러 입점 심사 대기/ }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/sellers/applications'))
@@ -339,7 +333,7 @@ describe('어드민 nav', () => {
       // 아무 일도 하지 않아도(onSelect 배선이 끊겨도) 경로·제목 단언이 그냥 통과한다.
       const { router } = renderAt(path === '/' ? '/audit-log' : '/')
 
-      await user.click(await screen.findByRole('button', { name: navButtonName(label) }))
+      await user.click(await screen.findByRole('button', { name: label }))
 
       await waitFor(() => expect(normalizePath(router.state.location.pathname)).toBe(path))
       // 경로만 맞고 라우트 파일이 없으면 404 화면이라 이 제목이 없다.
