@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { setAccessToken } from '@aechak/api'
-import { endServerSession } from './auth.session'
+import { endServerSession, loginWithPassword } from './auth.session'
 
 /**
  * 로그아웃 — 서버 세션 종료가 성공한 뒤에만 로컬을 정리한다.
@@ -20,6 +20,24 @@ import { endServerSession } from './auth.session'
  * 손대지 않았다. 창은 좁다 — 서버가 revoke 전에 refresh를 처리하고 그 응답만 늦게 와야 한다
  * (revoke 뒤에 닿은 refresh는 401이고, 그 경로는 인터셉터가 토큰을 비운다).
  */
+/**
+ * 아이디·비밀번호 로그인. 성공하면 운영 화면으로 보낸다 — 소셜은 서버 콜백이 `/login/complete`로
+ * 되돌려 그 라우트가 이동을 맡지만, 이쪽은 되돌아올 곳이 없어 훅이 직접 옮긴다.
+ *
+ * 실패는 삼키지 않고 호출부가 화면에 보여 준다. 서버가 아이디 부재와 비밀번호 불일치를 같은
+ * 코드(20014)로 주므로 둘을 가려 안내할 수 없고, 가려 보여 주면 그 차이가 공격자에게 신호가 된다.
+ */
+export function usePasswordLogin() {
+  const navigate = useNavigate()
+  return useMutation({
+    mutationFn: ({ loginId, password }: { loginId: string; password: string }) =>
+      loginWithPassword(loginId, password),
+    onSuccess: async () => {
+      await navigate({ to: '/' })
+    },
+  })
+}
+
 export function useLogout() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()

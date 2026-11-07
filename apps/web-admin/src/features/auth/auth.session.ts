@@ -58,6 +58,23 @@ export async function endServerSession(): Promise<void> {
 }
 
 /**
+ * 아이디·비밀번호 로그인(`POST /auth/login/password`) — 소셜과 달리 리다이렉트 없이 한 번의 POST로
+ * 끝나고, access를 응답 body로 바로 받는다. refresh는 서버가 httpOnly 쿠키로 심으므로 여기서
+ * 만지지 않는다(소셜 복귀 뒤 bootstrapSession과 같은 세션 모양이 된다).
+ *
+ * `withCredentials`를 명시하는 이유는 로그아웃과 같다 — 어드민은 `/admin` 경로의 credentials를
+ * 끄는 앱이라, 서버가 Set-Cookie를 심는 이 호출에서 꺼지면 세션 쿠키가 브라우저에 남지 않는다.
+ */
+export async function loginWithPassword(loginId: string, password: string): Promise<void> {
+  const response = await axiosInstance.post<{ data: WebTokenData }>(
+    '/auth/login/password',
+    { loginId, password },
+    { forceApiHost: true, withCredentials: true },
+  )
+  setAccessToken(response.data.data.accessToken)
+}
+
+/**
  * 로그인 실패 복귀(`?error=`)의 인라인 문구.
  *
  * 20006(온보딩 미완)을 셀러센터처럼 "구매자 앱에서 온보딩을 마치라"고 안내하지 않는다 — 어드민은
