@@ -7,6 +7,7 @@ import { inquiryHandlers } from './inquiries.handlers'
 import { claimHandlers } from './claims.handlers'
 import { reviewHandlers } from './reviews.handlers'
 import { reportHandlers } from './reports.handlers'
+import { inspectionMonitorHandlers } from './inspection-monitor.handlers'
 // 검토 큐 목록 핸들러가 쓰는 경로 상수도 그 모듈이 소유한다(승인·반려가 거기서 상품 상태를 바꾼다).
 import { ADMIN_PRODUCT_INSPECTIONS_URL, productHandlers } from './products.handlers'
 import { sellerHandlers } from './sellers.handlers'
@@ -92,6 +93,15 @@ export {
   seedAdminProducts,
   type AdminProductWire,
 } from './products.handlers'
+export {
+  ADMIN_INSPECTIONS_URL,
+  ADMIN_INSPECTION_DETAIL_URL,
+  makeAdminInspectionPerspectiveWire,
+  makeAdminInspectionWire,
+  seedAdminInspections,
+  type AdminInspectionPerspectiveWire,
+  type AdminInspectionWire,
+} from './inspection-monitor.handlers'
 export {
   ADMIN_REVIEWS_URL,
   ADMIN_REVIEW_BLIND_URL,
@@ -1264,5 +1274,10 @@ export const handlers = [
   ...reportHandlers,
   // 셀러 관리 핸들러도 시드 없이 빈 목록으로 답한다 — `/sellers`가 nav 테스트에서 열린다.
   ...sellerHandlers,
+  // 검수 진행 현황 핸들러도 시드 없이 빈 목록으로 답한다 — `/inspections/monitoring`이 nav
+  // 테스트에서 열리고, 그 화면은 폴링이라 열려 있는 동안 주기적으로 같은 경로를 다시 부른다
+  // (핸들러가 없으면 onUnhandledRequest:'error'로 깨진다). 위 검수 **큐** 핸들러와 다른 경로다 —
+  // `/admin/product-inspections`는 관리자 확인이 남은 큐, 이쪽은 검수 건 자체의 진행이다.
+  ...inspectionMonitorHandlers,
 ]
 export const server = setupServer(...handlers)
