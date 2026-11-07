@@ -4,6 +4,7 @@ import { SideNav } from '@aechak/design-system/web'
 import type { NavGroup } from '@aechak/design-system/web'
 import {
   Activity,
+  ChartNoAxesColumn,
   ClipboardCheck,
   Flag,
   LayoutDashboard,
@@ -52,8 +53,9 @@ const APPLICATIONS_NAV_KEY = '/sellers/applications'
 // nav 구성은 SCRUM-238 차단 이전(26e4b89^)의 5그룹을 되살린 것이고, 그 뒤 생긴 `/admins`를
 // 운영 관리 그룹에 더해 15항목이 됐다. 목데이터 '상품 검수 관리'의 입구를 내려 14항목이었다가
 // (SCRUM-313) 그 화면이 실연동되면서 '상품 카탈로그 관리'로 다시 올라와 15항목이 됐고(SCRUM-363),
-// '채팅 CS 모니터링'을 내려 14항목이 됐다가(SCRUM-377), 검수 진행 현황 경로가 생겨 'AI 검수
-// 모니터링'이 더해져 지금은 **5그룹 15항목, 전부 실연동**이다(SCRUM-367). 차단 이전 nav의
+// '채팅 CS 모니터링'을 내려 14항목이 됐다가(SCRUM-377), 검수 진행 현황 경로로 'AI 검수
+// 모니터링'이(SCRUM-367), 검수 집계 경로로 'AI 검수 지표'가(SCRUM-279) 더해져 지금은
+// **5그룹 16항목, 전부 실연동**이다. 차단 이전 nav의
 // "확장 예정" 6항목 — 홈 배너·카테고리·정산·어드민 계정 권한·고급 통계·세금 신고 — 은 복원
 // 대상이 아니고, 그중 어드민 계정 권한 관리는 `/admins`가 대신한다.
 //
@@ -151,12 +153,18 @@ const navGroups: NavGroup[] = [
       // 있는 검수 건 자체**라 판정 전과 통과까지 전부 나오고 쓰기가 없다. 그래서 '모니터링'을
       // 골랐다 — 어드민 nav가 이미 그 말을 "지금 흐르는 것을 본다"는 뜻으로 쓰고 있어
       // ('주문 배송 모니터링'·'채팅 CS 모니터링') 운영자가 새 말을 배우지 않아도 된다.
-      // 집계(`/admin/inspection-metrics`)는 아직 FE 화면이 없다 — 생길 때 이름이 셋 다 갈려
-      // 있어야 해서 여기 함께 적어 둔다(집계 · 작업 목록 · 진행 현황).
       {
         key: '/inspections/monitoring',
         label: 'AI 검수 모니터링',
         icon: <Activity className={iconClass} />,
+      },
+      // 집계(`/admin/inspection-metrics`)로 실연동된 세 번째 항목이다(SCRUM-279). 이름이 셋 다
+      // 갈린다 — 지표는 끝난 건만 센 집계(창이 settled_at 기준), 큐는 작업 목록, 모니터링은
+      // 진행 현황이다. 배지는 두지 않는다. 지표에는 '처리해야 할 N건' 같은 단일 수가 없다.
+      {
+        key: '/products/ai-metrics',
+        label: 'AI 검수 지표',
+        icon: <ChartNoAxesColumn className={iconClass} />,
       },
     ],
   },

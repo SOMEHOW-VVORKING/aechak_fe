@@ -5989,6 +5989,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NoticeDetailResponse"
+  /admin/inspection-metrics:
+    get:
+      summary: "어드민 AI 검수 운영 지표"
+      description: >-
+        어드민 콘솔(admin 모듈) 전용. 주기 로그(api `InspectionMetricsSchedule`)와 **같은
+        집계**를 한 장으로 돌려준다 — 화면과 로그가 다른 판정을 내리지 않게 한 곳에서만 센다.
+        비율은 0~1 실수이고 **분모가 0이면 null**이다(0으로 바꾸면 "한 건도 안 돌았다"와
+        "돌았는데 전부 건너뛰었다"가 같은 숫자가 된다 — 화면은 null을 '미측정'으로 쓴다).
+        금액은 백만분의 1 USD로만 온다(환율 환산은 보는 쪽 몫).
+        시각은 오프셋 없는 LocalDateTime이라 **질의 파라미터도 오프셋 없이 보내야 한다** —
+        UTC 표기(`Z`)로 보내면 서버가 시간대만큼 밀린 창을 집계한다.
+        **블록이 통째로 빠져 올 수 있다.** 지금 배포된 서버는 flat `windowFrom`·`measuredAt`·
+        `windowHours`·`needsAttention` + `promotion`·`coverage`·`cost`·`backlog` 넷만 주고,
+        `window`·`alarms`·`funnel`·`judgment`·`adminReview`·`latency`·`triageAudit`와
+        `cost.byStage`는 확장이 배포된 뒤에 실린다. 그래서 화면은 블록이 없으면 0이 아니라
+        '서버가 아직 주지 않음'으로 그려야 한다.
+        질의 파라미터는 **전부 선택**이고 하나도 없으면 설정된 창(`window-hours`, 기본 24)이다.
+        확장 전 서버는 파라미터를 무시하고 늘 그 창을 돌려주므로, 화면은 요청한 창과 응답이
+        밝힌 창을 맞춰 보고 어긋나면 그 사실을 운영자에게 알려야 한다.
+      operationId: "getAdminInspectionMetrics"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+          description: "집계 시작(포함). `content_inspections.settled_at` 기준, 오프셋 없는 LocalDateTime"
+        - name: to
+          in: query
+          schema:
+            type: string
+          description: "집계 끝(배타). 생략하면 서버의 now"
+        - name: policyVersion
+          in: query
+          schema:
+            type: string
+          description: >-
+            정책 버전. 생략하면 전체. BE 설정(`inspection.policy-version`)이 검수 행에 적는
+            값이고 AI의 실제 정책 문구 버전과 손으로 맞춰져 있어 어긋날 수 있다 —
+            응답의 `window.promptVersions` 분포가 그 어긋남을 드러낸다
+        - name: targetType
+          in: query
+          schema:
+            $ref: "#/components/schemas/InspectionTargetType"
+          description: "대상 종류. 생략하면 전체(지금 쌓이는 것은 PRODUCT뿐이다)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInspectionMetricsResponse"
 components:
   schemas:
     Species:
@@ -14115,6 +14168,591 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/NoticeDetailData"
+    AdminInspectionMetricsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdminInspectionMetricsData"
+    AdminInspectionMetricsData:
+      type: object
+      description: >-
+        지표 한 장. **블록마다 선택**인 이유는 배포 순서다 — 확장 전 서버는 flat 창 필드 넷과
+        promotion·coverage·cost·backlog만 준다. 소비하는 쪽은 블록 유무를 먼저 보고 없으면
+        '미측정'으로 그려야 하고, 없는 값을 0으로 채우면 "집계가 0이다"라는 거짓을 말한다
+      properties:
+        windowFrom:
+          type: string
+          description: "확장 전 서버의 창 시작. 확장 뒤에는 `window.from`이 정본이다"
+        measuredAt:
+          type: string
+          description: "확장 전 서버의 집계 시각. 확장 뒤에는 `window.measuredAt`이 정본이다"
+        windowHours:
+          type: integer
+          description: "확장 전 서버의 창 길이(시간). 창의 끝은 measuredAt이다"
+        needsAttention:
+          type: boolean
+          description: "주기 로그가 WARN으로 올리는 조건과 같은 판정. 어느 조건인지는 alarms[]가 말한다"
+        window:
+          $ref: "#/components/schemas/InspectionMetricsWindow"
+        alarms:
+          type: array
+          description: >-
+            주기 로그의 경보 문장과 같은 값. 비어 있지 않으면 화면이 상단 배너로 띄운다 —
+            로그에만 문장이 있고 API에는 boolean만 나가면 화면과 로그가 다른 말을 한다
+          items:
+            $ref: "#/components/schemas/InspectionMetricsAlarm"
+        funnel:
+          $ref: "#/components/schemas/InspectionMetricsFunnel"
+        judgment:
+          $ref: "#/components/schemas/InspectionMetricsJudgment"
+        promotion:
+          $ref: "#/components/schemas/InspectionMetricsPromotion"
+        coverage:
+          $ref: "#/components/schemas/InspectionMetricsCoverage"
+        adminReview:
+          $ref: "#/components/schemas/InspectionMetricsAdminReview"
+        backlog:
+          $ref: "#/components/schemas/InspectionMetricsBacklog"
+        cost:
+          $ref: "#/components/schemas/InspectionMetricsCost"
+        latency:
+          $ref: "#/components/schemas/InspectionMetricsLatency"
+        triageAudit:
+          $ref: "#/components/schemas/InspectionMetricsTriageAudit"
+    InspectionMetricsWindow:
+      type: object
+      required: [from, to, measuredAt]
+      description: "서버가 **실제로** 집계한 창. 요청한 창과 다를 수 있고 그때는 이 값이 사실이다"
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        measuredAt:
+          type: string
+        windowHours:
+          type: integer
+          nullable: true
+        policyVersion:
+          type: string
+          nullable: true
+          description: "적용된 정책 버전 필터. null이면 전체"
+        targetType:
+          allOf:
+            - $ref: "#/components/schemas/InspectionTargetType"
+          nullable: true
+        promptVersions:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: >-
+            창 안의 프롬프트 버전 분포(버전 문자열 → 건수). 한 policyVersion 버킷에 둘 이상
+            실리면 BE 설정과 AI 정책 문구 버전이 어긋났다는 신호다
+    InspectionMetricsAlarm:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "경보 식별자(BACKLOG_COUNT·OVER_BREAKEVEN 등). 열거로 좁히지 않는다 — 서버가 조건을 더한다"
+        message:
+          type: string
+          description: "주기 로그와 같은 문장"
+    InspectionMetricsFunnel:
+      type: object
+      required: [settledCount, exits]
+      description: >-
+        단계별 탈출 분포. 탈출은 **일곱 + 미분류 하나**다 — 다섯만 세면 판정 실패·미판정이
+        빠져 합이 100%가 되지 않는다
+      properties:
+        settledCount:
+          type: integer
+          format: int64
+          description: "창 안에 닫힌 검수 전수. 모든 share의 분모다"
+        unclassifiedCount:
+          type: integer
+          format: int64
+          description: "어느 탈출로도 분류되지 않은 건수. **0이 아니면 그 자체가 사건이다**(새 터미널이 생겼다는 뜻)"
+        exits:
+          type: array
+          description: "순서 고정. `stage: 0`은 퍼널 밖(실패 터미널)이라 세로 퍼널과 따로 그린다"
+          items:
+            $ref: "#/components/schemas/InspectionMetricsFunnelExit"
+        stage1:
+          $ref: "#/components/schemas/InspectionMetricsStage1"
+        stage2:
+          $ref: "#/components/schemas/InspectionMetricsStage2"
+        stage3:
+          $ref: "#/components/schemas/InspectionMetricsStage3"
+        stage4:
+          $ref: "#/components/schemas/InspectionMetricsStage4"
+        stage5:
+          $ref: "#/components/schemas/InspectionMetricsStage5"
+    InspectionMetricsFunnelExit:
+      type: object
+      required: [stage, exit, count]
+      properties:
+        stage:
+          type: integer
+          description: "1~5는 퍼널 단계, 0은 퍼널 밖(판정 실패·미판정·미분류)"
+        exit:
+          type: string
+          description: "탈출 식별자(RULE_BLOCKED·TRIAGE_CLEARED 등). 열거로 좁히지 않는다 — 터미널이 늘어난다"
+        label:
+          type: string
+          nullable: true
+          description: "서버가 보낸 한국어 라벨. 없으면 화면이 자기 표를 쓰고 모르는 값은 원문과 함께 '알 수 없음'으로 적는다"
+        count:
+          type: integer
+          format: int64
+        shareOfSettled:
+          type: number
+          format: double
+          nullable: true
+    InspectionMetricsStage1:
+      type: object
+      required: [enteredCount, blockedCount]
+      description: "룰 단계 — 정규식·네거티브 리스트가 확정 차단한 비율. 분모에서 미판정은 빠진다(룰을 탄 적이 없다)"
+      properties:
+        name:
+          type: string
+          nullable: true
+        enteredCount:
+          type: integer
+          format: int64
+        blockedCount:
+          type: integer
+          format: int64
+        blockRate:
+          type: number
+          format: double
+          nullable: true
+    InspectionMetricsStage2:
+      type: object
+      required: [enteredCount, clearedCount, promotedCount, breakevenRate, overBreakeven]
+      description: >-
+        선별 단계. 분모는 **선별 호출이 나간 검수**다 — 관점 기록으로 세면 규칙 적중으로
+        선별을 묻지도 않고 승급한 건이 분모에 들어와 건너뛰기율이 낮게 나온다
+      properties:
+        name:
+          type: string
+          nullable: true
+        enteredCount:
+          type: integer
+          format: int64
+        clearedCount:
+          type: integer
+          format: int64
+        promotedCount:
+          type: integer
+          format: int64
+        callFailedCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "선별 호출이 깨진 건수. 승급 분자에 포함된다 — 호출이 실제로 나갔으므로 비용으로는 같다"
+        bypassedByRuleHitCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "규칙 적중으로 선별을 건너뛴 건수. 1단 통과 수와 2단 분모 사이의 차이를 설명한다"
+        skipRate:
+          type: number
+          format: double
+          nullable: true
+        promotionRate:
+          type: number
+          format: double
+          nullable: true
+        breakevenRate:
+          type: number
+          format: double
+          description: >-
+            손익분기 승급률(설정값). 이 선을 넘으면 선별이 비용을 **더한다**.
+            서버 설정과 측정 하네스(`ai/harness/run.py`)의 값이 어긋날 수 있어 화면은 둘을
+            함께 보여 준다 — 그 사이 구간에서 경보가 거짓이 되기 때문이다
+        overBreakeven:
+          type: boolean
+          description: "서버의 판정. breakevenRate와 같은 값으로 계산되므로 화면이 다시 계산하지 않는다"
+    InspectionMetricsStage3:
+      type: object
+      required: [enteredCount, respondedCount, violationFoundCount, clearCount]
+      description: "관점 판정 단계. 분모는 '3단을 탄 건'이 아니라 **응답이 온 건**이다 — 레이트 리밋으로 못 본 건을 넣으면 모델 품질이 아니라 가용성을 재게 된다"
+      properties:
+        name:
+          type: string
+          nullable: true
+        enteredCount:
+          type: integer
+          format: int64
+        respondedCount:
+          type: integer
+          format: int64
+        violationFoundCount:
+          type: integer
+          format: int64
+        clearCount:
+          type: integer
+          format: int64
+        detectionRate:
+          type: number
+          format: double
+          nullable: true
+    InspectionMetricsStage4:
+      type: object
+      required: [enteredCount, overturnedCount, upheldCount]
+      description: >-
+        비평 단계. **분모가 조건부로 틀린다** — 승급(`enable_escalation`)이 꺼지면 비평이
+        돌지 않는데 모델 위반 건은 그대로 분모에 들어온다. escalationObserved가 그 신뢰 여부다
+      properties:
+        name:
+          type: string
+          nullable: true
+        enteredCount:
+          type: integer
+          format: int64
+        overturnedCount:
+          type: integer
+          format: int64
+        upheldCount:
+          type: integer
+          format: int64
+        overturnRate:
+          type: number
+          format: double
+          nullable: true
+        escalationObserved:
+          type: boolean
+          nullable: true
+          description: "비평 호출이 원장에서 실제로 관측됐는가. false면 뒤집힘율 분모를 믿을 수 없다"
+    InspectionMetricsStage5:
+      type: object
+      required: [flagCount, passCount, failedCount, unjudgedCount]
+      description: "최종 터미널 건수. PASS = 2·3·4단 탈출의 합, FLAG = 1·5단 탈출의 합이어야 한다"
+      properties:
+        name:
+          type: string
+          nullable: true
+        flagCount:
+          type: integer
+          format: int64
+        passCount:
+          type: integer
+          format: int64
+        failedCount:
+          type: integer
+          format: int64
+        unjudgedCount:
+          type: integer
+          format: int64
+    InspectionMetricsJudgment:
+      type: object
+      required: [settledCount, passCount, flagCount, unjudgedCount, failedCount]
+      properties:
+        settledCount:
+          type: integer
+          format: int64
+        passCount:
+          type: integer
+          format: int64
+        flagCount:
+          type: integer
+          format: int64
+        unjudgedCount:
+          type: integer
+          format: int64
+        failedCount:
+          type: integer
+          format: int64
+        passRate:
+          type: number
+          format: double
+          nullable: true
+    InspectionMetricsPromotion:
+      type: object
+      required: [triagedCount, promotedCount, clearedCount, breakevenRate, overBreakeven]
+      description: >-
+        확장 전 서버의 승급률 블록. 확장 뒤에는 `funnel.stage2`가 같은 숫자를 더 넓은 맥락과
+        함께 들고 있어, 화면은 stage2를 먼저 보고 없으면 이쪽으로 떨어진다
+      properties:
+        triagedCount:
+          type: integer
+          format: int64
+        promotedCount:
+          type: integer
+          format: int64
+        clearedCount:
+          type: integer
+          format: int64
+        callFailedCount:
+          type: integer
+          format: int64
+          nullable: true
+        promotionRate:
+          type: number
+          format: double
+          nullable: true
+        breakevenRate:
+          type: number
+          format: double
+        overBreakeven:
+          type: boolean
+    InspectionMetricsCoverage:
+      type: object
+      required: [settledCount, unverifiedCount]
+      description: >-
+        누락률 — **아무도 내용을 보지 않은 채 닫힌 비율**이다. 선별이 놓친 비율이 아니다.
+        `triageSkippedBlockedCount`는 상품 경로에서 올라갈 수 없어 구조적으로 거의 0이므로,
+        그 값이 0인 것을 '선별이 놓친 게 없다'로 읽으면 가장 위험한 쪽으로 틀린다
+      properties:
+        settledCount:
+          type: integer
+          format: int64
+        unverifiedCount:
+          type: integer
+          format: int64
+        unjudgedCount:
+          type: integer
+          format: int64
+          nullable: true
+        verdictFailedCount:
+          type: integer
+          format: int64
+          nullable: true
+        modelUnverifiedCount:
+          type: integer
+          format: int64
+          nullable: true
+        triageSkippedPassCount:
+          type: integer
+          format: int64
+          nullable: true
+        triageSkippedBlockedCount:
+          type: integer
+          format: int64
+          nullable: true
+        unverifiedRate:
+          type: number
+          format: double
+          nullable: true
+        triageMissConfirmed:
+          type: boolean
+          nullable: true
+    InspectionMetricsAdminReview:
+      type: object
+      required: [inflowCount, decidedCount, allowedCount, blockedCount]
+      description: >-
+        어드민 유입과 결정. **유입 사유별 분포의 합이 유입 건수보다 작을 수 있다** —
+        `adminReviewReason`은 최초 사유만 남기므로 이의가 나중에 붙은 행은 처음 사유로 세어지고,
+        이의 유입은 `appealInflowCount`가 따로 센다
+      properties:
+        inflowCount:
+          type: integer
+          format: int64
+        inflowRate:
+          type: number
+          format: double
+          nullable: true
+        inflowByReason:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: "키는 AdminReviewReason 이름"
+        appealInflowCount:
+          type: integer
+          format: int64
+          nullable: true
+        decidedCount:
+          type: integer
+          format: int64
+        allowedCount:
+          type: integer
+          format: int64
+        blockedCount:
+          type: integer
+          format: int64
+        allowRate:
+          type: number
+          format: double
+          nullable: true
+          description: "허용 비율이 높으면 AI가 과탐이라는 뜻이다 — 뒤집힘율과 교차해 읽는 수치다"
+        decisionLatency:
+          $ref: "#/components/schemas/InspectionMetricsMinutePercentile"
+    InspectionMetricsMinutePercentile:
+      type: object
+      required: [sampleCount]
+      properties:
+        p50Minutes:
+          type: integer
+          format: int64
+          nullable: true
+        p95Minutes:
+          type: integer
+          format: int64
+          nullable: true
+        sampleCount:
+          type: integer
+          format: int64
+    InspectionMetricsBacklog:
+      type: object
+      required: [openCount, warnCount, warnAgeMinutes, breached]
+      properties:
+        openCount:
+          type: integer
+          format: int64
+          description: "어드민 큐 목록과 **같은 필터**로 센 처리 대기 건수"
+        staleOpenCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "상품 지문이 지금 내용과 어긋난 행. 그 건은 이 검수로 결정할 수 없다(409 errorCode 40508). 2026-11-07 dev 서버는 이 필드를 주지 않는다"
+        oldestWaitingSince:
+          type: string
+          nullable: true
+        oldestWaitMinutes:
+          type: integer
+          format: int64
+          nullable: true
+        openByReason:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        warnCount:
+          type: integer
+          format: int64
+          description: "건수 임계(설정값). 넘으면 주기 로그가 WARN으로 올린다"
+        warnAgeMinutes:
+          type: integer
+          format: int64
+          description: "대기 시간 임계(분, 설정값)"
+        breached:
+          type: boolean
+    InspectionMetricsCost:
+      type: object
+      required: [callCount, inspectionCount, totalCostMicroUsd]
+      properties:
+        callCount:
+          type: integer
+          format: int64
+        inspectionCount:
+          type: integer
+          format: int64
+          description: "호출이 나간 검수 수. 룰이 무료로 차단한 건과 스텁 건은 여기 없다"
+        totalCostMicroUsd:
+          type: integer
+          format: int64
+        triageCostMicroUsd:
+          type: integer
+          format: int64
+          nullable: true
+        cacheMissCallCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            캐시를 못 읽은 호출 수. 선별 프롬프트가 Haiku의 최소 캐시 길이보다 짧아
+            cache_control이 조용히 무시되는 자리라, 선별은 0이 정상이 아니고 관점 호출이
+            0이면 사건이다
+        costPerInspectionMicroUsd:
+          type: integer
+          format: int64
+          nullable: true
+          description: "**호출이 나간 건당**이다. 룰 차단분이 분모에서 빠져 1단 차단율만큼 과대 보고된다"
+        costPerSettledInspectionMicroUsd:
+          type: integer
+          format: int64
+          nullable: true
+          description: "닫힌 검수 전수를 분모로 한 진짜 건당 비용"
+        byStage:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/InspectionMetricsCostByStage"
+          description: >-
+            단계별 지출(키는 관점 이름). 비평과 수정 문구는 원장에 둘 다 `ALL`로 적혀
+            `UNATTRIBUTED`로 묶여 올 수 있다 — 0이 아니면 구버전 데이터이고 합계에서 빼지는 않는다
+    InspectionMetricsCostByStage:
+      type: object
+      required: [callCount, costMicroUsd]
+      properties:
+        callCount:
+          type: integer
+          format: int64
+        costMicroUsd:
+          type: integer
+          format: int64
+        cacheMissCallCount:
+          type: integer
+          format: int64
+          nullable: true
+        costPerSettledMicroUsd:
+          type: integer
+          format: int64
+          nullable: true
+    InspectionMetricsLatency:
+      type: object
+      description: "지연. 끝에서 끝은 단계별 지연의 합과 다르다 — 큐 대기·재시도·카프카 왕복이 거기 들어 있다"
+      properties:
+        endToEnd:
+          $ref: "#/components/schemas/InspectionMetricsMsPercentile"
+        byStage:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/InspectionMetricsMsPercentile"
+    InspectionMetricsMsPercentile:
+      type: object
+      required: [sampleCount]
+      properties:
+        p50Ms:
+          type: integer
+          format: int64
+          nullable: true
+        p95Ms:
+          type: integer
+          format: int64
+          nullable: true
+        sampleCount:
+          type: integer
+          format: int64
+    InspectionMetricsTriageAudit:
+      type: object
+      required: [sampledCount, reviewedCount, violationFoundCount]
+      description: >-
+        표본 재검 — 선별이 건너뛴 통과를 사람이 다시 본 결과다. 분모는 '추출한 표본'이 아니라
+        **사람이 본 표본**이다(안 본 표본이 쌓이면 비율이 희석된다). 선별형 설계의 위험을
+        숫자로 재는 유일한 수단이고, 서버에 표본 테이블이 생긴 뒤에 실린다
+      properties:
+        sampledCount:
+          type: integer
+          format: int64
+        reviewedCount:
+          type: integer
+          format: int64
+        violationFoundCount:
+          type: integer
+          format: int64
+        undecidedCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            판단 불가로 적힌 표본. 분모에서 빼야 하는 건을 CLEAN으로 적으면 누락률이 낙관으로
+            기운다 — 그래서 따로 센다
+        missRate:
+          type: number
+          format: double
+          nullable: true
+        lastSampledAt:
+          type: string
+          nullable: true
+        populationCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "모집단(선별이 건너뛴 통과) 건수"
   parameters:
     SnsPublicId:
       name: publicId
