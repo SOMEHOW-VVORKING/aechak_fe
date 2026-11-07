@@ -9,7 +9,9 @@ import { stubGuestSession } from './session'
 // "로그인이 필요해요"가 뜻이 통하게 떠야 한다. 예전에는 로그인 여부 기본값이 true라
 // 비회원도 회원 전용 API를 불러 401 → 전역 리다이렉트로 마켓·검색에서 쫓겨났다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API_ORIGIN = 'http://localhost:8080'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,

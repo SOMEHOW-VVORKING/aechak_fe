@@ -8,6 +8,9 @@ import { routeTree } from '../../../routeTree.gen'
 import {
   ADMIN_ORIGIN,
   ADMIN_SELLERS_URL,
+  ADMIN_SELLER_DETAIL_URL,
+  ADMIN_SELLER_MEMO_URL,
+  ADMIN_SELLER_RELEASE_URL,
   ADMIN_SELLER_SUSPEND_URL,
   currentAdminSeller,
   lastAdminSellerWrite,
@@ -171,7 +174,8 @@ function recordSellerRequests(): string[] {
   return entries
 }
 
-const writesOnly = (entries: readonly string[]) => entries.filter(entry => !entry.startsWith('GET '))
+const writesOnly = (entries: readonly string[]) =>
+  entries.filter(entry => !entry.startsWith('GET '))
 
 /** 응답을 테스트가 붙잡고 있다가 놓는다 — 그 사이가 "요청이 떠 있는 동안"이다. */
 function gateSuspend() {
@@ -384,11 +388,16 @@ describe('/sellers', () => {
     await user.click(await screen.findByRole('button', { name: '초코집사네' }))
     const open = await drawer()
     await open.findByText('제재 이력 / 0건')
-    // 기본값이 무기한이다(빈 문자열이면 DS Select가 placeholder 색으로 그려 미선택처럼 보인다).
-    expect(combo('정지 기간')).toHaveValue('indefinite')
+    // 기본값을 비워 둔다. 되돌리기 어려운 제재의 기본값으로 가장 센 값을 두면 사유만 고른
+    // 운영자가 무기한 정지를 의도 없이 넣는다. 무기한은 골라서 넣는 값이다.
+    expect(combo('정지 기간')).toHaveValue('')
     expect(open.getByText(/기간이 지나도 자동으로 풀리지 않아요/)).toBeInTheDocument()
 
     await chooseOption('판매정지 사유', '상품 정보 허위 기재')
+    // 사유를 골라도 기간이 비어 있으면 잠겨 있다.
+    expect((await drawer()).getByRole('button', { name: '판매정지' })).toBeDisabled()
+
+    await chooseOption('정지 기간', '무기한')
     await user.click((await drawer()).getByRole('button', { name: '판매정지' }))
     const confirm = await screen.findByRole('dialog', { name: '판매를 정지할까요?' })
     expect(within(confirm).getByText('무기한')).toBeInTheDocument()
@@ -412,10 +421,16 @@ describe('/sellers', () => {
     expect(open.queryByRole('textbox', { name: '상세 사유' })).toBeNull()
 
     await chooseOption('판매정지 사유', '기타 (상세 사유 필수)')
+    // 기간까지 골라 둔다 — 그러면 아래의 잠김이 상세 사유 하나 때문임이 분명해진다.
+    // 무기한을 고르는 이유는 본문 단언을 건드리지 않기 위해서다(기간 키는 006이 본다).
+    await chooseOption('정지 기간', '무기한')
     open = await drawer()
     expect(open.getByRole('button', { name: '판매정지' })).toBeDisabled()
 
-    await user.type(open.getByRole('textbox', { name: '상세 사유' }), '동일 사유 경고를 세 번 보냈어요.')
+    await user.type(
+      open.getByRole('textbox', { name: '상세 사유' }),
+      '동일 사유 경고를 세 번 보냈어요.',
+    )
     open = await drawer()
     expect(open.getByRole('button', { name: '판매정지' })).toBeEnabled()
     // 버튼이 잠긴 동안 쓰기가 한 건도 나가지 않았다.
@@ -456,9 +471,7 @@ describe('/sellers', () => {
     await user.click(within(confirm).getByRole('button', { name: '정지 해제' }))
 
     expect(await screen.findByText('정지 해제 처리했어요.')).toBeInTheDocument()
-    expect(writesOnly(requests)).toEqual([
-      `POST ${ADMIN_SELLERS_URL}/2033/suspensions/release`,
-    ])
+    expect(writesOnly(requests)).toEqual([`POST ${ADMIN_SELLERS_URL}/2033/suspensions/release`])
     // 드로어가 들고 있던 현재 메모가 그대로 함께 간다(비어 있지 않을 때만 덮어쓰는 값이다).
     expect(lastAdminSellerWrite()?.body).toEqual({
       reasonDetail: '점검 결과 문제 없었어요.',
@@ -504,6 +517,7 @@ describe('/sellers', () => {
     let open = await drawer()
     await open.findByText('제재 이력 / 0건')
     await chooseOption('판매정지 사유', '신고 누적')
+    await chooseOption('정지 기간', '7일')
 
     // 확인 창을 열어 둔 사이 다른 운영자가 먼저 정지한 상태 — 서버가 409(10007)로 끊는다.
     seedAdminSellers([
@@ -523,9 +537,7 @@ describe('/sellers', () => {
 
     // 드로어가 열려 있고, 재조회가 가져온 새 상태에 맞는 조치로 바뀐다.
     open = await drawer()
-    await waitFor(() =>
-      expect(open.getByRole('button', { name: '정지 해제' })).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(open.getByRole('button', { name: '정지 해제' })).toBeInTheDocument())
     expect(open.queryByRole('button', { name: '판매정지' })).toBeNull()
   })
 
@@ -566,7 +578,9 @@ describe('/sellers', () => {
     )
     renderAt('/sellers')
 
-    expect(await screen.findByText(/어드민 권한이 없어 셀러 목록을 볼 수 없어요/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/어드민 권한이 없어 셀러 목록을 볼 수 없어요/),
+    ).toBeInTheDocument()
     // 0곳을 그리면 "조건에 맞는 셀러가 없다"로 읽힌다 — 조회 실패는 0이 아니라 줄표다.
     expect(screen.getByText('조건에 맞는 셀러 —')).toBeInTheDocument()
     expect(screen.queryByText('조건에 맞는 셀러 0곳')).toBeNull()
@@ -626,11 +640,18 @@ describe('/sellers', () => {
     const open = await drawer()
     await open.findByText('제재 이력 / 0건')
     await chooseOption('판매정지 사유', '신고 누적')
+    await chooseOption('정지 기간', '7일')
     await user.click((await drawer()).getByRole('button', { name: '판매정지' }))
     const confirm = await screen.findByRole('dialog', { name: '판매를 정지할까요?' })
     await user.click(within(confirm).getByRole('button', { name: '판매정지' }))
-    // loading이면 확인 버튼의 접근명이 스피너(aria-hidden)뿐이라 빈 이름이 된다.
-    await waitFor(() => expect(within(confirm).getByRole('button', { name: '' })).toBeDisabled())
+    // loading이면 확인 버튼이 sr-only 문구를 남긴 채 잠긴다.
+    await waitFor(() =>
+      expect(within(confirm).getByRole('button', { name: '판매정지' })).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(within(confirm).getByRole('button', { name: '판매정지' })).toBeDisabled()
 
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: '판매를 정지할까요?' })).toBeInTheDocument()
@@ -669,6 +690,43 @@ describe('/sellers', () => {
     expect(await screen.findByRole('button', { name: '멍멍마켓' })).toBeInTheDocument()
     expect(screen.queryByText('예시 데이터예요')).toBeNull()
     expect(screen.queryByText(/저장되지 않아요/)).toBeNull()
+  })
+
+  /**
+   * `boot/admin` CORS 설정에 `allowCredentials`가 없다. credentials 모드로 보내면 브라우저가
+   * **정상 응답까지 버린다** — 서버가 200을 돌려줘도 화면에는 네트워크 오류로 보이고, 그
+   * 어긋남은 상태 코드로는 말할 수 없다. 공유 클라이언트의 `/admin` 분기가 깨지면 이 화면이
+   * 통째로 죽는데, 단언이 없으면 그 변경이 이 파일을 녹색으로 통과한다.
+   */
+  it('[AC-SELLER-MGMT-017] 어드민 요청을 credentials 없이 보낸다', async () => {
+    const modes: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).origin === ADMIN_ORIGIN) modes.push(request.credentials)
+    })
+
+    renderAt('/sellers')
+    await screen.findByRole('button', { name: '멍멍마켓' })
+
+    // 빈 배열에 every는 공허하게 통과한다. 요청이 실제로 나갔는지를 먼저 본다.
+    expect(modes).not.toHaveLength(0)
+    expect(modes.every(mode => mode !== 'include')).toBe(true)
+  })
+
+  /**
+   * 핸들러와 단언이 같은 상수를 보므로 **상수가 틀리면 둘이 함께 틀린 채 통과한다.** 그래서
+   * 상수를 한 번은 리터럴과 맞댄다. 서버 경로가 바뀌면 이 블록만 깨지고, 그 자리가 BE
+   * `AdminSellerController`의 매핑을 다시 읽을 신호다.
+   */
+  it('[AC-SELLER-MGMT-018] 가로채는 주소가 서버 경로 다섯과 글자 그대로 같다', () => {
+    expect(ADMIN_SELLERS_URL).toBe(`${ADMIN_ORIGIN}/api/v1/admin/sellers`)
+    expect(ADMIN_SELLER_DETAIL_URL).toBe(`${ADMIN_ORIGIN}/api/v1/admin/sellers/:sellerId`)
+    expect(ADMIN_SELLER_SUSPEND_URL).toBe(
+      `${ADMIN_ORIGIN}/api/v1/admin/sellers/:sellerId/suspensions`,
+    )
+    expect(ADMIN_SELLER_RELEASE_URL).toBe(
+      `${ADMIN_ORIGIN}/api/v1/admin/sellers/:sellerId/suspensions/release`,
+    )
+    expect(ADMIN_SELLER_MEMO_URL).toBe(`${ADMIN_ORIGIN}/api/v1/admin/sellers/:sellerId/memo`)
   })
 })
 

@@ -1,6 +1,8 @@
 export {
   useAdminMemberDetail,
   useAdminMembers,
+  useJoinedMemberCount,
+  useResetMemberProfile,
   useSanctionMember,
   DEFAULT_PAGE_SIZE,
   type MemberDetailResult,
@@ -12,6 +14,7 @@ export {
   detailErrorMessage,
   isSanctionDecision,
   listErrorMessage,
+  profileResetErrorMessage,
   sanctionErrorMessage,
   toDateLabel,
   SANCTION_REASON_LABELS,

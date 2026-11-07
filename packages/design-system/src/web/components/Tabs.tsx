@@ -1,7 +1,8 @@
 export interface TabItem {
   key: string
   label: string
-  badge?: number
+  /** 그대로 그린다. 천 단위 구분 같은 표기는 부르는 쪽이 맞춰 문자열로 넘긴다 */
+  badge?: number | string
 }
 
 export interface TabsProps {

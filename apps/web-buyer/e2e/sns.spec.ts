@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
 import type {
+  SnsPostGridPageResult,
   SnsProfileResult,
   SnsRelationItemResult,
   SnsRelationPageResult,
@@ -9,10 +10,12 @@ import type {
 
 // SNS-01 프로필(b7-st-4), 팔로워/팔로잉(b7-st-5), 차단/뮤트 관리(b7-st-8), 로그인 안내 시트(b13-st-2) E2E.
 // 실백엔드 없이 page.route 스텁으로 contracts/sns.yaml을 재현한다(교차 출처 8080 + withCredentials라 정확한 origin과
-// Allow-Credentials, OPTIONS 방어 필수). 마이 메뉴의 SNS 진입 행은 SNS_SERVER_AVAILABLE=false로 숨어 있어 경로로 바로 연다.
+// Allow-Credentials, OPTIONS 방어 필수). 각 화면은 경로로 바로 연다.
 // 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
@@ -68,6 +71,7 @@ const BORI: SnsProfileResult = {
   following: false,
   blockedByMe: false,
   mutedByMe: false,
+  blockingMe: false,
 }
 
 // 내가 차단한 계정: 닉네임과 이미지만 오고 소개글, 펫, 수는 null(계약 P11).
@@ -80,6 +84,17 @@ const BORI_BLOCKED: SnsProfileResult = {
   followingCount: null,
   blockedByMe: true,
 }
+
+// 나를 차단한 계정: 닉네임만 오고 이미지, 소개글, 펫, 수는 null(계약 0.3.0 blockingMe, R2-06).
+const BORI_BLOCKING_ME: SnsProfileResult = {
+  ...BORI_BLOCKED,
+  profileImageUrl: null,
+  blockedByMe: false,
+  blockingMe: true,
+}
+
+// 서로 차단: 나를 차단한 계정 응답에 blockedByMe도 true다.
+const BORI_MUTUAL: SnsProfileResult = { ...BORI_BLOCKING_ME, blockedByMe: true }
 
 const ME: SnsProfileResult = {
   publicId: ME_ID,
@@ -94,6 +109,7 @@ const ME: SnsProfileResult = {
   following: false,
   blockedByMe: false,
   mutedByMe: false,
+  blockingMe: false,
 }
 
 const FOLLOWERS: SnsUserItemResult[] = [
@@ -150,6 +166,16 @@ const MUTES: SnsRelationItemResult[] = [
   },
 ]
 
+// 프로필 탭과 저장됨(SNS-03)은 이 spec에서 빈 목록이다. 칸은 sns-feed.spec이 본다.
+const EMPTY_GRID: SnsPostGridPageResult = { items: [], nextCursor: null, hasNext: false }
+
+// 게시물 탭은 아이콘 탭이라 이름은 접근성 이름이다(SNS-01 F5). 하단 탭바도 tab 역할이라 게시물 목록 탭만 고른다.
+async function expectPostTabs(page: Page, names: string[]) {
+  const tabs = page.getByRole('tablist', { name: '게시물 목록' }).getByRole('tab')
+  await expect(tabs).toHaveCount(names.length)
+  for (const [i, name] of names.entries()) await expect(tabs.nth(i)).toHaveAccessibleName(name)
+}
+
 interface StubOptions {
   /** false면 refresh 쿠키가 없는 비로그인(refresh 401) */
   member?: boolean
@@ -186,6 +212,8 @@ async function stubSns(page: Page, opts: StubOptions = {}) {
       : fulfill(route, 200, { data: profile }),
   )
   await page.route(`${API}/sns/me`, route => fulfill(route, 200, { data: ME }))
+  await page.route(`${API}/sns/users/*/{posts,videos,reposts}*`, route => fulfill(route, 200, { data: EMPTY_GRID }))
+  await page.route(`${API}/sns/me/saves*`, route => fulfill(route, 200, { data: EMPTY_GRID }))
 
   await page.route(`${API}/sns/users/*/{follow,block,mute}`, route => {
     const method = route.request().method()
@@ -241,7 +269,7 @@ test('[AC-SNS01-E2E-001] 비로그인으로 다른 사용자 프로필을 보면
   await expect(page.getByRole('button', { name: '팔로우', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '공유' })).toBeVisible()
   // 저장됨은 본인 프로필에만 있다.
-  await expect(page.getByRole('tab')).toHaveText(['그리드', '영상', '리포스트'])
+  await expectPostTabs(page, ['그리드', '영상', '리포스트'])
   await expect(page.getByText('아직 게시물이 없어요')).toBeVisible()
   await shot(page, 'sns-01-profile-guest')
 })
@@ -266,7 +294,7 @@ test('[AC-SNS01-E2E-003] 내 프로필은 프로필 수정 진입과 저장됨 �
 
   await expect(page.getByRole('button', { name: '프로필 수정' })).toBeVisible()
   await expect(page.getByText('말티즈 콩이 기록용')).toBeVisible()
-  await expect(page.getByRole('tab')).toHaveText(['그리드', '영상', '리포스트', '저장됨'])
+  await expectPostTabs(page, ['그리드', '영상', '리포스트', '저장됨'])
   await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '더보기' })).toHaveCount(0)
 
@@ -289,7 +317,9 @@ test('[AC-SNS01-E2E-004] 더보기 시트에서 차단하면 확인 Modal을 거
 
   await sheet.getByText('차단하기').click()
   const modal = page.getByRole('dialog', { name: '차단할까요?' })
-  await expect(modal).toContainText('보리언니님은 회원님의 게시물과 프로필을 볼 수 없고 서로 팔로우가 해제돼요.')
+  await expect(
+    modal.getByText('보리언니님과 서로의 게시물을 볼 수 없고 서로 팔로우가 해제돼요.', { exact: true }),
+  ).toBeVisible()
   expect(calls.toggles).toEqual([]) // 확인 전에는 차단 요청을 보내지 않는다
   await shot(page, 'sns-05-block-confirm')
 
@@ -299,7 +329,7 @@ test('[AC-SNS01-E2E-004] 더보기 시트에서 차단하면 확인 Modal을 거
   expect(calls.toggles).toEqual(['POST block'])
 })
 
-test('[AC-SNS01-E2E-005] 내가 차단한 프로필은 차단 안내와 차단 해제 버튼만 보여준다', async ({ page }) => {
+test('[AC-SNS01-E2E-005] 내가 차단한 프로필은 차단 안내와 차단 해제 버튼, 신고만 있는 더보기를 보여준다', async ({ page }) => {
   await stubSns(page, { profile: BORI_BLOCKED })
   await page.goto(profileUrl)
 
@@ -307,9 +337,11 @@ test('[AC-SNS01-E2E-005] 내가 차단한 프로필은 차단 안내와 차단 �
   await expect(page.getByText('차단을 해제하면 프로필을 다시 볼 수 있어요.')).toBeVisible()
   await expect(page.getByRole('button', { name: '차단 해제' })).toBeVisible()
   await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '더보기' })).toHaveCount(0)
-  await expect(page.getByRole('tab')).toHaveCount(0)
+  await expect(page.getByRole('tablist', { name: '게시물 목록' })).toHaveCount(0)
   await shot(page, 'sns-06-profile-blocked-by-me')
+  // 차단한 계정 안내의 앱바 더보기에서 신고한다(SNS-07 P11).
+  await page.getByRole('button', { name: '더보기' }).click()
+  await expect(page.getByRole('dialog', { name: '프로필 더보기' }).getByRole('button')).toHaveText(['신고하기'])
 })
 
 test('[AC-SNS01-E2E-006] 뮤트한 프로필은 뮤트 상태와 해제 버튼을 보여준다', async ({ page }) => {
@@ -413,9 +445,78 @@ test('[AC-SNS01-E2E-012] 관리 목록에서 차단 해제를 누르면 확인 M
   await page.getByRole('button', { name: '광고계정 차단 해제' }).click()
   const modal = page.getByRole('dialog', { name: '차단을 해제할까요?' })
   await expect(modal).toContainText(
-    '광고계정님이 회원님의 게시물과 프로필을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.',
+    '광고계정님과 서로의 게시물을 다시 볼 수 있어요. 해제된 팔로우는 되살아나지 않아요.',
   )
   await expect(modal.getByRole('button', { name: '해제' })).toBeVisible()
   expect(calls.toggles).toEqual([])
   await shot(page, 'sns-14-relations-unblock-confirm')
+})
+
+test('[AC-SNS01-E2E-013] 나를 차단한 프로필은 기본 프로필 사진과 닉네임만 보여주고 더보기에는 차단하기와 신고하기만 있다', async ({
+  page,
+}) => {
+  const calls = await stubSns(page, { profile: BORI_BLOCKING_ME })
+  await page.goto(profileUrl)
+
+  // 이미지 대신 닉네임 첫 글자 아바타(기본 프로필 사진)를 그린다.
+  const avatar = page.getByLabel('보리언니', { exact: true })
+  await expect(avatar).toHaveText('보')
+  await expect(avatar.locator('img')).toHaveCount(0)
+  await expect(page.getByText('팔로워')).toHaveCount(0)
+  await expect(page.getByRole('tablist', { name: '게시물 목록' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '공유' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '차단 해제' })).toHaveCount(0)
+  await shot(page, 'sns-15-profile-blocking-me')
+
+  await page.getByRole('button', { name: '더보기' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText('차단하기')).toBeVisible()
+  await expect(sheet.getByText('신고하기')).toBeVisible()
+  await expect(sheet.getByText(/뮤트/)).toHaveCount(0)
+  await shot(page, 'sns-16-blocking-me-more-sheet')
+
+  await sheet.getByText('차단하기').click()
+  await expect(page.getByRole('dialog', { name: '차단할까요?' })).toBeVisible()
+  expect(calls.toggles).toEqual([])
+})
+
+test('[AC-SNS01-E2E-014] 서로 차단한 프로필은 기본 프로필과 차단 해제 버튼만 보여주고 해제는 확인 Modal을 거친다', async ({
+  page,
+}) => {
+  const calls = await stubSns(page, { profile: BORI_MUTUAL })
+  await page.goto(profileUrl)
+
+  const avatar = page.getByLabel('보리언니', { exact: true })
+  await expect(avatar).toHaveText('보')
+  await expect(avatar.locator('img')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '차단 해제' })).toBeVisible()
+  await expect(page.getByText('차단한 계정이에요')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('tablist', { name: '게시물 목록' })).toHaveCount(0)
+  await shot(page, 'sns-17-profile-mutual-block')
+
+  await page.getByRole('button', { name: '차단 해제' }).click()
+  await expect(page.getByRole('dialog', { name: '차단을 해제할까요?' })).toBeVisible()
+  expect(calls.toggles).toEqual([])
+})
+
+test('[AC-SNS01-E2E-015] 팔로우가 429 90012면 잠시 후 다시 시도해 달라는 토스트가 뜨고 버튼은 팔로우 그대로다', async ({
+  page,
+}) => {
+  await stubSns(page)
+  // 나중에 등록한 라우트가 먼저 확인된다. 팔로우 켜기만 빈도 제한 응답으로 바꾼다.
+  await page.route(`${API}/sns/users/*/follow`, route =>
+    route.request().method() === 'POST'
+      ? fulfill(route, 429, { errorCode: 90012, message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' })
+      : fulfill(route, 204),
+  )
+  await page.goto(profileUrl)
+
+  await page.getByRole('button', { name: '팔로우', exact: true }).click()
+
+  await expect(page.getByText('잠시 후 다시 시도해 주세요')).toBeVisible()
+  await expect(page.getByRole('button', { name: '팔로우', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '128 팔로워' })).toBeVisible()
+  await shot(page, 'sns-18-follow-rate-limited')
 })

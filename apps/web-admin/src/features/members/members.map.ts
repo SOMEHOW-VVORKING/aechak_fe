@@ -171,3 +171,12 @@ export function sanctionErrorMessage(error: unknown): string {
   if (status === 400) return '입력한 값을 서버가 받지 못했어요. 사유와 기간을 확인해 주세요.'
   return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
 }
+
+export function profileResetErrorMessage(error: unknown): string {
+  const { status, errorCode } = toWireError(error)
+  if (status === 409 && errorCode === 30024)
+    return '프로필이 없는 계정(가입 진행 중, 탈퇴)이라 초기화할 수 없어요. 목록을 다시 불러왔어요.'
+  if (status === 403) return '이 작업을 처리할 권한이 없어요. 관리자 권한을 확인해 주세요.'
+  if (status === 404) return '회원을 찾을 수 없어요. 목록을 다시 불러와 주세요.'
+  return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
+}

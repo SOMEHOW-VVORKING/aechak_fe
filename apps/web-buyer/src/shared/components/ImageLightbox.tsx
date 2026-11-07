@@ -8,7 +8,7 @@ export interface ImageLightboxProps {
   alt?: string
 }
 
-const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 // 리뷰 사진 등 단일 이미지를 크게 보는 라이트박스. 스크림 클릭/닫기 버튼/ESC로 닫힌다.
 // position:fixed지만 __root의 폰 프레임 translateZ containing block 안에서 배치돼
@@ -56,13 +56,16 @@ export function ImageLightbox({ src, onClose, alt = '' }: ImageLightboxProps) {
         e.preventDefault()
         return
       }
+      const active = document.activeElement
+      // 열린 직후 포커스는 패널 자신에 있어 first도 last도 아니다. 그대로 두면 Shift+Tab 한 번에 포커스가 라이트박스 뒤로 넘어간다.
+      // 포커스가 패널 밖에 있으면 아무것도 하지 않는다. 위에 겹쳐 뜬 오버레이의 Tab까지 처리하면 그 오버레이의 첫 항목에서 포커스가 움직이지 않는다.
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (active === first || active === panel) {
           e.preventDefault()
           last.focus()
         }
       } else {
-        if (document.activeElement === last) {
+        if (active === last || active === panel) {
           e.preventDefault()
           first.focus()
         }

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Alert, Button, Card } from '@aechak/design-system/web'
-import { Apple, Globe, Info, MessageCircle } from 'lucide-react'
+import { Info, MessageCircle } from 'lucide-react'
 import { WEB_LOGIN_PROVIDERS, type SocialProvider } from '../auth.session'
 
 interface LoginFormProps {
@@ -13,8 +13,6 @@ interface LoginFormProps {
 
 const SOCIAL_BUTTONS: { provider: SocialProvider; label: string; icon: ReactNode }[] = [
   { provider: 'kakao', label: '카카오로 로그인', icon: <MessageCircle className="size-4" /> },
-  { provider: 'google', label: '구글로 로그인', icon: <Globe className="size-4" /> },
-  { provider: 'apple', label: 'Apple로 로그인', icon: <Apple className="size-4" /> },
 ]
 
 export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: LoginFormProps) {
@@ -29,7 +27,7 @@ export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: L
 
       <div className="flex flex-col gap-2">
         {SOCIAL_BUTTONS.map(({ provider, label, icon }) => {
-          // 서버 웹 로그인이 열린 provider만 활성 — 구글·애플은 서버 지원 후 개방(web-buyer 관례).
+          // 서버 웹 로그인이 열린 provider만 활성(web-buyer 관례).
           const supported = WEB_LOGIN_PROVIDERS.has(provider)
           return (
             <Button

@@ -10,12 +10,14 @@ import {
   getAdminMemberDetail,
   getAdminMembers,
   releaseAdminMemberSanction,
+  resetAdminMemberProfile,
   sanctionAdminMember,
   type AdminMemberDetailData,
   type AdminMemberListData,
   type GetAdminMembersParams,
 } from '@aechak/api'
 import type { MemberAccount } from '@aechak/domain'
+import { useMetricValue } from '@/shared/hooks/useMetricValue'
 import {
   DECISION_TO_ACTION,
   STATUS_FILTER_TO_WIRE,
@@ -97,8 +99,34 @@ export function useAdminMembers(params: MemberListParams): MemberListResult {
   }
 }
 
+/**
+ * 하루치 신규 회원 수. 대시보드 첫 화면의 `오늘 신규 회원` 칸이 쓴다.
+ *
+ * `size=1`로 받고 응답 `totalCount`만 읽는다 — 목록 길이로 세면 늘 1이다. 서버는 `joinedFrom`·
+ * `joinedTo`를 `[그 날 00:00, 다음 날 00:00)` 반열림 구간으로 펴서 **count 조건에도 그대로**
+ * 적용하므로(BE `AdminMemberService.toCondition` + `AdminMemberQueryAdapter.countMembers`),
+ * 두 값에 같은 날짜를 넣으면 그 하루에 가입한 수가 된다. 목록 화면과 **키를 가른다**: 목록 키에는
+ * 상태·검색어·커서가 실려 있어 거기 끼면 화면이 1건짜리 페이지를 그린다.
+ *
+ * **관리자 계정은 세지 않는다** — 서버 조회가 `role=GENERAL`로 좁혀 있고 관리자는 명부
+ * (`/admin/admins`)가 따로 다룬다. 상태는 보내지 않아 가입 당일 제재·탈퇴된 계정도 그 날 가입한
+ * 수에 남는다(가입 사실은 상태로 사라지지 않는다).
+ *
+ * 날짜는 호출부가 **KST 벽시계 날짜**로 넘긴다 — 서버 JVM이 `TZ=Asia/Seoul`이라 운영자 브라우저가
+ * 어느 표준시든 서버가 세는 하루와 같은 구간을 가리켜야 한다.
+ */
+export function useJoinedMemberCount(joinedOn: string): number | null {
+  const params: GetAdminMembersParams = { joinedFrom: joinedOn, joinedTo: joinedOn, size: 1 }
+  return useMetricValue([...MEMBERS_QUERY_KEY, 'joined-count', joinedOn], signal =>
+    getAdminMembers(params, signal).then(response => response.data.totalCount),
+  )
+}
+
 export interface MemberDetailResult {
   member: MemberAccount | null
+  /** 현재 프로필 이미지 주소. 기본 이미지면 null이다. */
+  profileImageUrl: string | null
+  bio: string | null
   sanctions: SanctionEntryView[]
   isLoading: boolean
   isError: boolean
@@ -115,6 +143,8 @@ export function useAdminMemberDetail(userId: number | null): MemberDetailResult 
   })
   return {
     member: query.data ? toMemberAccount(query.data.member) : null,
+    profileImageUrl: query.data?.profileImageUrl ?? null,
+    bio: query.data?.bio ?? null,
     sanctions: (query.data?.sanctions ?? []).map(toSanctionEntry),
     isLoading: query.isLoading,
     isError: query.isError,
@@ -160,6 +190,15 @@ export function useSanctionMember() {
         ...body,
       })
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEY }),
+  })
+}
+
+/** 프로필 초기화. 제재와 같이 204 본문 없음이라 성공과 실패 모두 무효화 후 재조회로 반영한다. */
+export function useResetMemberProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: number) => resetAdminMemberProfile(userId),
     onSettled: () => queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEY }),
   })
 }

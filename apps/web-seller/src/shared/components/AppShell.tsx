@@ -10,32 +10,28 @@ import {
   RotateCcw,
   Star,
   Store,
-  Tag,
   Truck,
-  UserCog,
   Wallet,
 } from 'lucide-react'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
 const iconClass = 'size-full'
 
-// nav는 2026-10-18 게이트(SCRUM-238) 이전 정본 4그룹 12항목 구성 그대로다 — 그때 화면 코드는
-// 하나도 지워지지 않았고 진입점만 빠졌는데, 운영자에게는 "기능이 사라졌다"로 읽혔다. 그래서
-// **항목은 빼지 않고 전부 올린다**. 서버 유무는 숨김이 아니라 "준비 중" 꼬리표로 가른다
-// (AGENTS.md 규약 10 — 숨기지 않고, 속이지도 않는다).
+// nav는 2026-10-18 게이트(SCRUM-238) 이전 정본 구성에서 **BE가 없던 두 항목(혜택/쿠폰/할인 ·
+// 계정/보안)을 걷어낸** 4그룹 10항목이다. 게이트 때는 화면 코드를 남기고 진입점만 닫았다가
+// 운영자에게 "기능이 사라졌다"로 읽혔지만, 이번에는 그 반대다 — 쿠폰은 BE에 경로가 아예 없고,
+// 계정/보안은 소셜 로그인 전용 서비스라 비밀번호·2단계 인증의 대상 자체가 없다. 예시 데이터로
+// 열어 두는 것이 운영자를 더 속이므로 화면째 지웠다(AGENTS.md 규약 10 — 숨기지 않고, 속이지도
+// 않는다. 막아야 하는 것은 메뉴가 아니라 "저장되는 것처럼 보이는 화면"이다).
 //
-// 꼬리표 없는 10항목은 seller 모듈에 API가 올라와 실연동이다(주문 SCRUM-291 · 대시보드 SCRUM-292 ·
+// 남은 10항목은 전부 seller 모듈에 API가 올라와 실연동이다(주문 SCRUM-291 · 대시보드 SCRUM-292 ·
 // 배송 정책·정산 SCRUM-293 · 클레임 SCRUM-295 · 리뷰 관리 SCRUM-315 · 고객 문의 SCRUM-316 ·
-// 알림/공지 SCRUM-332). 라우트 게이트 상수는 `shared/serverAvailability.ts`에 남아 있어 서버가
-// 내려가면 상수만 내려 진입점을 닫을 수 있다.
+// 알림/공지 SCRUM-332). 그래서 "준비 중" 꼬리표가 붙는 항목이 하나도 없다 — 꼬리표가 필요한
+// 항목이 다시 생기면 어드민 nav(SCRUM-302)처럼 `badge`가 아니라 `NavItem.tag`로 붙일 것(`badge`는
+// 서버가 채우는 숫자라 글자 상태와 자리를 겹쳐 쓸 수 없다). 라우트 게이트 상수는
+// `shared/serverAvailability.ts`에 남아 있어 서버가 내려가면 상수만 내려 진입점을 닫을 수 있다.
 //
-// 꼬리표가 붙은 2항목(혜택/쿠폰 · 계정)은 BE가 없어 라우트가 예시 데이터와 "예시 데이터" 띠를
-// 보여준다(SCRUM-307).
-// 꼬리표를 떼는 것은 그 경로에 seller BE가 생겼을 때뿐이고, 아이콘은 정본의 lucide 이름을 그대로 쓴다.
-//
-// 상태 표시에 `badge`가 아니라 `NavItem.tag`를 쓰는 이유는 어드민 nav(SCRUM-302)와 같다 — `badge`는
-// 서버가 채우는 숫자(처리 대기 건수)라 글자 상태와 자리를 겹쳐 쓸 수 없다.
-const PENDING_TAG = '준비 중'
+// 아이콘은 정본의 lucide 이름을 그대로 쓴다.
 
 const groups: NavGroup[] = [
   {
@@ -55,12 +51,6 @@ const groups: NavGroup[] = [
     items: [
       { key: '/products', label: '상품 관리', icon: <Package className={iconClass} /> },
       { key: '/shipping-policy', label: '배송 정책', icon: <Truck className={iconClass} /> },
-      {
-        key: '/coupons',
-        label: '혜택/쿠폰/할인',
-        icon: <Tag className={iconClass} />,
-        tag: PENDING_TAG,
-      },
     ],
   },
   {
@@ -74,12 +64,6 @@ const groups: NavGroup[] = [
     items: [
       { key: '/store-settings', label: '스토어 설정', icon: <Store className={iconClass} /> },
       { key: '/notices', label: '알림/공지', icon: <Megaphone className={iconClass} /> },
-      {
-        key: '/account',
-        label: '계정/보안',
-        icon: <UserCog className={iconClass} />,
-        tag: PENDING_TAG,
-      },
     ],
   },
 ]

@@ -5,7 +5,9 @@ import type { CompletePaymentEnvelope, PreparePaymentEnvelope } from '@aechak/ap
 // page.route 스텁으로 서버 계약을 재현하고, 포트원 SDK는 window.PortOne을 미리 심어 CDN 로드를 막는다
 // (npm `/v2` 엔트리는 window.PortOne이 이미 있으면 cdn.portone.io 스크립트를 주입하지 않는다).
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

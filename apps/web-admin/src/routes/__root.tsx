@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   LifeBuoy,
   Megaphone,
-  MessagesSquare,
   Package,
   RotateCcw,
   ScanEye,
@@ -28,8 +27,8 @@ const iconClass = 'size-full'
 
 const APPLICATIONS_NAV_KEY = '/sellers/applications'
 
-/**
- * 서버가 아직 없어 들어가도 **예시 데이터**만 보이는 항목의 꼬리표.
+/*
+ * 서버가 아직 없어 들어가도 **예시 데이터**만 보이는 항목의 꼬리표(`tag: '준비 중'`).
  *
  * 규약 10의 목적은 메뉴를 숨기는 것이 아니라 **운영자가 속지 않게** 하는 것이다. 메뉴에서 빼
  * 버리면 운영자는 어드민이 무엇을 다루는 도구인지조차 알 수 없고(2026-10-18 SCRUM-238에서
@@ -41,19 +40,29 @@ const APPLICATIONS_NAV_KEY = '/sellers/applications'
  * `MockDataNotice` 띠로 예시임을 밝히며 쓰기를 서버로 내보내지 않는다. **꼬리표는 그대로 둔다**:
  * 들어가기 전에 알 수 있어야 한다.
  *
+ * 2026-11-07 기준 이 꼬리표가 남은 항목은 **없다.** 셀러 관리(SCRUM-362)와 대시보드는 실연동돼
+ * 꼬리표를 뗐고, 채팅 CS 모니터링은 아래 nav 주석의 이유로 항목째 내렸다. 꼬리표가 다시 필요한
+ * 항목이 생기면 그 항목에 꼬리표를 다시 달고 `admin-nav.test.tsx`의 분류 배열을 되살린다.
+ *
  * 숫자 배지(`badge`)와 별개 필드인 이유는 쓰임이 다르기 때문이다. 배지는 "처리 대기 N건"이고
  * 꼬리표는 "아직 열리지 않았다"라, 입점 심사처럼 둘을 겸해야 하는 항목이 생기면 한 자리에
  * 겹쳐 쓸 수 없다. BE가 생기면 그 항목에서 이 꼬리표를 떼고 화면의 띠를 걷는다.
  */
-const PENDING_TAG = '준비 중'
 
 // nav 구성은 SCRUM-238 차단 이전(26e4b89^)의 5그룹을 되살린 것이고, 그 뒤 생긴 `/admins`를
 // 운영 관리 그룹에 더해 15항목이 됐다. 목데이터 '상품 검수 관리'의 입구를 내려 14항목이었다가
-// (SCRUM-313) 그 화면이 실연동되면서 '상품 카탈로그 관리'로 다시 올라와 15항목이 되고
-// (SCRUM-363), 검수 진행 현황 경로가 생겨 'AI 검수 모니터링'이 더해져 **16항목**이다
-// (SCRUM-367 — 실연동 14 + 준비 중 2). (차단 이전 nav의 "확장 예정" 6항목 — 홈 배너·카테고리·정산·
-// 어드민 계정 권한·고급 통계·세금 신고 — 은 복원 대상이 아니고, 그중 어드민 계정 권한 관리는
-// `/admins`가 대신한다).
+// (SCRUM-313) 그 화면이 실연동되면서 '상품 카탈로그 관리'로 다시 올라와 15항목이 됐고(SCRUM-363),
+// '채팅 CS 모니터링'을 내려 14항목이 됐다가(SCRUM-377), 검수 진행 현황 경로가 생겨 'AI 검수
+// 모니터링'이 더해져 지금은 **5그룹 15항목, 전부 실연동**이다(SCRUM-367). 차단 이전 nav의
+// "확장 예정" 6항목 — 홈 배너·카테고리·정산·어드민 계정 권한·고급 통계·세금 신고 — 은 복원
+// 대상이 아니고, 그중 어드민 계정 권한 관리는 `/admins`가 대신한다.
+//
+// '채팅 CS 모니터링'은 **규약 10의 꼬리표가 아니라 항목 제거로 처리했다.** 꼬리표는 "BE가 생기면
+// 열린다"는 약속이라 그 약속이 서는 항목에만 쓸 수 있는데, 채팅은 **BE에 도메인 자체가 없어**
+// (SNS 쪽 `/sns/*`만 열려 있다) 실연동될 길이 없고 데모 범위에서도 뺐다. 그래서 입구만 내리는
+// 것으로 끝내지 않고 라우트(`routes/chat-monitoring.tsx`)와 feature(`features/chat-monitoring/`)까지
+// 함께 지웠다 — 돌아올 화면이 아니라 URL로 닿을 자리도 남길 이유가 없다. 채팅이 생기면 꼬리표를
+// 붙여 되올리지 말고 그때 실연동으로 새로 만든다.
 //
 // 꼬리표 유무는 dev 실측으로 갈랐다(2026-10-30, `GET /v3/api-docs`). admin-api-dev에 있는 경로는
 // `/admin/admins`(+`/{userId}`), `/admin/seller-applications` 계열 넷, `/admin/members` 계열
@@ -73,13 +82,15 @@ const navGroups: NavGroup[] = [
     key: 'operations',
     label: '운영',
     items: [
-      // 로그인 복귀 지점이라 라우트를 비울 수 없다 — admin 모듈에 운영 지표 집계 API가 없어
-      // 지표는 예시로 그리고, 심사 대기 수만 실 API 값을 쓴다(routes/index.tsx).
+      // 로그인 복귀 지점이라 라우트를 비울 수 없다. admin 모듈에 운영 지표를 한 번에 주는 경로는
+      // 여전히 없지만, 이미 실연동된 화면들의 목록·지표 경로를 1건짜리 조회로 건수만 받아
+      // 일곱 칸과 할 일 네 줄을 전부 실 집계로 채웠다(routes/index.tsx) — 지어낸 숫자를 그리는
+      // 칸이 없어 꼬리표를 뗐다. 실 집계 화면에 꼬리표를 남기면 실데이터를 예시로 의심하게
+      // 만들어 규약 10의 목적을 거꾸로 깨뜨린다.
       {
         key: '/',
         label: '대시보드',
         icon: <LayoutDashboard className={iconClass} />,
-        tag: PENDING_TAG,
       },
       {
         // 배지 숫자는 아래 AdminNavShell이 서버 심사 대기 수로 채운다 — 상수 배지는 AGENTS.md가
@@ -192,13 +203,7 @@ const navGroups: NavGroup[] = [
         label: '리뷰 관리',
         icon: <Star className={iconClass} />,
       },
-      // 채팅 자체가 BE에 없다(SNS 쪽 `/sns/*`만 열려 있다).
-      {
-        key: '/chat-monitoring',
-        label: '채팅 CS 모니터링',
-        icon: <MessagesSquare className={iconClass} />,
-        tag: PENDING_TAG,
-      },
+      // 네 번째였던 '채팅 CS 모니터링'은 2026-11-07에 내렸다 — 사유는 위 nav 주석에 적었다.
     ],
   },
   {
@@ -248,7 +253,7 @@ function withPendingBadge(groups: NavGroup[], pendingCount: number | null): NavG
 }
 
 function AdminShell() {
-  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const pathname = useRouterState({ select: state => state.location.pathname })
   // /login 계열(로그인 화면 + /login/complete 서버 콜백 복귀)은 nav에 속하지 않는 별도 라우트라
   // SideNav 없이 단독 렌더링한다. 셸 안의 usePendingApplicationCount가 로그인 전에 심사 조회를
   // 발사해 401/403을 만들지 않도록, 훅보다 **먼저** 돌려보낸다(조건을 훅 아래로 내리면 안 된다).

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Check, ChevronDown, SearchX, SlidersHorizontal, Star } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, SearchX, ShoppingBag, SlidersHorizontal, Star } from 'lucide-react'
 import {
   BottomSheet,
   Button,
@@ -8,13 +8,14 @@ import {
   MobileScreen,
   SearchInput,
   Skeleton,
+  Tabs,
 } from '@aechak/design-system/web'
 import type { CategoryResponse } from '@aechak/api'
 import { BackAppBar } from '@/shared/components/BackAppBar'
 import { Divider } from '@/shared/components/Divider'
 import { FilterChip } from '@/shared/components/FilterChip'
 import { useSafeBack } from '@/shared/useSafeBack'
-import { ProductGrid, type CatalogProduct } from '@/shared/catalog'
+import { ProductCarousel, ProductGrid, type CatalogProduct } from '@/shared/catalog'
 import { LoginGate, useLoginGate, useIsLoggedIn } from '@/shared/auth'
 import { useSearchCategories, useSearchLanding, useSearchResults } from '../search.queries'
 import {
@@ -24,6 +25,7 @@ import {
   activeFilterCount,
   type ResultSort,
   type SearchFilters,
+  type SearchTab,
 } from '../search.mock'
 import { KeywordChip } from './KeywordChip'
 import { OptionSheet } from './OptionSheet'
@@ -48,8 +50,23 @@ const RATING_PRESETS: { label: string; value: number }[] = [
   { label: '4.5↑', value: 4.5 },
 ]
 
-// 검색 결과 + 필터(b3-st-3). full-bleed(탭바 없음). query는 라우트 검색 파라미터에서 받는다.
-export function SearchResultsScreen({ query }: { query: string }) {
+/** 전체 탭 마켓 섹션의 미리보기 수(b12-st-2) */
+const MARKET_SECTION_SIZE = 5
+
+interface SearchResultsScreenProps {
+  query: string
+  tab: SearchTab
+  onTabChange: (tab: SearchTab) => void
+  /** SNS 탭 옆 결과 수(게시물 검색 totalCount). 모르면 숫자를 그리지 않는다 */
+  snsCount?: number
+  /** 전체 탭의 SNS 섹션과 SNS 탭. SNS feature가 그려 라우트가 넘긴다(feature 간 import 금지) */
+  snsSection: ReactNode
+  snsTab: ReactNode
+}
+
+// 통합 검색 결과(b12-st-2~4). 마켓 탭은 기존 상품 검색 결과 + 필터(b3-st-3, b12-st-3)이고 전체 탭은 SNS 섹션과 상품 5개
+// 미리보기다. full-bleed(탭바 없음). query와 탭은 라우트 검색 파라미터에서 받는다.
+export function SearchResultsScreen({ query, tab, onTabChange, snsCount, snsSection, snsTab }: SearchResultsScreenProps) {
   const navigate = useNavigate()
   const { gateOpen, gateFeature, requireAuth, closeGate } = useLoginGate()
   const goBack = useSafeBack({ to: '/' })
@@ -75,12 +92,14 @@ export function SearchResultsScreen({ query }: { query: string }) {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useSearchResults(query, filters, sort)
+  } = useSearchResults(query, filters, sort, tab === 'market')
+  // 전체 탭 마켓 섹션은 기본 필터와 인기순 첫 페이지다. 필터를 바꾸지 않은 마켓 탭과 같은 조회라 탭을 오가도 다시 부르지 않는다.
+  const preview = useSearchResults(query, DEFAULT_FILTERS, 'popular', tab === 'all')
 
   // 무결과 추천어는 서버 추천 검색어(GET /search/keywords)만 쓴다. 하드코딩 칩은 그 넷에 걸리는
   // 상품이 없어 눌러도 같은 무결과로 돌아왔다 — "다른 검색어가 있다"는 거짓 약속이다. 회원 전용
   // 경로라 비회원·무응답이면 섹션을 접는다(검색 랜딩의 추천 섹션과 같은 처리).
-  const noResults = data != null && data.products.length === 0
+  const noResults = tab === 'market' && data != null && data.products.length === 0
   const landing = useSearchLanding(isLoggedIn && noResults)
   const suggested = landing.data?.suggestedKeywords ?? []
 
@@ -90,7 +109,7 @@ export function SearchResultsScreen({ query }: { query: string }) {
   const research = (q: string) => {
     const trimmed = q.trim()
     if (!trimmed) return
-    navigate({ to: '/search/results', search: { q: trimmed } })
+    navigate({ to: '/search/results', search: { q: trimmed, ...(tab !== 'all' && { tab }) } })
   }
 
   const sortLabel = RESULT_SORT_LABELS[sort]
@@ -108,186 +127,214 @@ export function SearchResultsScreen({ query }: { query: string }) {
   return (
     <MobileScreen
       header={
-        <BackAppBar onBack={goBack}>
-          <SearchInput
-            value={draftQuery}
-            onChange={setDraftQuery}
-            onClear={() => navigate({ to: '/search' })}
-            placeholder="상품, 브랜드 검색"
-            onKeyDown={e => {
-              if (e.key === 'Enter') research(draftQuery)
-            }}
+        <>
+          <BackAppBar onBack={goBack}>
+            <SearchInput
+              value={draftQuery}
+              onChange={setDraftQuery}
+              onClear={() => navigate({ to: '/search', search: tab !== 'all' ? { tab } : {} })}
+              placeholder="상품/계정/해시태그 검색"
+              onKeyDown={e => {
+                if (e.key === 'Enter') research(draftQuery)
+              }}
+            />
+          </BackAppBar>
+          {/* 탭을 바꿔도 검색어는 그대로다(b12-st-4). 탭 전환은 새 검색이 아니다(R3-13). */}
+          <Tabs
+            tabs={[
+              { key: 'all', label: '전체' },
+              { key: 'market', label: '마켓' },
+              { key: 'sns', label: 'SNS', badge: snsCount?.toLocaleString('ko-KR') },
+            ]}
+            activeKey={tab}
+            onSelect={key => onTabChange(key as SearchTab)}
+            className="[&>button]:flex-1"
           />
-        </BackAppBar>
+        </>
       }
     >
-      <div className="flex flex-col gap-3 py-3">
-        {/* 필터바 — 상세 필터 버튼 + 인라인 퀵필터 칩(무료배송 토글/가격/별점 4↑) */}
-        <div className="flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            type="button"
-            onClick={() => setFilterOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={filterOpen}
-            className={[
-              'inline-flex h-9 flex-none items-center gap-1.5 rounded-chip border px-3.5 text-body-sm transition-colors',
-              filterCount > 0
-                ? 'border-brand-border bg-brand-subtle text-brand'
-                : 'border-border bg-surface-base text-text-secondary',
-            ].join(' ')}
-          >
-            <SlidersHorizontal className="size-4" />
-            필터
-            {filterCount > 0 && <span className="font-semibold text-brand">{filterCount}</span>}
-          </button>
-          {/* 품절 제외는 기본 ON(활성)이라, 스크롤해야 보이는 맨 끝이 아니라 필터 버튼 바로 뒤에 둬
-              기본 활성 상태가 처음부터 보이게 한다(폭이 430px를 넘으면 뒤쪽 별점 칩이 대신 스크롤됨). */}
-          <FilterChip
-            selected={filters.excludeSoldOut}
-            onClick={() => patchFilters({ excludeSoldOut: !filters.excludeSoldOut })}
-          >
-            품절 제외
-            {filters.excludeSoldOut && <Check className="size-3.5" />}
-          </FilterChip>
-          <FilterChip
-            selected={filters.freeShippingOnly}
-            onClick={() => patchFilters({ freeShippingOnly: !filters.freeShippingOnly })}
-          >
-            무료배송
-            {filters.freeShippingOnly && <Check className="size-3.5" />}
-          </FilterChip>
-          {/* 가격은 즉시 토글이 아니라 가격대 전용 시트를 연다(무료배송/별점과 달리 선택지가 여러 개라서). */}
-          <FilterChip selected={priceActive} expanded={priceOpen} onClick={() => setPriceOpen(true)}>
-            {priceChipLabel}
-            <ChevronDown className="size-3.5" />
-          </FilterChip>
-          <FilterChip
-            selected={filters.minRating >= 4}
-            onClick={() => patchFilters({ minRating: filters.minRating >= 4 ? 0 : 4 })}
-          >
-            별점 4↑
-          </FilterChip>
+      {tab === 'all' && (
+        <div className="flex flex-col pb-6">
+          {snsSection}
+          <Divider />
+          <MarketSection
+            result={preview}
+            onMore={() => onTabChange('market')}
+            onSelect={goProduct}
+            wishGuard={proceed => requireAuth('wish', proceed)}
+          />
         </div>
-
-        {/* 결과 헤더 */}
-        <div className="flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <span className="text-caption text-text-tertiary">
-              <span className="font-semibold text-text-secondary">
-                {(data?.total ?? 0).toLocaleString('ko-KR')}
-              </span>
-              개
-            </span>
+      )}
+      {tab === 'sns' && snsTab}
+      {tab === 'market' && (
+        <div className="flex flex-col gap-3 py-3">
+          {/* 필터바 — 상세 필터 버튼 + 인라인 퀵필터 칩(무료배송 토글/가격/별점 4↑) */}
+          <div className="flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => setFilterOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={filterOpen}
+              className={[
+                'inline-flex h-9 flex-none items-center gap-1.5 rounded-chip border px-3.5 text-body-sm transition-colors',
+                filterCount > 0
+                  ? 'border-brand-border bg-brand-subtle text-brand'
+                  : 'border-border bg-surface-base text-text-secondary',
+              ].join(' ')}
+            >
+              <SlidersHorizontal className="size-4" />
+              필터
+              {filterCount > 0 && <span className="font-semibold text-brand">{filterCount}</span>}
+            </button>
+            {/* 품절 제외는 기본 ON(활성)이라, 스크롤해야 보이는 맨 끝이 아니라 필터 버튼 바로 뒤에 둬
+                기본 활성 상태가 처음부터 보이게 한다(폭이 430px를 넘으면 뒤쪽 별점 칩이 대신 스크롤됨). */}
+            <FilterChip
+              selected={filters.excludeSoldOut}
+              onClick={() => patchFilters({ excludeSoldOut: !filters.excludeSoldOut })}
+            >
+              품절 제외
+              {filters.excludeSoldOut && <Check className="size-3.5" />}
+            </FilterChip>
+            <FilterChip
+              selected={filters.freeShippingOnly}
+              onClick={() => patchFilters({ freeShippingOnly: !filters.freeShippingOnly })}
+            >
+              무료배송
+              {filters.freeShippingOnly && <Check className="size-3.5" />}
+            </FilterChip>
+            {/* 가격은 즉시 토글이 아니라 가격대 전용 시트를 연다(무료배송/별점과 달리 선택지가 여러 개라서). */}
+            <FilterChip selected={priceActive} expanded={priceOpen} onClick={() => setPriceOpen(true)}>
+              {priceChipLabel}
+              <ChevronDown className="size-3.5" />
+            </FilterChip>
+            <FilterChip
+              selected={filters.minRating >= 4}
+              onClick={() => patchFilters({ minRating: filters.minRating >= 4 ? 0 : 4 })}
+            >
+              별점 4↑
+            </FilterChip>
           </div>
-          <button
-            type="button"
-            onClick={() => setSortOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={sortOpen}
-            className="inline-flex items-center gap-1 text-body-sm text-text-secondary"
-          >
-            {sortLabel}
-            <ChevronDown className="size-4 text-icon-muted" />
-          </button>
-        </div>
 
-        {/* 결과 그리드 / 빈 상태 */}
-        <div className="px-4">
-          {isError && !data ? (
-            // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다. DS EmptyState는 action 버튼이 size=sm 고정이라
-            // 목업의 md 버튼을 못 만든다 — 레이아웃만 미러링한다(아래 무결과 블록과 같은 사정).
-            <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
-                <SearchX className="size-7" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-body font-medium text-text-primary">검색 결과를 불러오지 못했어요</p>
-                <p className="text-body-sm text-text-tertiary">
-                  네트워크 상태를 확인하고 다시 시도해 주세요.
-                </p>
-              </div>
-              <Button variant="secondary" size="md" onClick={() => void refetch()}>
-                다시 시도
-              </Button>
+          {/* 결과 헤더 */}
+          <div className="flex items-center justify-between px-4">
+            <div className="flex items-center gap-2">
+              <span className="text-caption text-text-tertiary">
+                <span className="font-semibold text-text-secondary">
+                  {(data?.total ?? 0).toLocaleString('ko-KR')}
+                </span>
+                개
+              </span>
             </div>
-          ) : isLoading || !data ? (
-            <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-2">
-                  <Skeleton variant="rect" className="aspect-square w-full rounded-image" />
-                  <Skeleton variant="text" className="h-4 w-3/4" />
-                </div>
-              ))}
-            </div>
-          ) : data.products.length === 0 ? (
-            <div className="flex flex-col gap-6 pt-4">
-              {/* 카피 관례상 직접 인용부호 금지 — 검색어는 따옴표 대신 브랜드색 강조로 세팅오프한다.
-                  DS EmptyState.title은 string이라 마크업을 못 넣어, 그 레이아웃만 그대로 미러링. */}
+            <button
+              type="button"
+              onClick={() => setSortOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={sortOpen}
+              className="inline-flex items-center gap-1 text-body-sm text-text-secondary"
+            >
+              {sortLabel}
+              <ChevronDown className="size-4 text-icon-muted" />
+            </button>
+          </div>
+
+          {/* 결과 그리드 / 빈 상태 */}
+          <div className="px-4">
+            {isError && !data ? (
+              // 검색 오류는 빈 결과가 아니라 재시도 가능한 실패로 구분한다. DS EmptyState는 action 버튼이 size=sm 고정이라
+              // 목업의 md 버튼을 못 만든다 — 레이아웃만 미러링한다(아래 무결과 블록과 같은 사정).
               <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
                 <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
                   <SearchX className="size-7" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-body font-medium text-text-primary">
-                    <span className="font-semibold text-brand">{query}</span> 검색 결과가 없어요
-                  </p>
+                  <p className="text-body font-medium text-text-primary">검색 결과를 불러오지 못했어요</p>
                   <p className="text-body-sm text-text-tertiary">
-                    검색어의 철자를 확인하거나 더 일반적인 단어로 다시 검색해 보세요.
+                    네트워크 상태를 확인하고 다시 시도해 주세요.
                   </p>
                 </div>
+                <Button variant="secondary" size="md" onClick={() => void refetch()}>
+                  다시 시도
+                </Button>
               </div>
-              {suggested.length > 0 && (
-                <div className="flex flex-col gap-2.5">
-                  <span className="text-label font-semibold text-text-secondary">
-                    이런 검색어는 어때요?
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {suggested.map(keyword => (
-                      <KeywordChip
-                        key={keyword}
-                        keyword={keyword}
-                        onClick={() => research(keyword)}
-                      />
-                    ))}
+            ) : isLoading || !data ? (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-5">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex flex-col gap-2">
+                    <Skeleton variant="rect" className="aspect-square w-full rounded-image" />
+                    <Skeleton variant="text" className="h-4 w-3/4" />
+                  </div>
+                ))}
+              </div>
+            ) : data.products.length === 0 ? (
+              <div className="flex flex-col gap-6 pt-4">
+                {/* 카피 관례상 직접 인용부호 금지 — 검색어는 따옴표 대신 브랜드색 강조로 세팅오프한다.
+                    DS EmptyState.title은 string이라 마크업을 못 넣어, 그 레이아웃만 그대로 미러링. */}
+                <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-full bg-surface-sunken text-icon-muted">
+                    <SearchX className="size-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-body font-medium text-text-primary">
+                      <span className="font-semibold text-brand">{query}</span> 검색 결과가 없어요
+                    </p>
+                    <p className="text-body-sm text-text-tertiary">
+                      검색어의 철자를 확인하거나 더 일반적인 단어로 다시 검색해 보세요.
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
-          ) : (
-            <ProductGrid
-              products={data.products}
-              onSelect={goProduct}
-              wishGuard={proceed => requireAuth('wish', proceed)}
-              renderExtra={product =>
-                product.rating != null ? (
-                  <div className="mt-1 flex items-center gap-1 text-text-tertiary">
-                    <Star className="size-3 flex-none text-warning" fill="currentColor" />
-                    <span className="text-caption">
-                      {product.rating.toFixed(1)} (
-                      {product.reviewCount.toLocaleString('ko-KR')})
+                {suggested.length > 0 && (
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-label font-semibold text-text-secondary">
+                      이런 검색어는 어때요?
                     </span>
+                    <div className="flex flex-wrap gap-2">
+                      {suggested.map(keyword => (
+                        <KeywordChip
+                          key={keyword}
+                          keyword={keyword}
+                          onClick={() => research(keyword)}
+                        />
+                      ))}
+                    </div>
                   </div>
-                ) : null
-              }
-            />
-          )}
-          {data && data.products.length > 0 && hasNextPage && (
-            <div className="mt-6 flex flex-col items-center gap-2">
-              {isFetchNextPageError && (
-                <p className="text-body-sm text-error-fg">다음 상품을 불러오지 못했어요.</p>
-              )}
-              <Button
-                variant="secondary"
-                className="w-full"
-                loading={isFetchingNextPage}
-                onClick={() => void fetchNextPage()}
-              >
-                {isFetchNextPageError ? '다시 시도' : '상품 더 보기'}
-              </Button>
-            </div>
-          )}
+                )}
+              </div>
+            ) : (
+              <ProductGrid
+                products={data.products}
+                onSelect={goProduct}
+                wishGuard={proceed => requireAuth('wish', proceed)}
+                renderExtra={product =>
+                  product.rating != null ? (
+                    <div className="mt-1 flex items-center gap-1 text-text-tertiary">
+                      <Star className="size-3 flex-none text-warning" fill="currentColor" />
+                      <span className="text-caption">
+                        {product.rating.toFixed(1)} (
+                        {product.reviewCount.toLocaleString('ko-KR')})
+                      </span>
+                    </div>
+                  ) : null
+                }
+              />
+            )}
+            {data && data.products.length > 0 && hasNextPage && (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                {isFetchNextPageError && (
+                  <p className="text-body-sm text-error-fg">다음 상품을 불러오지 못했어요.</p>
+                )}
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  loading={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  {isFetchNextPageError ? '다시 시도' : '상품 더 보기'}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <FilterSheet
         open={filterOpen}
@@ -331,6 +378,80 @@ export function SearchResultsScreen({ query }: { query: string }) {
 
       <LoginGate open={gateOpen} feature={gateFeature} onClose={closeGate} />
     </MobileScreen>
+  )
+}
+
+// 전체 탭 마켓 섹션(b12-st-2). 상품 5개 가로 미리보기와 결과 수, 더 있으면 마켓 탭으로 가는 더보기다. 이 섹션만 실패하면 SNS
+// 섹션은 그대로 두고 이 자리에만 다시 시도를 둔다(SNS-06 P18).
+function MarketSection({
+  result,
+  onMore,
+  onSelect,
+  wishGuard,
+}: {
+  result: ReturnType<typeof useSearchResults>
+  onMore: () => void
+  onSelect: (product: CatalogProduct) => void
+  wishGuard: (proceed: () => void) => void
+}) {
+  const { data, isError, refetch, hasNextPage } = result
+  let body: ReactNode
+  if (isError && !data) {
+    body = (
+      <div className="flex flex-col items-center gap-3 px-4 py-4 text-center">
+        <p className="text-body-sm text-text-secondary">상품 검색 결과를 불러오지 못했어요</p>
+        <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+          다시 시도
+        </Button>
+      </div>
+    )
+  } else if (!data) {
+    body = (
+      <div className="flex gap-3 px-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} variant="rect" className="aspect-square w-[152px] flex-none rounded-image" />
+        ))}
+      </div>
+    )
+  } else if (data.products.length === 0) {
+    body = <p className="px-4 py-3 text-body-sm text-text-tertiary">검색 결과가 없어요</p>
+  } else {
+    body = (
+      <>
+        <ProductCarousel
+          products={data.products.slice(0, MARKET_SECTION_SIZE)}
+          onSelect={onSelect}
+          wishGuard={wishGuard}
+          className="px-4"
+        />
+        {(data.products.length > MARKET_SECTION_SIZE || hasNextPage) && (
+          <button
+            type="button"
+            onClick={onMore}
+            className="flex w-full items-center justify-center gap-0.5 px-4 py-3 text-body-sm font-medium text-text-secondary"
+          >
+            마켓 결과 {data.total.toLocaleString('ko-KR')}개 더보기
+            <ChevronRight className="size-4" />
+          </button>
+        )}
+      </>
+    )
+  }
+  return (
+    <section aria-label="마켓 검색 결과">
+      <div className="flex items-center justify-between px-4 pb-2 pt-4">
+        <h2 className="flex items-center gap-1.5 text-label font-semibold text-text-primary">
+          <ShoppingBag className="size-3.5 text-icon-muted" />
+          마켓
+        </h2>
+        {data && (
+          <span className="text-caption text-text-tertiary">
+            <span className="font-semibold tabular-nums text-text-secondary">{data.total.toLocaleString('ko-KR')}</span>개
+          </span>
+        )}
+      </div>
+      {body}
+    </section>
   )
 }
 

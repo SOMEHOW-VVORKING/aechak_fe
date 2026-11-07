@@ -5,7 +5,9 @@ import type { UnreviewedOrderItemResponse, WrittenReviewItemResponse } from '@ae
 // BE MyReviewListResponse 계약(tab=unreviewed|written, 커서 페이지, type 판별 필드)을 재현한다.
 // CORS/프리플라이트 규칙은 reviews.spec과 같다(교차출처 8080 + withCredentials).
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const USER_ME_URL = 'http://localhost:8080/api/v1/users/me'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,

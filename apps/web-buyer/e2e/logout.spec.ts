@@ -4,7 +4,9 @@ import { stubGuestSession, stubMemberSession } from './session'
 // 설정 홈 로그아웃 ↔ 서버 세션 종료(POST /auth/web/logout) E2E. 실백엔드 없이 page.route
 // 스텁으로 재현한다(교차 출처 + withCredentials — CORS 헤더 필수, pet-breeds 관례).
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

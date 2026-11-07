@@ -6,7 +6,9 @@ import {
   Check,
   CheckCircle,
   Hourglass,
+  ImageOff,
   PauseCircle,
+  RotateCcw,
   UserX,
 } from 'lucide-react'
 import {
@@ -28,10 +30,12 @@ import {
   SANCTION_REASON_LABELS,
   detailErrorMessage,
   listErrorMessage,
+  profileResetErrorMessage,
   sanctionErrorMessage,
   toDateLabel,
   useAdminMemberDetail,
   useAdminMembers,
+  useResetMemberProfile,
   useSanctionMember,
   type MemberStatusFilterValue,
 } from '@/features/members'
@@ -41,11 +45,13 @@ import { DetailField } from '@/shared/components/DetailField'
 import { DrawerSummaryCard } from '@/shared/components/DrawerSummaryCard'
 import { FilterSelect } from '@/shared/components/FilterSelect'
 import { HistoryList } from '@/shared/components/HistoryList'
+import { MediaPlaceholder } from '@/shared/components/MediaPlaceholder'
 import { PageIntro } from '@/shared/components/PageIntro'
 import { RowLinkButton } from '@/shared/components/RowLinkButton'
 import { StatusMetaPill } from '@/shared/components/StatusMetaPill'
 import type { StatusMeta } from '@/shared/components/StatusMetaPill'
 import { SummaryGrid } from '@/shared/components/SummaryGrid'
+import { usePendingWriteExitGuard } from '@/shared/hooks/usePendingWriteExitGuard'
 
 export const Route = createFileRoute('/members')({
   component: MembersPage,
@@ -203,8 +209,11 @@ function MembersPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const detail = useAdminMemberDetail(selectedUserId)
   const sanction = useSanctionMember()
+  const profileReset = useResetMemberProfile()
+  usePendingWriteExitGuard(profileReset.isPending)
 
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [decision, setDecision] = useState<MemberDecision>('normal')
   const [reasonCode, setReasonCode] = useState('')
@@ -245,9 +254,24 @@ function MembersPage() {
         (!needsReasonDetail || reasonDetail.trim() !== '') &&
         (!needsPeriod || sanctionPeriod !== ''))
 
+  // 이미 비어 있으면 서버도 204로 받지만 바뀌는 것이 없어 누를 수 없게 둔다(프로필이 없는 계정도 여기에 든다).
+  const hasProfileContent = detail.profileImageUrl != null || detail.bio != null
+
   function closeDrawer() {
+    // 초기화 요청 중에 닫히면 호출별 콜백이 실행되지 않아 결과 안내가 사라진다
+    if (profileReset.isPending) return
     setSelectedUserId(null)
     setConfirmOpen(false)
+    setResetOpen(false)
+  }
+
+  function submitProfileReset() {
+    if (!member) return
+    profileReset.mutate(member.userId, {
+      onSuccess: () => setToast('프로필 이미지와 소개글을 초기화했어요.'),
+      onError: error => setToast(profileResetErrorMessage(error)),
+      onSettled: () => setResetOpen(false),
+    })
   }
 
   function submit() {
@@ -370,6 +394,42 @@ function MembersPage() {
                 </p>
               )}
             </DrawerSummaryCard>
+
+            <DetailField label="프로필">
+              <div className="flex items-start gap-3">
+                {detail.profileImageUrl ? (
+                  <img
+                    src={detail.profileImageUrl}
+                    alt="프로필 이미지"
+                    className="size-[72px] shrink-0 rounded-md object-cover"
+                  />
+                ) : (
+                  <MediaPlaceholder className="size-[72px] shrink-0 flex-col gap-1 text-caption">
+                    <ImageOff className="size-4" />
+                    기본 이미지
+                  </MediaPlaceholder>
+                )}
+                <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-body-sm text-text-secondary">
+                  {detail.bio ?? '소개글이 없어요.'}
+                </p>
+              </div>
+              <div className="mt-2.5 flex items-center gap-2.5">
+                <Button
+                  variant="secondary"
+                  className="shrink-0"
+                  leftIcon={<RotateCcw className="size-4" />}
+                  onClick={() => setResetOpen(true)}
+                  disabled={!hasProfileContent || detail.isError || profileReset.isPending}
+                >
+                  프로필 초기화
+                </Button>
+                <span className="min-w-0 break-keep text-caption text-text-tertiary">
+                  {hasProfileContent
+                    ? '이미지를 기본 이미지로 되돌리고 소개글을 비워요. 제재는 남지 않아요.'
+                    : '초기화할 이미지와 소개글이 없어요.'}
+                </span>
+              </div>
+            </DetailField>
 
             <DetailField label={`제재 이력 / ${detail.sanctions.length}건`}>
               <HistoryList
@@ -508,6 +568,26 @@ function MembersPage() {
                   : SANCTION_REASON_LABELS[reasonCode as SanctionReasonCode] ?? '-',
               },
             ]}
+          />
+        </Modal>
+      )}
+
+      {member && (
+        <Modal
+          open={resetOpen}
+          onClose={() => {
+            if (profileReset.isPending) return
+            setResetOpen(false)
+          }}
+          title="프로필을 초기화할까요?"
+          description="프로필 이미지가 기본 이미지로 바뀌고 소개글이 비워져요. 닉네임과 계정 상태는 그대로이고 회원은 다시 바꿀 수 있어요."
+          confirmLabel="초기화"
+          confirmVariant="danger"
+          onConfirm={submitProfileReset}
+          loading={profileReset.isPending}
+        >
+          <SummaryGrid
+            items={[{ label: '대상', value: `${member.nickname ?? '닉네임 없음'} (${member.userId})` }]}
           />
         </Modal>
       )}

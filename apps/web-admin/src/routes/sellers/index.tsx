@@ -238,6 +238,10 @@ function SellersPage() {
 
   const totalPages = Math.max(1, Math.ceil(list.totalCount / DEFAULT_PAGE_SIZE))
   const lastPage = totalPages - 1
+  // 조회가 실패하면 totalCount가 0으로 와 totalPages가 1이 된다. 그 값으로 페이저를 그리면
+  // 2페이지에서 실패한 운영자의 '이전' 버튼까지 사라져 되돌아올 수단이 없어진다 — 아래 보정
+  // useEffect가 isError를 제외하므로(실패를 근거로 페이지를 접지 않는다) 그 상태가 유지된다.
+  const pageCount = Math.max(totalPages, page + 1)
 
   // 마지막 페이지의 유일한 셀러가 필터에서 빠지면 재조회 결과에 그 페이지가 없어져 빈 목록에
   // 갇힌다 — 페이지 이동 버튼은 totalPages > 1일 때만 그려지므로 되돌아올 수단까지 사라진다.
@@ -263,7 +267,9 @@ function SellersPage() {
   const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null)
   const [reasonCode, setReasonCode] = useState('')
   const [reasonDetail, setReasonDetail] = useState('')
-  const [durationDays, setDurationDays] = useState<string>(SUSPENSION_DURATION_INDEFINITE)
+  // 기본값을 비워 둔다. 되돌리기 어려운 제재의 기본값으로 가장 센 값(무기한)을 두면 사유만
+  // 고른 운영자가 의도하지 않은 무기한 정지를 넣게 된다. 무기한 자체는 선택지에 남는다.
+  const [durationDays, setDurationDays] = useState('')
   const [internalMemo, setInternalMemo] = useState('')
   const [seededId, setSeededId] = useState<number | null>(null)
 
@@ -274,7 +280,7 @@ function SellersPage() {
     if (!view || seededId === view.seller.sellerId) return
     setReasonCode(view.suspensionReasonCode ?? '')
     setReasonDetail('')
-    setDurationDays(SUSPENSION_DURATION_INDEFINITE)
+    setDurationDays('')
     setInternalMemo(view.internalMemo ?? '')
     setSeededId(view.seller.sellerId)
   }, [view, seededId])
@@ -303,6 +309,7 @@ function SellersPage() {
     !detail.isError &&
     (!isSuspend ||
       (reasonCode !== '' &&
+        durationDays !== '' &&
         (!needsReasonDetail || reasonDetail.trim() !== '') &&
         reasonDetail.length <= SELLER_TEXT_MAX_LENGTH))
 
@@ -437,7 +444,7 @@ function SellersPage() {
         emptyLabel={list.isError ? '목록을 불러오지 못했어요.' : '조건에 맞는 셀러가 없어요.'}
       />
 
-      {totalPages > 1 && (
+      {pageCount > 1 && (
         <div className="mt-3 flex items-center justify-end gap-2 text-body-sm text-text-tertiary">
           <Button
             variant="ghost"
@@ -449,13 +456,13 @@ function SellersPage() {
             이전
           </Button>
           <span className="tabular-nums">
-            {page + 1} / {totalPages}
+            {page + 1} / {pageCount}
           </span>
           <Button
             variant="ghost"
             size="sm"
             rightIcon={<ChevronRight className="size-4" />}
-            disabled={page + 1 >= totalPages}
+            disabled={page + 1 >= pageCount}
             onClick={() => setPage(current => current + 1)}
           >
             다음
@@ -595,6 +602,7 @@ function SellersPage() {
                     options={SUSPENSION_DURATION_OPTIONS}
                     value={durationDays}
                     onChange={setDurationDays}
+                    placeholder="기간 선택"
                   />
                   <p className="text-caption text-text-tertiary">
                     기간이 지나도 자동으로 풀리지 않아요. 해제는 이 화면에서 직접 처리해요.
@@ -668,7 +676,7 @@ function SellersPage() {
                       label: '기간',
                       value:
                         SUSPENSION_DURATION_OPTIONS.find(option => option.value === durationDays)
-                          ?.label ?? '무기한',
+                          ?.label ?? '',
                     },
                   ]
                 : []),

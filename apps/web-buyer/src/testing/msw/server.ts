@@ -19,7 +19,7 @@ import {
   type PreparePaymentResponse,
 } from '@aechak/api'
 import { CATALOG_PRODUCTS, FREE_SHIPPING_THRESHOLD, placeholderImage } from '@/shared/catalog'
-import { snsHandlers } from './sns'
+import { recordSnsUpload, snsHandlers } from './sns'
 import { productInquiryHandlers } from './product-inquiry'
 import { noticeHandlers } from './notices'
 
@@ -520,6 +520,23 @@ function labelOf(breedId: number): string {
   )
 }
 
+// 업로드 용도(contracts/sns.yaml UploadPurpose). 상한이 있는 용도만 contentLength가 필수다.
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const UPLOAD_PURPOSES: Record<string, { folder: string; types: string[]; maxBytes?: number }> = {
+  USER_PROFILE: { folder: 'users/profile', types: IMAGE_TYPES },
+  PET_PROFILE: { folder: 'pets/profile', types: IMAGE_TYPES },
+  PRODUCT: { folder: 'products', types: IMAGE_TYPES },
+  SELLER_STORE: { folder: 'sellers/store', types: IMAGE_TYPES },
+  SELLER_DOCUMENT: { folder: 'sellers/documents', types: [...IMAGE_TYPES, 'application/pdf'] },
+  REVIEW_IMAGE: { folder: 'reviews/images', types: IMAGE_TYPES },
+  SNS_POST_IMAGE: { folder: 'sns/posts/images', types: IMAGE_TYPES, maxBytes: 10 * 1024 * 1024 },
+  SNS_POST_VIDEO: {
+    folder: 'sns/posts/videos',
+    types: ['video/mp4', 'video/quicktime'],
+    maxBytes: 100 * 1024 * 1024,
+  },
+}
+
 const petHandlers = [
   http.get(PETS_URL, () => HttpResponse.json({ data: { pets: petRows.map(withImageUrl) } })),
   http.post(PETS_URL, async ({ request }) => {
@@ -582,19 +599,42 @@ const petHandlers = [
     return HttpResponse.json({ data: { promotedDefaultPetId: promoted } })
   }),
   http.post(PRESIGNED_URL, async ({ request }) => {
-    const body = (await request.json()) as { purpose: string; contentType: string }
-    // 키 경로에 purpose를 반영해 프로필/펫/리뷰 업로드를 재현한다(서버 UploadPurpose.prefix와 동일).
-    const folder =
-      body.purpose === 'USER_PROFILE'
-        ? 'users/profile'
-        : body.purpose === 'REVIEW_IMAGE'
-          ? 'reviews/images'
-          : 'pets/profile'
-    const key = `tmp/1/${folder}/fixture.${body.contentType.split('/')[1]}`
-    return HttpResponse.json({ data: { url: `https://fake-s3.local/${key}`, key } })
+    const body = (await request.json()) as {
+      purpose: string
+      contentType: string
+      contentLength?: number
+    }
+    // 판정 순서는 계약(sns.yaml issuePresignedUrl)과 같다. 모르는 용도와 1보다 작은 길이 90001,
+    // 허용 밖 형식 100000, 상한이 있는 용도의 길이 누락 90001과 상한 초과 100004.
+    const purpose = UPLOAD_PURPOSES[body.purpose]
+    if (!purpose || (body.contentLength != null && !(body.contentLength >= 1))) {
+      return errorJson(400, 90001, '잘못된 요청입니다.')
+    }
+    if (!purpose.types.includes(body.contentType)) {
+      return errorJson(400, 100000, '지원하지 않는 파일 형식입니다.')
+    }
+    if (purpose.maxBytes != null) {
+      if (body.contentLength == null) return errorJson(400, 90001, '잘못된 요청입니다.')
+      if (body.contentLength > purpose.maxBytes) return errorJson(400, 100004, '파일 용량이 너무 큽니다.')
+    }
+    // 상한이 있는 SNS 용도는 한 게시물에 여러 장을 올리므로 키마다 새 이름을 쓴다(같은 키 두 번은 130404).
+    const name = purpose.maxBytes != null ? ulid() : 'fixture'
+    const key = `tmp/1/${purpose.folder}/${name}.${body.contentType.split('/')[1]}`
+    // 서명에 든 형식을 URL에 남겨 PUT의 Content-Type이 다르면 S3처럼 403을 준다.
+    // 길이 서명은 jsdom Blob이 본문으로 실리지 않아(문자열로 바뀐다) 여기서 대조하지 않고 E2E가 본다.
+    const url = `https://fake-s3.local/${key}?type=${encodeURIComponent(body.contentType)}`
+    return HttpResponse.json({ data: { url, key } })
   }),
   // presigned PUT은 S3 직행이라 baseURL 밖이다. 절대 URL로 따로 가로챈다.
-  http.put('https://fake-s3.local/*', () => new HttpResponse(null, { status: 200 })),
+  http.put('https://fake-s3.local/*', ({ request }) => {
+    const url = new URL(request.url)
+    const signedType = url.searchParams.get('type')
+    if (signedType != null && request.headers.get('Content-Type') !== signedType) {
+      return new HttpResponse(null, { status: 403 })
+    }
+    recordSnsUpload(url.pathname.slice(1))
+    return new HttpResponse(null, { status: 200 })
+  }),
 ]
 
 export const USER_ME_URL = `${base}/users/me`

@@ -9,7 +9,9 @@ const API_ORIGIN = 'http://localhost:8080'
 // 재현한다(product-detail/pet-breeds spec과 동일한 CORS/프리플라이트 규칙). 서버가 sort/photoOnly/cursor를
 // 실제로 반영한다고 보고, 스텁이 그 파라미터대로 응답을 만들어 정렬/포토 필터/페이지네이션을 검증한다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',
@@ -264,7 +266,7 @@ const DETAIL_FOR_PREVIEW = {
 test('[AC-REVIEW-E2E-009] 상품 상세는 리뷰 목록 API로 미리보기 3개를 채운다', async ({ page }) => {
   await stubReviews(page, 100)
   // API 경로를 통째로 지정한다 — `/products/{id}$` 같은 정규식은 페이지 내비게이션 URL
-  // (localhost:5175/products/{id})까지 잡아 앱 대신 JSON이 렌더된다(product-detail spec과 동일한 형태).
+  // (앱 origin의 /products/{id})까지 잡아 앱 대신 JSON이 렌더된다(product-detail spec과 동일한 형태).
   await page.route(`**/api/v1/products/${REAL_ID}`, (route: Route) =>
     route.request().method() === 'OPTIONS'
       ? route.fulfill({

@@ -158,14 +158,25 @@ describe('첫 진입 세션 확인', () => {
 
     // 로그인 화면은 페이지 전체를 이동하므로 화면을 내리고, 쿠키가 생긴 상태로 복귀 라우트를 새로 연다.
     cleanup()
+    let refreshCalls = 0
     server.use(
-      http.post(WEB_REFRESH_URL, () =>
-        HttpResponse.json({ data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 } }),
-      ),
+      http.post(WEB_REFRESH_URL, () => {
+        refreshCalls += 1
+        return HttpResponse.json({
+          data: { accessToken: 'access', tokenType: 'Bearer', expiresIn: 900 },
+        })
+      }),
     )
-    const after = renderAt('/login/complete?status=ACTIVE')
+    // BE가 보내는 주소 그대로 연다. isNew가 빠지면 라우터가 isNew=false를 붙인 주소로 바꾸며
+    // beforeLoad를 한 번 더 실행한다.
+    const after = renderAt('/login/complete?status=ACTIVE&isNew=false')
 
-    await waitFor(() => expect(after.state.location.pathname).toBe('/cart'))
+    await waitFor(() => expect(after.state.location.href).toBe('/cart'))
+    // 두 번째 실행이 있으면 대기 행동이 이미 지워져 있어 라우터가 잠시 뒤 홈으로 이동한다.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(after.state.location.href).toBe('/cart')
+    expect(refreshCalls).toBe(1)
+    expect(peekPendingAction()).toBeNull()
   })
 
   it('[AC-GUEST-009] 비회원이 기본 주소로 들어오면 로그인 화면에서 마켓으로 갈 수 있다', async () => {

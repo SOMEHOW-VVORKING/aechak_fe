@@ -320,7 +320,7 @@ describe('/reports', () => {
     await user.click(await screen.findByRole('button', { name: '먼지아빠' }))
     let open = await drawer()
     await open.findByText(사용자신고.reasonText!)
-    expect(open.getByText('리뷰 신고에만 걸 수 있어요')).toBeInTheDocument()
+    expect(open.getByText('리뷰와 SNS 게시물, 댓글 신고에만 걸 수 있어요')).toBeInTheDocument()
     expect(open.getAllByRole('radio')[1]).toBeDisabled()
 
     await user.keyboard('{Escape}')
@@ -509,6 +509,250 @@ describe('/reports', () => {
 
     expect(await screen.findByText(/어드민 권한이 없어 신고를 볼 수 없어요/)).toBeInTheDocument()
     expect(screen.queryByText('조건에 맞는 신고가 없어요.')).toBeNull()
+  })
+})
+
+/** SNS 게시물 신고. targetKey는 게시물 publicId이고 targetName은 지금 캡션이다. 사유는 SNS 어휘다. */
+const 게시물신고 = makeAdminReportWire({
+  targetType: 'SNS_POST',
+  reportId: 31,
+  targetKey: '01JF9W3Q6R8T2V4X7Z9B1C3D5J',
+  targetName: '오늘 산책 다녀왔어요. 할인 링크는 프로필에 있어요',
+  targetOwnerUserId: 3521,
+  targetOwnerNickname: '콩이맘',
+  reasonCode: 'SPAM',
+  reportCount: 2,
+  reportedAt: '2026-11-05T10:20:00',
+  status: 'RECEIVED',
+  reporterId: 5201,
+  reasonText: '산책 글마다 같은 할인 링크를 붙여요.',
+  history: [],
+})
+
+/** 지운 SNS 게시물은 캡션이 null이다. 닉네임으로 떨어지면 회원 신고로 읽힌다. */
+const 지운게시물신고 = makeAdminReportWire({
+  ...게시물신고,
+  reportId: 32,
+  targetKey: '01JF9W3Q6R8T2V4X7Z9B1C3D6K',
+  targetName: null,
+  reasonText: '이미 지운 글이에요.',
+})
+
+describe('/reports SNS 게시물', () => {
+  beforeEach(() => {
+    seedAdminApplications()
+    seedAdminReports([게시물신고, 지운게시물신고, 사용자신고])
+  })
+
+  it('[AC-SNS-RPT-020] SNS 게시물 신고는 유형과 필터에 SNS 게시물로 보이고 지운 게시물은 종류와 식별자로 읽는다', async () => {
+    const queries = recordListQueries()
+    renderAt('/reports')
+
+    expect(await screen.findByRole('button', { name: 게시물신고.targetName! })).toBeInTheDocument()
+    expect(table().getAllByText('SNS 게시물')).toHaveLength(2)
+    expect(table().queryByText('SNS_POST')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: `SNS 게시물 ${지운게시물신고.targetKey}` }),
+    ).toBeInTheDocument()
+
+    await chooseOption(selectWithOption('신고 대상 전체'), 'SNS 게시물')
+    await waitFor(() => expect(bodyRowCount()).toBe(2))
+    expect(queries.at(-1)).toBe('SNS_POST|none|none')
+  })
+
+  it('[AC-SNS-RPT-021] SNS 게시물의 비공개 전환은 게시물 삭제로 적고 확인을 거쳐 나간다', async () => {
+    const requests = recordReportRequests()
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(await screen.findByRole('button', { name: 게시물신고.targetName! }))
+    const open = await drawer()
+    await open.findByText(게시물신고.reasonText!)
+    expect(open.getByText('게시물 삭제')).toBeInTheDocument()
+    expect(open.queryByText('비공개 전환')).toBeNull()
+    expect(open.getByText('대상자 계정에 제재하고 게시물 삭제')).toBeInTheDocument()
+
+    await chooseByCaption('게시물만 운영자 삭제')
+    await chooseOption(selectWithOption('욕설/비방'), '외부 거래 유도')
+    await user.click(open.getByRole('button', { name: '제출' }))
+    const confirm = await screen.findByRole('dialog', { name: '게시물을 삭제할까요?' })
+    expect(within(confirm).getByText(/되돌릴 수 없어요/)).toBeInTheDocument()
+    await user.click(within(confirm).getByRole('button', { name: '게시물 삭제' }))
+
+    expect(await screen.findByText('게시물 삭제 처리했어요.')).toBeInTheDocument()
+    expect(writesOnly(requests)).toEqual(['POST /admin/reports/SNS_POST/31/decision'])
+    const saved = currentAdminReport('SNS_POST', 31)
+    expect(saved?.decisionRecord?.decision).toBe('HIDE_TARGET')
+    expect(saved?.targetName).toBeNull()
+    expect(lastAdminReportSanction()).toBeNull()
+  })
+
+  it('[AC-SNS-RPT-022] SNS 게시물의 계정 제재 확인은 게시물도 지운다고 알린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(await screen.findByRole('button', { name: 게시물신고.targetName! }))
+    const open = await drawer()
+    await open.findByText(게시물신고.reasonText!)
+    await chooseByCaption('대상자 계정에 제재하고 게시물 삭제')
+    await chooseOption(selectWithOption('외부 거래 유도'), '외부 거래 유도')
+    await chooseOption(selectWithOption('임시 정지'), '이용 제한')
+    await chooseOption(selectWithOption('리뷰 욕설/비방 반복'), '허위 신고 반복')
+    await user.click(open.getByRole('button', { name: '제출' }))
+    const confirm = await screen.findByRole('dialog', { name: '계정 제재까지 적용할까요?' })
+    expect(within(confirm).getByText(/게시물도 삭제돼요/)).toBeInTheDocument()
+    expect(within(confirm).queryByText(/대상 글은 그대로 노출/)).toBeNull()
+  })
+
+  it('[AC-SNS-RPT-023] 처리된 SNS 게시물 신고의 결정은 게시물 삭제로 보인다', async () => {
+    seedAdminReports([
+      {
+        ...지운게시물신고,
+        status: 'SANCTIONED',
+        decisionRecord: {
+          decision: 'HIDE_TARGET',
+          reasonCode: 'EXTERNAL_TRADE',
+          reasonDetail: null,
+          noticeToOwner: null,
+          internalMemo: null,
+          targetOwnerUserId: 3521,
+          actedByAdminId: 9001,
+          decidedAt: '2026-11-05T12:00:00',
+        },
+      },
+    ])
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(
+      await screen.findByRole('button', { name: `SNS 게시물 ${지운게시물신고.targetKey}` }),
+    )
+    const open = await drawer()
+    await open.findByText(지운게시물신고.reasonText!)
+    expect(open.getByText('게시물 삭제')).toBeInTheDocument()
+    expect(open.queryByRole('button', { name: '제출' })).toBeNull()
+  })
+})
+
+/** SNS 댓글 신고. targetKey는 댓글 publicId이고 targetName은 지금 댓글 내용이다. 사유는 SNS 어휘다. */
+const 댓글신고 = makeAdminReportWire({
+  targetType: 'SNS_COMMENT',
+  reportId: 41,
+  targetKey: '01JF9W3Q6R8T2V4X7Z9B1CMT01',
+  targetName: '이 링크 들어가면 사료 반값이에요',
+  targetOwnerUserId: 3522,
+  targetOwnerNickname: '보리누나',
+  reasonCode: 'SPAM',
+  reportCount: 1,
+  reportedAt: '2026-11-06T09:10:00',
+  status: 'RECEIVED',
+  reporterId: 5202,
+  reasonText: '댓글마다 같은 링크를 달아요.',
+  history: [],
+})
+
+/** 지운 SNS 댓글은 내용이 null이다. 닉네임으로 떨어지면 회원 신고로 읽힌다. */
+const 지운댓글신고 = makeAdminReportWire({
+  ...댓글신고,
+  reportId: 42,
+  targetKey: '01JF9W3Q6R8T2V4X7Z9B1CMT02',
+  targetName: null,
+  reasonText: '이미 지운 댓글이에요.',
+})
+
+describe('/reports SNS 댓글', () => {
+  beforeEach(() => {
+    seedAdminApplications()
+    seedAdminReports([댓글신고, 지운댓글신고, 게시물신고])
+  })
+
+  it('[AC-SNS-RPT-024] SNS 댓글 신고는 유형과 필터에 SNS 댓글로 보이고 지운 댓글은 종류와 식별자로 읽는다', async () => {
+    const queries = recordListQueries()
+    renderAt('/reports')
+
+    expect(await screen.findByRole('button', { name: 댓글신고.targetName! })).toBeInTheDocument()
+    expect(table().getAllByText('SNS 댓글')).toHaveLength(2)
+    expect(table().queryByText('SNS_COMMENT')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: `SNS 댓글 ${지운댓글신고.targetKey}` }),
+    ).toBeInTheDocument()
+
+    await chooseOption(selectWithOption('신고 대상 전체'), 'SNS 댓글')
+    await waitFor(() => expect(bodyRowCount()).toBe(2))
+    expect(queries.at(-1)).toBe('SNS_COMMENT|none|none')
+  })
+
+  it('[AC-SNS-RPT-025] SNS 댓글의 비공개 전환은 댓글 삭제로 적고 확인을 거쳐 나간다', async () => {
+    const requests = recordReportRequests()
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(await screen.findByRole('button', { name: 댓글신고.targetName! }))
+    const open = await drawer()
+    await open.findByText(댓글신고.reasonText!)
+    expect(open.getByText('댓글 삭제')).toBeInTheDocument()
+    expect(open.queryByText('비공개 전환')).toBeNull()
+    expect(open.getByText('대상자 계정에 제재하고 댓글 삭제')).toBeInTheDocument()
+
+    await chooseByCaption('댓글만 운영자 삭제')
+    await chooseOption(selectWithOption('욕설/비방'), '외부 거래 유도')
+    await user.click(open.getByRole('button', { name: '제출' }))
+    const confirm = await screen.findByRole('dialog', { name: '댓글을 삭제할까요?' })
+    expect(within(confirm).getByText(/되돌릴 수 없어요/)).toBeInTheDocument()
+    await user.click(within(confirm).getByRole('button', { name: '댓글 삭제' }))
+
+    expect(await screen.findByText('댓글 삭제 처리했어요.')).toBeInTheDocument()
+    expect(writesOnly(requests)).toEqual(['POST /admin/reports/SNS_COMMENT/41/decision'])
+    const saved = currentAdminReport('SNS_COMMENT', 41)
+    expect(saved?.decisionRecord?.decision).toBe('HIDE_TARGET')
+    expect(saved?.targetName).toBeNull()
+    expect(lastAdminReportSanction()).toBeNull()
+  })
+
+  it('[AC-SNS-RPT-026] SNS 댓글의 계정 제재 확인은 댓글도 지운다고 알린다', async () => {
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(await screen.findByRole('button', { name: 댓글신고.targetName! }))
+    const open = await drawer()
+    await open.findByText(댓글신고.reasonText!)
+    await chooseByCaption('대상자 계정에 제재하고 댓글 삭제')
+    await chooseOption(selectWithOption('외부 거래 유도'), '외부 거래 유도')
+    await chooseOption(selectWithOption('임시 정지'), '이용 제한')
+    await chooseOption(selectWithOption('리뷰 욕설/비방 반복'), '허위 신고 반복')
+    await user.click(open.getByRole('button', { name: '제출' }))
+    const confirm = await screen.findByRole('dialog', { name: '계정 제재까지 적용할까요?' })
+    expect(within(confirm).getByText(/댓글도 삭제돼요/)).toBeInTheDocument()
+    expect(within(confirm).queryByText(/대상 글은 그대로 노출/)).toBeNull()
+  })
+
+  it('[AC-SNS-RPT-027] 처리된 SNS 댓글 신고의 결정은 댓글 삭제로 보인다', async () => {
+    seedAdminReports([
+      {
+        ...지운댓글신고,
+        status: 'SANCTIONED',
+        decisionRecord: {
+          decision: 'HIDE_TARGET',
+          reasonCode: 'EXTERNAL_TRADE',
+          reasonDetail: null,
+          noticeToOwner: null,
+          internalMemo: null,
+          targetOwnerUserId: 3522,
+          actedByAdminId: 9001,
+          decidedAt: '2026-11-06T12:00:00',
+        },
+      },
+    ])
+    const user = userEvent.setup()
+    renderAt('/reports')
+
+    await user.click(
+      await screen.findByRole('button', { name: `SNS 댓글 ${지운댓글신고.targetKey}` }),
+    )
+    const open = await drawer()
+    await open.findByText(지운댓글신고.reasonText!)
+    expect(open.getByText('댓글 삭제')).toBeInTheDocument()
+    expect(open.queryByRole('button', { name: '제출' })).toBeNull()
   })
 })
 

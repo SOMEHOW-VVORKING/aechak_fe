@@ -60,4 +60,4 @@ export type {
   ProductReport,
 } from './types'
 
-export { cartLineKey } from './types'
+export { cartLineKey, inspectionViolationCategoryLabel } from './types'
