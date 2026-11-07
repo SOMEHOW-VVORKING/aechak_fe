@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { describe, it, expect, beforeEach } from 'vitest'
-import type { SellerProductInspection } from '@aechak/api'
+import type { InspectionStage, SellerProductInspection } from '@aechak/api'
 import { SELLER_PRODUCTS_URL, makeSellerProductWire, seedSellerProducts, server } from '@/testing/msw/server'
 import { isInspectionInProgress } from '../products.queries'
 import { routeTree } from '../../../routeTree.gen'
@@ -486,5 +486,125 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     expect(await screen.findByText('2026.10.23 09:12에 이의를 제기했어요')).toBeInTheDocument()
     expect(screen.getByText('치료 효능 표현을 고쳐 주세요.')).toBeInTheDocument()
     expect(screen.queryByText('수정 필요 항목')).not.toBeInTheDocument()
+  })
+
+  // ─── 검수 단계 (SCRUM-378) ────────────────────────────────────────────────
+  // 서버가 RULE·TRIAGE·MODEL 세 줄을 늘 그 순서로 준다 — 화면은 단계 수를 세지 않고 받은 만큼
+  // 그린다. 통과와 미검사를 섞지 않는 것이 이 표의 요점이라 라벨도 셋이 다 갈려 있어야 한다.
+
+  const STAGES: InspectionStage[] = [
+    { stage: 'RULE', outcome: 'CLEAR', detail: null },
+    { stage: 'TRIAGE', outcome: 'VIOLATION', detail: null },
+    { stage: 'MODEL', outcome: 'UNCHECKED', detail: '1차 선별이 위반을 확정했어요' },
+  ]
+
+  /** 단계 목록만 집는다 — 위반 목록도 `listitem`이라 Drawer 전체에서 세면 섞인다. */
+  async function stageRows() {
+    const heading = await screen.findByText('검수 단계')
+    return within(heading.nextElementSibling as HTMLElement).getAllByRole('listitem')
+  }
+
+  it('[AC-SPRD-102] 단계마다 이름과 결과를 한 줄로 보여 주고 와이어 값은 글자로 새지 않는다', async () => {
+    serveInspection(inspectionWire({ stages: STAGES }))
+    renderAt('/products')
+
+    await openDrawer()
+
+    const rows = await stageRows()
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('자동 규칙 검사')
+    expect(rows[0]).toHaveTextContent('통과')
+    expect(rows[1]).toHaveTextContent('1차 선별')
+    expect(rows[1]).toHaveTextContent('걸렸어요')
+    expect(rows[2]).toHaveTextContent('상세 검수')
+    expect(rows[2]).toHaveTextContent('안 돌았어요')
+    for (const wire of ['RULE', 'TRIAGE', 'MODEL', 'CLEAR', 'VIOLATION', 'UNCHECKED']) {
+      expect(screen.queryByText(wire), `와이어 값 ${wire}`).not.toBeInTheDocument()
+    }
+  })
+
+  it('[AC-SPRD-103] 돌지 않은 단계에만 사유를 붙이고 걸림·통과에 실린 값은 버린다', async () => {
+    // 계약은 "VIOLATION·CLEAR는 detail=null"이지만 믿기만 하면, 서버가 걸린 단계에 내부 값을 다는
+    // 순간 그것이 셀러 화면에 뜬다 -- 매퍼에서 접어 막는다.
+    serveInspection(
+      inspectionWire({
+        stages: [
+          { stage: 'RULE', outcome: 'CLEAR', detail: 'perspective=ALL' },
+          { stage: 'TRIAGE', outcome: 'VIOLATION', detail: 'RATE_LIMITED' },
+          { stage: 'MODEL', outcome: 'UNCHECKED', detail: '1차 선별이 위반을 확정했어요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const rows = await stageRows()
+    expect(within(rows[2] as HTMLElement).getByText('1차 선별이 위반을 확정했어요')).toBeInTheDocument()
+    expect(rows[0]).toHaveTextContent('자동 규칙 검사통과')
+    expect(rows[1]).toHaveTextContent('1차 선별걸렸어요')
+    expect(screen.queryByText('perspective=ALL')).not.toBeInTheDocument()
+    expect(screen.queryByText('RATE_LIMITED')).not.toBeInTheDocument()
+  })
+
+  // 사유 문장은 서버가 번역해 보낸다 -- 판정이 끝났으면 "돌지 않았어요", 아직 돌고 있으면 "아직
+  // 닿지 않았어요"다(끝난 판정에 "아직"을 쓰면 셀러는 기다리면 된다고 읽는다). skipReason에서 온
+  // 문장도 같은 자리로 온다. FE에 번역표를 두면 두 벌이 어긋나므로 받은 문장을 그대로 그린다.
+
+  it('[AC-SPRD-118] 판정이 끝난 응답의 "돌지 않았어요"를 그대로 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        stages: [
+          { stage: 'RULE', outcome: 'CLEAR', detail: null },
+          { stage: 'TRIAGE', outcome: 'UNCHECKED', detail: '이 단계는 돌지 않았어요' },
+          { stage: 'MODEL', outcome: 'UNCHECKED', detail: '요청이 몰려 잠시 뒤 다시 봐요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const rows = await stageRows()
+    expect(within(rows[1] as HTMLElement).getByText('이 단계는 돌지 않았어요')).toBeInTheDocument()
+    expect(within(rows[2] as HTMLElement).getByText('요청이 몰려 잠시 뒤 다시 봐요')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-119] 아직 돌고 있는 응답의 "아직 닿지 않았어요"도 그대로 보여 준다', async () => {
+    serveInspection(
+      inspectionWire({
+        inspectionStatus: 'PENDING',
+        progressStep: 'AI_REVIEWING',
+        processingState: 'IN_FLIGHT',
+        judgment: null,
+        reasonCode: null,
+        reasonSummary: null,
+        sellerNotice: null,
+        settledAt: null,
+        stages: [
+          { stage: 'RULE', outcome: 'CLEAR', detail: null },
+          { stage: 'TRIAGE', outcome: 'UNCHECKED', detail: '아직 이 단계에 닿지 않았어요' },
+          { stage: 'MODEL', outcome: 'UNCHECKED', detail: '모델이 판단을 거부했어요' },
+        ],
+      }),
+    )
+    renderAt('/products')
+
+    await openDrawer()
+
+    const rows = await stageRows()
+    expect(within(rows[1] as HTMLElement).getByText('아직 이 단계에 닿지 않았어요')).toBeInTheDocument()
+    expect(within(rows[2] as HTMLElement).getByText('모델이 판단을 거부했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-104] 단계가 오지 않는 응답에서는 영역째 접는다', async () => {
+    // 이 필드가 없는 BE 배포를 FE가 먼저 만나면 빈 표가 아니라 아무것도 없어야 한다.
+    serveInspection(inspectionWire({}))
+    renderAt('/products')
+
+    await openDrawer()
+
+    expect(await screen.findByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).toBeInTheDocument()
+    expect(screen.queryByText('검수 단계')).not.toBeInTheDocument()
   })
 })

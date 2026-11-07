@@ -9,10 +9,14 @@ import type {
   GetSellerProductsParams,
   GetSellerProductsSort,
   GetSellerProductsStock,
+  InspectionStage,
+  InspectionStageName,
+  InspectionStageOutcome,
   InspectionStatus,
   SaleStatus,
   SellerProductDetailData,
   SellerProductDraftAutofillData,
+  SellerProductDraftAutofillMode,
   SellerProductDraftAutofillRequest,
   SellerProductDraftData,
   SellerProductDraftOptionCombinationInput,
@@ -28,6 +32,8 @@ import type {
 // 생성물 이름을 그대로 쓰되, 화면 코드가 읽기 쉬운 FE 이름을 붙인다.
 export type WireSaleStatus = SaleStatus
 export type WireInspectionStatus = InspectionStatus
+export type WireInspectionStage = InspectionStageName
+export type WireInspectionStageOutcome = InspectionStageOutcome
 export type CategoryNode = CategoryResponse
 
 export type {
@@ -210,6 +216,72 @@ export const INSPECTION_STATUS_LABEL: Record<WireInspectionStatus, string> = {
   PENDING: '검수 대기',
   APPROVED: '검수 통과',
   REJECTED: '반려',
+}
+
+// ─── 검수 단계(응답 stages) ───────────────────────────────────────────────────
+// 서버가 RULE·TRIAGE·MODEL 세 줄을 늘 그 순서로 주므로 화면은 단계 수를 세지 않는다. 관점 접기와
+// 사유 번역은 서버가 하고(내부 값은 응답에 없다) 여기서는 와이어 값을 라벨로 바꾸기만 한다.
+//
+// `detail`은 서버가 번역한 완성 문장이라 FE에 표가 없다. 번역표를 BE와 같이 들면 두 벌이 어긋나고,
+// 셀러는 어느 쪽이 참인지 알 수 없다. 대신 서버가 보내는 문장을 여기 적어 둔다 -- 어느 문장이
+// 화면까지 오는지 FE 테스트가 고정하는 대상이다.
+//   "이 단계는 돌지 않았어요"        판정이 끝났는데(processingState=SETTLED) 그 단계 행이 없다
+//   "아직 이 단계에 닿지 않았어요"   판정 전(QUEUED·IN_FLIGHT)이고 그 단계 행이 없다
+//   "요청이 몰려 잠시 뒤 다시 봐요"  skipReason=RATE_LIMITED
+//   "모델이 판단을 거부했어요"       skipReason=REFUSED
+// 앞의 두 문장을 가르는 것이 요점이다 -- 끝난 판정에 "아직"을 쓰면 셀러는 기다리면 된다고 읽는다.
+
+const INSPECTION_STAGE_LABEL: Record<WireInspectionStage, string> = {
+  RULE: '자동 규칙 검사',
+  TRIAGE: '1차 선별',
+  MODEL: '상세 검수',
+}
+
+const INSPECTION_STAGE_OUTCOME_LABEL: Record<WireInspectionStageOutcome, string> = {
+  VIOLATION: '걸렸어요',
+  CLEAR: '통과',
+  UNCHECKED: '안 돌았어요',
+}
+
+/** 결과별 강조 — 주의(걸림)·평상(통과)·흐림(안 돎). DS `StatusPill` variant 이름이다. */
+export type InspectionStageTone = 'warning' | 'neutral' | 'muted'
+
+const INSPECTION_STAGE_OUTCOME_TONE: Record<WireInspectionStageOutcome, InspectionStageTone> = {
+  VIOLATION: 'warning',
+  CLEAR: 'neutral',
+  UNCHECKED: 'muted',
+}
+
+/** 화면이 그대로 그리는 한 줄. 와이어 값은 `key`에만 남고 글자로는 새지 않는다. */
+export interface InspectionStageRow {
+  key: string
+  label: string
+  outcomeLabel: string
+  tone: InspectionStageTone
+  detail: string | null
+}
+
+/**
+ * stages를 화면 줄로 바꾼다. 필드가 없는 응답(이 기능 전 배포, 되돌린 뒤)은 빈 배열이라 단계 영역이
+ * 접힌다. 모르는 값은 와이어 글자를 그대로 내보내지 않고 뭉갠 라벨로 떨어뜨린다 -- 라벨이 비면
+ * 셀러에게 빈 줄이 보이고, 와이어 값을 그리면 영문 열거가 화면에 샌다.
+ *
+ * `key`에 순번을 섞는다 -- 모르는 단계 폴백이 쓰이는 상황이 바로 BE가 단계를 늘릴 때이고, 늘어난
+ * 단계가 둘이면 `stage`만으로는 키가 겹쳐 React가 잘못 재조정한다. 순번을 써도 흔들리지 않는다:
+ * 서버가 고정 길이·고정 순서로 주므로 줄이 끼어들거나 밀리지 않는다.
+ *
+ * `detail`은 UNCHECKED에서만 흘린다. 계약은 "VIOLATION·CLEAR는 null"이지만 그것을 FE가 믿기만
+ * 하면, 서버가 걸린 단계에 skipReason 원문을 달아 보내는 순간 내부 값이 셀러 화면에 뜬다 -- 지난
+ * 버그가 아니라 지금 막을 자리다.
+ */
+export function inspectionStageRows(stages: InspectionStage[] | undefined): InspectionStageRow[] {
+  return (stages ?? []).map(({ stage, outcome, detail }, i) => ({
+    key: `${stage}-${i}`,
+    label: INSPECTION_STAGE_LABEL[stage] ?? '그 밖의 단계',
+    outcomeLabel: INSPECTION_STAGE_OUTCOME_LABEL[outcome] ?? '결과를 읽지 못했어요',
+    tone: INSPECTION_STAGE_OUTCOME_TONE[outcome] ?? 'muted',
+    detail: outcome === 'UNCHECKED' ? (detail ?? null) : null,
+  }))
 }
 
 export function findCategoryPath(tree: CategoryNode[], categoryId: number): CategoryNode[] | null {
@@ -525,7 +597,74 @@ export const AUTOFILL_FIELD_LABEL: Record<AutofillFilledField, string> = {
   options: '옵션',
 }
 
-/** 초안 요청. 셀러가 이미 쓴 설명·옵션은 lockedFields로 보내 AI가 그 전제로 나머지를 만들게 한다. */
+/** 요청의 mode — FILL은 빈 칸만, REFINE은 쓴 본문을 다시 쓴다. */
+export type AutofillMode = SellerProductDraftAutofillMode
+
+/**
+ * 어느 모드로 부를지. 설명 칸이 비어 있으면 FILL, 차 있으면 REFINE이다.
+ *
+ * 버튼 문구·요청 mode·초안 적용 범위가 **같은 판정**을 봐야 한다 — 갈리면 버튼은 "본문 다듬기"인데
+ * 응답이 차 있는 칸을 비켜 가거나(아무 일도 안 일어난다), 반대로 "초안 받기"가 셀러 문장을 덮는다.
+ */
+export function autofillMode(v: ProductFormValues): AutofillMode {
+  return isBlank(v.description) ? 'FILL' : 'REFINE'
+}
+
+// AI fieldStatus → 빈 칸 옆 한 줄. 두 값만 안내한다 — "못 불렀다"(다시 시도할 수 있다)와 "모델이
+// 비워 뒀다"(다시 불러도 같다)는 셀러가 할 일이 다르다. 나머지 값(FILLED·EMPTY_NOT_ATTEMPTED 등)은
+// 안내할 것이 없어 그리지 않는다.
+const AUTOFILL_FIELD_STATUS_MESSAGE: Record<string, string> = {
+  EMPTY_CALL_FAILED: '불러오지 못했어요. 다시 시도해 주세요',
+  EMPTY_MODEL_DECLINED: '직접 작성해 주세요',
+}
+
+/** AI가 셀러가 쓴 값을 그대로 돌려준 자리(AI FieldStatus.KEPT_LOCKED). */
+const KEPT_LOCKED = 'KEPT_LOCKED'
+
+/**
+ * REFINE의 설명 칸에서만 안내한다.
+ *
+ * AI는 다시 쓴 결과를 쓸 수 없으면(품목 미확정·근거 불일치·가드 탈락) 셀러 원문을 그대로 담아
+ * `fieldStatus.description = KEPT_LOCKED`로 돌려준다. 그 응답에 아무 안내가 없으면 셀러는 "다듬기"를
+ * 누르고 글자 하나 안 바뀐 화면을 받고 끝난다.
+ *
+ * FILL의 KEPT_LOCKED는 반대로 정상 동작("쓴 칸을 비켜 갔다")이라 말할 것이 없고, 옵션은 REFINE에서도
+ * 손대지 않기로 한 자리라 역시 안내할 것이 없다 -- 그래서 모드와 필드를 둘 다 본다.
+ */
+const REFINE_DESCRIPTION_KEPT_MESSAGE = '본문을 다시 쓰지 못해 그대로 두었어요'
+
+// 와이어 필드명 → 폼 칸. optionGroups·optionCombinations는 화면에서 한 칸(옵션)이라 앞선 것이 남는다.
+const AUTOFILL_STATUS_FIELD: [string, AutofillFilledField][] = [
+  ['categoryId', 'category'],
+  ['description', 'description'],
+  ['optionGroups', 'options'],
+  ['optionCombinations', 'options'],
+]
+
+/** fieldStatus를 폼 칸별 한 줄 안내로 접는다. 모르는 값과 안내할 것이 없는 값은 빠진다. */
+export function autofillFieldNotices(
+  fieldStatus: ProductDraftAutofillResult['fieldStatus'] | undefined,
+  mode: AutofillMode = 'FILL',
+): Partial<Record<AutofillFilledField, string>> {
+  const notices: Partial<Record<AutofillFilledField, string>> = {}
+  for (const [wireField, formField] of AUTOFILL_STATUS_FIELD) {
+    if (notices[formField] !== undefined) continue
+    const status = fieldStatus?.[wireField] ?? ''
+    const message =
+      mode === 'REFINE' && wireField === 'description' && status === KEPT_LOCKED
+        ? REFINE_DESCRIPTION_KEPT_MESSAGE
+        : AUTOFILL_FIELD_STATUS_MESSAGE[status]
+    if (message) notices[formField] = message
+  }
+  return notices
+}
+
+/**
+ * 초안 요청. 셀러가 이미 쓴 설명·옵션은 lockedFields로 보내 AI가 그 전제로 나머지를 만들게 한다.
+ * REFINE일 때도 설명을 lockedFields에 담는다 — 다시 쓸 **입력**이 그것이고, 되돌리지 않는 쪽은
+ * mode가 정한다. mode는 생략하면 서버가 FILL로 보지만 보내는 쪽이 늘 적는다(요청만 보고 어느
+ * 모드였는지 알 수 있어야 재사용 키 사고를 쫓을 수 있다).
+ */
 export function toAutofillRequest(v: ProductFormValues): ProductDraftAutofillRequest {
   const description = v.description.trim()
   const optionGroups = v.optionEnabled
@@ -540,6 +679,7 @@ export function toAutofillRequest(v: ProductFormValues): ProductDraftAutofillReq
   }
   return {
     productName: v.productName.trim(),
+    mode: autofillMode(v),
     ...(categoryId != null && { categoryId }),
     ...(Object.keys(lockedFields).length > 0 && { lockedFields }),
   }
@@ -549,12 +689,27 @@ export function toAutofillRequest(v: ProductFormValues): ProductDraftAutofillReq
  * 초안을 빈 칸에만 얹는다 — 셀러가 이미 쓴 값은 덮지 않는다. 카테고리는 한 단계도 안 고른 상태만,
  * 옵션은 옵션을 안 켰고 단일 재고도 안 쓴 상태만 빈 칸으로 본다(단일 재고를 썼다면 옵션 없는
  * 상품으로 정한 것이다). AI 카테고리는 depth 3이 아닐 수 있어 경로만큼만 채운다.
+ *
+ * REFINE은 설명 한 칸만 예외다 — 셀러가 쓴 본문을 다시 쓰라고 부른 호출이라 차 있는 칸에도 얹는다.
+ * 카테고리·옵션은 그 호출에서도 빈 칸만 채운다(다시 쓰라고 한 것은 본문이다). 덮기 전 원문을
+ * 되돌릴 자리는 호출부가 들고 있다.
+ *
+ * **다시 쓰지 못한 응답을 "다시 썼다"로 세지 않는다.** AI는 REFINE을 못 살리면 셀러 원문을 그대로
+ * 담아 `fieldStatus.description = KEPT_LOCKED`로 돌려준다 -- 그 응답을 filled에 넣으면 화면은
+ * "AI가 다시 썼어요"를 적고 아무것도 복원하지 않는 되돌리기 버튼을 내준다. 가드 탈락은 흔한
+ * 경로라(사전 통과 슬롯만 생존) 드문 사고가 아니다. 그래서 fieldStatus와 글자를 둘 다 본다 --
+ * KEPT_LOCKED가 1차이고, 그 신호를 안 주는 배포에서는 글자 동일이 받는다. 둘이 같은 실패를
+ * 겹쳐 막는 것은 아니다. fieldStatus에 description 키가 없는 응답이 오고 그 사이 셀러가 본문을
+ * 고쳐 글자까지 달라진 경우는 통과하는데, 그때 되돌릴 값은 응답 시점 본문이라(ProductEditor가
+ * onSuccess에서 읽는다) 셀러가 잃은 글은 되돌리기로 돌아온다.
  */
 export function applyAutofillDraft(
   v: ProductFormValues,
-  draft: ProductDraftAutofillResult['draft'],
+  result: Pick<ProductDraftAutofillResult, 'draft' | 'fieldStatus'>,
   tree: CategoryNode[],
+  mode: AutofillMode = 'FILL',
 ): { values: ProductFormValues; filled: AutofillFilledField[] } {
+  const { draft, fieldStatus } = result
   const filled: AutofillFilledField[] = []
   const next = { ...v }
   const path = draft.categoryId != null ? findCategoryPath(tree, draft.categoryId) : null
@@ -563,7 +718,8 @@ export function applyAutofillDraft(
     filled.push('category')
   }
   const description = draft.description?.trim()
-  if (description && isBlank(v.description)) {
+  const rewrote = description !== v.description.trim() && fieldStatus?.description !== KEPT_LOCKED
+  if (description && rewrote && (mode === 'REFINE' || isBlank(v.description))) {
     next.description = description
     filled.push('description')
   }

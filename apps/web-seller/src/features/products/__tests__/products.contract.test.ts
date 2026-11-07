@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest'
+import type { InspectionStage } from '@aechak/api'
 import {
+  applyAutofillDraft,
+  autofillFieldNotices,
+  autofillMode,
   buildCombinations,
   discountRate,
   emptyProductForm,
+  inspectionStageRows,
   productErrorMessage,
   toDraftRequest,
   toFormValues,
@@ -10,6 +15,7 @@ import {
   toUpdateRequest,
   validateProductForm,
   type ProductDraft,
+  type ProductDraftAutofillResult,
   type ProductFormValues,
 } from '../products.contract'
 
@@ -303,5 +309,154 @@ describe('productErrorMessage', () => {
       '임시저장은 10개까지 보관할 수 있어요. 쓰지 않는 임시저장을 지운 뒤 다시 시도해 주세요.',
     )
     expect(productErrorMessage(new Error('network'))).toBe(fallback)
+  })
+})
+
+describe('inspectionStageRows', () => {
+  const unknownStage = (detail: string | null = null) =>
+    ({
+      stage: 'IMAGE' as InspectionStage['stage'],
+      outcome: 'PARTIAL' as InspectionStage['outcome'],
+      detail,
+    }) satisfies InspectionStage
+
+  it('[AC-SPRD-109] 받은 단계를 그대로 세 줄로 접고, 모르는 값도 와이어 글자로 내보내지 않는다', () => {
+    const stages = [
+      { stage: 'RULE', outcome: 'VIOLATION', detail: null },
+      { stage: 'TRIAGE', outcome: 'UNCHECKED', detail: '앞 단계에서 이미 걸려 더 보지 않았어요' },
+      // BE가 단계나 결과를 늘려도 화면에 영문이 새지 않아야 한다.
+      unknownStage(),
+    ] satisfies InspectionStage[]
+
+    const rows = inspectionStageRows(stages)
+
+    expect(rows.map(r => r.label)).toEqual(['자동 규칙 검사', '1차 선별', '그 밖의 단계'])
+    expect(rows.map(r => r.outcomeLabel)).toEqual(['걸렸어요', '안 돌았어요', '결과를 읽지 못했어요'])
+    // 주의·흐림만 쓰고 모르는 결과는 강조하지 않는다.
+    expect(rows.map(r => r.tone)).toEqual(['warning', 'muted', 'muted'])
+    expect(rows[1]?.detail).toBe('앞 단계에서 이미 걸려 더 보지 않았어요')
+    // 필드가 없는 응답(이 기능 전 배포)에서는 영역이 접힌다.
+    expect(inspectionStageRows(undefined)).toEqual([])
+  })
+
+  it('[AC-SPRD-112] 모르는 단계가 둘이어도 줄 키가 겹치지 않는다', () => {
+    // 폴백이 쓰이는 상황이 바로 BE가 단계를 늘릴 때다 -- 키가 겹치면 React가 잘못 재조정한다.
+    const rows = inspectionStageRows([unknownStage(), unknownStage()])
+
+    expect(new Set(rows.map(r => r.key)).size).toBe(2)
+  })
+
+  it('[AC-SPRD-113] 사유는 UNCHECKED에서만 흘리고 걸림·통과에 실린 값은 버린다', () => {
+    const rows = inspectionStageRows([
+      // 계약은 "VIOLATION·CLEAR는 null"이지만 믿기만 하면 서버가 단 내부 값이 화면에 그대로 뜬다.
+      { stage: 'RULE', outcome: 'VIOLATION', detail: 'RATE_LIMITED' },
+      { stage: 'TRIAGE', outcome: 'CLEAR', detail: 'perspective=DISPLAY_ADS' },
+      { stage: 'MODEL', outcome: 'UNCHECKED', detail: '요청이 몰려 잠시 뒤 다시 봐요' },
+    ])
+
+    expect(rows.map(r => r.detail)).toEqual([null, null, '요청이 몰려 잠시 뒤 다시 봐요'])
+  })
+
+  it('[AC-SPRD-114] "돌지 않았어요"와 "아직 닿지 않았어요"를 둘 다 그대로 받는다', () => {
+    // 서버가 가르는 문장이다(판정이 끝났으면 "돌지 않았어요", 진행 중이면 "아직 닿지 않았어요").
+    // FE에 번역표를 두면 두 벌이 어긋나므로 받은 문장을 글자 그대로 내려보내기만 한다.
+    const detailOf = (detail: string) =>
+      inspectionStageRows([{ stage: 'TRIAGE', outcome: 'UNCHECKED', detail }])[0]?.detail
+
+    expect(detailOf('이 단계는 돌지 않았어요')).toBe('이 단계는 돌지 않았어요')
+    expect(detailOf('아직 이 단계에 닿지 않았어요')).toBe('아직 이 단계에 닿지 않았어요')
+    // skipReason에서 온 문장도 같은 길로 온다.
+    expect(detailOf('요청이 몰려 잠시 뒤 다시 봐요')).toBe('요청이 몰려 잠시 뒤 다시 봐요')
+    expect(detailOf('모델이 판단을 거부했어요')).toBe('모델이 판단을 거부했어요')
+  })
+})
+
+describe('초안 모드와 비운 사유', () => {
+  const formWith = (description: string): ProductFormValues => ({ ...emptyProductForm(), description })
+
+  it('[AC-SPRD-110] 설명이 비어 있으면 FILL, 차 있으면 REFINE이다', () => {
+    expect(autofillMode(formWith(''))).toBe('FILL')
+    // 공백만 쓴 칸은 다시 쓸 본문이 아니다.
+    expect(autofillMode(formWith('   '))).toBe('FILL')
+    expect(autofillMode(formWith('직접 쓴 설명'))).toBe('REFINE')
+  })
+
+  it('[AC-SPRD-111] 안내할 두 값만 칸별 문구로 접고 모르는 값은 버린다', () => {
+    expect(
+      autofillFieldNotices({
+        categoryId: 'EMPTY_CALL_FAILED',
+        description: 'EMPTY_MODEL_DECLINED',
+        optionGroups: 'EMPTY_NOT_ATTEMPTED',
+        regularPrice: 'EMPTY_CALL_FAILED',
+      }),
+    ).toEqual({
+      category: '불러오지 못했어요. 다시 시도해 주세요',
+      description: '직접 작성해 주세요',
+    })
+    // 옵션 칸은 와이어 필드가 둘이고 앞선 쪽이 남는다.
+    expect(autofillFieldNotices({ optionCombinations: 'EMPTY_MODEL_DECLINED' })).toEqual({
+      options: '직접 작성해 주세요',
+    })
+    expect(autofillFieldNotices({ description: 'FILLED' })).toEqual({})
+    expect(autofillFieldNotices(undefined)).toEqual({})
+  })
+
+  it('[AC-SPRD-115] REFINE에서 다시 쓰지 못한 본문만 KEPT_LOCKED를 안내한다', () => {
+    expect(autofillFieldNotices({ description: 'KEPT_LOCKED' }, 'REFINE')).toEqual({
+      description: '본문을 다시 쓰지 못해 그대로 두었어요',
+    })
+    // FILL의 KEPT_LOCKED는 "쓴 칸을 비켜 갔다"는 정상 동작이라 말할 것이 없다(기본 모드도 FILL이다).
+    expect(autofillFieldNotices({ description: 'KEPT_LOCKED' }, 'FILL')).toEqual({})
+    expect(autofillFieldNotices({ description: 'KEPT_LOCKED' })).toEqual({})
+    // 옵션은 REFINE에서도 손대지 않기로 한 자리라 그대로 둔 것이 사고가 아니다.
+    expect(autofillFieldNotices({ optionGroups: 'KEPT_LOCKED' }, 'REFINE')).toEqual({})
+  })
+})
+
+describe('applyAutofillDraft', () => {
+  const SELLER_TEXT = '직접 쓴 설명'
+
+  /** 설명 한 칸만 보는 응답 -- 카테고리·옵션은 비워 둬 다른 칸이 끼어들지 않게 한다. */
+  const draftOnly = (
+    description: string | null,
+    status?: string,
+  ): Pick<ProductDraftAutofillResult, 'draft' | 'fieldStatus'> => ({
+    draft: { categoryId: null, description, optionGroups: [], optionCombinations: [] },
+    fieldStatus: status === undefined ? {} : { description: status },
+  })
+
+  it('[AC-SPRD-116] FILL은 셀러가 쓴 설명을 덮지 않고 빈 칸만 채운다', () => {
+    const form = { ...emptyProductForm(), description: SELLER_TEXT }
+
+    // 모드를 생략하면 FILL이다(기본값까지 같이 고정한다).
+    const written = applyAutofillDraft(form, draftOnly('AI가 쓴 설명', 'FILLED'), [])
+    expect(written.values.description).toBe(SELLER_TEXT)
+    expect(written.filled).toEqual([])
+    expect(applyAutofillDraft(form, draftOnly('AI가 쓴 설명', 'FILLED'), [], 'FILL').filled).toEqual([])
+
+    // 빈 칸에는 얹는다.
+    const blank = applyAutofillDraft({ ...emptyProductForm(), description: '  ' }, draftOnly('AI가 쓴 설명'), [])
+    expect(blank.values.description).toBe('AI가 쓴 설명')
+    expect(blank.filled).toEqual(['description'])
+  })
+
+  it('[AC-SPRD-117] REFINE이 다시 쓰지 못한 응답은 채운 것으로 세지 않는다', () => {
+    const form = { ...emptyProductForm(), description: SELLER_TEXT }
+    const refine = (result: Pick<ProductDraftAutofillResult, 'draft' | 'fieldStatus'>) =>
+      applyAutofillDraft(form, result, [], 'REFINE')
+
+    // AI는 다시 쓸 수 없으면 받은 원문을 그대로 담아 KEPT_LOCKED로 돌려준다.
+    const kept = refine(draftOnly(SELLER_TEXT, 'KEPT_LOCKED'))
+    expect(kept.values.description).toBe(SELLER_TEXT)
+    expect(kept.filled).toEqual([])
+
+    // fieldStatus를 FILLED로 적고 같은 글을 보내는 응답도, fieldStatus가 없는 배포도 같이 막는다.
+    expect(refine(draftOnly(` ${SELLER_TEXT} `, 'FILLED')).filled).toEqual([])
+    expect(refine(draftOnly(SELLER_TEXT)).filled).toEqual([])
+
+    // 정말 다시 쓴 응답만 덮는다.
+    const rewrote = refine(draftOnly('다시 쓴 설명', 'FILLED'))
+    expect(rewrote.values.description).toBe('다시 쓴 설명')
+    expect(rewrote.filled).toEqual(['description'])
   })
 })

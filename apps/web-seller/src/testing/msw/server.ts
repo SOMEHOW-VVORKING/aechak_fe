@@ -417,8 +417,11 @@ export function currentSellerProducts(): SellerProductSummaryWire[] {
 }
 
 // ─── AI 초안(POST /sellers/me/product-drafts/autofill) ─────────────────────────
-// BE는 AI 실패도 200 + state로 돌려주고 쿨다운만 429/40402다 — 세 경우를 시나리오로 가른다.
-export type ProductDraftAutofillScenario = 'ok' | 'unavailable' | 'cooldown'
+// BE는 AI 실패도 200 + state로 돌려주고 쿨다운만 429/40402다 — 다섯 경우를 시나리오로 가른다.
+// `empty-reasons`는 state=OK인데 초안이 비어 있는 응답이다 — 비운 사유가 fieldStatus에만 있다.
+// `kept-locked`는 REFINE이 다시 쓰지 못한 응답이다 -- AI가 받은 원문을 그대로 돌려주고 사유는
+// fieldStatus.description=KEPT_LOCKED에만 있다(state는 OK이고 draft.description도 차 있다).
+export type ProductDraftAutofillScenario = 'ok' | 'unavailable' | 'cooldown' | 'empty-reasons' | 'kept-locked'
 let autofillScenario: ProductDraftAutofillScenario = 'ok'
 let lastAutofillBody: unknown = null
 
@@ -689,14 +692,52 @@ const sellerProductHandlers = [
   }),
   // AI 초안 — 저장하지 않는다. 상품명이 비면 BE가 AI보다 먼저 400/90001로 거른다.
   http.post(SELLER_PRODUCT_DRAFT_AUTOFILL_URL, async ({ request }) => {
-    const body = (await request.json()) as { productName?: string }
+    const body = (await request.json()) as {
+      productName?: string
+      lockedFields?: { description?: string }
+    }
     lastAutofillBody = body
     if (!body.productName?.trim()) return badRequest('상품명을 입력해 주세요.')
+    if (autofillScenario === 'kept-locked') {
+      return HttpResponse.json({
+        data: {
+          state: 'OK',
+          draft: {
+            ...AUTOFILL_DRAFT_WIRE,
+            // 받은 원문을 그대로 되돌려 준다 -- 글자가 같은 것이 "다시 쓰지 못했다"의 표식이다.
+            description: body.lockedFields?.description ?? null,
+          },
+          fieldStatus: {
+            categoryId: 'FILLED',
+            description: 'KEPT_LOCKED',
+            optionGroups: 'FILLED',
+          },
+          basis: {},
+          sellerNotice: null,
+        },
+      })
+    }
     if (autofillScenario === 'cooldown') {
       return HttpResponse.json(
         { errorCode: 40402, message: '잠시 후 다시 시도해 주세요.' },
         { status: 429 },
       )
+    }
+    if (autofillScenario === 'empty-reasons') {
+      return HttpResponse.json({
+        data: {
+          state: 'OK',
+          draft: { categoryId: null, description: null, optionGroups: [], optionCombinations: [] },
+          // 셋째 값(EMPTY_NOT_ATTEMPTED)은 안내할 것이 없어 화면에 나오지 않아야 한다.
+          fieldStatus: {
+            categoryId: 'EMPTY_CALL_FAILED',
+            description: 'EMPTY_MODEL_DECLINED',
+            optionGroups: 'EMPTY_NOT_ATTEMPTED',
+          },
+          basis: {},
+          sellerNotice: null,
+        },
+      })
     }
     if (autofillScenario === 'unavailable') {
       return HttpResponse.json({

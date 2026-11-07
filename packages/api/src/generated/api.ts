@@ -2037,6 +2037,18 @@ export interface SellerProductDraftAutofillLockedFields {
 }
 
 /**
+ * FILL은 빈 칸만 채운다(기본). REFINE은 셀러가 쓴 본문을 입력으로 받아 다시 쓴다 — lockedFields로 실린 값을 되돌리지 않고 그 자리를 덮어쓸 초안을 돌려준다.
+ */
+export type SellerProductDraftAutofillMode =
+  (typeof SellerProductDraftAutofillMode)[keyof typeof SellerProductDraftAutofillMode]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SellerProductDraftAutofillMode = {
+  FILL: 'FILL',
+  REFINE: 'REFINE',
+} as const
+
+/**
  * 셀러가 이미 쓴 값. AI가 덮지 않고 그 전제로 나머지를 만든다
  * @nullable
  */
@@ -2059,6 +2071,8 @@ export interface SellerProductDraftAutofillRequest {
    * @nullable
    */
   lockedFields?: SellerProductDraftAutofillRequestLockedFields
+  /** 생략하면 FILL이다. REFINE은 lockedFields.description을 입력으로 삼아 그 칸을 다시 쓴다 — 재사용 키에 모드가 섞여야 같은 입력의 FILL 결과가 REFINE 요청에 돌아가지 않는다. */
+  mode?: SellerProductDraftAutofillMode
 }
 
 export interface SellerProductDraftAutofillDraft {
@@ -5118,6 +5132,41 @@ export interface InspectionViolation {
   suggestion?: string | null
 }
 
+/**
+ * 검수 단계. 자동 규칙 검사(RULE), 1차 선별(TRIAGE), 모델 상세 검수(MODEL)다 — MODEL은 여러 관점(ALL·DISPLAY_ADS·CONDUCT_TRADE)을 한 줄로 접은 것이라 그 가운데 가장 센 결과가 실린다.
+ */
+export type InspectionStageName = (typeof InspectionStageName)[keyof typeof InspectionStageName]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionStageName = {
+  RULE: 'RULE',
+  TRIAGE: 'TRIAGE',
+  MODEL: 'MODEL',
+} as const
+
+/**
+ * 단계 결과. UNCHECKED는 통과가 아니라 **그 단계에 닿지 않았다**는 뜻이다 — 둘을 섞으면 셀러가 보지 않은 단계를 통과로 읽는다.
+ */
+export type InspectionStageOutcome =
+  (typeof InspectionStageOutcome)[keyof typeof InspectionStageOutcome]
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const InspectionStageOutcome = {
+  VIOLATION: 'VIOLATION',
+  CLEAR: 'CLEAR',
+  UNCHECKED: 'UNCHECKED',
+} as const
+
+export interface InspectionStage {
+  stage: InspectionStageName
+  outcome: InspectionStageOutcome
+  /**
+   * UNCHECKED일 때만 사유 한 줄이 실리고 VIOLATION·CLEAR는 null이다(설명할 것이 없다). 내부 값(관점 이름·skipReason 원문·구간·확신도)은 오지 않는다 — 셀러에게 보일 문구로 번역된 뒤에 온다.
+   * @nullable
+   */
+  detail?: string | null
+}
+
 export interface SellerProductInspectionResponse {
   data: SellerProductInspection
 }
@@ -5159,6 +5208,8 @@ export interface SellerProductInspection {
   rejectReason?: string | null
   /** reasonCode, reasonSummary, sellerNotice와 같은 판정의 위반 목록. 없으면 빈 배열이다 */
   violations: InspectionViolation[]
+  /** 단계별 결과. 서버는 **항상 RULE·TRIAGE·MODEL 세 줄을 그 순서로** 주고, 닿지 않은 단계는 outcome=UNCHECKED로 채운다 — 길이가 변하지 않아 화면이 단계 수를 세지 않는다. required가 아닌 이유는 이 필드가 없는 배포를 FE가 먼저 만날 수 있어서다 (그때는 단계 영역만 접힌다). */
+  stages?: InspectionStage[]
   /**
    * 이의를 제기한 시각. null이면 제기한 적이 없다
    * @nullable
@@ -23636,7 +23687,7 @@ export const useDeleteSellerProductDraft = <TError = unknown, TContext = unknown
 }
 
 /**
- * 상품명으로 AI가 카테고리·상세 설명·옵션 초안을 만든다. 아무것도 저장하지 않는다 — 셀러가 받아들인 값은 등록·임시저장 요청으로 다시 나간다. AI가 못 만들어도 200이고 state로 알린다 (OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴 수 있어 FE는 열거로 가두지 않는다). OK가 "모든 필드를 받았다"를 뜻하지 않는다 — 비어 있는 사유는 fieldStatus(필드명 → 사유 문자열)에, 셀러에게 보일 안내는 sellerNotice에 실린다. 초안이 드는 필드는 넷(categoryId·description· optionGroups·optionCombinations)뿐이고 상품명·가격·할인·이미지는 설계상 늘 비어 있다. 쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004. 셀러당 쿨다운(기본 20초) 안의 재호출은 429 errorCode 40402이고 모델을 부르지 않는다. 상품명이 비면 400 errorCode 90001.
+ * 상품명으로 AI가 카테고리·상세 설명·옵션 초안을 만든다. 아무것도 저장하지 않는다 — 셀러가 받아들인 값은 등록·임시저장 요청으로 다시 나간다. AI가 못 만들어도 200이고 state로 알린다 (OK·FAILED·UNAVAILABLE — AI 쪽이 값을 늘릴 수 있어 FE는 열거로 가두지 않는다). OK가 "모든 필드를 받았다"를 뜻하지 않는다 — 비어 있는 사유는 fieldStatus(필드명 → 사유 문자열)에, 셀러에게 보일 안내는 sellerNotice에 실린다. 초안이 드는 필드는 넷(categoryId·description· optionGroups·optionCombinations)뿐이고 상품명·가격·할인·이미지는 설계상 늘 비어 있다. `mode`는 FILL(기본, 빈 칸만 채움)과 REFINE(셀러가 쓴 본문을 입력으로 받아 다시 씀)이고 생략하면 FILL이다. 쓰기 권한은 ACTIVE 셀러뿐이고 그 밖은 403 errorCode 40004. 셀러당 쿨다운(기본 20초) 안의 재호출은 429 errorCode 40402이고 모델을 부르지 않는다. 상품명이 비면 400 errorCode 90001.
  * @summary 셀러 상품 등록 폼 AI 초안 받기
  */
 export const autofillSellerProductDraft = (
