@@ -10,7 +10,9 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 // 보내므로 스텁도 Access-Control-Allow-Credentials를 **빼야** 한다 — 그 헤더의 부재 자체가
 // credentials 분기의 회귀 감시다. 반대로 `/auth/web/refresh`는 쿠키를 왕복하는 credentials 요청이라
 // 정확한 origin + Allow-Credentials가 둘 다 필요하다.
-const ORIGIN = 'http://localhost:5174'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5174'
 // 글롭에 origin을 박아 호스트를 가른다 — 비우면 요청이 api 호스트(8080)로 잘못 나가도 같은 스텁이
 // 받아 주어 E2E가 오배치를 전혀 잡지 못한다.
 const ADMIN_API_ORIGIN = 'http://localhost:8082'

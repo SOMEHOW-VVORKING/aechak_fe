@@ -5,7 +5,9 @@ import { stubMemberSession } from './session'
 // 재현한다 — 페이지(5175) → API(8080)가 교차 출처 + withCredentials라 fulfill 응답에도 정확한
 // origin의 CORS 헤더가 필요하다(와일드카드 불가).
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

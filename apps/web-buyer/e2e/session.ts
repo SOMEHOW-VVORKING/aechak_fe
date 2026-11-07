@@ -8,10 +8,12 @@ import type { Page } from '@playwright/test'
 // 요청이 실패해 회원 여부가 미지로 남고, 로그인 상태를 enabled로 넘기는 조회(카테고리·최근
 // 검색어·리뷰 미리보기)가 아예 나가지 않아 화면이 비회원처럼 보인다.
 //
-// 교차 출처(5175 → 8080) + withCredentials라 fulfill 응답에도 정확한 origin의 CORS 헤더가 필요하다
-// (와일드카드 불가 — 다른 spec과 같은 규칙).
-
-const ORIGIN = 'http://localhost:5175'
+// 교차 출처(앱 → 8080) + withCredentials라 fulfill 응답에도 정확한 origin의 CORS 헤더가 필요하다
+// (와일드카드 불가 — 다른 spec과 같은 규칙). 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서
+// 온다 — 한 글자만 어긋나도 브라우저가 이 응답을 거부해 회원 여부가 미지로 남고, 로그인 상태를
+// enabled로 넘기는 조회가 통째로 나가지 않는다. 화면은 에러 없이 빈 상태로 그려지므로 원인이
+// 드러나지 않는다(전용 포트로 돌리다 실측으로 겪었다).
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
   'Access-Control-Allow-Credentials': 'true',

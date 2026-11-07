@@ -13,7 +13,9 @@ import type {
 // Allow-Credentials, OPTIONS 방어 필수). 마이 메뉴의 SNS 진입 행은 SNS_SERVER_AVAILABLE=false로 숨어 있어 경로로 바로 연다.
 // 각 상태를 PR 첨부용으로 test-results/pr-c(gitignore)에 찍는다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,

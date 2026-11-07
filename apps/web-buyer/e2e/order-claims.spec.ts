@@ -13,7 +13,9 @@ import type {
 // 사유 선택지(GET /claims/reasons)는 SCRUM-273(BE #150) 미머지로 dev에 없다 —
 // 404로 떨어지는 경로도 한 케이스로 못박는다.
 
-const ORIGIN = 'http://localhost:5175'
+// 포트는 playwright.config.ts와 같은 `E2E_BASE_URL`에서 온다 — withCredentials라 fulfill 응답의
+// Access-Control-Allow-Origin이 실제 origin과 한 글자도 달라선 안 되므로 두 곳이 같은 값을 읽는다.
+const ORIGIN = process.env['E2E_BASE_URL'] ?? 'http://localhost:5175'
 const API = 'http://localhost:8080/api/v1'
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
