@@ -13,10 +13,15 @@ export const ADMIN_AUDIT_LOGS_URL = `${adminBase}/admin/audit-logs`
 export type WireAuditAction =
   | 'SELLER_APPLICATION_APPROVED'
   | 'SELLER_APPLICATION_REJECTED'
+  | 'SELLER_SUSPENDED'
+  | 'SELLER_SUSPENSION_RELEASED'
+  | 'SELLER_MEMO_UPDATED'
   | 'ADMIN_PROMOTED'
   | 'ADMIN_DEMOTED'
   | 'PRODUCT_INSPECTION_APPROVED'
   | 'PRODUCT_INSPECTION_REJECTED'
+  | 'PRODUCT_SALE_SUSPENDED'
+  | 'PRODUCT_SALE_RESUMED'
   | 'CLAIM_INTERVENED'
   | 'MEMBER_SANCTIONED'
   | 'MEMBER_SANCTION_RELEASED'
@@ -29,9 +34,11 @@ export type WireAuditAction =
   | 'NOTICE_UPDATED'
   | 'NOTICE_PUBLISHED'
   | 'NOTICE_UNPUBLISHED'
+  | 'REPORT_DECIDED'
 
 export type WireAuditTargetType =
   | 'SELLER_APPLICATION'
+  | 'SELLER'
   | 'ADMIN_USER'
   | 'MEMBER'
   | 'PRODUCT'
@@ -40,6 +47,7 @@ export type WireAuditTargetType =
   | 'REVIEW'
   | 'ORDER'
   | 'NOTICE'
+  | 'REPORT'
 
 export type WireAuditResult = 'SUCCESS' | 'FAILURE'
 export type WireAuditActorRole = 'GENERAL' | 'ADMIN'

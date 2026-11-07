@@ -303,7 +303,7 @@ describe('/audit-log', () => {
     expect(await screen.findByText('조건에 맞는 로그 0건')).toBeInTheDocument()
   })
 
-  it('[AC-ADM-AUD-006] 대상 종류 필터 옵션이 서버 열거 9값을 전부 덮는다', async () => {
+  it('[AC-ADM-AUD-006] 대상 종류 필터 옵션이 서버 열거 11값을 전부 덮는다', async () => {
     renderAt('/audit-log')
     await screen.findByText('조건에 맞는 로그 4건')
 
@@ -317,6 +317,7 @@ describe('/audit-log', () => {
     ).toEqual([
       '대상 종류 전체',
       '입점 신청',
+      '셀러',
       '관리자',
       '회원',
       '상품',
@@ -325,9 +326,42 @@ describe('/audit-log', () => {
       '리뷰',
       '주문',
       '공지',
+      '신고',
     ])
-    // 액션 18값도 같은 이유로 전부 있어야 한다(센티넬 하나를 더해 19개).
-    expect(within(screen.getAllByRole('combobox')[1]!).getAllByRole('option')).toHaveLength(19)
+    // 액션 24값도 같은 이유로 전부 있어야 한다(센티넬 하나를 더해 25개).
+    expect(within(screen.getAllByRole('combobox')[1]!).getAllByRole('option')).toHaveLength(25)
+  })
+
+  it('[AC-ADM-AUD-010] 셀러 제재·상품 판매중지·신고 처리 액션을 필터로 골라 서버 쿼리로 보낸다', async () => {
+    const queries = recordListQueries()
+    const user = userEvent.setup()
+    renderAt('/audit-log')
+    await screen.findByText('조건에 맞는 로그 4건')
+
+    const actions = within(screen.getAllByRole('combobox')[1]!)
+      .getAllByRole('option')
+      .map(option => option.textContent)
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        '셀러 판매정지',
+        '셀러 판매정지 해제',
+        '셀러 내부 메모 수정',
+        '상품 판매중지',
+        '상품 판매 재개',
+        '신고 처리',
+      ]),
+    )
+
+    await user.selectOptions(
+      screen.getAllByRole('combobox')[0]!,
+      screen.getByRole('option', { name: '셀러' }),
+    )
+    await user.selectOptions(
+      screen.getAllByRole('combobox')[1]!,
+      screen.getByRole('option', { name: '셀러 판매정지' }),
+    )
+    await screen.findByText('조건에 맞는 로그 0건')
+    expect(queries).toContain('SELLER|SELLER_SUSPENDED|none|none|none')
   })
 
   it('[AC-ADM-AUD-007] 대상 식별자는 종류를 앞세워 보여주고 링크로 만들지 않는다', async () => {

@@ -6192,7 +6192,7 @@ export interface MyProductInquiryListResponse {
 }
 
 /**
- * 감사되는 운영 액션 18종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'· '상품 판매 중지'는 이 열거에 없다 — 플랫폼이 감사하지 않는 행위다
+ * 감사되는 운영 액션 24종(be AdminAuditAction). 목 시절 화면이 쓰던 '상담방 운영 개입'은 이 열거에 없다. 셀러 제재·메모, 상품 판매 중지·재개, 신고 처리는 dev admin-api 응답 기준으로 옮겼다
  */
 export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAuditAction]
 
@@ -6200,10 +6200,15 @@ export type AdminAuditAction = (typeof AdminAuditAction)[keyof typeof AdminAudit
 export const AdminAuditAction = {
   SELLER_APPLICATION_APPROVED: 'SELLER_APPLICATION_APPROVED',
   SELLER_APPLICATION_REJECTED: 'SELLER_APPLICATION_REJECTED',
+  SELLER_SUSPENDED: 'SELLER_SUSPENDED',
+  SELLER_SUSPENSION_RELEASED: 'SELLER_SUSPENSION_RELEASED',
+  SELLER_MEMO_UPDATED: 'SELLER_MEMO_UPDATED',
   ADMIN_PROMOTED: 'ADMIN_PROMOTED',
   ADMIN_DEMOTED: 'ADMIN_DEMOTED',
   PRODUCT_INSPECTION_APPROVED: 'PRODUCT_INSPECTION_APPROVED',
   PRODUCT_INSPECTION_REJECTED: 'PRODUCT_INSPECTION_REJECTED',
+  PRODUCT_SALE_SUSPENDED: 'PRODUCT_SALE_SUSPENDED',
+  PRODUCT_SALE_RESUMED: 'PRODUCT_SALE_RESUMED',
   CLAIM_INTERVENED: 'CLAIM_INTERVENED',
   MEMBER_SANCTIONED: 'MEMBER_SANCTIONED',
   MEMBER_SANCTION_RELEASED: 'MEMBER_SANCTION_RELEASED',
@@ -6216,16 +6221,18 @@ export const AdminAuditAction = {
   NOTICE_UPDATED: 'NOTICE_UPDATED',
   NOTICE_PUBLISHED: 'NOTICE_PUBLISHED',
   NOTICE_UNPUBLISHED: 'NOTICE_UNPUBLISHED',
+  REPORT_DECIDED: 'REPORT_DECIDED',
 } as const
 
 /**
- * 액션이 가리킨 대상의 종류 9종(be AdminAuditTargetType). 종류마다 targetId의 뜻이 다르다 — 앞의 다섯은 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자
+ * 액션이 가리킨 대상의 종류 11종(be AdminAuditTargetType). 종류마다 targetId의 뜻이 다르다. SELLER·SELLER_APPLICATION·ADMIN_USER·MEMBER·INQUIRY·REVIEW는 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자, REPORT는 '종류/내부번호'
  */
 export type AdminAuditTargetType = (typeof AdminAuditTargetType)[keyof typeof AdminAuditTargetType]
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const AdminAuditTargetType = {
   SELLER_APPLICATION: 'SELLER_APPLICATION',
+  SELLER: 'SELLER',
   ADMIN_USER: 'ADMIN_USER',
   MEMBER: 'MEMBER',
   PRODUCT: 'PRODUCT',
@@ -6234,6 +6241,7 @@ export const AdminAuditTargetType = {
   REVIEW: 'REVIEW',
   ORDER: 'ORDER',
   NOTICE: 'NOTICE',
+  REPORT: 'REPORT',
 } as const
 
 /**

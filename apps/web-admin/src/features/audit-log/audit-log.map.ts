@@ -9,7 +9,7 @@ import type {
 // 와이어 enum·필드는 이 파일 안에 가둔다(AGENTS 6-2). 화면은 아래 view 타입 어휘만 쓴다.
 //
 // 리뷰·문의는 서버 enum을 소문자 FE 어휘로 1:1 변환해 두는데 감사 로그는 **그렇게 하지 않는다.**
-// 세 축(action 17 · targetType 9 · result 2)을 한 번 더 베끼면 변환표 둘과 라벨 표가 서로 어긋날
+// 세 축(action 24 · targetType 11 · result 2)을 한 번 더 베끼면 변환표 둘과 라벨 표가 서로 어긋날
 // 자리만 늘어나고, 이 축들의 값은 그대로 서버 필터로 되돌아가야 하는 **불투명한 코드**라 FE가 다시
 // 이름 지을 것이 없다. 그래서 타입만 feature 이름으로 다시 내보내 화면이 `@aechak/api`를 직접
 // 보지 않게 한다.
@@ -18,7 +18,7 @@ export type AuditTargetType = AdminAuditTargetType
 export type AuditResult = AdminAuditResult
 
 /**
- * 액션 한글 라벨 18값.
+ * 액션 한글 라벨 24값.
  *
  * 열에는 서버 `actionLabel`을 그대로 쓴다 — FE 표로 덮으면 서버가 열거를 늘린 날 빈 칸이 되거나
  * 틀린 한글이 찍힌다. 이 표가 있어야 하는 이유는 **필터 옵션**이다: 옵션은 데이터가 오기 전에
@@ -28,10 +28,15 @@ export type AuditResult = AdminAuditResult
 export const AUDIT_ACTION_LABELS = {
   SELLER_APPLICATION_APPROVED: '셀러 입점 승인',
   SELLER_APPLICATION_REJECTED: '셀러 입점 반려',
+  SELLER_SUSPENDED: '셀러 판매정지',
+  SELLER_SUSPENSION_RELEASED: '셀러 판매정지 해제',
+  SELLER_MEMO_UPDATED: '셀러 내부 메모 수정',
   ADMIN_PROMOTED: '관리자 권한 부여',
   ADMIN_DEMOTED: '관리자 권한 회수',
   PRODUCT_INSPECTION_APPROVED: '상품 검수 통과',
   PRODUCT_INSPECTION_REJECTED: '상품 검수 반려',
+  PRODUCT_SALE_SUSPENDED: '상품 판매중지',
+  PRODUCT_SALE_RESUMED: '상품 판매 재개',
   CLAIM_INTERVENED: '클레임 개입',
   MEMBER_SANCTIONED: '회원 이용 제한',
   MEMBER_SANCTION_RELEASED: '회원 이용 제한 해제',
@@ -44,11 +49,13 @@ export const AUDIT_ACTION_LABELS = {
   NOTICE_UPDATED: '공지 수정',
   NOTICE_PUBLISHED: '공지 게시',
   NOTICE_UNPUBLISHED: '공지 게시 중단',
+  REPORT_DECIDED: '신고 처리',
 } satisfies Record<AuditAction, string>
 
-/** 대상 종류 한글 라벨 9값. 쓰임은 위 액션 표와 같다(열은 서버 라벨, 옵션은 이 표). */
+/** 대상 종류 한글 라벨 11값. 쓰임은 위 액션 표와 같다(열은 서버 라벨, 옵션은 이 표). */
 export const AUDIT_TARGET_TYPE_LABELS = {
   SELLER_APPLICATION: '입점 신청',
+  SELLER: '셀러',
   ADMIN_USER: '관리자',
   MEMBER: '회원',
   PRODUCT: '상품',
@@ -57,6 +64,7 @@ export const AUDIT_TARGET_TYPE_LABELS = {
   REVIEW: '리뷰',
   ORDER: '주문',
   NOTICE: '공지',
+  REPORT: '신고',
 } satisfies Record<AuditTargetType, string>
 
 export const AUDIT_RESULT_LABELS = {
@@ -67,13 +75,15 @@ export const AUDIT_RESULT_LABELS = {
 /**
  * `targetId`의 **종류를 글자로 앞세우는** 접두.
  *
- * 서버는 `targetId` 문자열 하나만 주고 뜻은 종류마다 다르다 — 앞의 다섯은 내부 int64 번호고
- * PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자다. 번호만 그대로 찍으면 회원 내부
+ * 서버는 `targetId` 문자열 하나만 주고 뜻은 종류마다 다르다 — 셀러·입점 신청·관리자·회원·문의·리뷰는
+ * 내부 int64 번호, PRODUCT·CLAIM은 ULID, ORDER는 주문번호, NOTICE는 공지 식별자, REPORT는
+ * `PRODUCT/12` 꼴의 종류/번호다. 번호만 그대로 찍으면 회원 내부
  * PK `19023`과 클레임 ULID가 **같은 종류의 값처럼** 읽혀, 운영자가 회원 번호를 어딘가에 붙여
  * 넣으려 한다. 'APP-' 같은 접두를 발명하는 대신(서버가 만들지 않는 값이다) 무엇인지만 말한다.
  */
 const TARGET_ID_KIND_LABELS = {
   SELLER_APPLICATION: '내부 번호',
+  SELLER: '내부 번호',
   ADMIN_USER: '내부 번호',
   MEMBER: '내부 번호',
   PRODUCT: '공개 식별자',
@@ -82,6 +92,7 @@ const TARGET_ID_KIND_LABELS = {
   REVIEW: '내부 번호',
   ORDER: '주문번호',
   NOTICE: '공지 식별자',
+  REPORT: '신고 종류/번호',
 } satisfies Record<AuditTargetType, string>
 
 const ACTOR_ROLE_LABELS = {
