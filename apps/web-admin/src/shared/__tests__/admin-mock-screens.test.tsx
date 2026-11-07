@@ -74,9 +74,9 @@ const NOT_SAVED = '저장되지 않아요'
 const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시는 새로 고치면 사라져요.'
 
 /**
- * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 4화면.
+ * admin 모듈에 엔드포인트가 없어 **예시 데이터로 모양만 보여주는** 2화면.
  *
- * 넷 중 '상품 검수 관리'(`/products/review`)만 **nav 입구가 없다**(SCRUM-313 — 같은 '검수'
+ * 둘 중 '상품 검수 관리'(`/products/review`)만 **nav 입구가 없다**(SCRUM-313 — 같은 '검수'
  * 그룹에 실연동 'AI 검수 큐'가 있어 운영자가 이름이 맞는 가짜 쪽을 먼저 눌렀다). 입구가 없어도
  * URL로는 닿으므로 띠와 쓰기 차단은 그대로 필요하고, nav에 없는 탓에 `admin-nav.test.tsx`의
  * 분류(AC-ADMIN-NAV-004)에서 빠져 **이 파일이 그 화면의 유일한 띠 가드다** — SCREENS·WRITE_FLOWS에서
@@ -89,30 +89,33 @@ const WRITE_TOAST = '예시 화면이라 저장되지 않아요. 바뀐 표시�
  *  실연동 화면 계약은 각 feature 의 `__tests__`가 본다. 공지의 대상 필터
  *  계약(`'all'`이 실제 값인 축의 센티넬)은 여기 있던 AC-ADMIN-MOCK-007을
  *  `features/notices/__tests__`가 서버 필터 단언으로 이어 본다. 신고의 처리 조합 계약은
- *  `features/reports/__tests__`가 본다.)
+ *  `features/reports/__tests__`가 본다.
+ *  **대시보드**는 2026-11-07에 빠졌다 — 전용 집계 경로가 생긴 것이 아니라 위 실연동 경로들의
+ *  `totalCount`를 모아 일곱 칸과 할 일 네 줄을 전부 실 집계로 채웠고, 예시 화면이 아니게 됐다.
+ *  여기 있던 AC-ADMIN-MOCK-004는 `features/dashboard/__tests__`의 AC-ADMIN-DASH-008이 이어
+ *  본다(그쪽이 '예시' 꼬리표와 예시 데이터 띠가 하나도 없는 것과 남은 칸·줄을 칸 이름으로 센다).
+ *  **채팅 CS 모니터링**도 같은 날 빠졌는데 이유가 반대다 — BE에 채팅 도메인 자체가 없어 실연동될
+ *  길이 없고 데모 범위에서 뺐다. 그래서 입구만 내리지 않고 라우트·feature·nav 항목을 전부 지웠다
+ *  (사유 전문은 `routes/__root.tsx`의 nav 주석에 있다). URL로 닿을 자리도 없으니 이 배열에 남길
+ *  이유가 없다.)
  *
  * 2026-10-18(SCRUM-238)이 이 화면들의 진입을 `UnavailableScreen`으로 막았고, 2026-10-26
  * (SCRUM-302)이 nav 항목만 되살렸다. 그 상태가 "메뉴는 보이는데 눌러도 아무것도 못 본다"였고
  * "목 데이터로 잘 들어가 있던 화면을 다 없앴다"는 지적으로 되돌렸다(SCRUM-308).
  *
  * 그래서 이 파일이 고정하는 계약은 셋이다.
- * 1. 4화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
+ * 1. 2화면이 **각각** 열리고 자기 내용을 그린다 — 개수를 세지 않고 화면 이름과 그 화면에만
  *    있는 문자열로 확인한다(개수만 세면 한 화면이 다른 화면으로 바뀌어도 통과한다).
- * 2. 4화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
+ * 2. 2화면에 예시 데이터 띠가 있고 "저장되지 않아요"가 적혀 있다.
  * 3. 저장·제출·발송을 눌러도 **요청이 한 건도 더 나가지 않는다.** 서버에 없는 경로로 나가면
  *    운영자 화면에 500·404가 찍힌다.
  *
  * nav 꼬리표와 띠가 짝이 맞는지, 실연동 화면에 띠가 없는지는 `admin-nav.test.tsx`가 본다.
  */
 const SCREENS = [
-  ['대시보드', '/', '확인이 필요한 일'],
   ['셀러 관리', '/sellers', '냥이상점'],
   ['상품 검수 관리', '/products/review', '동결건조 닭가슴살 100g'],
-  ['채팅 CS 모니터링', '/chat-monitoring', 'ROOM-4821'],
 ] as const satisfies readonly (readonly [string, string, string])[]
-
-/** 목록 표를 그리는 화면. 대시보드만 표가 아니라 지표 카드로 내용을 보여준다. */
-const TABLE_SCREENS = SCREENS.filter(([, path]) => path !== '/')
 
 /**
  * 쓰기 버튼이 있는 화면과 그 누르는 순서. `confirm`이 있으면 확인 Modal을 거치는 액션이고,
@@ -159,13 +162,6 @@ const WRITE_FLOWS = [
     // 드로어 액션과 Modal 확인 버튼이 같은 이름이라, 확인은 Modal 안으로 좁혀서 누른다.
     confirm: { dialog: '상품을 판매 중지할까요?', button: '판매 중지' },
   },
-  {
-    screen: '채팅 CS 모니터링',
-    path: '/chat-monitoring',
-    openRow: 'ROOM-4821',
-    action: '운영자 개입',
-    confirm: { dialog: '운영자로 대화에 들어갈까요?', button: '개입하기' },
-  },
 ] as const
 
 describe('어드민 예시 데이터 화면', () => {
@@ -199,7 +195,10 @@ describe('어드민 예시 데이터 화면', () => {
     expect(notice).toHaveTextContent(NOT_SAVED)
   })
 
-  it.each(TABLE_SCREENS)('[AC-ADMIN-MOCK-003] %s(%s)은 빈 안내가 아니라 목록 표를 그린다', async (
+  // 남은 두 화면 모두 목록 표를 그린다 — 표가 아니라 지표 카드로 내용을 보여주던 대시보드가
+  // 실 집계로 빠지면서 이 단언의 적용 범위가 SCREENS 전체와 같아졌고, 그 둘을 가르던
+  // TABLE_SCREENS 필터는 함께 걷었다(표가 아닌 예시 화면이 다시 생기면 그때 되살린다).
+  it.each(SCREENS)('[AC-ADMIN-MOCK-003] %s(%s)은 빈 안내가 아니라 목록 표를 그린다', async (
     label,
     path,
   ) => {
@@ -209,18 +208,6 @@ describe('어드민 예시 데이터 화면', () => {
     const table = screen.getByRole('table')
     // 머리글만 있는 빈 표는 "준비 중"이 아니라 "데이터가 없다"로 읽힌다 — 본문 행까지 확인한다.
     expect(within(table).getAllByRole('row').length).toBeGreaterThan(1)
-  })
-
-  it('[AC-ADMIN-MOCK-004] 대시보드는 표 대신 지표와 할 일 목록으로 내용을 보여준다', async () => {
-    renderAt('/')
-
-    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
-    expect(screen.getByText('오늘 주문')).toBeInTheDocument()
-    expect(screen.getByText('최근 7일 거래액')).toBeInTheDocument()
-    expect(screen.getByText('확인이 필요한 일')).toBeInTheDocument()
-    // 지표 여덟 칸 중 둘만 예시로 남아 꼬리표를 달고 나머지는 실 집계다(SCRUM-313) — 어느 칸이
-    // 어느 쪽인지와 실패 표기는 `features/dashboard/__tests__`가 칸 이름으로 고정한다.
-    expect(screen.getAllByText('예시').length).toBeGreaterThan(0)
   })
 
   it.each(WRITE_FLOWS.map(flow => [flow.screen, flow] as const))(

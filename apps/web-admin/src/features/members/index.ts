@@ -1,6 +1,7 @@
 export {
   useAdminMemberDetail,
   useAdminMembers,
+  useJoinedMemberCount,
   useResetMemberProfile,
   useSanctionMember,
   DEFAULT_PAGE_SIZE,

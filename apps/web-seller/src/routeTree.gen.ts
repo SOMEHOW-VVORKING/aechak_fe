@@ -19,9 +19,7 @@ import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as NoticesIndexRouteImport } from './routes/notices/index'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries/index'
-import { Route as CouponsIndexRouteImport } from './routes/coupons/index'
 import { Route as ClaimsIndexRouteImport } from './routes/claims/index'
-import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as LoginCompleteRouteImport } from './routes/login/complete'
 import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId/edit'
@@ -76,19 +74,9 @@ const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
   path: '/inquiries/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CouponsIndexRoute = CouponsIndexRouteImport.update({
-  id: '/coupons/',
-  path: '/coupons/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ClaimsIndexRoute = ClaimsIndexRouteImport.update({
   id: '/claims/',
   path: '/claims/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AccountIndexRoute = AccountIndexRouteImport.update({
-  id: '/account/',
-  path: '/account/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsNewRoute = ProductsNewRouteImport.update({
@@ -111,9 +99,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
-  '/account/': typeof AccountIndexRoute
   '/claims/': typeof ClaimsIndexRoute
-  '/coupons/': typeof CouponsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/login/': typeof LoginIndexRoute
   '/notices/': typeof NoticesIndexRoute
@@ -129,9 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
-  '/account': typeof AccountIndexRoute
   '/claims': typeof ClaimsIndexRoute
-  '/coupons': typeof CouponsIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/login': typeof LoginIndexRoute
   '/notices': typeof NoticesIndexRoute
@@ -148,9 +132,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login/complete': typeof LoginCompleteRoute
   '/products/new': typeof ProductsNewRoute
-  '/account/': typeof AccountIndexRoute
   '/claims/': typeof ClaimsIndexRoute
-  '/coupons/': typeof CouponsIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/login/': typeof LoginIndexRoute
   '/notices/': typeof NoticesIndexRoute
@@ -168,9 +150,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
-    | '/account/'
     | '/claims/'
-    | '/coupons/'
     | '/inquiries/'
     | '/login/'
     | '/notices/'
@@ -186,9 +166,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
-    | '/account'
     | '/claims'
-    | '/coupons'
     | '/inquiries'
     | '/login'
     | '/notices'
@@ -204,9 +182,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login/complete'
     | '/products/new'
-    | '/account/'
     | '/claims/'
-    | '/coupons/'
     | '/inquiries/'
     | '/login/'
     | '/notices/'
@@ -223,9 +199,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginCompleteRoute: typeof LoginCompleteRoute
   ProductsNewRoute: typeof ProductsNewRoute
-  AccountIndexRoute: typeof AccountIndexRoute
   ClaimsIndexRoute: typeof ClaimsIndexRoute
-  CouponsIndexRoute: typeof CouponsIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   LoginIndexRoute: typeof LoginIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
@@ -310,25 +284,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/coupons/': {
-      id: '/coupons/'
-      path: '/coupons'
-      fullPath: '/coupons/'
-      preLoaderRoute: typeof CouponsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/claims/': {
       id: '/claims/'
       path: '/claims'
       fullPath: '/claims/'
       preLoaderRoute: typeof ClaimsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/account/': {
-      id: '/account/'
-      path: '/account'
-      fullPath: '/account/'
-      preLoaderRoute: typeof AccountIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products/new': {
@@ -359,9 +319,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginCompleteRoute: LoginCompleteRoute,
   ProductsNewRoute: ProductsNewRoute,
-  AccountIndexRoute: AccountIndexRoute,
   ClaimsIndexRoute: ClaimsIndexRoute,
-  CouponsIndexRoute: CouponsIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   LoginIndexRoute: LoginIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,

@@ -10,18 +10,21 @@ import {
   ADMIN_APPLICATIONS_URL,
   ADMIN_CLAIMS_URL,
   ADMIN_INQUIRIES_URL,
+  ADMIN_MEMBERS_URL,
   ADMIN_ORDER_METRICS_URL,
   ADMIN_PRODUCT_INSPECTIONS_URL,
   ADMIN_REPORTS_URL,
   makeAdminApplicationWire,
   makeAdminClaimWire,
   makeAdminInquiryWire,
+  makeAdminMemberWire,
   makeAdminOrderWire,
   makeAdminProductInspectionWire,
   makeAdminReportWire,
   seedAdminApplications,
   seedAdminClaims,
   seedAdminInquiries,
+  seedAdminMembers,
   seedAdminOrders,
   seedAdminProductInspections,
   seedAdminReports,
@@ -108,15 +111,16 @@ const openClaims = (count: number) =>
   )
 
 /**
- * 대시보드는 어드민의 첫 화면이고 로그인 복귀 지점이다. 2026-11-03(SCRUM-313)까지 지표 여덟 칸
- * 중 일곱이 `예시` 꼬리표를 달고 있었고, 할 일 목록은 꼬리표 없이 지어낸 숫자로 실연동 화면으로
- * 보냈다 — 운영자가 그 숫자를 할 일로 읽고 들어가면 화면의 숫자가 달랐다.
+ * 대시보드는 어드민의 첫 화면이고 로그인 복귀 지점이다. 한때 지표 여덟 칸 중 일곱이 `예시`
+ * 꼬리표를 달고 있었고, 할 일 목록은 꼬리표 없이 지어낸 숫자로 실연동 화면으로 보냈다 —
+ * 운영자가 그 숫자를 할 일로 읽고 들어가면 화면의 숫자가 달랐다. 지금은 **일곱 칸과 할 일 네
+ * 줄이 전부 실 집계**이고, 서버에 셀 방법이 없던 칸은 남겨 두지 않고 걷었다.
  *
  * 그래서 이 파일이 고정하는 계약은 넷이다.
  * 1. 실 집계 칸은 **`totalCount`로** 센다(목록 길이로 세면 `size=1` 조회에서 늘 1이다).
  * 2. 조회 실패·권한 없음은 **0이 아니라 줄표 + 사유**다.
  * 3. 할 일 줄은 **카드와 같은 집계**를 쓰고, 그 수를 실제로 보여주는 화면으로 보낸다.
- * 4. 못 채운 칸은 **꼬리표를 유지**한다(떼면 거짓이 된다).
+ * 4. 지어낸 숫자를 그리는 칸은 **하나도 남기지 않는다**(남기면 예시 띠와 nav 꼬리표가 함께 돌아온다).
  */
 describe('어드민 대시보드 지표', () => {
   beforeEach(() => {
@@ -138,6 +142,30 @@ describe('어드민 대시보드 지표', () => {
       makeAdminInquiryWire({ inquiryId: 9900, status: 'DONE', answer: '처리했어요.' }),
     ])
     seedAdminClaims(openClaims(5))
+    // 오늘 가입한 일반 회원 둘. 어제 가입한 회원과 오늘 가입한 **관리자**는 세지 않는다 —
+    // 가입일 구간과 `role=GENERAL` 두 조건이 모두 서버 count에 걸린다.
+    seedAdminMembers([
+      makeAdminMemberWire({ userId: 1001, nickname: '코코맘', joinedAt: `${TODAY}T09:10:00` }),
+      makeAdminMemberWire({
+        userId: 1002,
+        publicId: '01HZXK0000000000000000002',
+        nickname: '초코아빠',
+        joinedAt: `${TODAY}T18:40:00`,
+      }),
+      makeAdminMemberWire({
+        userId: 1003,
+        publicId: '01HZXK0000000000000000003',
+        nickname: '어제가입',
+        joinedAt: '2026-10-26T21:31:00',
+      }),
+      makeAdminMemberWire({
+        userId: 9001,
+        publicId: '01HZXK0000000000000000901',
+        nickname: '운영자',
+        role: 'ADMIN',
+        joinedAt: `${TODAY}T08:00:00`,
+      }),
+    ])
     seedAdminOrders([
       makeAdminOrderWire({
         orderId: '01HZXK0000000000000000T01',
@@ -227,6 +255,7 @@ describe('어드민 대시보드 지표', () => {
         ADMIN_CLAIMS_URL,
         ADMIN_ORDER_METRICS_URL,
         ADMIN_APPLICATIONS_URL,
+        ADMIN_MEMBERS_URL,
       ].map(url =>
         http.get(url, () =>
           HttpResponse.json({ errorCode: 20011, message: '권한이 없습니다.' }, { status: 403 }),
@@ -242,6 +271,8 @@ describe('어드민 대시보드 지표', () => {
     expect(metricCard('답변 대기 문의')).toHaveTextContent('—')
     expect(metricCard('진행 중 클레임')).toHaveTextContent('—')
     expect(metricCard('오늘 거래액')).toHaveTextContent('—')
+    expect(metricCard('오늘 신규 회원')).toHaveTextContent('—')
+    expect(metricCard('오늘 신규 회원')).not.toHaveTextContent('0명')
     // 이 칸만 `useMetricValue`가 아니라 `usePendingApplicationCount`가 채운다(nav 배지와 queryKey를
     // 공유해야 해서 자기 코드를 들고 있다) — 같은 판정을 **이 칸에서도** 단언한다. 그 훅의 실패
     // 판정(`if (query.isError) return null` + `?? null`)을 `?? 0`만 남기게 되돌리면 이 칸이
@@ -251,7 +282,11 @@ describe('어드민 대시보드 지표', () => {
     expect(metricCard('셀러 입점 심사 대기')).toHaveTextContent('—')
     expect(metricCard('셀러 입점 심사 대기')).not.toHaveTextContent('0건')
     // 줄표만 있으면 운영자는 "0"인지 "못 받았는지"를 모른다 — 띠가 사유를 적는다.
-    expect(screen.getByRole('alert')).toHaveTextContent('권한이 없거나 조회가 실패')
+    // 받는 중에도 값은 null이라 띠는 **조회가 다 가라앉은 뒤에** 뜬다(로딩 중에 "실패했다"고
+    // 말하지 않는다) — 그래서 단언도 기다린다.
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('권한이 없거나 조회가 실패'),
+    )
     // 할 일 줄도 같은 판정을 쓴다(0건으로 접히면 목록이 "할 일 없음"으로 보인다).
     expect(todoRow('미처리 신고')).toHaveTextContent('—')
   })
@@ -320,29 +355,49 @@ describe('어드민 대시보드 지표', () => {
     },
   )
 
-  it('[AC-ADMIN-DASH-008] 집계 경로가 없는 칸만 예시 꼬리표를 유지한다', async () => {
+  /**
+   * 걷어낸 다섯(오늘 주문·정산 예정액·최근 7일 거래액 그래프·신규 입점 셀러·위험 신호 채팅방)은
+   * 서버에 셀 방법이 없어서 지웠다. 남겨 두면 예시 꼬리표와 예시 데이터 띠가 함께 돌아오고,
+   * 띠가 돌아오면 nav 꼬리표까지 되살아난다 — 그래서 **이름으로** 부재를 고정한다. 개수만 세면
+   * 다른 칸이 늘면서 같은 수가 되는 날 조용히 통과한다.
+   */
+  const REMOVED_LABELS = [
+    '오늘 주문',
+    '정산 예정액',
+    '최근 7일 거래액',
+    '신규 입점 셀러',
+    '위험 신호 채팅방',
+    '채팅 CS 모니터링 열기',
+  ] as const
+
+  it('[AC-ADMIN-DASH-008] 지어낸 숫자를 그리는 칸은 하나도 남지 않는다', async () => {
     renderDashboard()
 
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
-
-    // 서버에 셀 방법이 없는 둘. 꼬리표를 떼면 지어낸 숫자가 실 집계처럼 보인다.
-    expect(metricCard('오늘 주문')).toHaveTextContent('예시')
-    expect(metricCard('정산 예정액')).toHaveTextContent('예시')
-    // 채워진 칸에서는 뗀다 — 남겨 두면 실데이터를 예시로 의심하게 만들어 거꾸로 속인다.
     await waitFor(() => expect(metricCard('오늘 거래액')).toHaveTextContent('100,000원'))
+
+    // 꼬리표가 하나라도 남으면 그 칸은 지어낸 숫자를 그린다는 뜻이다.
+    expect(screen.queryByText('예시')).not.toBeInTheDocument()
+    // 예시 데이터 띠는 실 집계 화면에 붙이지 않는다 — 실데이터를 예시로 의심하게 만든다.
+    expect(screen.queryByText('예시 데이터예요')).not.toBeInTheDocument()
+    for (const label of REMOVED_LABELS) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument()
+    }
+    // 남은 일곱 칸과 할 일 네 줄은 그대로 있어야 한다(걷다가 실 집계까지 흘리면 안 된다).
     for (const label of [
       '오늘 거래액',
+      '오늘 신규 회원',
+      '셀러 입점 심사 대기',
       '검수 대기 상품',
       '미처리 신고',
       '답변 대기 문의',
       '진행 중 클레임',
-      '셀러 입점 심사 대기',
     ]) {
-      expect(metricCard(label)).not.toHaveTextContent('예시')
+      expect(metricCard(label)).toBeInTheDocument()
     }
-    // 집계가 없는 할 일 줄은 꼬리표를 달고 남는다(채팅은 BE에 경로 자체가 없다).
-    expect(todoRow('위험 신호 채팅방')).toHaveTextContent('예시')
-    expect(todoRow('진행 중 클레임')).not.toHaveTextContent('예시')
+    for (const label of ['검수 대기 상품', '미처리 신고', '답변 대기 문의', '진행 중 클레임']) {
+      expect(todoRow(label)).toBeInTheDocument()
+    }
   })
 
   it('[AC-ADMIN-DASH-009] 입점 심사 대기 수는 nav 배지와 같은 키라 조회가 한 번만 나간다', async () => {
@@ -356,5 +411,28 @@ describe('어드민 대시보드 지표', () => {
     expect(applicationReads).toHaveLength(1)
     // 배지도 같은 수를 읽는다 — 카드와 배지가 다른 말을 하면 운영자는 어느 쪽도 믿지 못한다.
     expect(screen.getByRole('button', { name: '셀러 입점 심사 2' })).toBeInTheDocument()
+  })
+
+  /**
+   * 신규 회원 칸은 이 변경의 핵심이다. 지어낸 `37명`이 오래 남아 있던 이유가 "가입 집계 경로가
+   * 없다"는 낡은 서술이었는데, `GET /admin/members`가 `joinedFrom`·`joinedTo`를 받고 그 구간을
+   * **count 조건에도** 적용한다(BE `AdminMemberQueryAdapter.countMembers`의 `joinedAtRange`).
+   * 새 엔드포인트 없이 기존 경로를 다시 쓰는 자리라, 이 단언이 없으면 다음 사람이 예시로 되돌린다.
+   */
+  it('[AC-ADMIN-DASH-010] 신규 회원 칸은 가입일을 오늘로 좁힌 1건짜리 조회의 totalCount로 센다', async () => {
+    const requests = recordRequests()
+    renderDashboard()
+
+    // 오늘 가입한 일반 회원 둘. 목록 길이로 셌다면 `size=1`이라 `1명`이고, 가입일 구간을 빼면
+    // 어제 가입한 회원까지 들어가 `3명`이며, 관리자까지 세면 `4명`이 된다.
+    await waitFor(() => expect(metricCard('오늘 신규 회원')).toHaveTextContent('2명'))
+
+    const sent = requests.find(entry => entry.includes(`${ADMIN_MEMBERS_URL}?`)) ?? ''
+    // LocalDate 꼴이어야 한다 — date-time을 보내면 서버 바인딩이 400으로 끊는다.
+    expect(sent).toContain(`joinedFrom=${TODAY}`)
+    expect(sent).toContain(`joinedTo=${TODAY}`)
+    expect(sent).toContain('size=1')
+    // 목록 화면과 키가 겹치면 첫 화면에서 같은 경로를 두 번 부르거나 목록이 1건짜리가 된다.
+    expect(requests.filter(entry => entry.includes(`${ADMIN_MEMBERS_URL}?`))).toHaveLength(1)
   })
 })
