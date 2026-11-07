@@ -20,6 +20,7 @@ import {
   useSnsToggle,
   type SnsPost,
   type SnsReactionKind,
+  type SnsReportTarget,
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { petTagLabel, postDate, postDateLabel } from '../sns.format'
@@ -58,6 +59,8 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
   const [confirm, setConfirm] = useState<PostConfirm | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  // 게시물 신고와 댓글 신고가 시트 하나를 쓴다. 댓글 대상이 없으면 게시물을 신고한다. 시트가 닫히는 동안에도 대상을 남긴다.
+  const [commentReport, setCommentReport] = useState<SnsReportTarget | null>(null)
   // 로그인 뒤 다시 켤 리포스트, 저장, 좋아요(A26). 정해지면 SnsResumeReaction이나 SnsResumeLike가 한 번 보낸다.
   const [resume, setResume] = useState<SnsReactionKind | 'like' | null>(null)
   const [commentResume, setCommentResume] = useState<SnsCommentResume | null>(null)
@@ -91,8 +94,13 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
     if (pending.kind === 'save' || pending.kind === 'like' || (pending.kind === 'repost' && !post.isMine)) {
       setResume(pending.kind)
     }
-    // 댓글 입력, 댓글 작성자 차단, 댓글 좋아요는 내 게시물에서도 된다. 댓글 목록이 불러와진 뒤 SnsCommentList가 연다.
-    if (pending.kind === 'comment' || pending.kind === 'commentBlock' || pending.kind === 'commentLike') {
+    // 댓글 입력, 댓글 작성자 차단, 댓글 신고, 댓글 좋아요는 내 게시물에서도 된다. 댓글 목록이 불러와진 뒤 SnsCommentList가 연다.
+    if (
+      pending.kind === 'comment' ||
+      pending.kind === 'commentBlock' ||
+      pending.kind === 'commentReport' ||
+      pending.kind === 'commentLike'
+    ) {
       setCommentResume({ kind: pending.kind, targetPublicId: pending.targetPublicId })
       return
     }
@@ -104,7 +112,10 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
       )
     } else if (pending.kind === 'block') setConfirm('block')
     else if (pending.kind === 'mute') setMoreOpen(true)
-    else if (pending.kind === 'report') setReportOpen(true)
+    else if (pending.kind === 'report') {
+      setCommentReport(null)
+      setReportOpen(true)
+    }
   }, [publicId, loggedIn, unavailable, blockedByMe, post, mutateToggle])
 
   const postUrl = `${window.location.origin}/sns/posts/${publicId}`
@@ -243,11 +254,20 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
           onDelete={() => setDeleteConfirm(true)}
           onMute={() => (post.mutedByMe ? setConfirm('unmute') : mute(post))}
           onBlock={() => requireAuth('block', () => setConfirm('block'), { kind: 'block', publicId })}
-          onReport={() => requireAuth('snsReport', () => setReportOpen(true), { kind: 'report', publicId })}
+          onReport={() =>
+            requireAuth(
+              'snsReport',
+              () => {
+                setCommentReport(null)
+                setReportOpen(true)
+              },
+              { kind: 'report', publicId },
+            )
+          }
         />
       )}
       <SnsReportSheet
-        target={post ? postReportTarget(post) : null}
+        target={commentReport ?? (post ? postReportTarget(post) : null)}
         open={reportOpen}
         onClose={() => setReportOpen(false)}
       />
@@ -471,6 +491,10 @@ export function SnsPostDetailScreen({ publicId, author, comment }: { publicId: s
       pinnedCommentId={comment}
       resume={commentResume}
       onResumeDone={() => setCommentResume(null)}
+      onReport={target => {
+        setCommentReport(target)
+        setReportOpen(true)
+      }}
     />,
   )
 }

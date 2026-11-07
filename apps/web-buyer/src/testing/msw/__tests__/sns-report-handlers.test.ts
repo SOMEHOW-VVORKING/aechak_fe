@@ -3,14 +3,22 @@ import { axiosInstance, errorResponse, setAccessToken } from '@aechak/api'
 import {
   SNS_BLOCKER,
   SNS_COCO,
+  SNS_COMMENT_DELETED,
+  SNS_COMMENT_MINE,
+  SNS_COMMENT_MONG,
   SNS_ME,
   SNS_POST_BLOCKER,
   SNS_POST_COCO,
   SNS_POST_DELETED,
   SNS_POST_MINE,
   SNS_POST_SPAM,
+  SNS_REPLY_COCO,
+  SNS_SPAM,
+  SNS_TORI,
   currentSns,
   seedSns,
+  snsComment,
+  snsExampleComments,
 } from '../server'
 
 // SNS-07 신고 접수 MSW 핸들러의 계약 검증. 화면 테스트가 이 판정 순서와 에러 코드를 전제로 한다.
@@ -64,5 +72,34 @@ describe('POST /reports SNS_USER', () => {
     expect(await failureOf(report('SNS_USER', 'missing'))).toEqual({ status: 404, errorCode: 130000 })
     expect(await failureOf(report('SNS_USER', SNS_COCO, 'OTHER'))).toEqual({ status: 400, errorCode: 30201 })
     expect(await failureOf(report('SNS_USER', SNS_BLOCKER, 'FRAUD'))).toEqual({ status: 409, errorCode: 30202 })
+  })
+})
+
+describe('POST /reports SNS_COMMENT', () => {
+  it('[AC-SNS-RPT-032] 없는 댓글, 볼 수 없는 게시물, 차단한 작성자, 보이지 않는 댓글, 본인 댓글, 기타 상세 없음, 중복을 계약 순서대로 거절한다', async () => {
+    seedSns({
+      comments: [
+        ...snsExampleComments(),
+        snsComment('cm-deleted-post', SNS_POST_DELETED, SNS_COCO),
+        snsComment('cm-spam-post', SNS_POST_SPAM, SNS_SPAM),
+        snsComment('cm-muted', SNS_POST_COCO, SNS_TORI),
+      ],
+    })
+    expect(await failureOf(report('SNS_COMMENT', 'missing'))).toEqual({ status: 404, errorCode: 130700 })
+    expect(await failureOf(report('SNS_COMMENT', 'cm-deleted-post'))).toEqual({ status: 404, errorCode: 130400 })
+    expect(await failureOf(report('SNS_COMMENT', 'cm-spam-post'))).toEqual({ status: 403, errorCode: 130001 })
+    expect(await failureOf(report('SNS_COMMENT', 'cm-muted'))).toEqual({ status: 404, errorCode: 130700 })
+    expect(await failureOf(report('SNS_COMMENT', SNS_COMMENT_DELETED))).toEqual({ status: 404, errorCode: 130700 })
+    expect(await failureOf(report('SNS_COMMENT', SNS_COMMENT_MINE))).toEqual({ status: 400, errorCode: 130803 })
+    expect(await failureOf(report('SNS_COMMENT', SNS_COMMENT_MONG, 'OTHER', ' '))).toEqual({
+      status: 400,
+      errorCode: 130801,
+    })
+
+    // 대댓글은 그 대댓글만 대상이라 부모 댓글 신고와 따로 접수된다.
+    expect((await report('SNS_COMMENT', SNS_REPLY_COCO)).status).toBe(201)
+    expect((await report('SNS_COMMENT', SNS_COMMENT_MONG)).status).toBe(201)
+    expect(await failureOf(report('SNS_COMMENT', SNS_REPLY_COCO, 'ABUSE'))).toEqual({ status: 409, errorCode: 130804 })
+    expect(currentSns().reports.map(r => r.targetId)).toEqual([SNS_REPLY_COCO, SNS_COMMENT_MONG])
   })
 })

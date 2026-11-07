@@ -32,7 +32,7 @@ export type GateFeature =
 
 // SNS 행동은 로그인 뒤 원래 화면으로 돌아와 이어서 한다(A26). 나머지는 기존 안내를 그대로 쓴다.
 // 글쓰기(write)는 SNS 게시물 작성이다(SNS-02 design 6절 10번). feed는 비로그인이 누른 팔로잉 피드 탭이다(SNS-03 A9).
-// repost, save는 게시물 리포스트와 저장이다(SNS-03 design 6절 5번). snsReport는 SNS 게시물과 사용자 신고다(SNS-07).
+// repost, save는 게시물 리포스트와 저장이다(SNS-03 design 6절 5번). snsReport는 SNS 게시물, 댓글, 사용자 신고다(SNS-07).
 // 상품 신고(report)는 로그인 뒤 이어서 하지 않아 SNS 문구를 쓰지 않는다. like, likers는 좋아요와 좋아요한 사람이다(SNS-04 design 6절 10번).
 const SNS_FEATURES = new Set<GateFeature>([
   'follow',

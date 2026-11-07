@@ -15,6 +15,7 @@ import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
 import {
   SNS_COMMENT_REPLY_CLOSED,
   SNS_COMMENT_UNAVAILABLE,
+  commentReportTarget,
   snsCommentErrorMessage,
   snsErrorCode,
   snsKeys,
@@ -28,6 +29,7 @@ import {
   useUpdateSnsComment,
   type SnsComment,
   type SnsPost,
+  type SnsReportTarget,
 } from '../sns.queries'
 import { RELATION_CONFIRM } from '../sns.copy'
 import { relativeTimeLabel } from '../sns.format'
@@ -42,9 +44,9 @@ function randomId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
 }
 
-/** 로그인 뒤 다시 열 댓글 입력창이나 댓글 작성자 차단, 다시 켤 댓글 좋아요(A26) */
+/** 로그인 뒤 다시 열 댓글 입력창이나 댓글 작성자 차단, 댓글 신고 시트, 다시 켤 댓글 좋아요(A26) */
 export interface SnsCommentResume {
-  kind: 'comment' | 'commentBlock' | 'commentLike'
+  kind: 'comment' | 'commentBlock' | 'commentReport' | 'commentLike'
   targetPublicId?: string
 }
 
@@ -133,8 +135,8 @@ const MOVE_TOLERANCE_PX = 10
 
 /**
  * 댓글 목록(b7-st-2 2-A). 비로그인도 본다(A9). 오래된순이고 대댓글은 한 단계 들여쓴다. 헤더의 수는 상세 commentCount다.
- * 알림으로 연 댓글(commentPublicId)은 로그인했을 때만 불러 목록 위에 고정한다(G7). 다른 사람 댓글을 길게 누르면 차단 시트를 연다.
- * 신고는 SNS-T21 전까지 숨긴다.
+ * 알림으로 연 댓글(commentPublicId)은 로그인했을 때만 불러 목록 위에 고정한다(G7). 다른 사람 댓글을 길게 누르면 신고와 차단이 있는
+ * 메뉴 시트를 연다(SNS-07 P14).
  */
 export function SnsCommentList({
   post,
@@ -144,6 +146,7 @@ export function SnsCommentList({
   pinnedCommentId,
   resume,
   onResumeDone,
+  onReport,
 }: {
   post: SnsPost
   draft: SnsCommentDraft
@@ -152,6 +155,8 @@ export function SnsCommentList({
   pinnedCommentId?: string
   resume: SnsCommentResume | null
   onResumeDone: () => void
+  /** 신고 시트를 연다. 시트는 상세 화면이 그려 게시물이 사라져 목록이 내려가도 결과 토스트가 남는다 */
+  onReport: (target: SnsReportTarget) => void
 }) {
   const loggedIn = useIsLoggedIn()
   const queryClient = useQueryClient()
@@ -181,8 +186,10 @@ export function SnsCommentList({
   const resumeLikeSent = useRef(false)
 
   // 로그인 뒤 다시 실행(A26). 입력창만 다시 열고 댓글은 보내지 않는다. 답글달기였으면 단건으로 그 댓글을 다시 읽어 아직 답글을
-  // 달 수 있을 때만 그 답글 입력창을 연다. 차단은 그 작성자의 댓글이 아직 보일 때만 확인 시트를 다시 연다. 볼 수 없게 됐으면 안내만 한다.
-  const resumeTarget = resume?.kind === 'comment' ? resume.targetPublicId : undefined
+  // 달 수 있을 때만 그 답글 입력창을 연다. 신고도 단건으로 다시 읽어 아직 보일 때만 신고 시트를 다시 열고 제출하지 않는다.
+  // 차단은 그 작성자의 댓글이 아직 보일 때만 확인 시트를 다시 연다. 볼 수 없게 됐으면 안내만 한다.
+  const resumeTarget =
+    resume?.kind === 'comment' || resume?.kind === 'commentReport' ? resume.targetPublicId : undefined
   const resumeThread = useSnsCommentThread(resumeTarget, loggedIn)
   const ready = comments.data != null
   useEffect(() => {
@@ -205,6 +212,13 @@ export function SnsCommentList({
         draft.setReplyTo(target)
       }
       draft.focus()
+    } else if (resume.kind === 'commentReport') {
+      if (resumeTarget != null && resumeThread.isPending) return
+      const target = resumeThread.data?.comment
+      // 비로그인은 isMine이 늘 false라 로그인해 보니 내 댓글일 수 있다.
+      if (target?.isMine) notify('내 댓글은 신고할 수 없어요', 'error')
+      else if (target?.status === 'ACTIVE' && target.author) openReport(target)
+      else notify(snsCommentErrorMessage(resumeThread.error, '댓글을 찾을 수 없어요'), 'error')
     } else {
       if (!ready) return
       // shortcut: 불러온 첫 페이지에서만 그 작성자를 찾는다. 뒤 페이지에만 댓글이 있으면 찾을 수 없다는 안내가 나온다.
@@ -228,8 +242,20 @@ export function SnsCommentList({
     )
 
   const openMenu = (item: SnsComment) => {
-    if (item.status !== 'ACTIVE' || item.isMine) return
+    if (item.status !== 'ACTIVE' || !item.author || item.isMine) return
     setMenuTarget(item)
+  }
+
+  const openReport = (item: SnsComment) => onReport(commentReportTarget(item, post.publicId))
+
+  // 비로그인은 로그인 안내 시트를 열고 로그인 뒤 같은 화면에서 신고 시트만 다시 연다(A26).
+  const report = (item: SnsComment) => {
+    setMenuTarget(null)
+    requireAuth('snsReport', () => openReport(item), {
+      kind: 'commentReport',
+      publicId: post.publicId,
+      targetPublicId: item.publicId,
+    })
   }
 
   const block = (item: SnsComment) => {
@@ -438,6 +464,13 @@ export function SnsCommentList({
         ariaLabel="댓글 메뉴"
       >
         <div className="flex flex-col pb-1">
+          <button
+            type="button"
+            onClick={() => menuTarget && report(menuTarget)}
+            className="flex h-12 items-center px-2 text-left text-body font-medium text-text-primary"
+          >
+            신고
+          </button>
           <button
             type="button"
             onClick={() => menuTarget && block(menuTarget)}

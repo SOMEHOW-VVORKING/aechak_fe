@@ -7,8 +7,9 @@
  * compose는 대상 없는 글쓰기다(publicId는 빈 문자열). 돌아온 SNS 탭이 작성 화면을 다시 연다(SNS-02 A26).
  * repost, save, like의 대상은 게시물 publicId다(SNS-03 design 6절 10번, SNS-04 design 6절 10번).
  * report는 신고 시트만 다시 열고 자동으로 제출하지 않는다. 대상은 게시물이나 사용자 publicId다(SNS-07 A26).
- * comment는 댓글 입력창을, commentBlock은 댓글 작성자의 차단 확인을 다시 연다. publicId는 게시물이고 targetPublicId는
- * comment면 답글달기를 누른 댓글, commentBlock이면 댓글 작성자, commentLike면 좋아요를 누른 댓글이다(SNS-04 design 6절 10번).
+ * comment는 댓글 입력창을, commentBlock은 댓글 작성자의 차단 확인을, commentReport는 댓글 신고 시트를 다시 연다. publicId는
+ * 게시물이고 targetPublicId는 comment면 답글달기를 누른 댓글, commentBlock이면 댓글 작성자, commentReport면 신고할 댓글,
+ * commentLike면 좋아요를 누른 댓글이다(SNS-04 design 6절 10번, SNS-07 A26).
  */
 export type PendingActionKind =
   | 'follow'
@@ -22,6 +23,7 @@ export type PendingActionKind =
   | 'like'
   | 'comment'
   | 'commentBlock'
+  | 'commentReport'
   | 'commentLike'
 
 export interface PendingAction {
