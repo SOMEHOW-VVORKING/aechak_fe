@@ -7,7 +7,14 @@ import { http, HttpResponse } from 'msw'
 import { setAccessToken } from '@aechak/api'
 import { logout, resetAuth } from '@/shared/auth'
 import { resetRegistry, resetWishlist } from '@/shared/catalog'
-import { PRODUCT_FIXTURES, PRODUCT_LIKE_URL, seedLikedProducts, server } from '@/testing/msw/server'
+import {
+  CATEGORIES_URL,
+  CATEGORY_FIXTURES,
+  PRODUCT_FIXTURES,
+  PRODUCT_LIKE_URL,
+  seedLikedProducts,
+  server,
+} from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
 function likedSeed(ids: string[]) {
@@ -44,6 +51,53 @@ describe('/market', () => {
     // 먼저 사료 상품이 사라질 때까지 기다린 뒤(=필터 확정), 안정된 산책용품 상품을 확인한다.
     await waitFor(() => expect(screen.queryByText('강아지 연어 사료 2kg')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('자동 리드줄 5m 대형견용')).toBeInTheDocument())
+  })
+
+  it('[AC-CATALOG-014] 대분류를 고르면 첫 중분류로 조회하고 전체 타일은 두지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/market')
+
+    await user.click(await screen.findByRole('button', { name: '고양이' }))
+
+    expect(await screen.findByText('벤토나이트 고양이 모래 8.5L')).toBeInTheDocument()
+    expect(screen.queryByText('상품을 불러오지 못했어요')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '위생/미용', pressed: true })).toBeInTheDocument()
+    // 대분류 칩의 전체 하나만 남는다.
+    expect(screen.getAllByRole('button', { name: '전체' })).toHaveLength(1)
+  })
+
+  it('[AC-CATALOG-015] ?category=<대분류 라벨> 진입 시 첫 중분류로 조회한다', async () => {
+    renderAt('/market?category=' + encodeURIComponent('고양이'))
+
+    expect(await screen.findByRole('button', { name: '위생/미용', pressed: true })).toBeInTheDocument()
+    expect(await screen.findByText('벤토나이트 고양이 모래 8.5L')).toBeInTheDocument()
+    expect(screen.queryByText('상품을 불러오지 못했어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-CATALOG-016] ?category=<소분류 라벨> 진입 시 소속 중분류로 조회한다', async () => {
+    server.use(
+      http.get(CATEGORIES_URL, () =>
+        HttpResponse.json({
+          data: CATEGORY_FIXTURES.map(main =>
+            main.categoryId === 1
+              ? {
+                  ...main,
+                  children: main.children.map(sub =>
+                    sub.categoryId === 12
+                      ? { ...sub, children: [{ categoryId: 121, name: '리드줄', iconUrl: null, sortOrder: 1, children: [] }] }
+                      : sub,
+                  ),
+                }
+              : main,
+          ),
+        }),
+      ),
+    )
+    renderAt('/market?category=' + encodeURIComponent('리드줄'))
+
+    expect(await screen.findByRole('button', { name: '산책용품', pressed: true })).toBeInTheDocument()
+    expect(await screen.findByText('자동 리드줄 5m 대형견용')).toBeInTheDocument()
+    expect(screen.queryByText('상품을 불러오지 못했어요')).not.toBeInTheDocument()
   })
 
   it('[AC-CATALOG-007] 대분류 선택 시 중분류 그리드가 뜨고 카테고리 토글로 접고 펼칠 수 있다', async () => {

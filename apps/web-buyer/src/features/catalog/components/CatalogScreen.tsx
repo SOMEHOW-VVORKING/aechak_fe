@@ -7,7 +7,6 @@ import {
   Footprints,
   GraduationCap,
   House,
-  LayoutGrid,
   PawPrint,
   Pill,
   Scissors,
@@ -27,7 +26,6 @@ import { useCategoryTree, useProductList } from '../catalog.queries'
 // 중분류 아이콘 — 서버 카테고리명 기준. 매칭 없으면 PawPrint 폴백(실 taxonomy 명이 이 맵과 다를 수
 // 있으므로 안전망). 서버 iconUrl은 S3 key라 <img>로 못 써 lucide를 유지한다.
 const SUBCAT_ICONS: Record<string, LucideIcon> = {
-  전체: LayoutGrid,
   '사료/간식': Bone,
   장난감: ToyBrick,
   '의류/악세서리': Shirt,
@@ -52,15 +50,9 @@ function findCategoryPath(nodes: CategoryResponse[], label: string): number[] | 
   return null
 }
 
-// id로 카테고리명을 depth 무관 재귀로 찾는다 — 선택이 depth-3 리프라 중분류 타일과 매칭되지 않아도
-// 활성 필터 이름을 pill로 보여주기 위함.
-function findCategoryName(nodes: CategoryResponse[], id: number): string | null {
-  for (const node of nodes) {
-    if (node.categoryId === id) return node.name
-    const childName = findCategoryName(node.children, id)
-    if (childName) return childName
-  }
-  return null
+// 서버 상품 필터는 중분류만 받으므로, 대분류를 고르면 첫 중분류로 조회한다.
+function firstSubCategoryId(mains: CategoryResponse[], mainId: number | null): number | null {
+  return mains.find(main => main.categoryId === mainId)?.children[0]?.categoryId ?? null
 }
 
 // 카테고리 탐색(b3-st-1). _tabs 레이아웃 안(스크롤 영역)에 렌더되므로 MobileScreen을 다시 씌우지 않는다.
@@ -85,8 +77,7 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
   const activeMain = mains.find(m => m.categoryId === selectedMainId)
   const subs = activeMain?.children ?? []
 
-  const categoryId = selectedSubId ?? selectedMainId ?? undefined
-  const list = useProductList({ category: categoryId, sort })
+  const list = useProductList({ category: selectedSubId ?? undefined, sort })
   const products = list.data?.products ?? []
   const totalCount = list.data?.totalCount ?? products.length
 
@@ -106,10 +97,9 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
     const path = findCategoryPath(data, initialSubCategory)
     lastAppliedLabel.current = initialSubCategory
     if (!path) return
-    // path[0]=대분류, 마지막=매치 노드. 매치 노드 id로 필터해 정확히 그 카테고리(+하위)만 거른다 —
-    // depth-3 리프 딥링크가 depth-2 형제 상품까지 끌어오지 않게 한다.
+    // path[0]=대분류, path[1]=중분류. 소분류 라벨은 소속 중분류로, 대분류 라벨은 첫 중분류로 조회한다.
     setSelectedMainId(path[0] ?? null)
-    setSelectedSubId(path.length >= 2 ? (path[path.length - 1] ?? null) : null)
+    setSelectedSubId(path[1] ?? firstSubCategoryId(data, path[0] ?? null))
     setCategoryOpen(true)
   }, [initialSubCategory, tree.data])
 
@@ -118,12 +108,11 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
 
   const selectMain = (id: number | null) => {
     setSelectedMainId(id)
-    setSelectedSubId(null)
+    setSelectedSubId(firstSubCategoryId(mains, id))
     setCategoryOpen(id != null)
   }
 
-  // 선택 카테고리명은 트리에서 id로 조회한다(중분류 타일에 없는 depth-3 리프도 이름을 보여주려고).
-  const selectedCategoryName = selectedSubId != null ? findCategoryName(mains, selectedSubId) : null
+  const selectedCategoryName = subs.find(sub => sub.categoryId === selectedSubId)?.name
   const collapsedLabel = activeMain ? (selectedCategoryName ?? activeMain.name) : null
 
   return (
@@ -178,7 +167,6 @@ export function CatalogScreen({ initialSubCategory }: { initialSubCategory?: str
           </button>
           {categoryOpen && (
             <div className="grid grid-cols-5 gap-y-3 px-2 pb-3">
-              <SubTile label="전체" selected={selectedSubId === null} onClick={() => setSelectedSubId(null)} />
               {subs.map(sub => (
                 <SubTile
                   key={sub.categoryId}
