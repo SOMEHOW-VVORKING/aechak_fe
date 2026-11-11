@@ -86,6 +86,8 @@ const INSPECTION_VIOLATION_CATEGORY_LABELS = new Map([
   ['ABUSE', '욕설'],
   ['PII', '개인정보'],
   ['IRRELEVANT', '상품과 무관한 내용'],
+  ['PRESCRIPTION_DRUG', '처방 의약품'],
+  ['LIVE_ANIMAL', '생체 판매'],
 ])
 
 export function inspectionViolationCategoryLabel(category: string): string {
