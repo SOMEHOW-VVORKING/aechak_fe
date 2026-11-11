@@ -241,14 +241,14 @@ describe('ai-review-metrics.map', () => {
     expect(costStageLabel('CRITIC')).toBe('비평')
   })
 
-  it('[AC-AI-METRICS-M012] 비평 호출이 관측되지 않으면 뒤집힘율 분모에 경고를 단다', () => {
+  it('[AC-AI-METRICS-M012] 비평 호출이 관측되지 않았는데 뒤집은 건이 있으면 뒤집힘율 분모에 경고를 단다', () => {
     const view = toFunnelView(
       funnelOf({
         stage4: {
           enteredCount: 100,
-          overturnedCount: 0,
-          upheldCount: 100,
-          overturnRate: 0,
+          overturnedCount: 3,
+          upheldCount: 97,
+          overturnRate: 0.03,
           escalationObserved: false,
         },
       }),
@@ -269,6 +269,43 @@ describe('ai-review-metrics.map', () => {
       }),
     )
     expect(observed.stages[3]?.caveat).toBeNull()
+  })
+
+  it('[AC-AI-METRICS-M022] 비평이 돈 기록이 없으면 비평 단계와 0건짜리 비평 탈출을 뺀다', () => {
+    const view = toFunnelView(
+      funnelOf({
+        exits: [
+          { stage: 3, exit: 'MODEL_CLEAR', label: '위반 없음', count: 54 },
+          { stage: 4, exit: 'CRITIC_OVERTURNED', label: '비평이 뒤집음', count: 0 },
+          { stage: 5, exit: 'MODEL_FLAG', label: '확정 위반', count: 9 },
+        ],
+        stage4: { enteredCount: 9, overturnedCount: 0, upheldCount: 9, overturnRate: 0, escalationObserved: false },
+      }),
+    )
+
+    expect(view.stages.map(stage => stage.key)).not.toContain('stage4')
+    expect(view.exits.map(exit => exit.exit)).toEqual(['MODEL_CLEAR', 'MODEL_FLAG'])
+  })
+
+  it('[AC-AI-METRICS-M023] 비평이 뒤집은 건이 집계 창에 있으면 단계와 탈출을 그대로 둔다', () => {
+    const view = toFunnelView(
+      funnelOf({
+        exits: [{ stage: 4, exit: 'CRITIC_OVERTURNED', label: '비평이 뒤집음', count: 2 }],
+        stage4: { enteredCount: 9, overturnedCount: 2, upheldCount: 7, overturnRate: 0.22, escalationObserved: true },
+      }),
+    )
+
+    expect(view.stages.map(stage => stage.key)).toContain('stage4')
+    expect(view.exits.map(exit => exit.exit)).toEqual(['CRITIC_OVERTURNED'])
+  })
+
+  it('[AC-AI-METRICS-M024] 선별이 위반으로 확정한 건수를 2단에 적는다', () => {
+    const base = { enteredCount: 40, clearedCount: 25, promotedCount: 12, breakevenRate: 0.62, overBreakeven: false }
+    const flagged = toFunnelView(funnelOf({ stage2: { ...base, flaggedCount: 3 } }))
+    expect(flagged.stages[1]?.caveat).toContain('선별이 위반으로 확정한 3건')
+
+    const none = toFunnelView(funnelOf({ stage2: { ...base, flaggedCount: 0 } }))
+    expect(none.stages[1]?.caveat).toBeNull()
   })
 
   it('[AC-AI-METRICS-M013] 3단은 응답이 오지 않은 건이 분모에서 빠진 사실을 적는다', () => {

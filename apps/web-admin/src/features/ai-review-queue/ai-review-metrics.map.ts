@@ -284,7 +284,8 @@ export function toAlarms(data: AdminInspectionMetricsData): AlarmView[] {
 }
 
 // ── 2. 퍼널 ────────────────────────────────────────────────────────────────────
-// 단계는 넷이다 — 1단 룰 / 2단 선별 / 3단 관점 판정 / 4단 비평. 다섯째 블록(stage5)은 단계가
+// 단계는 셋이다 — 1단 룰 / 2단 선별 / 3단 상세 검수. 4단 비평은 파이프라인에서 빠진 단계라
+// 비평이 실제로 돈 기록이 집계 창에 있을 때만 그린다. 다섯째 블록(stage5)은 단계가
 // 아니라 최종 판정 분포라 퍼널 막대로 그리지 않고 따로 보여 준다.
 //
 // **비율마다 분모가 다르다**는 것이 이 블록에서 가장 틀리기 쉬운 자리다. 1단 차단율의 분모는
@@ -369,6 +370,15 @@ export function toFunnelView(funnel: InspectionMetricsFunnel): FunnelView {
   const stage2 = funnel.stage2
   const stage3 = funnel.stage3
   const stage4 = funnel.stage4
+  // 비평이 빠진 뒤의 응답은 뒤집음 0건에 호출 관측도 없다. 그 단계를 그리면 없는 단계가 있는 것처럼 읽힌다.
+  const criticRan = stage4 != null && ((stage4.overturnedCount ?? 0) > 0 || stage4.escalationObserved === true)
+  const flaggedCount = stage2?.flaggedCount ?? 0
+  const stage2Notes = [
+    stage2 && (stage2.bypassedByRuleHitCount ?? 0) > 0
+      ? `규칙이 적중해 선별을 묻지 않고 승급한 ${stage2.bypassedByRuleHitCount}건은 분모에 없어요.`
+      : null,
+    flaggedCount > 0 ? `선별이 위반으로 확정한 ${flaggedCount}건은 상세 검수 없이 걸러졌어요.` : null,
+  ].filter((note): note is string => note !== null)
 
   const stages: FunnelStageView[] = [
     {
@@ -389,24 +399,21 @@ export function toFunnelView(funnel: InspectionMetricsFunnel): FunnelView {
       key: 'stage2',
       order: 2,
       label: '선별',
-      caption: 'Haiku가 깨끗하다고 보면 관점 판정을 건너뛰어요.',
+      caption: 'Haiku가 깨끗하다고 보면 상세 검수를 건너뛰고, 위반이 확실하면 바로 걸러요.',
       enteredCount: stage2?.enteredCount ?? null,
       exitedCount: stage2?.clearedCount ?? null,
       exitLabel: '건너뜀',
       rate: stage2?.skipRate ?? null,
       rateLabel: '건너뛰기율',
       rateBasis: '분모는 선별 호출이 실제로 나간 검수예요',
-      caveat:
-        stage2 && (stage2.bypassedByRuleHitCount ?? 0) > 0
-          ? `규칙이 적중해 선별을 묻지 않고 승급한 ${stage2.bypassedByRuleHitCount}건은 분모에 없어요.`
-          : null,
+      caveat: stage2Notes.length > 0 ? stage2Notes.join(' ') : null,
       share: stage2 ? shareOf(stage2.enteredCount, settledCount) : null,
     },
     {
       key: 'stage3',
       order: 3,
-      label: '관점 판정',
-      caption: 'Sonnet이 표시 / 광고 관점과 행위 / 거래 관점으로 본문을 읽어요.',
+      label: '상세 검수',
+      caption: 'Sonnet이 본문을 읽고 위반을 판정해요.',
       enteredCount: stage3?.enteredCount ?? null,
       exitedCount: stage3?.violationFoundCount ?? null,
       exitLabel: '위반 검출',
@@ -423,7 +430,7 @@ export function toFunnelView(funnel: InspectionMetricsFunnel): FunnelView {
       key: 'stage4',
       order: 4,
       label: '비평',
-      caption: 'Opus가 관점 판정의 위반을 반박해요 — 뒤집으면 통과가 돼요.',
+      caption: 'Opus가 상세 검수의 위반을 반박해요. 뒤집으면 통과가 돼요.',
       enteredCount: stage4?.enteredCount ?? null,
       exitedCount: stage4?.overturnedCount ?? null,
       exitLabel: '뒤집음',
@@ -443,8 +450,8 @@ export function toFunnelView(funnel: InspectionMetricsFunnel): FunnelView {
   return {
     settledCount,
     unclassifiedCount: funnel.unclassifiedCount ?? 0,
-    stages,
-    exits: rows.filter(row => row.stage > 0),
+    stages: criticRan ? stages : stages.filter(stage => stage.key !== 'stage4'),
+    exits: rows.filter(row => row.stage > 0 && (criticRan || row.exit !== 'CRITIC_OVERTURNED' || row.count > 0)),
     terminals: rows.filter(row => row.stage === 0),
   }
 }
