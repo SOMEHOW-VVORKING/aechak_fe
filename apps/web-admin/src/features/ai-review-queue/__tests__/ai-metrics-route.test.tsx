@@ -79,11 +79,13 @@ describe('/products/ai-metrics', () => {
 
   it('[AC-AI-METRICS-019] 비평이 돈 기록이 없으면 비평 단계와 비평 탈출 줄을 그리지 않는다', async () => {
     const wire = makeAdminInspectionMetricsWire()
+    const funnel = wire.funnel
+    if (!funnel) throw new Error('픽스처에 funnel 이 없다')
     seedAdminInspectionMetrics({
       ...wire,
       funnel: {
-        ...wire.funnel,
-        exits: wire.funnel.exits.map(exit => (exit.exit === 'CRITIC_OVERTURNED' ? { ...exit, count: 0 } : exit)),
+        ...funnel,
+        exits: (funnel.exits ?? []).map(exit => (exit.exit === 'CRITIC_OVERTURNED' ? { ...exit, count: 0 } : exit)),
         stage4: { enteredCount: 88, overturnedCount: 0, upheldCount: 88, overturnRate: 0, escalationObserved: false },
       },
     })
