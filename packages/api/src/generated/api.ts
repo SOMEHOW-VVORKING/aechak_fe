@@ -5688,7 +5688,7 @@ export interface AdminInspectionPerspective {
    */
   skipReason?: string | null
   /**
-   * 위반 상세 **JSON 원문 문자열**이다. 파싱된 객체가 아니라 DB의 JSON 칼럼 텍스트고 모양은 AI 레포가 쥔다(MySQL이 공백을 정규화한다). 구조를 전제한 분기를 쓰지 말 것
+   * 위반 상세 **JSON 원문 문자열**이다. 파싱된 객체가 아니라 DB의 JSON 칼럼 텍스트다 (MySQL이 공백을 정규화한다). 지금 저장되는 모양은 위반 항목의 배열이고 항목마다 category, perspective, spanStart, spanEnd, quote, suggestion, confidence가 있다. 모양은 판정 계약을 따라 바뀔 수 있으므로 화면은 방어적으로 파싱하고, 풀리지 않으면 원문을 그대로 보여 준다
    * @nullable
    */
   violations?: string | null
@@ -23543,7 +23543,7 @@ export const useUpdateSellerProduct = <TError = unknown, TContext = unknown>(
 }
 
 /**
- * 셀러가 지정할 수 있는 값은 ON_SALE과 SUSPENDED뿐이다 — OUT_OF_STOCK·ENDED는 400 errorCode 90001 message "판매중과 판매중지만 지정할 수 있습니다." 현재 상태를 보지 않으므로 같은 값 재전송도 200이다. 재고 파생 전이가 같은 요청 안에서 동기로 얹히기 때문에, 재고 없이 ON_SALE을 보내면 응답이 그 자리에서 OUT_OF_STOCK이다 (재고가 없어도 SUSPENDED는 그대로 반영된다). 이 경로는 상품 버전을 남기지 않는다.
+ * 셀러가 지정할 수 있는 값은 ON_SALE과 SUSPENDED뿐이다 — OUT_OF_STOCK·ENDED는 400 errorCode 90001 message "판매중과 판매중지만 지정할 수 있습니다." 목표가 ON_SALE이고 상품이 검수에서 반려됐거나 관리자 검토를 기다리는 중이면 409 errorCode 40013으로 거절한다(SUSPENDED로 내리는 요청은 이 조건으로 막지 않는다). 현재 판매 상태는 보지 않으므로, 이 거부 조건에 걸리지 않으면 같은 값 재전송도 200이다. 재고 파생 전이가 같은 요청 안에서 동기로 얹히기 때문에, 재고 없이 ON_SALE을 보내면 응답이 그 자리에서 OUT_OF_STOCK이다 (재고가 없어도 SUSPENDED는 그대로 반영된다). 이 경로는 상품 버전을 남기지 않는다.
  * @summary 셀러 상품 판매 상태 변경
  */
 export const changeSellerProductSaleStatus = (

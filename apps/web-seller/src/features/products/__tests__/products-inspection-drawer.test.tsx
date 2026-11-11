@@ -342,7 +342,8 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     const unknown = (await screen.findByText('새 분류 표현')).closest('li') as HTMLElement
     expect(within(unknown).getByText('기타')).toBeInTheDocument()
     expect(within(violationItem('객체 내장 키 표현')).getByText('기타')).toBeInTheDocument()
-    expect(within(violationItem('상품과 무관한 표현')).getByText('기타')).toBeInTheDocument()
+    // IRRELEVANT는 서버 열거에 있는 분류라 제 이름으로 나온다.
+    expect(within(violationItem('상품과 무관한 표현')).getByText('상품과 무관한 내용')).toBeInTheDocument()
   })
 
   it('[AC-SPRD-095] 판정 실패 뒤에는 목록을 숨긴다', async () => {
