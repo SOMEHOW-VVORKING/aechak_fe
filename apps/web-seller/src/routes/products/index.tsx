@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { FileText, Image as ImageIcon, Pencil, Plus } from 'lucide-react'
 import {
@@ -102,6 +102,9 @@ const flattenCategories = (nodes: CategoryNode[], prefix = ''): { value: string;
   })
 
 const SAVED_MESSAGE = { created: '상품을 등록했어요.', updated: '상품을 수정했어요.' } as const
+
+// 행을 누르면 검수 진행이 열리므로, 행 안의 다른 조작은 누름이 행까지 올라가지 않게 막는다.
+const stopRowClick = (event: MouseEvent) => event.stopPropagation()
 
 // 되돌릴 수 있는 전환이라 confirmVariant는 primary다.
 const SUSPEND_CONFIRM = {
@@ -292,24 +295,26 @@ function ProductsRoute() {
       // 옵션별 재고 Drawer로 가는 유일한 진입점이라 평문 숫자와 구별되는 어포던스가 필요하다 —
       // ghost 버튼만으로는 다른 열의 숫자와 똑같이 보인다(점선 밑줄 + 연필 아이콘).
       render: p => (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="tabular-nums underline decoration-dotted underline-offset-2"
-          rightIcon={<Pencil className="size-3.5" />}
-          aria-label={`${p.name} 재고 ${p.totalStock}개 수정`}
-          disabled={isMutating}
-          onClick={() => setInventoryProductId(p.productId)}
-        >
-          {p.totalStock.toLocaleString()}
-        </Button>
+        <span className="inline-block" onClick={stopRowClick}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="tabular-nums underline decoration-dotted underline-offset-2"
+            rightIcon={<Pencil className="size-3.5" />}
+            aria-label={`${p.name} 재고 ${p.totalStock}개 수정`}
+            disabled={isMutating}
+            onClick={() => setInventoryProductId(p.productId)}
+          >
+            {p.totalStock.toLocaleString()}
+          </Button>
+        </span>
       ),
     },
     {
       key: 'saleStatus',
       label: '판매 상태',
       render: p => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={stopRowClick}>
           <StatusPill variant={SALE_STATUS_VARIANT[p.saleStatus]}>{SALE_STATUS_LABEL[p.saleStatus]}</StatusPill>
           <Toggle
             ariaLabel={`${p.name} 판매`}
@@ -351,7 +356,7 @@ function ProductsRoute() {
       key: 'actions',
       label: '처리',
       render: p => (
-        <div className="flex justify-end">
+        <div className="flex justify-end" onClick={stopRowClick}>
           <Button
             variant="ghost"
             size="sm"
@@ -505,12 +510,13 @@ function ProductsRoute() {
           columns={columns}
           rows={data?.products ?? []}
           rowKey={p => p.productId}
+          onRowClick={p => setInspectionProductId(p.productId)}
           loading={isLoading}
           emptyLabel={isError ? '목록을 불러오지 못했어요.' : '조건에 맞는 상품이 없어요.'}
         />
       </div>
       <p className="mt-2 text-caption text-text-tertiary">
-        옵션 구성과 상품 삭제는 아직 바꿀 수 없어요. 옵션별 재고와 판매 여부는 재고 열에서 바꿀 수 있어요.
+        행을 누르면 검수 진행을 볼 수 있어요. 옵션 구성과 상품 삭제는 아직 바꿀 수 없어요. 옵션별 재고와 판매 여부는 재고 열에서 바꿀 수 있어요.
       </p>
 
       {totalPages > 1 && (
