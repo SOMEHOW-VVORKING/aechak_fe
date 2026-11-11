@@ -9,6 +9,7 @@ import {
   Skeleton,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { useMe } from '@/shared/account'
@@ -87,7 +88,7 @@ export function VerifyScreen() {
     )
   }
 
-  const header = <BackAppBar onBack={goBack} title="본인 인증" />
+  const header = <BackAppBar onBack={goBack} title="본인 인증" actions={<HomeAction />} />
 
   if (isError) {
     return (

@@ -4,6 +4,7 @@ import { Heart } from 'lucide-react'
 import { Button, EmptyState, MobileScreen, Skeleton } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { type CatalogProduct, ProductGrid, toggleWishlist, useWishedIds } from '@/shared/catalog'
 import { LoginGate, useLoginGate } from '@/shared/auth'
@@ -33,7 +34,7 @@ export function WishlistScreen() {
   const showEmpty = products.length === 0 && !likedQuery.hasNextPage
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="찜" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="찜" actions={<HomeAction />} />}>
       {/* 스토어 찜 탭이 컷돼 단일 섹션 헤더로 둔다(탭이 아님). */}
       {products.length > 0 && (
         <div className="flex items-baseline gap-2 px-4 pt-4">

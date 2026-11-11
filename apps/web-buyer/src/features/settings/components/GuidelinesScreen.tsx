@@ -1,6 +1,7 @@
 import { Check, X } from 'lucide-react'
 import { Alert, DocumentHeader, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { GUIDELINE_BAD, GUIDELINE_GOOD, GUIDELINE_REVISION } from '../settings.mock'
 import { DocSection } from './DocLayout'
@@ -12,7 +13,7 @@ export function GuidelinesScreen() {
   const goBack = useSafeBack({ to: '/settings' })
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="커뮤니티 가이드라인" />} contentClassName="pb-8">
+    <MobileScreen header={<BackAppBar onBack={goBack} title="커뮤니티 가이드라인" actions={<HomeAction />} />} contentClassName="pb-8">
       <DocumentHeader title="커뮤니티 가이드라인" revision={GUIDELINE_REVISION} />
       <div className="flex flex-col gap-6 p-4">
         <DocSection title="권장하는 행동">

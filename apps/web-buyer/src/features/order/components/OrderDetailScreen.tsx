@@ -14,6 +14,7 @@ import type {
 import { Button, Card, MobileScreen, Modal, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { Divider } from '@/shared/components/Divider'
 import { PriceRow } from '@/shared/components/PriceRow'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
@@ -151,7 +152,7 @@ export function OrderDetailScreen({ orderId }: { orderId: string }) {
    * **비가역 처리가 성공했는데 사용자는 조회 실패만 보게 된다**(codex 지적).
    */
   const screen = (content: ReactNode) => (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="주문 상세" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="주문 상세" actions={<HomeAction />} />}>
       {content}
 
       {confirmTarget && (

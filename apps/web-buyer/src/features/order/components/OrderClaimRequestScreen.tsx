@@ -14,6 +14,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { RadioList } from '@/shared/components/RadioList'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { formatKRW } from '@/shared/formatKRW'
@@ -186,7 +187,13 @@ export function OrderClaimRequestScreen({
    */
   const screen = (content: ReactNode, footer?: ReactNode) => (
     <MobileScreen
-      header={<BackAppBar onBack={goBack} title={CLAIM_ACTION_LABEL[claimType]} />}
+      header={
+        <BackAppBar
+          onBack={goBack}
+          title={CLAIM_ACTION_LABEL[claimType]}
+          actions={<HomeAction />}
+        />
+      }
       footer={footer}
     >
       {content}

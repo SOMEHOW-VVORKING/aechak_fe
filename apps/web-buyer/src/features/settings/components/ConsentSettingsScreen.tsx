@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { EmptyState, MobileScreen, Skeleton } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { useConsentTerms, type ConsentTerm } from '../settings.queries'
 import { SettingsGroup } from './SettingsSection'
@@ -43,7 +44,7 @@ export function ConsentSettingsScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="동의 관리" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="동의 관리" actions={<HomeAction />} />}>
       <div className="flex flex-col gap-5 p-4">
         {isLoading ? (
           <div role="status" aria-label="약관을 불러오는 중" className="flex flex-col gap-3">

@@ -13,6 +13,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { ImageLightbox } from '@/shared/components/ImageLightbox'
 import { useMe } from '@/shared/account'
@@ -100,7 +101,7 @@ export function MyReviewsScreen({ submitted = false, photo = false }: { submitte
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="내 리뷰" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="내 리뷰" actions={<HomeAction />} />}>
       <div className="flex flex-col gap-3 p-4">
         <SegmentedControl
           options={[

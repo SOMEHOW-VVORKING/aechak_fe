@@ -231,6 +231,16 @@ describe('/orders/$orderId/claim 사유 선택지', () => {
     await user.click(screen.getByText('기타'))
     expect(screen.getByLabelText('상세 사유')).toHaveValue('')
   })
+
+  it('[AC-CLAIM-026] 클레임 요청 화면의 홈 버튼을 누르면 홈으로 간다', async () => {
+    seedOrderGroups([deliveredGroup(RECENTLY_DELIVERED_AT)])
+    const user = userEvent.setup()
+    const router = renderAt('/orders/o-returnable/claim?type=exchange')
+
+    expect(await screen.findByText('상품이 파손되었거나 불량이에요')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
 })
 
 describe('/orders/$orderId/claim 접수', () => {

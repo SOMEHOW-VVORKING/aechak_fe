@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { SearchX } from 'lucide-react'
 import { Accordion, EmptyState, MobileScreen, SearchInput } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { Divider } from '@/shared/components/Divider'
 import { FilterChip } from '@/shared/components/FilterChip'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -26,7 +27,7 @@ export function FaqScreen() {
   const keyword = query.trim()
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="자주 묻는 질문" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="자주 묻는 질문" actions={<HomeAction />} />}>
       <div className="flex flex-col">
         {/* 검색 */}
         <div className="px-4 pt-3 pb-2">

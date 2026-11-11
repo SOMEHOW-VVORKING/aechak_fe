@@ -66,6 +66,30 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
     expect(screen.queryByRole('option', { name: '푸들' })).not.toBeInTheDocument()
   })
 
+  it('[AC-PET-FORM-HOME-001] 홈 버튼이 보이고 누르면 홈(\'/\')으로 간다', async () => {
+    // 홈 가드는 access가 없으면 로그인으로 보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    renderAt('/mypage/pets/new')
+
+    await screen.findByLabelText('품종')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    expect(await screen.findByText('이런 상품은 어때요?')).toBeInTheDocument()
+  })
+
+  it('[AC-PET-FORM-HOME-002] 반려동물 목록과 인라인 편집 폼에도 홈 버튼이 보인다', async () => {
+    seedPets([{ ...COCO, breedId: 369 }])
+    const user = userEvent.setup()
+    renderAt('/mypage/pets')
+
+    const editButtons = await screen.findAllByRole('button', { name: '수정' })
+    expect(screen.getByRole('button', { name: '홈으로 가기' })).toBeInTheDocument()
+
+    await user.click(editButtons[0]!)
+    await screen.findByLabelText('품종')
+    expect(screen.getByRole('button', { name: '홈으로 가기' })).toBeInTheDocument()
+  })
+
   it('[AC-PET-BREEDS-003] 종 전환 시 새 종의 목록으로 교체되고 이전 선택은 초기화된다', async () => {
     const user = userEvent.setup()
     renderAt('/mypage/pets/new')

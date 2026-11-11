@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { describe, it, expect } from 'vitest'
+import { setAccessToken } from '@aechak/api'
 import { INQUIRIES_URL, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -13,11 +14,12 @@ function renderAt(path: string) {
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return router
 }
 
 describe('고객센터 문의 라우트', () => {
@@ -171,5 +173,16 @@ describe('고객센터 문의 라우트', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('문의가 접수됐어요')).not.toBeInTheDocument()
     expect(screen.getByLabelText('문의 내용')).toBeInTheDocument()
+  })
+
+  it('[AC-INQUIRY-ROUTE-009] 홈 버튼이 보이고 누르면 홈(/)으로 간다', async () => {
+    // 홈은 회원 전용이라 비회원이면 로그인으로 돌려보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    const router = renderAt('/settings/inquiry')
+    await screen.findByText('고객센터 문의')
+
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })

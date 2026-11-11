@@ -249,6 +249,16 @@ describe('/settings/notices 공지 목록', () => {
     // 회원 전용 경로를 그대로 부르면 401 → 전역 리다이렉트로 화면이 사라진다.
     expect(noticesQueries()).toEqual([])
   })
+
+  it('[AC-BUYER-NOTICE-013] 목록의 홈 버튼이 보이고 누르면 홈(/)으로 간다', async () => {
+    seedNotices([PINNED])
+    const user = userEvent.setup()
+    const router = renderAt('/settings/notices')
+    await screen.findByText('교환/반품 접수 방법이 바뀌어요')
+
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
 })
 
 describe('/settings/notices/$noticeId 공지 상세', () => {
@@ -288,5 +298,15 @@ describe('/settings/notices/$noticeId 공지 상세', () => {
 
     expect(await screen.findByText('로그인이 필요해요')).toBeInTheDocument()
     expect(screen.queryByText('교환/반품 접수 방법이 바뀌어요')).not.toBeInTheDocument()
+  })
+
+  it('[AC-BUYER-NOTICE-014] 상세의 홈 버튼이 보이고 누르면 홈(/)으로 간다', async () => {
+    seedNotices([PINNED])
+    const user = userEvent.setup()
+    const router = renderAt(`/settings/notices/${PINNED.noticeId}`)
+    await screen.findByText('교환/반품 접수 방법이 바뀌어요')
+
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })
