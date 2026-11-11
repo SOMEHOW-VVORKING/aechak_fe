@@ -571,7 +571,7 @@ Daum 우편번호는 **API 키 불필요·무료·한국 주소 표준**이라 �
 선택했다. 변경 범위는 `features/address`(+ `daum-postcode.ts` 신규)에 한정 — 도메인/DS 무변경.
 
 - **스크립트는 온디맨드 동적 로드**(`features/address/daum-postcode.ts`의 `loadDaumPostcode()`) —
-  시트를 처음 열 때 `https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js`를
+  시트를 처음 열 때 `https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js`를
   `<script>`로 주입하고 `onload`를 Promise로 기다린다. 모듈 레벨 `loadPromise` once-guard로
   중복 주입을 막고(이미 `window.daum?.Postcode` 있으면 즉시 resolve), 로드 실패 시 캐시를 비워
   다음 열기에서 재시도 가능. `index.html`에 `<script defer>`로 넣지 않고 온디맨드를 택한 이유는

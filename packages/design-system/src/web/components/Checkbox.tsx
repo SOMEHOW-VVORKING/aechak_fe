@@ -31,7 +31,8 @@ export function Checkbox({ checked, indeterminate = false, disabled, error, labe
             : error
               ? 'border-error-border'
               : 'border-border',
-          disabled ? 'bg-surface-disabled border-border opacity-60' : '',
+          // 잠긴 체크 상태(첫 배송지 = 기본 등)도 체크로 읽히게 brand 채움을 유지하고 흐리게만 한다.
+          disabled ? (checked || indeterminate ? 'opacity-60' : 'bg-surface-disabled border-border opacity-60') : '',
         ].filter(Boolean).join(' ')}
       >
         <input
