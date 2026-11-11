@@ -68,7 +68,8 @@ function seedNeighborPosts(n: number) {
   })
 }
 
-const cards = () => screen.queryAllByRole('button', { name: /님의 게시물 보기$/ })
+// ByRole은 카드 수십 장에서 접근 이름 계산이 무거워 waitFor 폴링마다 CI 시간을 잡아먹는다 — aria-label로 찾는다.
+const cards = () => screen.queryAllByLabelText(/님의 게시물 보기$/)
 const cardOf = (nickname: string, index = 0) =>
   screen.getAllByRole('button', { name: `${nickname}님의 게시물 보기` })[index]!.closest('article')!
 
