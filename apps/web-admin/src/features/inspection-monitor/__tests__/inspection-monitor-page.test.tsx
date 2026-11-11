@@ -7,9 +7,11 @@ import {
   ADMIN_INSPECTIONS_URL,
   ADMIN_ORIGIN,
   makeAdminInspectionPerspectiveWire,
+  makeAdminInspectionViolationsJson,
   makeAdminInspectionWire,
   seedAdminInspections,
   server,
+  type AdminInspectionPerspectiveWire,
   type AdminInspectionWire,
 } from '@/testing/msw/server'
 import { InspectionMonitorPage } from '../components/InspectionMonitorPage'
@@ -239,89 +241,282 @@ describe('검수 진행 현황 화면', () => {
   })
 
   describe('상세 — 관점별 진행', () => {
-    beforeEach(() => {
+    const RAW_UNKNOWN_SHAPE = '[{"quote":"관절염 치료","rule":"MEDICAL_CLAIM"}]'
+
+    /** 종결된 검수 한 건을 심고 상세를 연다. 관점 행은 서버가 보낸 그대로다. */
+    async function openDetailWith(
+      perspectives: AdminInspectionPerspectiveWire[],
+      overrides: Partial<AdminInspectionWire> = {},
+    ) {
       seedAdminInspections([
         running({
           processingState: 'SETTLED',
           judgment: 'FLAG',
           settledAt: '2026-11-07T10:00:08',
-          promptVersion: 'p12',
-          reasonCode: 'MEDICAL_CLAIM',
-          reasonSummary: '관절염 치료에 효과',
-          sellerNotice: '치료 효능 표현을 고쳐 주세요.',
           leaseOwner: null,
           leaseExpiresAt: null,
-          perspectives: [
-            makeAdminInspectionPerspectiveWire({ perspective: 'RULE', outcome: 'CLEAR' }),
-            makeAdminInspectionPerspectiveWire({
-              perspective: 'TRIAGE',
-              outcome: 'UNCHECKED',
-              skipReason: '선별 호출이 실패했어요',
-            }),
-            makeAdminInspectionPerspectiveWire({
-              perspective: 'DISPLAY_ADS',
-              outcome: 'VIOLATION',
-              violations: '[{"quote":"관절염 치료","rule":"MEDICAL_CLAIM"}]',
-            }),
-          ],
+          perspectives,
+          ...overrides,
         }),
       ])
-    })
-
-    async function openDetail() {
       renderPage()
       const user = userEvent.setup()
       await user.click(await screen.findByRole('button', { name: '연어 건사료 2kg' }))
       await screen.findByRole('list', { name: '관점별 진행' })
     }
 
+    /** 나눠 묻는 방식 — 선별이 넘겼고 한 관점은 위반, 다른 관점은 호출 한도에 걸렸다. */
+    const splitRows = (): AdminInspectionPerspectiveWire[] => [
+      makeAdminInspectionPerspectiveWire({ perspective: 'RULE', outcome: 'CLEAR' }),
+      makeAdminInspectionPerspectiveWire({
+        perspective: 'TRIAGE',
+        outcome: 'UNCHECKED',
+        skipReason: 'PROMOTED',
+      }),
+      makeAdminInspectionPerspectiveWire({
+        perspective: 'DISPLAY_ADS',
+        outcome: 'VIOLATION',
+        violations: makeAdminInspectionViolationsJson([
+          {
+            category: 'MEDICAL_CLAIM',
+            perspective: 'DISPLAY_ADS',
+            spanStart: 0,
+            spanEnd: 14,
+            quote: '관절염 치료에 효과가 있다',
+            suggestion: '관절 건강에 도움을 줄 수 있는 글루코사민 함유',
+            confidence: 0.91,
+          },
+        ]),
+      }),
+      makeAdminInspectionPerspectiveWire({
+        perspective: 'CONDUCT_TRADE',
+        outcome: 'UNCHECKED',
+        skipReason: 'RATE_LIMITED',
+      }),
+    ]
+
+    /** 단계 줄의 이름만 순서대로 — 위반 목록의 항목은 세지 않는다. */
+    function stageLabels(): string[] {
+      const list = screen.getByRole('list', { name: '관점별 진행' })
+      return within(list)
+        .getAllByRole('listitem')
+        .filter(item => item.parentElement === list)
+        .map(item => item.querySelector('p')?.textContent ?? '')
+    }
+
     it('[AC-ADMIN-INSP-009] 미검사를 통과와 같은 칸에 그리지 않는다', async () => {
-      await openDetail()
+      await openDetailWith(splitRows())
 
-      const triage = within(perspectiveRowOf('선별'))
-      expect(triage.getByText('미검사')).toBeInTheDocument()
+      const trade = within(perspectiveRowOf('상세 검수 / 거래 행위'))
+      expect(trade.getByText('미검사')).toBeInTheDocument()
       // 같은 줄에 통과가 함께 있으면 운영자가 본 것으로 읽는다 — 이 단언이 이 화면의 핵심이다.
-      expect(triage.queryByText('통과')).not.toBeInTheDocument()
-      expect(triage.getByText(/선별 호출이 실패했어요/)).toBeInTheDocument()
-      expect(triage.getByText(/통과가 아니에요/)).toBeInTheDocument()
+      expect(trade.queryByText('통과')).not.toBeInTheDocument()
+      expect(trade.getByText(/통과가 아니에요/)).toBeInTheDocument()
 
-      const rule = within(perspectiveRowOf('규칙'))
+      const rule = within(perspectiveRowOf('자동 규칙 검사'))
       expect(rule.getByText('통과')).toBeInTheDocument()
       expect(rule.queryByText('미검사')).not.toBeInTheDocument()
     })
 
-    it('[AC-ADMIN-INSP-010] 기록이 없는 관점은 빠지지 않고 미검사와도 다르게 그려진다', async () => {
-      await openDetail()
+    it('[AC-ADMIN-INSP-010] 건너뛴 이유를 코드가 아니라 한국어로 보여 준다', async () => {
+      await openDetailWith(splitRows())
 
-      // 응답에 세 관점만 왔지만 다섯 칸을 모두 그린다 — 빼면 파이프라인이 어디서 멈췄는지가 사라진다.
-      expect(screen.getAllByRole('listitem')).toHaveLength(5)
-      for (const label of ['거래 행위', '통합']) {
-        const row = within(perspectiveRowOf(label))
-        expect(row.getByText('기록 없음')).toBeInTheDocument()
-        expect(row.queryByText('미검사')).not.toBeInTheDocument()
-        expect(row.queryByText('통과')).not.toBeInTheDocument()
-      }
-    })
-
-    it('[AC-ADMIN-INSP-011] 위반 상세는 JSON 원문을 그대로 보여 준다', async () => {
-      await openDetail()
-
-      const displayAds = within(perspectiveRowOf('표시 / 광고'))
-      expect(displayAds.getByText('위반')).toBeInTheDocument()
-      // 파싱해 필드를 꺼내지 않는다 — 모양은 AI 레포가 쥐고 있어 바뀌는 날 조용히 빈 칸이 된다.
+      const triage = within(perspectiveRowOf('1차 선별'))
       expect(
-        displayAds.getByText('[{"quote":"관절염 치료","rule":"MEDICAL_CLAIM"}]'),
+        triage.getByText('건너뛴 이유 / 1차 선별이 판정하지 않고 상세 검수로 넘겼어요'),
+      ).toBeInTheDocument()
+      expect(triage.queryByText(/PROMOTED/)).not.toBeInTheDocument()
+      expect(
+        within(perspectiveRowOf('상세 검수 / 거래 행위')).getByText(
+          '건너뛴 이유 / 요청 한도에 걸려 모델을 호출하지 못했어요',
+        ),
       ).toBeInTheDocument()
     })
 
+    it('[AC-ADMIN-INSP-018] 모르는 사유 코드는 숨기지 않고 코드 그대로 보여 준다', async () => {
+      await openDetailWith([
+        makeAdminInspectionPerspectiveWire({
+          perspective: 'ALL',
+          outcome: 'UNCHECKED',
+          skipReason: 'BRAND_NEW_REASON',
+        }),
+      ])
+
+      expect(
+        within(perspectiveRowOf('상세 검수')).getByText('건너뛴 이유 / BRAND_NEW_REASON'),
+      ).toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-011] 위반 상세를 분류와 걸린 표현, 수정 제안으로 풀어 보여 준다', async () => {
+      await openDetailWith(splitRows())
+
+      const displayAds = within(perspectiveRowOf('상세 검수 / 표시와 광고'))
+      expect(displayAds.getByText('위반')).toBeInTheDocument()
+      // 분류는 영문 코드가 아니라 화면 이름이다.
+      expect(displayAds.getByText('질병 치료 효능')).toBeInTheDocument()
+      expect(displayAds.getByText('걸린 표현 / 관절염 치료에 효과가 있다')).toBeInTheDocument()
+      expect(
+        displayAds.getByText('수정 제안 / 관절 건강에 도움을 줄 수 있는 글루코사민 함유'),
+      ).toBeInTheDocument()
+      expect(displayAds.queryByText('위반 상세 원문')).not.toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-019] 풀 수 없는 위반 상세는 원문을 그대로 보여 준다', async () => {
+      await openDetailWith([
+        makeAdminInspectionPerspectiveWire({
+          perspective: 'ALL',
+          outcome: 'VIOLATION',
+          // 분류 키가 없는 모양이다. 빈 목록으로 그리면 위반이 없는 것처럼 보인다.
+          violations: RAW_UNKNOWN_SHAPE,
+        }),
+      ])
+
+      const model = within(perspectiveRowOf('상세 검수'))
+      expect(model.getByText('위반 상세 원문')).toBeInTheDocument()
+      expect(model.getByText(RAW_UNKNOWN_SHAPE)).toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-020] 통째로 본 검수는 쓰지 않은 방식의 줄을 그리지 않는다', async () => {
+      await openDetailWith(
+        [
+          makeAdminInspectionPerspectiveWire({ perspective: 'RULE', outcome: 'CLEAR' }),
+          makeAdminInspectionPerspectiveWire({ perspective: 'ALL', outcome: 'CLEAR' }),
+        ],
+        { judgment: 'PASS' },
+      )
+
+      // 정상 통과 건에 빈 줄이 끼면 중간을 건너뛴 것처럼 읽힌다.
+      expect(stageLabels()).toEqual(['자동 규칙 검사', '1차 선별', '상세 검수'])
+      expect(within(perspectiveRowOf('상세 검수')).getByText('통과')).toBeInTheDocument()
+      // 선별을 쓰지 않은 종결 건이다 — 기다리면 온다는 말을 쓰지 않는다.
+      const triage = within(perspectiveRowOf('1차 선별'))
+      expect(triage.getByText('기록 없음')).toBeInTheDocument()
+      expect(triage.getByText('판정이 끝날 때까지 이 단계는 돌지 않았어요')).toBeInTheDocument()
+      expect(triage.queryByText(/아직/)).not.toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-021] 나눠 물은 검수는 두 관점을 구별해 그리고 빈 통합 줄을 두지 않는다', async () => {
+      await openDetailWith(splitRows())
+
+      expect(stageLabels()).toEqual([
+        '자동 규칙 검사',
+        '1차 선별',
+        '상세 검수 / 표시와 광고',
+        '상세 검수 / 거래 행위',
+      ])
+    })
+
+    it('[AC-ADMIN-INSP-022] 규칙에서 끝난 건은 상세 검수 자리를 한 줄로만 남긴다', async () => {
+      await openDetailWith([
+        makeAdminInspectionPerspectiveWire({
+          perspective: 'RULE',
+          outcome: 'VIOLATION',
+          violations: makeAdminInspectionViolationsJson([
+            { category: 'CONTACT_INFO', perspective: 'RULE', quote: '010-1234-5678' },
+          ]),
+        }),
+      ])
+
+      expect(stageLabels()).toEqual(['자동 규칙 검사', '1차 선별', '상세 검수'])
+      const rule = within(perspectiveRowOf('자동 규칙 검사'))
+      expect(rule.getByText('위반')).toBeInTheDocument()
+      expect(rule.getByText('연락처 노출')).toBeInTheDocument()
+      expect(rule.getByText('걸린 표현 / 010-1234-5678')).toBeInTheDocument()
+      // 규칙 단계 위반에는 제안이 없다 — 빈 제안 줄을 그리지 않는다.
+      expect(rule.queryByText(/수정 제안/)).not.toBeInTheDocument()
+
+      const model = within(perspectiveRowOf('상세 검수'))
+      expect(model.getByText('기록 없음')).toBeInTheDocument()
+      expect(model.queryByText('미검사')).not.toBeInTheDocument()
+      expect(model.queryByText('통과')).not.toBeInTheDocument()
+      expect(model.queryByText(/아직/)).not.toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-023] 선별이 통과시킨 건은 상세 검수가 미검사이고 그 이유가 선별이다', async () => {
+      await openDetailWith(
+        [
+          makeAdminInspectionPerspectiveWire({ perspective: 'RULE', outcome: 'CLEAR' }),
+          makeAdminInspectionPerspectiveWire({ perspective: 'TRIAGE', outcome: 'CLEAR' }),
+          makeAdminInspectionPerspectiveWire({
+            perspective: 'ALL',
+            outcome: 'UNCHECKED',
+            skipReason: 'TRIAGE_CLEAR',
+          }),
+        ],
+        { judgment: 'PASS' },
+      )
+
+      expect(stageLabels()).toEqual(['자동 규칙 검사', '1차 선별', '상세 검수'])
+      expect(within(perspectiveRowOf('1차 선별')).getByText('통과')).toBeInTheDocument()
+      const model = within(perspectiveRowOf('상세 검수'))
+      expect(model.getByText('미검사')).toBeInTheDocument()
+      expect(model.queryByText('통과')).not.toBeInTheDocument()
+      expect(
+        model.getByText('건너뛴 이유 / 1차 선별이 문제없다고 봐서 상세 검수를 하지 않았어요'),
+      ).toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-024] 선별이 위반을 확정한 건은 위반이 선별 줄에 있고 상세 검수는 미검사다', async () => {
+      await openDetailWith([
+        makeAdminInspectionPerspectiveWire({ perspective: 'RULE', outcome: 'CLEAR' }),
+        makeAdminInspectionPerspectiveWire({
+          perspective: 'TRIAGE',
+          outcome: 'VIOLATION',
+          violations: makeAdminInspectionViolationsJson([
+            {
+              category: 'OFF_PLATFORM',
+              perspective: 'TRIAGE',
+              quote: '카톡으로 따로 주문 주세요',
+              confidence: 0.97,
+            },
+          ]),
+        }),
+        makeAdminInspectionPerspectiveWire({
+          perspective: 'ALL',
+          outcome: 'UNCHECKED',
+          skipReason: 'TRIAGE_CERTAIN',
+        }),
+      ])
+
+      const triage = within(perspectiveRowOf('1차 선별'))
+      expect(triage.getByText('위반')).toBeInTheDocument()
+      expect(triage.getByText('외부 거래 유도')).toBeInTheDocument()
+      expect(triage.getByText('걸린 표현 / 카톡으로 따로 주문 주세요')).toBeInTheDocument()
+
+      const model = within(perspectiveRowOf('상세 검수'))
+      expect(model.getByText('미검사')).toBeInTheDocument()
+      // 안 본 단계가 위반을 찾은 것처럼 보이면 안 된다.
+      expect(model.queryByText('위반')).not.toBeInTheDocument()
+      expect(
+        model.getByText('건너뛴 이유 / 1차 선별이 위반을 확정해서 상세 검수를 하지 않았어요'),
+      ).toBeInTheDocument()
+    })
+
+    it('[AC-ADMIN-INSP-025] 진행 중인 건의 빈 줄은 아직 닿지 않았다고 말한다', async () => {
+      await openDetailWith([], {
+        processingState: 'IN_FLIGHT',
+        judgment: null,
+        settledAt: null,
+      })
+
+      expect(stageLabels()).toEqual(['자동 규칙 검사', '1차 선별', '상세 검수'])
+      for (const label of ['자동 규칙 검사', '1차 선별', '상세 검수']) {
+        const row = within(perspectiveRowOf(label))
+        expect(row.getByText('기록 없음')).toBeInTheDocument()
+        expect(row.getByText('아직 이 단계에 닿지 않았어요')).toBeInTheDocument()
+        expect(row.queryByText(/돌지 않았어요/)).not.toBeInTheDocument()
+      }
+    })
+
     it('[AC-ADMIN-INSP-012] 상세는 조치 버튼을 두지 않고 조치의 자리를 알려 준다', async () => {
-      await openDetail()
+      await openDetailWith(splitRows())
 
       expect(screen.getByText(/승인\/반려는 AI 검수 큐에서 해요/)).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '제출' })).not.toBeInTheDocument()
     })
 
     it('[AC-ADMIN-INSP-013] 없는 검수는 40508 문구로 갈린다', async () => {
+      seedAdminInspections([running()])
       server.use(
         http.get(`${ADMIN_INSPECTIONS_URL}/:inspectionId`, () =>
           HttpResponse.json({ errorCode: 40508, message: '검수를 찾을 수 없습니다.' }, { status: 404 }),

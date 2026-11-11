@@ -85,6 +85,7 @@ const INSPECTION_VIOLATION_CATEGORY_LABELS = new Map([
   ['SPAM', '스팸성 문구'],
   ['ABUSE', '욕설'],
   ['PII', '개인정보'],
+  ['IRRELEVANT', '상품과 무관한 내용'],
 ])
 
 export function inspectionViolationCategoryLabel(category: string): string {

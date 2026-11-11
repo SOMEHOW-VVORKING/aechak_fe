@@ -158,6 +158,11 @@ function toParams(f: Filters): SellerProductSearchInput {
 // 판매 토글이 켜진 상태. 판매종료도 BE가 ON_SALE 전환을 받으므로 꺼진 토글로 둔다.
 const isSelling = (status: WireSaleStatus) => status === 'ON_SALE' || status === 'OUT_OF_STOCK'
 
+// 반려된 상품은 서버가 판매중 전환을 거절하므로 꺼진 토글을 잠근다. 켜져 있는 토글은 내릴 수 있게 둔다.
+const isSaleStartLocked = (product: SellerProductSummary) =>
+  product.inspectionStatus === 'REJECTED' && !isSelling(product.saleStatus)
+const SALE_START_LOCKED_HINT = '반려된 상품이라 판매를 켤 수 없어요'
+
 function ProductsRoute() {
   const navigate = useNavigate({ from: Route.fullPath })
   const { saved } = Route.useSearch()
@@ -313,17 +318,23 @@ function ProductsRoute() {
     {
       key: 'saleStatus',
       label: '판매 상태',
-      render: p => (
-        <div className="flex items-center gap-2" onClick={stopRowClick}>
-          <StatusPill variant={SALE_STATUS_VARIANT[p.saleStatus]}>{SALE_STATUS_LABEL[p.saleStatus]}</StatusPill>
-          <Toggle
-            ariaLabel={`${p.name} 판매`}
-            checked={isSelling(p.saleStatus)}
-            disabled={isMutating}
-            onChange={next => handleToggle(p, next)}
-          />
-        </div>
-      ),
+      render: p => {
+        const locked = isSaleStartLocked(p)
+        return (
+          <div onClick={stopRowClick}>
+            <div className="flex items-center gap-2">
+              <StatusPill variant={SALE_STATUS_VARIANT[p.saleStatus]}>{SALE_STATUS_LABEL[p.saleStatus]}</StatusPill>
+              <Toggle
+                ariaLabel={locked ? `${p.name} 판매 / ${SALE_START_LOCKED_HINT}` : `${p.name} 판매`}
+                checked={isSelling(p.saleStatus)}
+                disabled={isMutating || locked}
+                onChange={next => handleToggle(p, next)}
+              />
+            </div>
+            {locked && <p className="mt-1.5 pl-2.5 text-caption text-text-tertiary">{SALE_START_LOCKED_HINT}</p>}
+          </div>
+        )
+      },
     },
     {
       key: 'inspectionStatus',

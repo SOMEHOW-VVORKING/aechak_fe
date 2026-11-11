@@ -337,6 +337,7 @@ export interface FunnelView {
 const EXIT_LABEL: Record<string, string> = {
   RULE_BLOCKED: '룰 확정 차단',
   TRIAGE_CLEARED: '선별 통과',
+  TRIAGE_FLAGGED: '선별 확정 위반',
   MODEL_CLEAR: '위반 없음',
   CRITIC_OVERTURNED: '비평이 뒤집음',
   MODEL_FLAG: '확정 위반',

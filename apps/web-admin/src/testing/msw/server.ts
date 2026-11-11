@@ -98,9 +98,11 @@ export {
   ADMIN_INSPECTIONS_URL,
   ADMIN_INSPECTION_DETAIL_URL,
   makeAdminInspectionPerspectiveWire,
+  makeAdminInspectionViolationsJson,
   makeAdminInspectionWire,
   seedAdminInspections,
   type AdminInspectionPerspectiveWire,
+  type AdminInspectionViolationWire,
   type AdminInspectionWire,
 } from './inspection-monitor.handlers'
 export {

@@ -9,6 +9,7 @@ import type {
   PerspectiveOutcome,
 } from '@aechak/api'
 import type { StatusPillVariant } from '@aechak/design-system/web'
+import { inspectionViolationCategoryLabel } from '@aechak/domain'
 
 // `GET /admin/inspections` 둘(목록·상세)의 응답을 화면 모델로 옮기는 매퍼. 서버 열거는 이 파일과
 // queries에만 가두고 화면은 여기서 나온 뷰 타입과 라벨만 읽는다(AGENTS 6-2·6-5).
@@ -17,8 +18,8 @@ import type { StatusPillVariant } from '@aechak/design-system/web'
 //
 //   1. 판정 널은 **아직 판정이 없다**는 뜻이고 PASS가 아니다.
 //   2. UNJUDGED(기한 초과)·FAILED(처리 실패)도 통과가 아니다 — 그 셋을 PASS와 한 칸에 묶지 않는다.
-//   3. 관점의 UNCHECKED(갔지만 못 봄)는 CLEAR(통과)와 다르고, **칸이 아예 없는 관점**(파이프라인이
-//      거기까지 못 감)은 또 그 둘과 다르다. 셋을 같은 모양으로 그리지 않는다.
+//   3. 관점의 UNCHECKED(갔지만 못 봄)는 CLEAR(통과)와 다르고, **행이 아예 없는 단계**(파이프라인이
+//      거기까지 못 감)는 또 그 둘과 다르다. 셋을 같은 모양으로 그리지 않는다.
 //
 // 그래서 라벨·색을 고르는 자리를 한곳에 모았다. 화면 여러 곳에서 각자 고르면 한 곳만 고쳐도
 // 통과와 미검사가 같은 색이 되는 회귀가 조용히 들어온다.
@@ -71,11 +72,10 @@ export const TARGET_TYPE_META: Record<InspectionTargetType, { label: string }> =
 export const TARGET_TYPE_FILTER_VALUES: InspectionTargetType[] = ['PRODUCT', 'REVIEW']
 
 /**
- * 관점을 그리는 순서 — 파이프라인 순서다(규칙 → 선별 → 표시·광고 → 거래 행위 → 통합).
+ * 관점을 그리는 순서 — 파이프라인 순서다(규칙 → 선별 → 상세 검수).
  *
- * 응답도 이 순서로 오지만 화면이 그 순서에 기대지 않는다. 다섯 칸을 **항상 전부 그리고** 응답에
- * 없는 관점은 '기록 없음'으로 채우기 때문이다 — 그러지 않으면 "그 관점까지 가지 못했다"가 화면에서
- * 사라져 운영자가 본 것만 보고 전부 봤다고 읽는다.
+ * 상세 검수는 한 검수에서 한 방식으로만 돈다. 통째로 보면 `ALL` 한 행, 나눠 물으면
+ * `DISPLAY_ADS`·`CONDUCT_TRADE` 두 행이 온다. 어느 줄을 그릴지는 `toPerspectiveCells`가 정한다.
  */
 export const PERSPECTIVE_ORDER: InspectionPerspectiveKind[] = [
   'RULE',
@@ -85,15 +85,19 @@ export const PERSPECTIVE_ORDER: InspectionPerspectiveKind[] = [
   'ALL',
 ]
 
+/** 나눠 묻는 방식의 두 관점. 통째로 보는 방식(`ALL`)과 한 검수에 함께 쓰이지 않는다. */
+const SPLIT_PERSPECTIVES: InspectionPerspectiveKind[] = ['DISPLAY_ADS', 'CONDUCT_TRADE']
+
+/** 단계 이름은 셀러 화면이 쓰는 말과 맞춘다. 나눠 묻는 두 줄은 무엇을 보는지 뒤에 붙인다. */
 export const PERSPECTIVE_META: Record<InspectionPerspectiveKind, { label: string }> = {
-  RULE: { label: '규칙' },
-  TRIAGE: { label: '선별' },
-  DISPLAY_ADS: { label: '표시 / 광고' },
-  CONDUCT_TRADE: { label: '거래 행위' },
-  ALL: { label: '통합' },
+  RULE: { label: '자동 규칙 검사' },
+  TRIAGE: { label: '1차 선별' },
+  DISPLAY_ADS: { label: '상세 검수 / 표시와 광고' },
+  CONDUCT_TRADE: { label: '상세 검수 / 거래 행위' },
+  ALL: { label: '상세 검수' },
 }
 
-/** 관점 칸에 그릴 수 있는 값 — 서버 결과 셋에 **응답에 없음**(`ABSENT`)을 더한 넷이다. */
+/** 관점 줄에 그릴 수 있는 값 — 서버 결과 셋에 **응답에 없음**(`ABSENT`)을 더한 넷이다. */
 export type PerspectiveCellOutcome = PerspectiveOutcome | 'ABSENT'
 
 /**
@@ -108,28 +112,102 @@ export const PERSPECTIVE_OUTCOME_META: Record<
   PerspectiveCellOutcome,
   { label: string; variant: StatusPillVariant; hint: string }
 > = {
-  VIOLATION: { label: '위반', variant: 'error', hint: '이 관점에서 위반을 찾았어요' },
-  CLEAR: { label: '통과', variant: 'success', hint: '이 관점으로 보고 문제를 찾지 못했어요' },
+  VIOLATION: { label: '위반', variant: 'error', hint: '이 단계에서 위반을 찾았어요' },
+  CLEAR: { label: '통과', variant: 'success', hint: '이 단계에서 보고 문제를 찾지 못했어요' },
   UNCHECKED: {
     label: '미검사',
     variant: 'warning',
-    hint: '이 관점까지는 갔지만 내용을 보지 못했어요. 통과가 아니에요',
+    hint: '이 단계까지는 갔지만 내용을 보지 못했어요. 통과가 아니에요',
   },
-  ABSENT: {
-    label: '기록 없음',
-    variant: 'muted',
-    hint: '파이프라인이 이 관점까지 가지 않아 기록이 없어요',
-  },
+  // 진행 중인 건의 문구다. 판정이 끝난 건은 `ABSENT_SETTLED_HINT`를 쓴다.
+  ABSENT: { label: '기록 없음', variant: 'muted', hint: '아직 이 단계에 닿지 않았어요' },
+}
+
+/** 판정이 끝났는데 행이 없는 단계. 더 기다려도 결과가 오지 않으므로 진행 중 문구와 가른다. */
+export const ABSENT_SETTLED_HINT = '판정이 끝날 때까지 이 단계는 돌지 않았어요'
+
+// 미검사 사유 코드의 화면 문구. 코드는 서버가 주는 문자열이라 Map으로 찾는다.
+const SKIP_REASON_LABELS = new Map([
+  ['RULE_HIT', '자동 규칙 검사에서 걸린 표현이 있어 선별 없이 상세 검수로 넘겼어요'],
+  ['TRIAGE_CLEAR', '1차 선별이 문제없다고 봐서 상세 검수를 하지 않았어요'],
+  ['TRIAGE_CERTAIN', '1차 선별이 위반을 확정해서 상세 검수를 하지 않았어요'],
+  ['PROMOTED', '1차 선별이 판정하지 않고 상세 검수로 넘겼어요'],
+  ['TRIAGE_DISABLED', '선별을 쓰지 않는 설정이에요'],
+  ['LLM_DISABLED', '모델 검수를 쓰지 않는 설정이에요'],
+  ['WAIT_LIMIT_EXCEEDED', '기한 안에 판정을 받지 못했어요'],
+  ['EVIDENCE_UNVERIFIED', '모델이 든 근거를 본문에서 찾지 못해 판단을 버렸어요'],
+  ['SCHEMA_INVALID', '모델 응답이 계약과 달라 판단을 버렸어요'],
+  ['TIMEOUT', '모델 호출이 시간 안에 끝나지 않았어요'],
+  ['RATE_LIMITED', '요청 한도에 걸려 모델을 호출하지 못했어요'],
+  ['REFUSED', '모델이 판단을 거부했어요'],
+  ['BUDGET_EXHAUSTED', '예산 한도에 걸려 모델을 호출하지 못했어요'],
+  ['TRUNCATED', '모델 응답이 중간에 끊겼어요'],
+  ['ERROR', '모델 호출이 실패했어요'],
+])
+
+// 파이프라인이 일부러 넘긴 미검사 사유.
+const INTENDED_SKIP_REASONS = new Set(['RULE_HIT', 'TRIAGE_CLEAR', 'TRIAGE_CERTAIN', 'PROMOTED'])
+
+/** 일부러 넘긴 미검사 줄의 문구. 실패성 사유와 사유 없는 미검사는 기본 문구를 쓴다. */
+export const UNCHECKED_SKIPPED_HINT = '이 단계는 건너뛰었어요. 통과 판정이 아니에요'
+
+/** 아는 코드는 한국어로, 모르는 코드는 코드 값 그대로 돌려준다. */
+export function skipReasonLabel(skipReason: string): string {
+  return SKIP_REASON_LABELS.get(skipReason) ?? skipReason
+}
+
+export interface ViolationItemView {
+  categoryLabel: string
+  quote: string | null
+  suggestion: string | null
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const optionalText = (value: unknown): value is string | null | undefined =>
+  value == null || typeof value === 'string'
+
+/**
+ * 위반 상세 원문을 목록으로 푼다. 아는 모양(분류가 있는 객체의 배열)이 아니면 `null`이다.
+ *
+ * 항목 하나라도 모양이 다르면 통째로 `null`을 돌려 화면이 원문을 그대로 보여 주게 한다.
+ */
+export function parseViolations(raw: string | null | undefined): ViolationItemView[] | null {
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null
+  const items: ViolationItemView[] = []
+  for (const item of parsed) {
+    if (!isRecord(item)) return null
+    const { category, quote, suggestion } = item
+    if (typeof category !== 'string' || !optionalText(quote) || !optionalText(suggestion)) return null
+    items.push({
+      categoryLabel: inspectionViolationCategoryLabel(category),
+      quote: quote || null,
+      suggestion: suggestion || null,
+    })
+  }
+  return items
 }
 
 export interface PerspectiveCellView {
   perspective: InspectionPerspectiveKind
   label: string
   outcome: PerspectiveCellOutcome
-  /** 미검사 사유. 서버는 UNCHECKED에만 싣는다. */
+  /** 결과 뱃지 옆에 적는 한 줄 뜻. 기록 없음은 판정이 끝났는지에 따라 문구가 갈린다. */
+  hint: string
+  /** 미검사 사유의 화면 문구. 서버는 UNCHECKED에만 사유를 싣는다. */
   skipReason: string | null
-  /** 위반 상세 JSON **원문 문자열**. 파싱하지 않는다 — 모양은 AI 레포가 쥐고 있다. */
+  /** 위반 상세 JSON **원문 문자열**. 목록으로 풀지 못했을 때 그대로 보여 준다. */
   violations: string | null
+  /** 원문을 목록으로 푼 것. 아는 모양이 아니면 `null`이다. */
+  violationItems: ViolationItemView[] | null
 }
 
 export interface InspectionRowView {
@@ -157,7 +235,7 @@ export interface InspectionDetailView extends InspectionRowView {
   sellerNotice: string | null
   leaseOwner: string | null
   leaseExpiresAt: string | null
-  /** 항상 다섯 칸(+ 알 수 없는 관점). 응답에 없는 관점은 `ABSENT`로 채워 그린다. */
+  /** 이번 검수가 쓴 방식의 단계 줄(+ 알 수 없는 관점). 행이 없는 단계는 `ABSENT`로 채워 그린다. */
   perspectives: PerspectiveCellView[]
 }
 
@@ -192,39 +270,62 @@ export function toInspectionRow(summary: AdminInspectionSummary): InspectionRowV
 }
 
 /**
- * 관점 다섯 칸을 만든다. **응답에 없는 관점을 빼지 않고 `ABSENT`로 채운다.**
+ * 단계 줄을 만든다. 규칙과 선별은 늘 그리고, 상세 검수는 **이번 검수가 쓴 방식의 줄만** 그린다.
  *
- * 응답 배열을 그대로 그리면 "거기까지 가지 못했다"가 화면에서 사라진다 — 규칙 한 줄만 적힌 건이
- * 전부 통과한 건과 같은 모양이 된다. 그리고 우리가 모르는 관점 값이 오면 **뒤에 덧붙인다**:
- * 서버가 관점을 더했을 때 조용히 지워 버리면 그 관점이 돌았다는 사실 자체가 가려진다.
+ * - 응답에 `ALL`이 있으면 나눠 묻는 두 관점의 빈 줄을 그리지 않는다.
+ * - 나눠 묻는 관점이 하나라도 있으면 빈 `ALL` 줄을 그리지 않는다.
+ * - 셋 다 없으면 상세 검수 자리를 `ALL` 한 줄로만 남긴다.
+ *
+ * 서버가 보낸 행은 어떤 조합이든 빼지 않고, 모르는 관점 값은 뒤에 덧붙인다.
  */
 export function toPerspectiveCells(
   perspectives: AdminInspectionPerspective[],
+  processingState: InspectionProcessingState,
 ): PerspectiveCellView[] {
   const byKind = new Map<InspectionPerspectiveKind, AdminInspectionPerspective>()
   // 같은 관점이 둘 오면 먼저 온 것을 남긴다(응답이 파이프라인 순서라 앞이 그 관점의 기록이다).
   for (const item of perspectives) {
     if (!byKind.has(item.perspective)) byKind.set(item.perspective, item)
   }
-  const known = PERSPECTIVE_ORDER.map(perspective => {
-    const found = byKind.get(perspective)
+  const hasWhole = byKind.has('ALL')
+  const hasSplit = SPLIT_PERSPECTIVES.some(perspective => byKind.has(perspective))
+  const isDrawn = (perspective: InspectionPerspectiveKind): boolean => {
+    if (byKind.has(perspective)) return true
+    if (perspective === 'ALL') return !hasSplit
+    if (SPLIT_PERSPECTIVES.includes(perspective)) return hasSplit && !hasWhole
+    return true
+  }
+  const absentHint = isInProgress(processingState)
+    ? PERSPECTIVE_OUTCOME_META.ABSENT.hint
+    : ABSENT_SETTLED_HINT
+  const toCell = (
+    perspective: InspectionPerspectiveKind,
+    found: AdminInspectionPerspective | undefined,
+  ): PerspectiveCellView => {
+    const outcome: PerspectiveCellOutcome = found?.outcome ?? 'ABSENT'
+    const isIntendedSkip =
+      outcome === 'UNCHECKED' && !!found?.skipReason && INTENDED_SKIP_REASONS.has(found.skipReason)
+    const hint = isIntendedSkip
+      ? UNCHECKED_SKIPPED_HINT
+      : outcome === 'ABSENT'
+        ? absentHint
+        : PERSPECTIVE_OUTCOME_META[outcome].hint
     return {
       perspective,
-      label: PERSPECTIVE_META[perspective].label,
-      outcome: (found?.outcome ?? 'ABSENT') as PerspectiveCellOutcome,
-      skipReason: found?.skipReason ?? null,
+      label: PERSPECTIVE_META[perspective]?.label ?? perspective,
+      outcome,
+      hint,
+      skipReason: found?.skipReason ? skipReasonLabel(found.skipReason) : null,
       violations: found?.violations ?? null,
+      violationItems: parseViolations(found?.violations),
     }
-  })
+  }
+  const known = PERSPECTIVE_ORDER.filter(isDrawn).map(perspective =>
+    toCell(perspective, byKind.get(perspective)),
+  )
   const extra = [...byKind.values()]
     .filter(item => !PERSPECTIVE_ORDER.includes(item.perspective))
-    .map(item => ({
-      perspective: item.perspective,
-      label: PERSPECTIVE_META[item.perspective]?.label ?? item.perspective,
-      outcome: item.outcome as PerspectiveCellOutcome,
-      skipReason: item.skipReason ?? null,
-      violations: item.violations ?? null,
-    }))
+    .map(item => toCell(item.perspective, item))
   return [...known, ...extra]
 }
 
@@ -238,7 +339,7 @@ export function toInspectionDetail(detail: AdminInspectionDetail): InspectionDet
     sellerNotice: detail.sellerNotice ?? null,
     leaseOwner: detail.leaseOwner ?? null,
     leaseExpiresAt: detail.leaseExpiresAt ?? null,
-    perspectives: toPerspectiveCells(detail.perspectives),
+    perspectives: toPerspectiveCells(detail.perspectives, detail.processingState),
   }
 }
 

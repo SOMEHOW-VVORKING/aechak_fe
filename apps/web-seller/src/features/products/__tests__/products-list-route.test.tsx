@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, onTestFinished } from 'vitest'
 import {
   CATEGORIES_URL,
   SELLER_PRODUCTS_URL,
@@ -423,6 +423,99 @@ describe('/products 목록 (SCRUM-119)', () => {
     expect(
       await screen.findByText('구매자 앱에서 온보딩(약관/닉네임)을 완료한 뒤 이용할 수 있어요.'),
     ).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-125] 반려된 상품의 꺼진 판매 토글은 잠기고 이유를 알려 준다', async () => {
+    const rejected = makeSellerProductWire({
+      name: '반려된 관절 영양제',
+      saleStatus: 'SUSPENDED',
+      inspectionStatus: 'REJECTED',
+    })
+    seedSellerProducts([{ product: rejected }, { product: HARNESS }])
+    let statusRequests = 0
+    const record = ({ request }: { request: Request }) => {
+      if (request.method === 'PATCH') statusRequests += 1
+    }
+    server.events.on('request:start', record)
+    onTestFinished(() => server.events.removeListener('request:start', record))
+    const user = userEvent.setup()
+    renderAt('/products')
+    const row = await rowOf(rejected.name)
+
+    // 접근성 이름에 이유가 들어 있다 — 화면을 보지 않는 셀러도 왜 잠겼는지 안다.
+    const toggle = within(row).getByRole('switch', {
+      name: `${rejected.name} 판매 / 반려된 상품이라 판매를 켤 수 없어요`,
+    })
+    expect(toggle).toBeDisabled()
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(within(row).getByText('반려된 상품이라 판매를 켤 수 없어요')).toBeInTheDocument()
+
+    await user.click(toggle)
+    expect(within(row).getByText('판매 중지')).toBeInTheDocument()
+
+    // 반려가 아닌 상품은 같은 판매 중지여도 잠기지 않고 안내도 없다.
+    const other = await rowOf(HARNESS.name)
+    expect(within(other).getByRole('switch', { name: `${HARNESS.name} 판매` })).toBeEnabled()
+    expect(within(other).queryByText('반려된 상품이라 판매를 켤 수 없어요')).not.toBeInTheDocument()
+
+    // 늦게 나가는 요청까지 잡도록 다른 단언이 끝난 뒤에 확인한다.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(statusRequests).toBe(0)
+  })
+
+  it('[AC-SPRD-126] 판매중인 반려 상품은 판매 중지로 내릴 수 있고 내린 뒤에는 잠긴다', async () => {
+    const rejected = makeSellerProductWire({
+      name: '반려된 관절 영양제',
+      saleStatus: 'ON_SALE',
+      inspectionStatus: 'REJECTED',
+    })
+    seedSellerProducts([{ product: rejected }])
+    const user = userEvent.setup()
+    renderAt('/products')
+    const row = await rowOf(rejected.name)
+
+    const toggle = within(row).getByRole('switch', { name: `${rejected.name} 판매` })
+    expect(toggle).toBeEnabled()
+    expect(within(row).queryByText('반려된 상품이라 판매를 켤 수 없어요')).not.toBeInTheDocument()
+
+    await user.click(toggle)
+    await user.click(
+      within(screen.getByRole('dialog', { name: '판매를 중지할까요?' })).getByRole('button', {
+        name: '판매 중지',
+      }),
+    )
+
+    expect(await screen.findByText('판매를 중지했어요.')).toBeInTheDocument()
+    expect(await within(row).findByText('반려된 상품이라 판매를 켤 수 없어요')).toBeInTheDocument()
+    expect(within(row).getByRole('switch')).toBeDisabled()
+  })
+
+  it('[AC-SPRD-127] 서버가 검수에 걸린 상품의 판매중 전환을 거절하면(409 errorCode 40013) 그 사유를 알린다', async () => {
+    const user = userEvent.setup()
+    // 목록의 검수 상태가 낡았거나 화면이 미리 알 수 없는 경우다 — 토글은 열려 있고 서버가 거절한다.
+    server.use(
+      http.patch(`${SELLER_PRODUCTS_URL}/:productId/status`, () =>
+        HttpResponse.json(
+          {
+            errorCode: 40013,
+            message:
+              '검수에서 걸린 상품은 판매중으로 바꿀 수 없습니다. 상품을 고쳐 다시 검수를 받아 주세요.',
+          },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderAt('/products')
+    const row = await rowOf(HARNESS.name)
+
+    await user.click(within(row).getByRole('switch', { name: `${HARNESS.name} 판매` }))
+
+    const toast = await screen.findByText(
+      '검수에서 걸린 상품은 판매중으로 바꿀 수 없어요. 상품을 고쳐 다시 검수를 받아 주세요.',
+    )
+    // 실패 안내다 — 성공 토스트와 같은 모양으로 뜨면 바뀐 줄 안다.
+    expect(toast.closest('[role="alert"]')).not.toBeNull()
+    expect(within(row).getByText('판매 중지')).toBeInTheDocument()
   })
 
   it('[AC-SPRD-070] BE에 없는 기능(상품 삭제)의 진입점은 목록에 없다', async () => {

@@ -10,7 +10,8 @@ import { adminBase, clampSize, errorBody } from './base'
 //   2. **판정 널을 그대로 내려보낸다.** 널과 PASS가 다르다는 것이 이 화면의 전부다.
 //   3. **알 수 없는 열거 값은 400/90001이다.** 상품 카탈로그 경로처럼 "조건 없음"으로 넘기지
 //      않는다(그쪽은 서버가 실제로 그렇게 동작한다 — 경로마다 다르다).
-//   4. **관점 기록이 없으면 빈 배열이다.** 화면이 다섯 칸을 스스로 채우는지가 그때 드러난다.
+//   4. **관점 기록이 없으면 빈 배열이다.** 화면이 빈 단계 줄을 스스로 채우는지가 그때 드러난다.
+//   5. **위반 상세는 서버가 저장한 모양의 JSON 문자열이다.** `makeAdminInspectionViolationsJson`으로 만든다.
 export const ADMIN_INSPECTIONS_URL = `${adminBase}/admin/inspections`
 export const ADMIN_INSPECTION_DETAIL_URL = `${ADMIN_INSPECTIONS_URL}/:inspectionId`
 
@@ -64,6 +65,35 @@ export interface AdminInspectionWire {
   leaseOwner: string | null
   leaseExpiresAt: string | null
   perspectives: AdminInspectionPerspectiveWire[]
+}
+
+/** BE가 관점 행에 저장하는 위반 한 건(판정 메시지의 위반 항목 직렬화). */
+export interface AdminInspectionViolationWire {
+  category: string
+  perspective: WirePerspectiveKind
+  spanStart: number | null
+  spanEnd: number | null
+  quote: string | null
+  suggestion: string | null
+  confidence: number | null
+}
+
+/** 위반 상세 칼럼에 저장되는 문자열을 만든다. 서버는 빈 목록이면 칼럼을 비우므로 한 건 이상 넘긴다. */
+export function makeAdminInspectionViolationsJson(
+  items: Partial<AdminInspectionViolationWire>[],
+): string {
+  return JSON.stringify(
+    items.map(item => ({
+      category: 'MEDICAL_CLAIM',
+      perspective: 'ALL',
+      spanStart: null,
+      spanEnd: null,
+      quote: null,
+      suggestion: null,
+      confidence: null,
+      ...item,
+    })),
+  )
 }
 
 let inspections: AdminInspectionWire[] = []

@@ -236,6 +236,7 @@ describe('ai-review-metrics.map', () => {
     // 서버가 라벨을 보내면 화면 표보다 그쪽을 믿는다.
     expect(exitLabel('BRAND_NEW_EXIT', '새 탈출')).toBe('새 탈출')
     expect(exitLabel('RULE_BLOCKED', null)).toBe('룰 확정 차단')
+    expect(exitLabel('TRIAGE_FLAGGED', null)).toBe('선별 확정 위반')
     expect(costStageLabel('BRAND_NEW_STAGE')).toBe('알 수 없음 (BRAND_NEW_STAGE)')
     expect(costStageLabel('CRITIC')).toBe('비평')
   })

@@ -31,6 +31,7 @@ import {
   type InspectionDetailView,
   type InspectionRowView,
   type PerspectiveCellView,
+  type ViolationItemView,
 } from '../inspection-monitor.map'
 import {
   ALL,
@@ -114,8 +115,30 @@ function makeColumns(
   ]
 }
 
+/** 위반 상세를 목록으로 그린다. 서버 글자는 텍스트로만 넣는다. */
+function ViolationList({ items }: { items: ViolationItemView[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {items.map((item, index) => (
+        <li key={index} className="space-y-0.5 rounded-sm bg-surface-sunken p-2 text-caption">
+          <p className="font-medium text-text-primary">{item.categoryLabel}</p>
+          {item.quote && (
+            <p className="break-words text-text-secondary">걸린 표현 / {item.quote}</p>
+          )}
+          {item.suggestion && (
+            <p className="break-words text-text-secondary">수정 제안 / {item.suggestion}</p>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const RAW_VIOLATIONS_CLASS =
+  'max-w-full overflow-x-auto rounded-sm bg-surface-sunken p-2 text-caption text-text-secondary'
+
 /**
- * 관점 한 줄. **통과·위반·미검사·기록 없음을 서로 다른 글자와 색으로** 그린다.
+ * 단계 한 줄. **통과·위반·미검사·기록 없음을 서로 다른 글자와 색으로** 그린다.
  *
  * 이 구분이 이 화면의 핵심이다. 미검사를 통과와 같은 모양으로 두면 운영자는 아무도 보지 않은
  * 내용을 검수가 끝난 것으로 읽고, 기록 없음까지 합치면 파이프라인이 어디서 멈췄는지가 사라진다.
@@ -127,23 +150,27 @@ function PerspectiveRow({ cell }: { cell: PerspectiveCellView }) {
     <li className="flex items-start justify-between gap-3 rounded-md border border-border-subtle p-3">
       <div className="min-w-0 space-y-1">
         <p className="text-body-sm font-medium text-text-primary">{cell.label}</p>
-        <p className="text-caption text-text-tertiary">{meta.hint}</p>
+        <p className="text-caption text-text-tertiary">{cell.hint}</p>
         {cell.skipReason && (
           <p className="text-caption text-text-secondary">건너뛴 이유 / {cell.skipReason}</p>
         )}
-        {cell.violations && (
-          <div className="space-y-1">
-            <p className="text-caption text-text-tertiary">위반 상세 원문</p>
-            {/*
-              서버가 DB의 JSON 칼럼 텍스트를 문자열로 그대로 내려보낸다. 모양은 AI 레포가 쥐고
-              있어 파싱해 필드를 꺼내면 그쪽이 바뀌는 날 조용히 빈 칸이 된다 — 원문을 그대로 보여
-              주고 판단은 운영자에게 맡긴다.
-            */}
-            <pre className="max-w-full overflow-x-auto rounded-sm bg-surface-sunken p-2 text-caption text-text-secondary">
-              {cell.violations}
-            </pre>
-          </div>
-        )}
+        {/* 목록으로 풀리면 목록을 그리고 원문은 접어 둔다. 풀리지 않으면 원문을 그대로 보여 준다. */}
+        {cell.violations &&
+          (cell.violationItems ? (
+            <div className="space-y-1">
+              <p className="text-caption text-text-tertiary">위반 상세</p>
+              <ViolationList items={cell.violationItems} />
+              <details className="text-caption text-text-tertiary">
+                <summary className="cursor-pointer">원문 보기</summary>
+                <pre className={`mt-1 ${RAW_VIOLATIONS_CLASS}`}>{cell.violations}</pre>
+              </details>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-caption text-text-tertiary">위반 상세 원문</p>
+              <pre className={RAW_VIOLATIONS_CLASS}>{cell.violations}</pre>
+            </div>
+          ))}
       </div>
       <div className="flex-none">
         <StatusMetaPill meta={meta} />

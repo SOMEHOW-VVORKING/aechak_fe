@@ -306,7 +306,8 @@ describe('AI 검수 큐 (SCRUM-283)', () => {
 
     expect(within(violationItem('새 분류 표현')).getByText('기타')).toBeInTheDocument()
     expect(within(violationItem('객체 내장 키 표현')).getByText('기타')).toBeInTheDocument()
-    expect(within(violationItem('상품과 무관한 표현')).getByText('기타')).toBeInTheDocument()
+    // IRRELEVANT는 서버 열거에 있는 분류라 제 이름으로 나온다.
+    expect(within(violationItem('상품과 무관한 표현')).getByText('상품과 무관한 내용')).toBeInTheDocument()
   })
 
   it('[AC-AI-QUEUE-022] 판정 실패여도 목록이 있으면 보여 준다', async () => {
