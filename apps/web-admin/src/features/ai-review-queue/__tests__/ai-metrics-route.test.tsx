@@ -50,13 +50,14 @@ describe('/products/ai-metrics', () => {
     seedAdminInspectionMetrics(makeAdminInspectionMetricsWire())
   })
 
-  it('[AC-AI-METRICS-001] 퍼널은 네 단계를 순서대로 그리고 단계마다 비율과 그 분모를 함께 보여 준다', async () => {
+  it('[AC-AI-METRICS-001] 퍼널은 단계를 순서대로 그리고 단계마다 비율과 그 분모를 함께 보여 준다', async () => {
     renderAt('/products/ai-metrics')
 
     const flow = (await screen.findByText('1단 룰')).closest('ol') as HTMLElement
     expect(flow.querySelectorAll(':scope > li')).toHaveLength(4)
     expect(flow).toHaveTextContent('2단 선별')
-    expect(flow).toHaveTextContent('3단 관점 판정')
+    expect(flow).toHaveTextContent('3단 상세 검수')
+    // 이 픽스처의 집계 창에는 비평이 돌던 때의 기록이 있다. 실제로 돈 단계는 숨기지 않는다.
     expect(flow).toHaveTextContent('4단 비평')
 
     // 단계마다 "몇 %가 걸리는가"가 보여야 한다.
@@ -74,6 +75,25 @@ describe('/products/ai-metrics', () => {
     expect(flow).toHaveTextContent('분모는 미판정을 뺀 닫힌 검수예요')
     expect(flow).toHaveTextContent('분모는 선별 호출이 실제로 나간 검수예요')
     expect(flow).toHaveTextContent('분모는 응답이 온 검수예요')
+  })
+
+  it('[AC-AI-METRICS-019] 비평이 돈 기록이 없으면 비평 단계와 비평 탈출 줄을 그리지 않는다', async () => {
+    const wire = makeAdminInspectionMetricsWire()
+    seedAdminInspectionMetrics({
+      ...wire,
+      funnel: {
+        ...wire.funnel,
+        exits: wire.funnel.exits.map(exit => (exit.exit === 'CRITIC_OVERTURNED' ? { ...exit, count: 0 } : exit)),
+        stage4: { enteredCount: 88, overturnedCount: 0, upheldCount: 88, overturnRate: 0, escalationObserved: false },
+      },
+    })
+    renderAt('/products/ai-metrics')
+
+    const flow = (await screen.findByText('1단 룰')).closest('ol') as HTMLElement
+    expect(flow.querySelectorAll(':scope > li')).toHaveLength(3)
+    expect(flow).toHaveTextContent('3단 상세 검수')
+    expect(flow).not.toHaveTextContent('비평')
+    expect(screen.queryByText('비평이 뒤집음')).not.toBeInTheDocument()
   })
 
   it('[AC-AI-METRICS-002] 퍼널 막대는 단계를 거치며 좁아진다 — 진입 건수와 폭이 함께 줄어든다', async () => {

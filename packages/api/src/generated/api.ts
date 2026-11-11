@@ -6921,6 +6921,11 @@ export interface InspectionMetricsStage2 {
   clearedCount: number
   promotedCount: number
   /**
+   * 선별이 위반으로 확정한 건수. 상세 검수를 부르지 않고 끝난 건이라 통과에도 승급에도 들지 않는다
+   * @nullable
+   */
+  flaggedCount?: number | null
+  /**
    * 선별 호출이 깨진 건수. 승급 분자에 포함된다 — 호출이 실제로 나갔으므로 비용으로는 같다
    * @nullable
    */

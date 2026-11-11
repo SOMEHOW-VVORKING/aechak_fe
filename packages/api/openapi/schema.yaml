@@ -14409,6 +14409,11 @@ components:
         promotedCount:
           type: integer
           format: int64
+        flaggedCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: "선별이 위반으로 확정한 건수. 상세 검수를 부르지 않고 끝난 건이라 통과에도 승급에도 들지 않는다"
         callFailedCount:
           type: integer
           format: int64
