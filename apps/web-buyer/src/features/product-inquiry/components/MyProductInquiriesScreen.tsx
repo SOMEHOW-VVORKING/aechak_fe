@@ -13,6 +13,7 @@ import {
 import type { MyProductInquiryItem } from '@aechak/api'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
@@ -67,7 +68,7 @@ export function MyProductInquiriesScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="내 상품 문의" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="내 상품 문의" actions={<HomeAction />} />}>
       {inquiries.isError ? (
         // "문의가 없음"과 "불러오지 못함"을 가른다.
         <ScreenEmptyState

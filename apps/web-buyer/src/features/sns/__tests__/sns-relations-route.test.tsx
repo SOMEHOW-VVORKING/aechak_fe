@@ -174,6 +174,15 @@ describe('/mypage/sns-relations 차단/뮤트 관리', () => {
     expect(router.state.location.pathname).toBe('/mypage/sns-relations')
   })
 
+  it('[AC-SNS-HOME-001] 홈 버튼이 보이고 누르면 홈으로 간다', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/mypage/sns-relations')
+
+    await screen.findByText('광고계정01')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
   it('[AC-SNS01-024] 서로 차단한 상태에서 한쪽만 해제하면 목록에서 빠지지만 상대 프로필은 계속 기본 프로필이다', async () => {
     seedSns({ blocks: [snsRelation(SNS_BLOCKER, SNS_ME), snsRelation(SNS_ME, SNS_BLOCKER)] })
     const user = userEvent.setup()

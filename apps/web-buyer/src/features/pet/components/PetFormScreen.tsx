@@ -10,6 +10,7 @@ import {
   Select,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import {
   isWithinPhotoSizeLimit,
   OVERSIZED_PHOTO_MESSAGE,
@@ -184,7 +185,13 @@ export function PetFormScreen({ target, onCancel, onSaved }: PetFormScreenProps)
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={onCancel} title={target ? '펫 프로필 수정' : '펫 프로필 작성'} />}
+      header={
+        <BackAppBar
+          onBack={onCancel}
+          title={target ? '펫 프로필 수정' : '펫 프로필 작성'}
+          actions={<HomeAction />}
+        />
+      }
       footer={
         <BottomFixedAction
           primary={{

@@ -71,6 +71,15 @@ describe('/mypage/withdraw (실서버 계약 — MSW)', () => {
     expect(counts.withdraw).toBe(0)
   })
 
+  it('[AC-WITHDRAW-009] 홈 버튼이 보이고 누르면 홈(\'/\')으로 간다', async () => {
+    const user = userEvent.setup()
+    const { router } = renderAt('/mypage/withdraw')
+
+    await screen.findByText('탈퇴하기 전에 확인해 주세요')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
   it('[AC-WITHDRAW-002] 서버가 withdrawable=false면 제한 안내를 보여주고 탈퇴 버튼을 잠근다', async () => {
     server.use(http.get(WITHDRAWAL_CHECK_URL, () => HttpResponse.json({ data: { withdrawable: false } })))
     renderAt('/mypage/withdraw')

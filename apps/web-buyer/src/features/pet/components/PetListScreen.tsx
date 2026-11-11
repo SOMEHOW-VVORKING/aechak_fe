@@ -4,6 +4,7 @@ import { Cat, Dog, PawPrint, Star } from 'lucide-react'
 import type { PetProfile } from '@aechak/domain'
 import { Button, Card, MobileScreen, Modal, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { DashedAddButton } from '@/shared/components/DashedAddButton'
 import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
@@ -40,7 +41,7 @@ export function PetListScreen() {
 
   if (isLoading) {
     return (
-      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" actions={<HomeAction />} />}>
         <div className="flex flex-col gap-3.5 p-4">
           <Skeleton className="h-[52px]" />
           <Skeleton className="h-[52px]" />
@@ -51,7 +52,7 @@ export function PetListScreen() {
 
   if (isError) {
     return (
-      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+      <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" actions={<HomeAction />} />}>
         <ScreenEmptyState
           icon={<PawPrint className="size-8" />}
           title="목록을 불러오지 못했어요"
@@ -63,7 +64,7 @@ export function PetListScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="펫 프로필" actions={<HomeAction />} />}>
       {errorMessage != null && (
         <p role="alert" className="px-4 pt-3 text-body-sm text-error-fg">
           {errorMessage}

@@ -9,6 +9,7 @@ import {
   Skeleton,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { orderErrorMessage, type OrderSegment } from '@/shared/order'
 import { useOrderList } from '../order.queries'
@@ -28,7 +29,7 @@ export function OrderListScreen() {
     navigate({ to: '/orders/$orderId', params: { orderId } })
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="주문 내역" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="주문 내역" actions={<HomeAction />} />}>
       <div className="flex min-h-full flex-col gap-3 p-4">
         <SegmentedControl
           options={ORDER_SEGMENTS.map(s => ({ value: s.value, label: s.label }))}

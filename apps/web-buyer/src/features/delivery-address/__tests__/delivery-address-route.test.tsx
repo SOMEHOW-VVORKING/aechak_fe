@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { HttpResponse, http } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import type { DaumPostcodeData } from '../daum-postcode'
 import {
   DELIVERY_ADDRESSES_URL,
@@ -111,6 +112,39 @@ describe('/addresses', () => {
   })
   afterEach(() => {
     delete window.daum
+  })
+
+  it('[AC-ADDR-ROUTE-015] 홈 버튼이 보이고 누르면 홈(\'/\')으로 간다', async () => {
+    // 홈 가드는 access가 없으면 로그인으로 보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    renderAt('/addresses')
+
+    await screen.findByText('회사')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    expect(await screen.findByText('이런 상품은 어때요?')).toBeInTheDocument()
+  })
+
+  it('[AC-ADDR-ROUTE-017] 마이페이지에서 연 배송지 추가 폼에도 홈 버튼이 보인다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses')
+
+    await screen.findByText('회사')
+    await user.click(screen.getByRole('button', { name: /배송지 추가/ }))
+    await screen.findByText('배송지 추가', { selector: 'span' })
+    expect(screen.getByRole('button', { name: '홈으로 가기' })).toBeInTheDocument()
+  })
+
+  it('[AC-ADDR-ROUTE-016] 주문서에서 들어오면(from=checkout) 목록과 폼 모두 홈 버튼을 두지 않는다', async () => {
+    const user = userEvent.setup()
+    renderAt('/addresses?from=checkout')
+
+    await screen.findByText('회사')
+    expect(screen.queryByRole('button', { name: '홈으로 가기' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /배송지 추가/ }))
+    await screen.findByText('배송지 추가', { selector: 'span' })
+    expect(screen.queryByRole('button', { name: '홈으로 가기' })).not.toBeInTheDocument()
   })
 
   it('[AC-ADDR-ROUTE-001] 배송지 목록과 기본 배지를 보여준다', async () => {

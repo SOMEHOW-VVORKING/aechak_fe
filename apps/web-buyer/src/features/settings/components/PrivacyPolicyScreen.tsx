@@ -1,5 +1,6 @@
 import { DocumentHeader, MobileScreen } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { PRIVACY_REVISION, PRIVACY_SECTIONS } from '../settings.mock'
 import { DocParagraph, DocSection } from './DocLayout'
@@ -9,7 +10,7 @@ export function PrivacyPolicyScreen() {
   const goBack = useSafeBack({ to: '/settings' })
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="개인정보 처리방침" />} contentClassName="pb-8">
+    <MobileScreen header={<BackAppBar onBack={goBack} title="개인정보 처리방침" actions={<HomeAction />} />} contentClassName="pb-8">
       <DocumentHeader title="개인정보 처리방침" revision={PRIVACY_REVISION} />
       <div className="flex flex-col gap-6 p-4">
         {PRIVACY_SECTIONS.map(section => (

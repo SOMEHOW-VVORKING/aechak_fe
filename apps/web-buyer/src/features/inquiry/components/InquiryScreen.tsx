@@ -13,6 +13,7 @@ import {
 import type { SubmitInquiryRequestInquiryType } from '@aechak/api'
 import { BottomFixedAction, BottomSheet, Input, MobileScreen, Textarea } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { AppToast } from '@/shared/components/AppToast'
 import { Divider } from '@/shared/components/Divider'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -104,7 +105,7 @@ export function InquiryScreen() {
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={goBack} title="고객센터 문의" />}
+      header={<BackAppBar onBack={goBack} title="고객센터 문의" actions={<HomeAction />} />}
       footer={
         <BottomFixedAction
           primary={{

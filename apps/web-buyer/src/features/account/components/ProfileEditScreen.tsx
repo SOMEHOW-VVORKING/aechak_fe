@@ -13,6 +13,7 @@ import {
 } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
@@ -143,7 +144,7 @@ export function ProfileEditScreen() {
 
   const saving = isUploading || updateProfile.isPending
 
-  const goBackHeader = <BackAppBar onBack={goBack} title="프로필 수정" />
+  const goBackHeader = <BackAppBar onBack={goBack} title="프로필 수정" actions={<HomeAction />} />
 
   if (isError) {
     return (

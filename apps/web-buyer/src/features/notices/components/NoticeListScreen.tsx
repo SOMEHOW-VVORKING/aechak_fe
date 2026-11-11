@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Alert, Card, MobileScreen, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { FilterChip } from '@/shared/components/FilterChip'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
@@ -35,7 +36,7 @@ export function NoticeListScreen() {
     void navigate({ to: '/settings/notices/$noticeId', params: { noticeId } })
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="공지사항" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="공지사항" actions={<HomeAction />} />}>
       <div className="flex flex-col">
         {/* 분류 칩. 필터를 바꾸면 쿼리 키가 갈려 커서 사슬이 처음부터 다시 시작한다
             (커서에 분류가 실리지 않아 서버가 끊어 주지 않는다 — notices.queries 주석). */}

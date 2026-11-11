@@ -1,5 +1,6 @@
 import { MobileScreen, Skeleton, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
@@ -24,7 +25,7 @@ export function NoticeDetailScreen({ noticeId }: { noticeId: string }) {
   const meta = detail.notice ? noticeCategoryMeta(detail.notice.category) : null
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="공지사항" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="공지사항" actions={<HomeAction />} />}>
       {detail.isLoading ? (
         <div className="flex flex-col gap-3 p-4">
           <Skeleton variant="text" className="w-2/3" />

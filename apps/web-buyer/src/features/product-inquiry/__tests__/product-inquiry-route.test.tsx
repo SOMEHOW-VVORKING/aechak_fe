@@ -375,4 +375,15 @@ describe('/mypage/product-inquiries', () => {
       expect(screen.queryByRole('button', { name: '철회하기' })).not.toBeInTheDocument(),
     )
   })
+
+  it('[AC-PINQ-027] 홈 버튼이 보이고 누르면 홈으로 간다', async () => {
+    seedProductInquiries([])
+    const user = userEvent.setup()
+    const router = renderAt('/mypage/product-inquiries')
+
+    expect(await screen.findByText('아직 등록한 문의가 없어요', {}, { timeout: 3000 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
 })

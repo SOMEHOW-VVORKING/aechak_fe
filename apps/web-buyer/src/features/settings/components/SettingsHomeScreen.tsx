@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { /* Bell, */ Database, Headphones, HelpCircle, ListChecks, LogOut, Megaphone, ShieldCheck, Smartphone, Users } from 'lucide-react'
 import { MobileScreen, Modal, StatusPill } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { APP_VERSION } from '../settings.mock'
 import { useLogout } from '../settings.queries'
@@ -32,7 +33,7 @@ export function SettingsHomeScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="설정" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="설정" actions={<HomeAction />} />}>
       <div className="flex flex-col gap-5 p-4">
         {/* 캡틴 지시로 '알림 설정' 진입점을 화면에서 숨김(삭제 아님 — 나중에 되살리기 쉽게 주석 처리).
             라우트(/settings/notifications)는 그대로 두고 진입점만 감춘다. 되살릴 때 상단 Bell import도 함께 복원.

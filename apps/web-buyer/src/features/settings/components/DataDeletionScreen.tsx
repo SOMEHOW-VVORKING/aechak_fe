@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Button, Card, DocumentHeader, MobileScreen, StatusPill } from '@aechak/design-system/web'
 import { ActionBarFrame } from '@/shared/components/ActionBarFrame'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { DATA_DELETION_IMMEDIATE, DATA_RETENTION_ROWS } from '../settings.mock'
 import { DocParagraph, DocSection } from './DocLayout'
@@ -16,7 +17,7 @@ export function DataDeletionScreen() {
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={goBack} title="계정 및 데이터 삭제" />}
+      header={<BackAppBar onBack={goBack} title="계정 및 데이터 삭제" actions={<HomeAction />} />}
       footer={
         <ActionBarFrame>
           <Button

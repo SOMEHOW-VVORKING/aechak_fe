@@ -3,6 +3,7 @@ import { EyeOff, Info } from 'lucide-react'
 import { Avatar, Button, EmptyState, MobileScreen, Modal, Skeleton, Tabs } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
   snsToggleErrorMessage,
@@ -80,7 +81,7 @@ export function SnsRelationsScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="차단/뮤트 관리" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="차단/뮤트 관리" actions={<HomeAction />} />}>
       <Tabs
         tabs={(['blocks', 'mutes'] as const).map(key => ({
           key,

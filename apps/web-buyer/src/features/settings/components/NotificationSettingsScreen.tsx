@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { MobileScreen, Toggle } from '@aechak/design-system/web'
 import { AppToast } from '@/shared/components/AppToast'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { SettingsControlRow, SettingsGroup } from './SettingsSection'
 
@@ -21,7 +22,7 @@ export function NotificationSettingsScreen() {
   }
 
   return (
-    <MobileScreen header={<BackAppBar onBack={goBack} title="알림 설정" />}>
+    <MobileScreen header={<BackAppBar onBack={goBack} title="알림 설정" actions={<HomeAction />} />}>
       <div className="flex flex-col gap-5 p-4">
         <SettingsGroup
           footnote={
