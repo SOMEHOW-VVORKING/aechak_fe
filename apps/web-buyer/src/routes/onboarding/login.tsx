@@ -1,24 +1,12 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Alert, Button, MobileScreen } from '@aechak/design-system/web'
+import { Alert, Button, KakaoLoginButton, MobileScreen } from '@aechak/design-system/web'
 import {
   WEB_LOGIN_PROVIDERS,
   socialLoginRedirectUrl,
   type SocialProvider,
 } from '@/features/onboarding'
 import { clearPendingAction } from '@/shared/auth'
-
-// TODO: placeholder brand marks (colored initial badges) — swap for
-// licensed Kakao logo before shipping; sourcing/recreating
-// real brand assets is explicitly deferred for this batch.
-const SOCIAL_OPTIONS: {
-  provider: SocialProvider
-  label: string
-  initial: string
-  badgeClassName: string
-}[] = [
-  { provider: 'kakao', label: '카카오로 시작하기', initial: 'K', badgeClassName: 'bg-[#FEE500] text-[#191919]' },
-]
 
 export interface LoginSearch {
   /** 로그인 실패 시 /login/complete가 되돌려주는 서버 에러코드 */
@@ -76,34 +64,12 @@ function SocialLoginRoute() {
               로그인에 실패했어요. 다시 시도해 주세요.
             </Alert>
           )}
-          {SOCIAL_OPTIONS.map(({ provider, label, initial, badgeClassName }) => {
-            // 서버 웹 로그인이 열린 provider만 활성
-            const supported = WEB_LOGIN_PROVIDERS.has(provider)
-            return (
-              <Button
-                key={provider}
-                variant="secondary"
-                size="lg"
-                fullWidth
-                loading={redirecting === provider}
-                disabled={!supported || redirecting !== null}
-                leftIcon={
-                  <span
-                    aria-hidden="true"
-                    className={[
-                      'flex size-5 flex-none items-center justify-center rounded-full text-[11px] font-bold',
-                      badgeClassName,
-                    ].join(' ')}
-                  >
-                    {initial}
-                  </span>
-                }
-                onClick={() => handleSocialLogin(provider)}
-              >
-                {supported ? label : `${label} (준비 중)`}
-              </Button>
-            )
-          })}
+          {/* 서버 웹 로그인이 열린 provider만 활성 */}
+          <KakaoLoginButton
+            loading={redirecting === 'kakao'}
+            disabled={!WEB_LOGIN_PROVIDERS.has('kakao') || redirecting !== null}
+            onClick={() => handleSocialLogin('kakao')}
+          />
           {/* 로그인하지 않고 카탈로그로 가는 유일한 입구다 — `/`는 비회원을 이 화면으로 보내고
               `/market`은 BE가 permitAll로 열어 두었는데, 여기에 버튼이 없으면 비회원은 주소를
               직접 쳐야 그 화면에 닿는다. 문구는 AuthRequiredScreen과 같게 맞춘다. */}

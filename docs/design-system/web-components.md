@@ -449,6 +449,23 @@ interface Column<T> {
 
 ---
 
+## KakaoLoginButton
+
+```tsx
+<KakaoLoginButton loading={redirecting} onClick={startKakaoLogin} />
+```
+
+카카오 로그인 디자인 가이드를 따르는 전폭 버튼이다. 문구(카카오 로그인), 색, 심볼은 고정이라 prop으로 바꿀 수 없다.
+
+| prop | 타입 | 기본값 |
+|---|---|---|
+| `loading` | `boolean` | `false` |
+| `type` | `'button' \| 'submit' \| 'reset'` | `'button'` |
+
+나머지는 `ButtonHTMLAttributes`(`children` 제외) 그대로 전달됨.
+
+---
+
 ## ListItem
 
 ```tsx

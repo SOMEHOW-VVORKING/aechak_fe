@@ -115,5 +115,5 @@ test('[AC-VERIFY-E2E-002] 세션 없이 진입하면(401 → refresh 실패) 로
 
   await page.goto('/mypage/verify')
   await expect(page).toHaveURL(/\/onboarding\/login$/)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })

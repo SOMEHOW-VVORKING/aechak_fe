@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import { configure } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 import {
   resetLikedProducts,
@@ -14,6 +15,9 @@ import {
 import { resetWishlistState } from './shared/catalog'
 import { resetAuth } from './shared/auth'
 import { resetIntersection, stubIntersectionObserver } from './testing/intersection'
+
+// findBy/waitFor 기본 1초는 CI에서 세 앱 suite가 CPU를 나눠 쓰면 모자라 무작위로 실패한다.
+configure({ asyncUtilTimeout: 3_000 })
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해하지만 노이즈이고, 예외가 전환 중 리렌더를 유발해 테스트 노드를 detach시키므로

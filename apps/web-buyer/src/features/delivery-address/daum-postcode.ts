@@ -3,7 +3,7 @@
 // 팝업(새 창) 대신 embed 모드로 시트 내부 컨테이너에 임베드한다(모바일/웹뷰 친화).
 
 export const DAUM_POSTCODE_SRC =
-  'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
+  'https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
 
 // oncomplete 콜백이 받는 데이터 중 이 화면이 실제로 쓰는 필드만 좁게 선언한다(any 지양).
 export interface DaumPostcodeData {

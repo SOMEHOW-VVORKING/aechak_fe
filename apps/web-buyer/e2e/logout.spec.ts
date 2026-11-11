@@ -38,7 +38,7 @@ test('[AC-LOGOUT-E2E-001] 로그아웃 확인 → 서버 로그아웃 호출 →
 
   // 로그아웃은 홈으로 보내고, 홈 가드가 로그아웃 상태를 보고 /home 없이 로그인 화면으로 넘긴다.
   await expect(page).toHaveURL(`${ORIGIN}/onboarding/login`)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
   expect(logoutCalls).toBeGreaterThanOrEqual(1)
 })
 
@@ -61,5 +61,5 @@ test('[AC-LOGOUT-E2E-002] 로그아웃한 뒤 새로고침해도 다시 로그�
   await page.goto('/')
 
   await expect(page).toHaveURL(`${ORIGIN}/onboarding/login`)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })
