@@ -200,7 +200,7 @@ test('[AC-ADM-E2E-010] 로그인 화면은 카카오만 열려 있고 SideNav �
   await stubAdminApi(page)
   await page.goto('/login')
 
-  await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeEnabled()
   await expect(page.getByRole('button', { name: /구글|Apple/ })).toHaveCount(0)
   // BE에 POST /auth/login이 없다 — 이메일/비밀번호 폼은 제거됐다.
   await expect(page.getByLabel('Email')).toHaveCount(0)
@@ -212,7 +212,7 @@ test('[AC-ADM-E2E-010] 로그인 화면은 카카오만 열려 있고 SideNav �
   // 로그인 진입은 API 호출이 아니라 api 호스트로의 페이지 이동이다.
   const [request] = await Promise.all([
     page.waitForRequest(url => url.url().includes('/auth/login/kakao/redirect')),
-    page.getByRole('button', { name: '카카오로 로그인' }).click(),
+    page.getByRole('button', { name: '카카오 로그인' }).click(),
   ])
   expect(request.url()).toContain(`${API_ORIGIN}/api/v1/auth/login/kakao/redirect`)
   expect(request.url()).toContain(encodeURIComponent(`${ORIGIN}/login/complete`))
@@ -305,7 +305,7 @@ test('[AC-ADM-E2E-013] 권한 없는 계정(403 errorCode 20011)은 빈 명부�
   // 주지 않으면 운영자가 주소를 직접 쳐야 복구된다.
   await page.getByRole('button', { name: '로그인 화면으로' }).click()
   await expect(page).toHaveURL(/\/login$/)
-  await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })
 
 test('[AC-ADM-E2E-014] 세션이 없으면(401 → refresh 실패) 명부 진입이 로그인으로 튕긴다', async ({ page }) => {
@@ -320,5 +320,5 @@ test('[AC-ADM-E2E-014] 세션이 없으면(401 → refresh 실패) 명부 진입
   // main.tsx가 setupAuthExpiredRedirect를 부르지 않으면 이 경로가 무동작이 되어, 운영자는 명부가
   // 비어 보이기만 하고 왜 안 되는지 알 수 없다.
   await expect(page).toHaveURL(/\/login$/)
-  await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })

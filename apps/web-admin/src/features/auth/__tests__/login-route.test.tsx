@@ -61,7 +61,7 @@ describe('어드민 로그인 (SCRUM-252)', () => {
   it('[AC-ADM-AUTH-001] 로그인 화면은 카카오만 활성이고 이메일/비밀번호 폼이 없다', async () => {
     renderAt('/login')
 
-    expect(await screen.findByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /구글/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Apple/ })).not.toBeInTheDocument()
     // BE에 POST /auth/login이 없다 — 이메일/비밀번호 폼은 제거됐다.
@@ -74,7 +74,7 @@ describe('어드민 로그인 (SCRUM-252)', () => {
     server.events.on('request:start', ({ request }) => requested.push(request.url))
     renderAt('/login')
 
-    await screen.findByRole('button', { name: '카카오로 로그인' })
+    await screen.findByRole('button', { name: '카카오 로그인' })
 
     // 셸이 심사 대기 수를 부르는 훅을 쥐고 있어, 분기를 훅 아래로 내리면 로그인 전에 401/403을 만든다.
     expect(screen.queryByRole('button', { name: '관리자 관리' })).not.toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('어드민 로그인 (SCRUM-252)', () => {
     const location = stubLocationHref()
     try {
       renderAt('/login')
-      await user.click(await screen.findByRole('button', { name: '카카오로 로그인' }))
+      await user.click(await screen.findByRole('button', { name: '카카오 로그인' }))
 
       // 어드민 호스트(8082)에는 /auth/*가 없다 — 기본 호스트가 아니라 api 호스트를 명시한다.
       expect(location.assigned).toHaveLength(1)

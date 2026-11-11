@@ -109,7 +109,7 @@ test('[AC-WITHDRAW-E2E-001] 안내 → 확인 Modal → DELETE → 완료 → �
   // 탈퇴 정리로 로그아웃 상태라 홈 가드가 /home을 부르지 않고 로그인 화면으로 보낸다(logout spec과 같은 확인).
   await page.getByRole('button', { name: '홈으로' }).click()
   await expect(page).toHaveURL(`${ORIGIN}/onboarding/login`)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })
 
 test('[AC-WITHDRAW-E2E-002] 서버가 withdrawable=false면 제한 안내와 잠긴 탈퇴 버튼을 보여준다', async ({ page }) => {

@@ -1,6 +1,6 @@
-import { type ReactNode, useState } from 'react'
-import { Alert, Button, Card, Input } from '@aechak/design-system/web'
-import { Info, MessageCircle } from 'lucide-react'
+import { useState } from 'react'
+import { Alert, Button, Card, Input, KakaoLoginButton } from '@aechak/design-system/web'
+import { Info } from 'lucide-react'
 import { WEB_LOGIN_PROVIDERS, type SocialProvider } from '../auth.session'
 
 interface LoginFormProps {
@@ -16,10 +16,6 @@ interface LoginFormProps {
   /** 비밀번호 로그인 실패 인라인 안내. */
   passwordErrorMessage?: string | null
 }
-
-const SOCIAL_BUTTONS: { provider: SocialProvider; label: string; icon: ReactNode }[] = [
-  { provider: 'kakao', label: '카카오로 로그인', icon: <MessageCircle className="size-4" /> },
-]
 
 export function LoginForm({
   onSocialLogin,
@@ -78,27 +74,12 @@ export function LoginForm({
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <div className="flex flex-col gap-2">
-        {SOCIAL_BUTTONS.map(({ provider, label, icon }) => {
-          // 서버 웹 로그인이 열린 provider만 활성(web-seller 관례).
-          const supported = WEB_LOGIN_PROVIDERS.has(provider)
-          return (
-            <Button
-              key={provider}
-              type="button"
-              variant="secondary"
-              size="lg"
-              fullWidth
-              leftIcon={icon}
-              loading={redirecting === provider}
-              disabled={!supported || redirecting !== null}
-              onClick={() => onSocialLogin(provider)}
-            >
-              {supported ? label : `${label} (준비 중)`}
-            </Button>
-          )
-        })}
-      </div>
+      {/* 서버 웹 로그인이 열린 provider만 활성(web-seller 관례). */}
+      <KakaoLoginButton
+        loading={redirecting === 'kakao'}
+        disabled={!WEB_LOGIN_PROVIDERS.has('kakao') || redirecting !== null}
+        onClick={() => onSocialLogin('kakao')}
+      />
 
       <div className="flex items-start gap-1.5 text-text-tertiary">
         <Info className="mt-0.5 size-3.5 shrink-0" />
