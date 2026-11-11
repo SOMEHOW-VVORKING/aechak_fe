@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import { configure } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
 import { configureApiHosts, setAccessToken } from '@aechak/api'
 import {
@@ -14,6 +15,9 @@ import {
 // 그러지 않으면 호스트 분기가 무동작이라 모든 요청이 api로 몰리고, 셀러 모듈로 가야 할
 // 요청이 잘못된 호스트로 나가도 테스트가 통과한다(실제 배포에서만 깨진다).
 configureApiHosts({ apiOrigin: API_ORIGIN, sellerOrigin: SELLER_ORIGIN })
+
+// findBy/waitFor 기본 1초는 CI에서 세 앱 suite가 CPU를 나눠 쓰면 모자라 무작위로 실패한다.
+configure({ asyncUtilTimeout: 3_000 })
 
 // jsdom은 window.scrollTo를 구현하지 않아 TanStack Router의 스크롤 복원이 "Not implemented"를
 // 던진다 — 무해한 no-op으로 스텁한다(라우트 렌더 테스트 공통, web-buyer 관례).
