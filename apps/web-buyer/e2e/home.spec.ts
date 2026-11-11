@@ -209,7 +209,7 @@ test('[AC-HOME-E2E-006] 세션 없이 진입하면(refresh 401) /home 없이 로
   await page.goto('/')
 
   await expect(page).toHaveURL(/\/onboarding\/login$/)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
   expect(homeCalls).toBe(0)
   await shot(page, `${SHOTS}/home-05-logged-out.png`)
 })

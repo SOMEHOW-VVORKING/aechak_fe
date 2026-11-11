@@ -127,7 +127,7 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
     )
     renderAt('/mypage/pets/new')
 
-    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
   })
 
   it('[AC-PET-BREEDS-009] 비인증 오류(서버 500)는 인라인 안내만 뜨고 재시도 버튼도 화면 이탈도 없다', async () => {
@@ -140,7 +140,7 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
     expect(screen.getByLabelText('품종')).toBeDisabled()
     // 재시도 버튼은 제거됐고, 401이 아니라 로그인으로 튕기지도 않는다(폼에 그대로 머문다).
     expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '카카오로 시작하기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '카카오 로그인' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('이름')).toBeInTheDocument()
   })
 
@@ -161,7 +161,7 @@ describe('펫 폼 품종 Select: breeds API 연동', () => {
 
     // 재시도가 새 토큰을 달고 나가야 품종이 뜬다. 헤더를 안 갈아끼우면 계속 401 → 로그인으로 튕긴다.
     expect(await screen.findByRole('option', { name: '코리안 숏헤어' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '카카오로 시작하기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '카카오 로그인' })).not.toBeInTheDocument()
   })
 
   it('[AC-PET-BREEDS-006] 품종 선택 후 저장하면 breedId가 전송되고 종은 그 품종에서 파생된다', async () => {

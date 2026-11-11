@@ -148,5 +148,5 @@ test('[AC-PET-BREEDS-E2E-002] 세션 없이 진입하면(401 → refresh 실패)
   await page.goto('/mypage/pets/new')
   // 전역 onAuthExpired(main.tsx)가 로그인으로 보낸다. 인라인 에러가 아니라 화면 자체가 바뀐다.
   await expect(page).toHaveURL(/\/onboarding\/login$/)
-  await expect(page.getByRole('button', { name: '카카오로 시작하기' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible()
 })
