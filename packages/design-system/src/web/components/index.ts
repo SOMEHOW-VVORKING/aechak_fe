@@ -22,6 +22,9 @@ export type { ToastVariant } from './Toast'
 
 export { Input } from './Input'
 
+export { KakaoLoginButton } from './KakaoLoginButton'
+export type { KakaoLoginButtonProps } from './KakaoLoginButton'
+
 export { EmptyState } from './EmptyState'
 
 export { Skeleton } from './Skeleton'
