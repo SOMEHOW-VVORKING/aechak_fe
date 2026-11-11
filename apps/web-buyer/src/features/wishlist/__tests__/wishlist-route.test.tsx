@@ -22,11 +22,12 @@ function renderAt(path: string) {
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return router
 }
 
 describe('/wishlist', () => {
@@ -136,5 +137,16 @@ describe('/wishlist', () => {
 
     expect(await screen.findByText('스크래쳐 하우스 2종 세트')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '재입고 알림' })).not.toBeInTheDocument()
+  })
+
+  it('[AC-WISH-HOME-001] 홈 버튼이 보이고 누르면 홈으로 간다', async () => {
+    seedLikedProducts([])
+    const user = userEvent.setup()
+    const router = renderAt('/wishlist')
+
+    expect(await screen.findByText('아직 찜한 상품이 없어요')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })

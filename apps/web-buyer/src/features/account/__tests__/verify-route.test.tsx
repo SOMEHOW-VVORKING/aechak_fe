@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HttpResponse, http } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import {
   MSW_PHONE_CODE,
   PHONE_VERIFICATIONS_CONFIRM_URL,
@@ -30,6 +31,17 @@ function renderAt(path: string) {
 describe('/mypage/verify (실서버 계약 — MSW)', () => {
   beforeEach(() => {
     seedAccount()
+  })
+
+  it('[AC-VERIFY-008] 홈 버튼이 보이고 누르면 홈(\'/\')으로 간다', async () => {
+    // 홈 가드는 access가 없으면 로그인으로 보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    renderAt('/mypage/verify')
+
+    await screen.findByLabelText('휴대폰 번호')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    expect(await screen.findByText('이런 상품은 어때요?')).toBeInTheDocument()
   })
 
   it('[AC-VERIFY-001] 인증번호 발송 후 입력이 나타나고 인증번호는 화면에 노출되지 않는다', async () => {

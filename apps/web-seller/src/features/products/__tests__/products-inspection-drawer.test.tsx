@@ -658,4 +658,36 @@ describe('/products 검수 진행 Drawer (SCRUM-283)', () => {
     expect(await screen.findByText('관리자가 이의를 확인하고 있어요')).toBeInTheDocument()
     expect(screen.queryByText(/고친 내용이 AI 검수를 통과했어요/)).not.toBeInTheDocument()
   })
+
+  it('[AC-SPRD-123] 행을 누르면 그 상품의 검수 진행이 열린다', async () => {
+    serveInspection(inspectionWire({}))
+    renderAt('/products')
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByText(PRODUCT.name))
+
+    expect(await screen.findByText('AI가 확인이 필요한 표현을 찾아 반려했어요')).toBeInTheDocument()
+  })
+
+  it('[AC-SPRD-124] 행 안의 재고·판매 토글·수정을 눌러도 검수 진행은 열리지 않는다', async () => {
+    let inspectionCalls = 0
+    server.use(
+      http.get(`${SELLER_PRODUCTS_URL}/:productId/inspection`, () => {
+        inspectionCalls += 1
+        return HttpResponse.json({ data: inspectionWire({}) })
+      }),
+    )
+    const router = renderAt('/products')
+    const user = userEvent.setup()
+    const row = (await screen.findByText(PRODUCT.name)).closest('tr') as HTMLElement
+
+    await user.click(within(row).getByRole('button', { name: new RegExp(`${PRODUCT.name} 재고 .*수정`) }))
+    await user.keyboard('{Escape}')
+    await user.click(within(row).getByRole('switch', { name: `${PRODUCT.name} 판매` }))
+    await user.keyboard('{Escape}')
+    await user.click(within(row).getByRole('button', { name: `${PRODUCT.name} 수정` }))
+
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/products\/.+\/edit$/))
+    expect(inspectionCalls, '행 안의 조작이 행 누름으로 번지면 검수 조회가 나간다').toBe(0)
+  })
 })

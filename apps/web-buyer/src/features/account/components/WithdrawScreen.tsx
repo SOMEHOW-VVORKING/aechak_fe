@@ -13,6 +13,7 @@ import {
 } from '@aechak/design-system/web'
 import { ActionBarFrame } from '@/shared/components/ActionBarFrame'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import {
@@ -62,7 +63,7 @@ function WithdrawGuide({ onWithdrawn }: { onWithdrawn: () => void }) {
   const [withdrawError, setWithdrawError] = useState<string | null>(null)
 
   const goBack = useSafeBack({ to: '/mypage' })
-  const header = <BackAppBar onBack={goBack} title="회원 탈퇴" />
+  const header = <BackAppBar onBack={goBack} title="회원 탈퇴" actions={<HomeAction />} />
 
   const handleConfirm = () => {
     setWithdrawError(null)

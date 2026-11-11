@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HttpResponse, http } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import { resetAccount } from '@/shared/account'
 import {
   currentAccount,
@@ -38,6 +39,17 @@ describe('/mypage/profile 실서버 연동', () => {
   beforeEach(() => {
     resetAccount()
     seedAccount()
+  })
+
+  it('[AC-PROFILE-011] 홈 버튼이 보이고 누르면 홈(\'/\')으로 간다', async () => {
+    // 홈 가드는 access가 없으면 로그인으로 보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    renderAt('/mypage/profile')
+
+    await screen.findByDisplayValue('코코집사')
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    expect(await screen.findByText('이런 상품은 어때요?')).toBeInTheDocument()
   })
 
   it('[AC-PROFILE-003] 초기값이 서버 내 정보(닉네임·자기소개)로 프리필된다', async () => {

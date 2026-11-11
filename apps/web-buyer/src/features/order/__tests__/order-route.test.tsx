@@ -360,6 +360,15 @@ describe('/orders 주문 목록', () => {
     expect(await screen.findByText('주문번호')).toBeInTheDocument()
     expect(screen.getByText('o-mixed-done')).toBeInTheDocument()
   })
+
+  it('[AC-ORDER-ROUTE-024] 주문 내역의 홈 버튼을 누르면 홈으로 간다', async () => {
+    seedOrderGroups([MIXED])
+    const user = userEvent.setup()
+    const router = renderAt('/orders')
+
+    await user.click(await screen.findByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
 })
 
 describe('오프라인(네트워크 paused)', () => {
@@ -637,5 +646,15 @@ describe('/orders/$orderId 리뷰·상품 진입', () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe('/products/p-confirmed'),
     )
+  })
+
+  it('[AC-ORDER-ROUTE-025] 주문 상세의 홈 버튼을 누르면 홈으로 간다', async () => {
+    seedOrderGroups([CONFIRMED])
+    const user = userEvent.setup()
+    const router = renderAt('/orders/o-confirmed')
+
+    expect(await screen.findByText('주문번호')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })

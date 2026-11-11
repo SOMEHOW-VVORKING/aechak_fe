@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { HttpResponse, http } from 'msw'
+import { setAccessToken } from '@aechak/api'
 import { DEFAULT_TERMS, TERMS_URL, currentConsents, seedTerms, server } from '@/testing/msw/server'
 import { routeTree } from '../../../routeTree.gen'
 
@@ -64,5 +65,36 @@ describe('/settings/consents', () => {
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
 
     expect(await screen.findByText('서비스 이용약관')).toBeInTheDocument()
+  })
+
+  it('[AC-CONSENT-004] 홈 버튼이 보이고 누르면 홈(/)으로 간다', async () => {
+    // 홈은 회원 전용이라 비회원이면 로그인으로 돌려보낸다.
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    const router = renderAt('/settings/consents')
+    await screen.findByText('서비스 이용약관')
+
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+})
+
+// 설정 하위의 나머지 화면은 전용 route 테스트가 없어 홈 버튼만 여기서 함께 확인한다.
+describe('설정 화면 홈 버튼', () => {
+  it.each([
+    ['/settings', '설정'],
+    ['/settings/notifications', '알림 설정'],
+    ['/settings/faq', '자주 묻는 질문'],
+    ['/settings/guidelines', '커뮤니티 가이드라인'],
+    ['/settings/privacy', '개인정보 처리방침'],
+    ['/settings/data-deletion', '계정 및 데이터 삭제'],
+  ])('[AC-SETTINGS-HOME-001] %s 의 홈 버튼이 보이고 누르면 홈(/)으로 간다', async (path, title) => {
+    setAccessToken('member-token')
+    const user = userEvent.setup()
+    const router = renderAt(path)
+    await screen.findAllByText(title)
+
+    await user.click(screen.getByRole('button', { name: '홈으로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 })

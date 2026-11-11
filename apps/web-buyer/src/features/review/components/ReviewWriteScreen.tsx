@@ -10,6 +10,7 @@ import {
   Textarea,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { ScreenEmptyState } from '@/shared/components/ScreenEmptyState'
 import { useSafeBack } from '@/shared/useSafeBack'
 import { findProduct, ProductLineRow } from '@/shared/catalog'
@@ -158,7 +159,7 @@ export function ReviewWriteScreen({
 
   if (!productName) {
     return (
-      <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" />}>
+      <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" actions={<HomeAction />} />}>
         <ScreenEmptyState
           title="리뷰할 상품을 찾을 수 없어요"
           description="주소가 올바르지 않거나 삭제된 상품이에요."
@@ -171,7 +172,7 @@ export function ReviewWriteScreen({
   // 주문 품목 id 없이 들어온 신규 작성(직접 URL 진입)은 저장할 곳이 없다 — 작성 대기에서 다시 진입하게 한다.
   if (!editing && targetOrderItemId == null) {
     return (
-      <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" />}>
+      <MobileScreen header={<BackAppBar onBack={goBack} title="리뷰 작성" actions={<HomeAction />} />}>
         <ScreenEmptyState
           title="리뷰를 쓸 주문을 찾을 수 없어요"
           description="내 리뷰의 작성 대기 목록에서 리뷰 쓰기를 눌러 주세요."
@@ -186,7 +187,7 @@ export function ReviewWriteScreen({
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={goBack} title="리뷰 작성" />}
+      header={<BackAppBar onBack={goBack} title="리뷰 작성" actions={<HomeAction />} />}
       footer={
         <BottomFixedAction
           primary={{

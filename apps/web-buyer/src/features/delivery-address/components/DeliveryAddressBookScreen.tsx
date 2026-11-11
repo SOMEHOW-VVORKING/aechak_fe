@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
 import { AlertCircle, Loader2, MapPin, Search, SearchX, Star } from 'lucide-react'
@@ -17,6 +17,7 @@ import {
   StatusPill,
 } from '@aechak/design-system/web'
 import { BackAppBar } from '@/shared/components/BackAppBar'
+import { HomeAction } from '@/shared/components/HomeAction'
 import { AppToast } from '@/shared/components/AppToast'
 import { DashedAddButton } from '@/shared/components/DashedAddButton'
 import { EditDeleteActions } from '@/shared/components/EditDeleteActions'
@@ -80,6 +81,9 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
     backToList()
   }
 
+  // 주문서에서 들어온 경우에는 홈 버튼을 두지 않는다.
+  const homeAction = from === 'checkout' ? undefined : <HomeAction />
+
   const atLimit = addresses.length >= MAX_DELIVERY_ADDRESSES
 
   return (
@@ -89,6 +93,7 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
           target={formTarget}
           isFirstAddress={addresses.length === 0}
           saving={addMutation.isPending || updateMutation.isPending}
+          headerActions={homeAction}
           onCancel={() => setFormTarget(undefined)}
           onSave={input => {
             setErrorMessage(null)
@@ -98,7 +103,7 @@ export function DeliveryAddressBookScreen({ from }: DeliveryAddressBookScreenPro
           }}
         />
       ) : (
-        <MobileScreen header={<BackAppBar onBack={goBack} title="배송지 관리" />}>
+        <MobileScreen header={<BackAppBar onBack={goBack} title="배송지 관리" actions={homeAction} />}>
           {isLoading ? (
             <div className="flex flex-col gap-3.5 p-4">
               {[0, 1].map(i => (
@@ -264,6 +269,7 @@ function DeliveryAddressForm({
   target,
   isFirstAddress,
   saving,
+  headerActions,
   onCancel,
   onSave,
 }: {
@@ -271,6 +277,8 @@ function DeliveryAddressForm({
   /** 등록된 배송지가 없으면 서버가 이 건을 기본으로 만든다 — 폼이 그 사실을 미리 보여준다. */
   isFirstAddress: boolean
   saving: boolean
+  /** 앱바 우측 액션(홈 버튼). 없으면 그리지 않는다. */
+  headerActions?: ReactNode
   onCancel: () => void
   onSave: (input: DeliveryAddressInput) => void
 }) {
@@ -313,7 +321,13 @@ function DeliveryAddressForm({
 
   return (
     <MobileScreen
-      header={<BackAppBar onBack={onCancel} title={target ? '배송지 수정' : '배송지 추가'} />}
+      header={
+        <BackAppBar
+          onBack={onCancel}
+          title={target ? '배송지 수정' : '배송지 추가'}
+          actions={headerActions}
+        />
+      }
       footer={
         <BottomFixedAction
           primary={{
