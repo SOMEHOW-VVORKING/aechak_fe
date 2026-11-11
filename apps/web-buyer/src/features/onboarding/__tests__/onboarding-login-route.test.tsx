@@ -25,7 +25,7 @@ describe('/onboarding/login — 로그인 수단', () => {
   it('[AC-ONBOARD-015] 로그인 버튼은 카카오 하나다', async () => {
     renderLoginRoute()
 
-    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /구글/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Apple/ })).not.toBeInTheDocument()
   })

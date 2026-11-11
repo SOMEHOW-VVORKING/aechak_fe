@@ -57,7 +57,7 @@ const landedOnLoginWith = async (router: ReturnType<typeof renderAt>, error: num
 }
 
 /** 로그인 화면의 표식 — 서버 웹 로그인이 열린 provider는 카카오뿐이다. */
-const loginScreen = () => screen.findByRole('button', { name: '카카오로 로그인' })
+const loginScreen = () => screen.findByRole('button', { name: '카카오 로그인' })
 /** 운영 화면(상품 관리)의 표식 — SideNav 항목과 겹치지 않는 이 화면만의 버튼이다. */
 const productsScreen = () => screen.findByRole('button', { name: '상품 등록' })
 

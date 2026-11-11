@@ -88,6 +88,6 @@ describe('어드민 아이디·비밀번호 로그인 (SCRUM-373)', () => {
     renderLogin()
 
     // 비밀번호 채널은 카카오를 대체하지 않는다. 사장님과 팀원은 카카오로 들어온다.
-    expect(await screen.findByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeEnabled()
   })
 })

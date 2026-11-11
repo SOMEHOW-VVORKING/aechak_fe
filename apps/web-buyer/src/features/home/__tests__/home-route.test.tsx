@@ -145,7 +145,7 @@ describe('/ (홈 GET /home 실연동)', () => {
     logout()
     const router = renderAt('/')
 
-    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/onboarding/login')
     expect(calls.home).toBe(0)
   })
@@ -157,7 +157,7 @@ describe('/ (홈 GET /home 실연동)', () => {
     const calls = countHomeCalls()
     const router = renderAt('/')
 
-    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/onboarding/login')
     expect(calls.home).toBe(0)
     expect(getIsLoggedIn()).toBe(false)

@@ -54,7 +54,7 @@ describe('/settings 로그아웃 — 서버 세션 종료 배선', () => {
 
     // 홈으로 이동하면 홈 가드가 로그아웃 상태를 보고 /home 없이 로그인 화면으로 보낸다.
     // 서버 호출·토큰 파기·로컬 플래그까지 전부 반영.
-    expect(await screen.findByRole('button', { name: '카카오로 시작하기' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
     expect(called).toBe(1)
     expect(getAccessToken()).toBeNull()
     expect(getIsLoggedIn()).toBe(false)

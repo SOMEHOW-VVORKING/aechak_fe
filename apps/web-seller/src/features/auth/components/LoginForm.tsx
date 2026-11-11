@@ -1,6 +1,5 @@
-import type { ReactNode } from 'react'
-import { Alert, Button, Card } from '@aechak/design-system/web'
-import { Info, MessageCircle } from 'lucide-react'
+import { Alert, Card, KakaoLoginButton } from '@aechak/design-system/web'
+import { Info } from 'lucide-react'
 import { WEB_LOGIN_PROVIDERS, type SocialProvider } from '../auth.session'
 
 interface LoginFormProps {
@@ -10,10 +9,6 @@ interface LoginFormProps {
   /** 로그인 실패 복귀(?error=) 인라인 안내. */
   errorMessage?: string | null
 }
-
-const SOCIAL_BUTTONS: { provider: SocialProvider; label: string; icon: ReactNode }[] = [
-  { provider: 'kakao', label: '카카오로 로그인', icon: <MessageCircle className="size-4" /> },
-]
 
 export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: LoginFormProps) {
   return (
@@ -25,27 +20,12 @@ export function LoginForm({ onSocialLogin, redirecting = null, errorMessage }: L
 
       {errorMessage && <Alert variant="error">{errorMessage}</Alert>}
 
-      <div className="flex flex-col gap-2">
-        {SOCIAL_BUTTONS.map(({ provider, label, icon }) => {
-          // 서버 웹 로그인이 열린 provider만 활성(web-buyer 관례).
-          const supported = WEB_LOGIN_PROVIDERS.has(provider)
-          return (
-            <Button
-              key={provider}
-              type="button"
-              variant="secondary"
-              size="lg"
-              fullWidth
-              leftIcon={icon}
-              loading={redirecting === provider}
-              disabled={!supported || redirecting !== null}
-              onClick={() => onSocialLogin(provider)}
-            >
-              {supported ? label : `${label} (준비 중)`}
-            </Button>
-          )
-        })}
-      </div>
+      {/* 서버 웹 로그인이 열린 provider만 활성(web-buyer 관례). */}
+      <KakaoLoginButton
+        loading={redirecting === 'kakao'}
+        disabled={!WEB_LOGIN_PROVIDERS.has('kakao') || redirecting !== null}
+        onClick={() => onSocialLogin('kakao')}
+      />
 
       <div className="flex items-start gap-1.5 text-text-tertiary">
         <Info className="mt-0.5 size-3.5 shrink-0" />

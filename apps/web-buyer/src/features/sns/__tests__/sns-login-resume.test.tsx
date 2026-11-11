@@ -298,7 +298,7 @@ describe('로그인 뒤 다시 실행(A26)', () => {
     await waitFor(() => expect(first.state.location.pathname).toBe('/onboarding/terms'))
     await user.click(await screen.findByRole('button', { name: '뒤로 가기' }))
     await waitFor(() => expect(first.state.location.pathname).toBe('/onboarding/login'))
-    await screen.findByText('카카오로 시작하기')
+    await screen.findByText('카카오 로그인')
     expect(sessionStorage.length).toBe(1)
     cleanup()
 
@@ -357,7 +357,7 @@ describe('로그인 뒤 다시 실행(A26)', () => {
 
     // 찜 게이트, 세션 만료, 홈 가드처럼 대기 행동 없이 로그인 화면으로 들어온다.
     renderAt('/onboarding/login')
-    await screen.findByText('카카오로 시작하기')
+    await screen.findByText('카카오 로그인')
     expect(sessionStorage.length).toBe(0)
     cleanup()
 

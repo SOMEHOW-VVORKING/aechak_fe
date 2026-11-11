@@ -6,7 +6,7 @@ import { LoginForm } from '../components/LoginForm'
 describe('LoginForm (서버 웹 로그인)', () => {
   it('[AC-AUTH-001] 로그인 버튼은 카카오 하나다', () => {
     render(<LoginForm onSocialLogin={vi.fn()} />)
-    expect(screen.getByRole('button', { name: '카카오로 로그인' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '카카오 로그인' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /구글/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Apple/ })).not.toBeInTheDocument()
   })
@@ -16,7 +16,7 @@ describe('LoginForm (서버 웹 로그인)', () => {
     const onSocialLogin = vi.fn()
     render(<LoginForm onSocialLogin={onSocialLogin} />)
 
-    await user.click(screen.getByRole('button', { name: '카카오로 로그인' }))
+    await user.click(screen.getByRole('button', { name: '카카오 로그인' }))
 
     expect(onSocialLogin).toHaveBeenCalledWith('kakao')
   })

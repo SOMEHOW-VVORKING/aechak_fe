@@ -80,7 +80,7 @@ describe('셀러센터 로그아웃 (SCRUM-353)', () => {
 
     await confirmLogout(user)
 
-    expect(await screen.findByRole('button', { name: '카카오로 로그인' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
     expect(calls).toHaveLength(1)
     // 경로까지 고정한다 — 호스트 분기가 seller(8081)로 보냈다면 이 핸들러에 닿지 못한다.
     expect(calls[0]!.url).toBe('http://localhost:8080/api/v1/auth/web/logout')
