@@ -25,7 +25,7 @@ const CORS = {
 const SHOTS = 'test-results/pr-e2e-guard'
 
 // Daum 우편번호 스크립트 — 주입한 window.daum이 있으면 한 번도 받으면 안 된다(온디맨드 로더의 once-guard).
-const DAUM_SRC_PREFIX = 'https://t1.daumcdn.net/'
+const DAUM_SRC_PREFIX = 'https://t1.kakaocdn.net/'
 
 async function shot(page: Page, name: string) {
   await page.addStyleTag({
